@@ -31,9 +31,7 @@ cd liiga_teletext
 3. Create a config.toml file in the project root with your API configuration (example.config.toml is in the root):
 
 ```toml
-{
-  "api_domain": "YOUR_API_DOMAIN"
-}
+api_domain = "YOUR_API_DOMAIN"
 ```
 
 4. Build and run the application:
@@ -48,7 +46,7 @@ cargo run --release
 ```
 liiga_teletext/
 ├── Cargo.toml
-├── config.json         # API configuration
+├── config.toml         # API configuration
 ├── src/
 │   ├── main.rs         # Main application logic and event handling
 │   ├── teletext_ui.rs  # UI components and rendering
@@ -66,12 +64,10 @@ liiga_teletext/
 
 ## Configuration
 
-The application requires a `config.json` file with the following structure:
+The application requires a `config.toml` file with the following structure:
 
 ```toml
-{
-  "api_domain": "YOUR_API_DOMAIN"
-}
+api_domain = "YOUR_API_DOMAIN"
 ```
 
 ## Features Status
