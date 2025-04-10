@@ -28,9 +28,9 @@ fn get_subheader(games: &[GameData]) -> String {
     }
 }
 
-fn create_page(games: &[GameData]) -> TeletextPage {
+fn create_page(games: &[GameData], disable_video_links: bool) -> TeletextPage {
     let subheader = get_subheader(games);
-    let mut page = TeletextPage::new(221, "JÄÄKIEKKO".to_string(), subheader);
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO".to_string(), subheader, disable_video_links);
 
     for game in games {
         page.add_game_result(
@@ -57,7 +57,7 @@ fn has_live_games(games: &[GameData]) -> bool {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load config first to fail early if there's an issue
-    Config::load()?;
+    let config = Config::load()?;
 
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -66,12 +66,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let games = fetch_liiga_data().await?;
         let mut page = if games.is_empty() {
-            let mut error_page =
-                TeletextPage::new(221, "JÄÄKIEKKO".to_string(), "SM-LIIGA".to_string());
+            let mut error_page = TeletextPage::new(
+                221,
+                "JÄÄKIEKKO".to_string(),
+                "SM-LIIGA".to_string(),
+                config.disable_video_links,
+            );
             error_page.add_error_message("Ei otteluita tänään");
             error_page
         } else {
-            create_page(&games)
+            create_page(&games, config.disable_video_links)
         };
 
         // Initial render

@@ -13,6 +13,7 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
   - Game status (scheduled, ongoing, finished)
   - Score with overtime/shootout indicators
   - Goal scorers with timestamps
+  - Video links for goals (can be disabled)
   - Pagination for multiple games
 - Keyboard navigation
 - Authentic YLE Teksti-TV appearance
@@ -32,6 +33,7 @@ cd liiga_teletext
 
 ```toml
 api_domain = "YOUR_API_DOMAIN"
+disable_video_links = false  # Optional: Set to true to disable video links
 ```
 
 4. Build and run the application:
@@ -39,6 +41,9 @@ api_domain = "YOUR_API_DOMAIN"
 ```bash
 cargo build --release
 cargo run --release
+
+# To run without video links:
+cargo run --release -- novideo
 ```
 
 ## Project Structure
@@ -61,6 +66,7 @@ liiga_teletext/
 - Data refreshes automatically:
   - Every minute for live games
   - Every hour for non-live games
+- Launch with `novideo` parameter to disable video links (e.g., `cargo run --release -- novideo`)
 
 ## Configuration
 
@@ -68,7 +74,13 @@ The application requires a `config.toml` file with the following structure:
 
 ```toml
 api_domain = "YOUR_API_DOMAIN"
+disable_video_links = false  # Optional: Set to true to disable video links
 ```
+
+You can also disable video links by:
+
+1. Setting `disable_video_links = true` in config.toml
+2. Running the application with the `novideo` parameter
 
 ## Features Status
 
@@ -78,6 +90,7 @@ api_domain = "YOUR_API_DOMAIN"
 - [x] Goal scorer information
 - [x] Support for multiple tournaments
 - [x] Automatic refresh based on game state
+- [x] Configurable video link display
 - [ ] Display standings
 - [ ] Display season statistics
 - [ ] Configuration options for refresh intervals

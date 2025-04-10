@@ -1,2 +1,3 @@
 # Default configuration for Liiga Teletext
 api_domain = "https://myapi.com"
+disable_video_links = false  # Set to true to disable video links, can also be enabled with 'novideo' launch parameter
