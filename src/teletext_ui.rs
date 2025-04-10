@@ -339,6 +339,17 @@ impl TeletextPage {
                                         ResetColor
                                     )?;
                                 }
+
+                                // Add goal type indicators if present
+                                let goal_type = event.get_goal_type_display();
+                                if !goal_type.is_empty() {
+                                    execute!(
+                                        stdout,
+                                        SetForegroundColor(RESULT_FG),
+                                        Print(format!(" {}", goal_type)),
+                                        ResetColor
+                                    )?;
+                                }
                             } else {
                                 // Print empty space to align away team scorers
                                 execute!(
@@ -388,6 +399,17 @@ impl TeletextPage {
                                         stdout,
                                         SetForegroundColor(scorer_color),
                                         Print(format!("{}", event.scorer_name)),
+                                        ResetColor
+                                    )?;
+                                }
+
+                                // Add goal type indicators if present
+                                let goal_type = event.get_goal_type_display();
+                                if !goal_type.is_empty() {
+                                    execute!(
+                                        stdout,
+                                        SetForegroundColor(RESULT_FG),
+                                        Print(format!(" {}", goal_type)),
                                         ResetColor
                                     )?;
                                 }

@@ -184,6 +184,19 @@ pub struct GoalEventData {
     pub video_clip_url: Option<String>,
 }
 
+impl GoalEventData {
+    pub fn get_goal_type_display(&self) -> String {
+        let mut indicators = Vec::new();
+        if self.goal_types.contains(&"YV".to_string()) {
+            indicators.push("YV");
+        }
+        if self.goal_types.contains(&"IM".to_string()) {
+            indicators.push("IM");
+        }
+        indicators.join(" ")
+    }
+}
+
 fn process_goal_events<T>(game: &T, player_names: &HashMap<i64, String>) -> Vec<GoalEventData>
 where
     T: HasTeams,
@@ -384,7 +397,12 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
             let client = client.clone();
             let config = config.clone();
             async move {
-                let time = format_time(&m.start)?;
+                let time = if !m.started {
+                    format_time(&m.start)?
+                } else {
+                    String::new()
+                };
+
                 let result = format!("{}-{}", m.home_team.goals, m.away_team.goals);
                 let is_overtime = matches!(
                     m.finished_type.as_deref(),
