@@ -162,7 +162,7 @@ pub struct GameData {
     pub score_type: ScoreType,
     pub is_overtime: bool,
     pub is_shootout: bool,
-    pub tournament: String,
+    pub serie: String,
     pub goal_events: Vec<GoalEventData>,
     pub finished_type: String,
 }
@@ -293,8 +293,8 @@ impl HasGoalEvents for DetailedTeam {
 pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
-    // let mut date = Local::now().format("%Y-%m-%d").to_string();
-    let mut date = "2025-01-11";
+    let mut date = Local::now().format("%Y-%m-%d").to_string();
+    // let mut date = "2025-01-11";
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
     let mut response_data: Option<ScheduleResponse> = None;
@@ -307,20 +307,13 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
             "{}/games?tournament={}&date={}",
             config.api_domain, tournament, date
         );
-        println!("Fetching from URL: {}", url);
 
         match client.get(&url).send().await {
             Ok(response) => {
-                println!("Response status: {}", response.status());
                 match response.text().await {
                     Ok(response_text) => {
                         match serde_json::from_str::<ScheduleResponse>(&response_text) {
                             Ok(response) => {
-                                println!(
-                                    "Found {} games for tournament {}",
-                                    response.games.len(),
-                                    tournament
-                                );
                                 if !response.games.is_empty() {
                                     response_data = Some(response);
                                     found_games = true;
@@ -352,10 +345,6 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
         // Sort dates in descending order to get the most recent one
         previous_dates.sort_by(|a, b| b.cmp(a));
         let nearest_date = &previous_dates[0];
-        println!(
-            "No games today, fetching games from nearest previous game date: {}",
-            nearest_date
-        );
 
         let mut prev_day_response: Option<ScheduleResponse> = None;
 
@@ -364,7 +353,6 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
                 "{}/games?tournament={}&date={}",
                 config.api_domain, tournament, nearest_date
             );
-            println!("Fetching from URL: {}", url);
 
             match client.get(&url).send().await {
                 Ok(response) => match response.text().await {
@@ -456,7 +444,7 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
                     score_type,
                     is_overtime,
                     is_shootout,
-                    tournament: m.serie,
+                    serie: m.serie,
                     goal_events,
                     finished_type: m.finished_type.unwrap_or_default(),
                 })
@@ -476,7 +464,6 @@ async fn fetch_game_data(
     game_id: i32,
 ) -> Result<GameData, Box<dyn Error>> {
     let url = format!("{}/games/{}/{}", config.api_domain, season, game_id);
-    println!("Fetching detailed game data from: {}", url);
     let response = client.get(&url).send().await?;
     let game_response = response.json::<DetailedGameResponse>().await?;
 
@@ -498,15 +485,6 @@ async fn fetch_game_data(
     let goal_events = process_goal_events(&game_response.game, &player_names);
 
     // Debug goal events
-    for event in &goal_events {
-        println!(
-            "Goal at minute {}: Player ID {} -> Name '{}' (found in map: {})",
-            event.minute,
-            event.scorer_player_id,
-            event.scorer_name,
-            player_names.contains_key(&event.scorer_player_id)
-        );
-    }
 
     let game_time = game_response.game.game_time;
     let is_overtime = game_time > 3600;
@@ -529,7 +507,7 @@ async fn fetch_game_data(
         },
         is_overtime,
         is_shootout,
-        tournament: game_response.game.serie,
+        serie: game_response.game.serie,
         goal_events,
         finished_type: game_response.game.finished_type.unwrap_or_default(),
     })
