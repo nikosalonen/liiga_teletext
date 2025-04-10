@@ -43,8 +43,8 @@ pub struct GameData {
 }
 
 pub(crate) fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
-    //let today = Local::now().format("%Y-%m-%d").to_string();
-    let today = "2025-01-17";
+    let today = Local::now().format("%Y-%m-%d").to_string();
+    //let today = "2025-01-17";
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let client = Client::new();
     let mut all_games = Vec::new();
