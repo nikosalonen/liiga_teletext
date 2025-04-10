@@ -15,18 +15,30 @@ use std::thread;
 use std::time::Duration;
 use teletext_ui::TeletextPage;
 
+fn get_subheader(games: &[GameData]) -> String {
+    if games.is_empty() {
+        return "SM-LIIGA".to_string();
+    }
+
+    // Use the tournament type from the first game as they should all be from same tournament
+    match games[0].tournament.as_str() {
+        "runkosarja" => "RUNKOSARJA".to_string(),
+        "playoffs" => "PLAYOFFS".to_string(),
+        "playout" => "PLAYOUT-OTTELUT".to_string(),
+        "qualifications" => "LIIGAKARSINTA".to_string(),
+        _ => "SM-LIIGA".to_string(),
+    }
+}
+
 // Function to create multiple pages if there are many games
 fn create_pages(games: &[GameData], page_size: usize) -> Vec<TeletextPage> {
     let mut pages = Vec::new();
     let chunks = games.chunks(page_size);
     let total_pages = (games.len() as f32 / page_size as f32).ceil() as u16;
+    let subheader = get_subheader(games);
 
     for (i, chunk) in chunks.enumerate() {
-        let mut page = TeletextPage::new(
-             221, // Example page number for hockey results
-            "JÄÄKIEKKO".to_string(),
-            "KARSINTA (4 voittoa)".to_string(),
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO".to_string(), subheader.clone());
 
         for game in chunk {
             page.add_game_result(
@@ -35,6 +47,7 @@ fn create_pages(games: &[GameData], page_size: usize) -> Vec<TeletextPage> {
                 game.time.clone(),
                 game.result.clone(),
                 game.score_type.clone(),
+                game.is_overtime,
             );
             page.add_spacer();
         }

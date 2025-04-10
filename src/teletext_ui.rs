@@ -34,6 +34,7 @@ pub enum TeletextRow {
         time: String,
         result: String,
         score_type: ScoreType,
+        is_overtime: bool,
     },
     ErrorMessage(String),
     Spacer,
@@ -65,6 +66,7 @@ impl TeletextPage {
         time: String,
         result: String,
         score_type: ScoreType,
+        is_overtime: bool,
     ) {
         self.content_rows.push(TeletextRow::GameResult {
             home_team: home,
@@ -72,6 +74,7 @@ impl TeletextPage {
             time,
             result,
             score_type,
+            is_overtime,
         });
     }
 
@@ -141,13 +144,20 @@ impl TeletextPage {
                     time,
                     result,
                     score_type,
+                    is_overtime,
                 } => {
                     let formatted_home = format!("{:<width$}", home_team, width = TEAM_NAME_WIDTH);
                     let formatted_away = format!("{:<width$}", away_team, width = TEAM_NAME_WIDTH);
 
                     let display_result = match score_type {
                         ScoreType::Scheduled => time.clone(),
-                        _ => result.clone(),
+                        _ => {
+                            if *is_overtime {
+                                format!("{} JA", result)
+                            } else {
+                                result.clone()
+                            }
+                        }
                     };
 
                     execute!(
