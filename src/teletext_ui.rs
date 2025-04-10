@@ -28,7 +28,7 @@ pub struct TeletextPage {
     subheader: String,
     content_rows: Vec<TeletextRow>,
     current_page: usize,
-    items_per_page: usize,
+    screen_height: u16,
 }
 
 pub enum TeletextRow {
@@ -54,13 +54,18 @@ pub enum ScoreType {
 
 impl TeletextPage {
     pub fn new(page_number: u16, title: String, subheader: String) -> Self {
+        // Get terminal size, fallback to reasonable default if can't get size
+        let screen_height = crossterm::terminal::size()
+            .map(|(_, height)| height)
+            .unwrap_or(24);
+
         TeletextPage {
             page_number,
             title,
             subheader,
             content_rows: Vec::new(),
             current_page: 0,
-            items_per_page: 3,
+            screen_height,
         }
     }
 
@@ -92,8 +97,92 @@ impl TeletextPage {
             .push(TeletextRow::ErrorMessage(message.to_string()));
     }
 
+    fn calculate_game_height(game: &TeletextRow) -> u16 {
+        match game {
+            TeletextRow::GameResult { goal_events, .. } => {
+                let base_height = 1; // Game result line
+                let home_scorers = goal_events.iter().filter(|e| e.is_home_team).count();
+                let away_scorers = goal_events.iter().filter(|e| !e.is_home_team).count();
+                let scorer_lines = home_scorers.max(away_scorers);
+                let spacer = 1; // Space between games
+                (base_height + scorer_lines as u16 + spacer) as u16
+            }
+            TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
+        }
+    }
+
+    fn get_page_content(&self) -> (Vec<&TeletextRow>, bool) {
+        let available_height = self.screen_height.saturating_sub(5); // Reserve space for header, subheader, and footer
+        let mut current_height = 0u16;
+        let mut page_content = Vec::new();
+        let mut has_more = false;
+        let mut items_per_page = Vec::new();
+        let mut current_page_items = Vec::new();
+
+        // First, calculate how many items fit on each page
+        for game in self.content_rows.iter() {
+            let game_height = Self::calculate_game_height(game);
+
+            if current_height + game_height <= available_height {
+                current_page_items.push(game);
+                current_height += game_height;
+            } else {
+                if !current_page_items.is_empty() {
+                    items_per_page.push(current_page_items.len());
+                    current_page_items = vec![game];
+                    current_height = game_height;
+                }
+            }
+        }
+        if !current_page_items.is_empty() {
+            items_per_page.push(current_page_items.len());
+        }
+
+        // Calculate the starting index for the current page
+        let mut start_idx = 0;
+        for (page_idx, &items) in items_per_page.iter().enumerate() {
+            if page_idx as usize == self.current_page {
+                break;
+            }
+            start_idx += items;
+        }
+
+        // Get the items for the current page
+        if let Some(&items_in_current_page) = items_per_page.get(self.current_page) {
+            let end_idx = (start_idx + items_in_current_page).min(self.content_rows.len());
+            page_content = self.content_rows[start_idx..end_idx].iter().collect();
+            has_more = end_idx < self.content_rows.len();
+        }
+
+        (page_content, has_more)
+    }
+
+    fn total_pages(&self) -> usize {
+        let mut total_pages = 1;
+        let mut current_height = 0u16;
+        let available_height = self.screen_height.saturating_sub(5);
+        let mut current_page_items = 0;
+
+        for game in &self.content_rows {
+            let game_height = Self::calculate_game_height(game);
+            if current_height + game_height > available_height {
+                if current_page_items > 0 {
+                    total_pages += 1;
+                    current_height = game_height;
+                    current_page_items = 1;
+                }
+            } else {
+                current_height += game_height;
+                current_page_items += 1;
+            }
+        }
+
+        total_pages
+    }
+
     pub fn next_page(&mut self) {
-        if (self.current_page + 1) * self.items_per_page < self.content_rows.len() {
+        let total = self.total_pages();
+        if self.current_page + 1 < total {
             self.current_page += 1;
         }
     }
@@ -102,10 +191,6 @@ impl TeletextPage {
         if self.current_page > 0 {
             self.current_page -= 1;
         }
-    }
-
-    fn total_pages(&self) -> usize {
-        (self.content_rows.len() + self.items_per_page - 1) / self.items_per_page
     }
 
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error>> {
@@ -137,14 +222,12 @@ impl TeletextPage {
             ResetColor
         )?;
 
-        // Calculate page bounds
-        let start_idx = self.current_page * self.items_per_page;
-        let end_idx = (start_idx + self.items_per_page).min(self.content_rows.len());
-        let visible_rows = &self.content_rows[start_idx..end_idx];
+        // Get content for current page
+        let (visible_rows, _) = self.get_page_content();
 
         // Draw content with exact positioning
         let mut current_y = 3; // Start content one line after subheader
-        for (index, row) in visible_rows.iter().enumerate() {
+        for row in visible_rows {
             match row {
                 TeletextRow::GameResult {
                     home_team,
@@ -241,10 +324,7 @@ impl TeletextPage {
                         }
                     }
 
-                    // Add a spacer line after each game except the last one
-                    if index < visible_rows.len() - 1 {
-                        current_y += 1;
-                    }
+                    current_y += 1; // Add a spacer line after each game
                 }
                 TeletextRow::ErrorMessage(message) => {
                     execute!(
@@ -258,7 +338,7 @@ impl TeletextPage {
                         )),
                         ResetColor
                     )?;
-                    current_y += 1;
+                    current_y += 2; // Message + spacer
                 }
             }
         }
@@ -279,7 +359,7 @@ impl TeletextPage {
 
         execute!(
             stdout,
-            MoveTo(0, current_y),
+            MoveTo(0, self.screen_height.saturating_sub(1)),
             SetForegroundColor(Color::Blue),
             Print("<<<"),
             SetForegroundColor(Color::White),
