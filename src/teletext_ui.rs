@@ -24,8 +24,6 @@ pub struct TeletextPage {
     title: String,
     subheader: String,
     content_rows: Vec<TeletextRow>,
-    current_page: u16,
-    total_pages: u16,
 }
 
 pub enum TeletextRow {
@@ -55,8 +53,6 @@ impl TeletextPage {
             title,
             subheader,
             content_rows: Vec::new(),
-            current_page: 1,
-            total_pages: 1,
         }
     }
 
@@ -72,9 +68,9 @@ impl TeletextPage {
     ) {
         let mut result_text = result.clone();
         if is_overtime {
-            result_text.push_str(" JA");
+            result_text.push_str(" ja");
         } else if is_shootout {
-            result_text.push_str(" RL");
+            result_text.push_str(" rl");
         }
 
         let line = format!(
@@ -103,11 +99,6 @@ impl TeletextPage {
             .push(TeletextRow::ErrorMessage(message.to_string()));
     }
 
-    pub fn set_pagination(&mut self, current: u16, total: u16) {
-        self.current_page = current;
-        self.total_pages = total;
-    }
-
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error>> {
         // Clear the screen
         execute!(stdout, Clear(ClearType::All))?;
@@ -120,11 +111,7 @@ impl TeletextPage {
             SetForegroundColor(HEADER_FG),
             Print(format!("{:<15}", self.title)),
             SetBackgroundColor(HEADER_BG),
-            Print(format!(
-                "{:>15} {:>8}",
-                format!("SM-LIIGA {}", self.page_number),
-                format!("{}/{}", self.current_page, self.total_pages)
-            )),
+            Print(format!("{:>25}", format!("SM-LIIGA {}", self.page_number))),
             ResetColor
         )?;
 
@@ -200,27 +187,16 @@ impl TeletextPage {
             }
         }
 
-        // Fill remaining space to meet minimum height
-        while current_y < TELETEXT_MIN_HEIGHT - 2 {
-            // -2 to leave space for footer
-            execute!(
-                stdout,
-                MoveTo(0, current_y),
-                Print(format!("{:width$}", "", width = TELETEXT_WIDTH as usize))
-            )?;
-            current_y += 1;
-        }
-
-        // Footer at the bottom
+        // Footer right after content
         execute!(
             stdout,
-            MoveTo(0, TELETEXT_MIN_HEIGHT - 1), // Place footer at the bottom of minimum height
+            MoveTo(0, current_y),
             SetForegroundColor(Color::Blue),
-            Print("<<<  "),
+            Print("<<<"),
             SetForegroundColor(Color::White),
-            Print("q=Lopeta  ←→=Selaa  r=Päivitä"),
+            Print(format!("{:^34}", "q=Lopeta  r=Päivitä")),
             SetForegroundColor(Color::Blue),
-            Print("  >>>"),
+            Print(">>>"),
             ResetColor
         )?;
 
