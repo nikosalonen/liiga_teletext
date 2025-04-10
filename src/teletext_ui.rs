@@ -1,5 +1,6 @@
 // src/teletext_ui.rs - Updated with better display formatting
 
+use crate::data_fetcher::GoalEventData;
 use crossterm::{
     cursor::MoveTo,
     execute,
@@ -14,8 +15,11 @@ const HEADER_FG: Color = Color::White;
 const SUBHEADER_FG: Color = Color::Green;
 const RESULT_FG: Color = Color::Yellow;
 const TEXT_FG: Color = Color::White;
-const TELETEXT_WIDTH: u16 = 40; // Standard teletext width
-const TEAM_NAME_WIDTH: usize = 10; // Fixed width for team names
+const HOME_SCORER_FG: Color = Color::Cyan;
+const AWAY_SCORER_FG: Color = Color::Cyan;
+const WINNING_GOAL_FG: Color = Color::Magenta;
+const TELETEXT_WIDTH: u16 = 50; // Increased from 40 to accommodate longer names
+const TEAM_NAME_WIDTH: usize = 15; // Increased from 10 to fit longer team names
 const TITLE_BG: Color = Color::Green;
 
 pub struct TeletextPage {
@@ -33,6 +37,8 @@ pub enum TeletextRow {
         result: String,
         score_type: ScoreType,
         is_overtime: bool,
+        is_shootout: bool,
+        goal_events: Vec<GoalEventData>,
     },
     ErrorMessage(String),
     Spacer,
@@ -64,6 +70,7 @@ impl TeletextPage {
         score_type: ScoreType,
         is_overtime: bool,
         is_shootout: bool,
+        goal_events: Vec<GoalEventData>,
     ) {
         let mut result_text = result.clone();
         if is_overtime {
@@ -86,6 +93,8 @@ impl TeletextPage {
             result,
             score_type,
             is_overtime,
+            is_shootout,
+            goal_events,
         });
     }
 
@@ -108,9 +117,9 @@ impl TeletextPage {
             MoveTo(0, 0),
             SetBackgroundColor(TITLE_BG),
             SetForegroundColor(HEADER_FG),
-            Print(format!("{:<15}", self.title)),
+            Print(format!("{:<20}", self.title)),
             SetBackgroundColor(HEADER_BG),
-            Print(format!("{:>25}", format!("SM-LIIGA {}", self.page_number))),
+            Print(format!("{:>30}", format!("SM-LIIGA {}", self.page_number))),
             ResetColor
         )?;
 
@@ -138,6 +147,8 @@ impl TeletextPage {
                     result,
                     score_type,
                     is_overtime,
+                    is_shootout,
+                    goal_events,
                 } => {
                     let formatted_home = format!("{:<width$}", home_team, width = TEAM_NAME_WIDTH);
                     let formatted_away = format!("{:<width$}", away_team, width = TEAM_NAME_WIDTH);
@@ -147,6 +158,8 @@ impl TeletextPage {
                         _ => {
                             if *is_overtime {
                                 format!("{} JA", result)
+                            } else if *is_shootout {
+                                format!("{} RL", result)
                             } else {
                                 result.clone()
                             }
@@ -165,6 +178,37 @@ impl TeletextPage {
                         ResetColor
                     )?;
                     current_y += 1;
+
+                    // Display scorers if game has started and has goal events
+                    if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
+                        && !goal_events.is_empty()
+                    {
+                        for event in goal_events {
+                            let indent = if event.is_home_team {
+                                0 // Align directly under home team
+                            } else {
+                                TEAM_NAME_WIDTH + 3 // Align directly under away team (after " - ")
+                            };
+
+                            let scorer_color =
+                                if event.is_winning_goal && (*is_overtime || *is_shootout) {
+                                    WINNING_GOAL_FG
+                                } else if event.is_home_team {
+                                    HOME_SCORER_FG
+                                } else {
+                                    AWAY_SCORER_FG
+                                };
+
+                            execute!(
+                                stdout,
+                                MoveTo(indent as u16, current_y),
+                                SetForegroundColor(scorer_color),
+                                Print(format!("{:2} {}", event.minute, event.scorer_name)),
+                                ResetColor
+                            )?;
+                            current_y += 1;
+                        }
+                    }
                 }
                 TeletextRow::ErrorMessage(message) => {
                     execute!(

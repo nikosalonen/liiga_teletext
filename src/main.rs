@@ -42,6 +42,7 @@ fn create_page(games: &[GameData]) -> TeletextPage {
             game.score_type.clone(),
             game.is_overtime,
             game.is_shootout,
+            game.goal_events.clone(),
         );
         page.add_spacer();
     }
