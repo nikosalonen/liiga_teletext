@@ -21,9 +21,9 @@ fn get_subheader(games: &[GameData]) -> String {
 
     // Use the tournament type from the first game as they should all be from same tournament
     match games[0].serie.as_str() {
-        "playoffs" => "PLAYOFFS".to_string(),
-        "playout" => "PLAYOUT-OTTELUT".to_string(),
-        "qualifications" => "LIIGAKARSINTA".to_string(),
+        "PLAYOFFS" => "PLAYOFFS".to_string(),
+        "PLAYOUT" => "PLAYOUT-OTTELUT".to_string(),
+        "QUALIFICATIONS" => "LIIGAKARSINTA".to_string(),
         _ => "RUNKOSARJA".to_string(),
     }
 }
