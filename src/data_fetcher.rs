@@ -508,3 +508,154 @@ fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
     }
     process_goal_events(game, &basic_names)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::DateTime;
+
+    #[test]
+    fn test_format_time() {
+        let timestamp = "2025-01-11T15:00:00Z";
+        let result = format_time(timestamp).unwrap();
+        // Note: This test assumes local timezone, might need adjustment
+        assert!(result.contains(":"), "Time should contain :");
+        assert_eq!(result.len(), 5, "Time should be in format HH.MM");
+    }
+
+    #[test]
+    fn test_process_goal_events() {
+        let game = ScheduleGame {
+            id: 1,
+            season: 2025,
+            start: "2025-01-11T15:00:00Z".to_string(),
+            end: "".to_string(),
+            home_team: ScheduleTeam {
+                team_id: "123".to_string(),
+                team_name: "Home".to_string(),
+                goals: 1,
+                goal_events: vec![GoalEvent {
+                    scorer_player_id: 123,
+                    logTime: "2025-01-11T15:10:00Z".to_string(),
+                    game_time: 600,
+                    period: 1,
+                    eventId: 1,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    winning_goal: true,
+                    goal_types: vec![],
+                    assistant_player_ids: vec![],
+                }],
+            },
+            away_team: ScheduleTeam {
+                team_id: "456".to_string(),
+                team_name: "Away".to_string(),
+                goals: 0,
+                goal_events: vec![],
+            },
+            finished_type: Some("ENDED_DURING_REGULAR_GAME_TIME".to_string()),
+            started: true,
+            ended: true,
+            game_time: 3600,
+            serie: "RUNKOSARJA".to_string(),
+        };
+
+        let mut player_names = HashMap::new();
+        player_names.insert(123, "John Doe".to_string());
+
+        let events = process_goal_events(&game, &player_names);
+
+        assert_eq!(events.len(), 1, "Should process one goal event");
+        let event = &events[0];
+        assert_eq!(event.scorer_name, "Doe", "Should extract last name");
+        assert_eq!(event.minute, 10, "Should convert game time to minutes");
+        assert!(event.is_home_team, "Should be marked as home team goal");
+    }
+
+    #[test]
+    fn test_create_basic_goal_events() {
+        let game = ScheduleGame {
+            id: 1,
+            season: 2025,
+            start: "2025-01-11T15:00:00Z".to_string(),
+            end: "".to_string(),
+            home_team: ScheduleTeam {
+                team_id: "123".to_string(),
+                team_name: "Home".to_string(),
+                goals: 1,
+                goal_events: vec![GoalEvent {
+                    scorer_player_id: 123,
+                    logTime: "2025-01-11T15:10:00Z".to_string(),
+                    game_time: 600,
+                    period: 1,
+                    eventId: 1,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    winning_goal: false,
+                    goal_types: vec!["RL0".to_string()],
+                    assistant_player_ids: vec![],
+                }],
+            },
+            away_team: ScheduleTeam {
+                team_id: "456".to_string(),
+                team_name: "Away".to_string(),
+                goals: 0,
+                goal_events: vec![],
+            },
+            finished_type: None,
+            started: true,
+            ended: false,
+            game_time: 600,
+            serie: "RUNKOSARJA".to_string(),
+        };
+
+        let events = create_basic_goal_events(&game);
+        assert!(events.is_empty(), "Should filter out RL0 goals");
+    }
+
+    #[test]
+    fn test_process_team_goals() {
+        let mut events = Vec::new();
+        let team = ScheduleTeam {
+            team_id: "123".to_string(),
+            team_name: "Team".to_string(),
+            goals: 2,
+            goal_events: vec![
+                GoalEvent {
+                    scorer_player_id: 123,
+                    logTime: "2025-01-11T15:10:00Z".to_string(),
+                    game_time: 600,
+                    period: 1,
+                    eventId: 1,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    winning_goal: false,
+                    goal_types: vec![],
+                    assistant_player_ids: vec![],
+                },
+                GoalEvent {
+                    scorer_player_id: 456,
+                    logTime: "2025-01-11T15:20:00Z".to_string(),
+                    game_time: 1200,
+                    period: 1,
+                    eventId: 2,
+                    home_team_score: 2,
+                    away_team_score: 0,
+                    winning_goal: false,
+                    goal_types: vec!["RL0".to_string()],
+                    assistant_player_ids: vec![],
+                },
+            ],
+        };
+
+        let mut player_names = HashMap::new();
+        player_names.insert(123, "John Doe".to_string());
+        player_names.insert(456, "Jane Smith".to_string());
+
+        process_team_goals(&team, &player_names, true, &mut events);
+
+        assert_eq!(events.len(), 1, "Should only process non-RL0 goals");
+        assert_eq!(events[0].minute, 10, "Should convert time correctly");
+        assert_eq!(events[0].scorer_name, "Doe", "Should format name correctly");
+    }
+}

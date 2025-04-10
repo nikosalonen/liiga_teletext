@@ -385,3 +385,131 @@ fn truncate(s: &str, max_chars: usize) -> String {
         s.chars().take(max_chars).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_fetcher::GoalEventData;
+
+    #[test]
+    fn test_page_navigation() {
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+
+        // Add enough games to create multiple pages
+        for i in 0..10 {
+            page.add_game_result(
+                format!("Home {}", i),
+                format!("Away {}", i),
+                "18.00".to_string(),
+                "0-0".to_string(),
+                ScoreType::Scheduled,
+                false,
+                false,
+                vec![],
+            );
+        }
+
+        let initial_page = page.current_page;
+        page.next_page();
+        assert!(page.current_page > initial_page, "Should move to next page");
+
+        page.previous_page();
+        assert_eq!(
+            page.current_page, initial_page,
+            "Should return to initial page"
+        );
+    }
+
+    #[test]
+    fn test_page_wrapping() {
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+
+        // Add enough games for multiple pages
+        for i in 0..10 {
+            page.add_game_result(
+                format!("Home {}", i),
+                format!("Away {}", i),
+                "18.00".to_string(),
+                "0-0".to_string(),
+                ScoreType::Scheduled,
+                false,
+                false,
+                vec![],
+            );
+        }
+
+        let total_pages = page.total_pages();
+        assert!(total_pages > 1, "Should have multiple pages");
+
+        // Test wrapping from last to first page
+        page.current_page = total_pages - 1;
+        page.next_page();
+        assert_eq!(page.current_page, 0, "Should wrap to first page");
+
+        // Test wrapping from first to last page
+        page.current_page = 0;
+        page.previous_page();
+        assert_eq!(
+            page.current_page,
+            total_pages - 1,
+            "Should wrap to last page"
+        );
+    }
+
+    #[test]
+    fn test_game_height_calculation() {
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+
+        // Test game without goals
+        page.add_game_result(
+            "Home".to_string(),
+            "Away".to_string(),
+            "18.00".to_string(),
+            "0-0".to_string(),
+            ScoreType::Scheduled,
+            false,
+            false,
+            vec![],
+        );
+
+        // Test game with goals
+        let goals = vec![GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Scorer".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec![],
+            is_home_team: true,
+        }];
+
+        page.add_game_result(
+            "Home".to_string(),
+            "Away".to_string(),
+            "18.00".to_string(),
+            "1-0".to_string(),
+            ScoreType::Final,
+            false,
+            false,
+            goals,
+        );
+
+        let (content, _) = page.get_page_content();
+        assert_eq!(content.len(), 2, "Should show both games");
+    }
+
+    #[test]
+    fn test_error_message_display() {
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+        let error_msg = "Test Error";
+        page.add_error_message(error_msg);
+
+        let (content, _) = page.get_page_content();
+        assert_eq!(content.len(), 1, "Should have one row");
+        match &content[0] {
+            TeletextRow::ErrorMessage(msg) => assert_eq!(msg, error_msg),
+            _ => panic!("Should be an error message"),
+        }
+    }
+}
