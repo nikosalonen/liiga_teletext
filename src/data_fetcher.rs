@@ -512,14 +512,13 @@ fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::DateTime;
 
     #[test]
     fn test_format_time() {
         let timestamp = "2025-01-11T15:00:00Z";
         let result = format_time(timestamp).unwrap();
         // Note: This test assumes local timezone, might need adjustment
-        assert!(result.contains(":"), "Time should contain :");
+        assert!(result.contains("."), "Time should contain .");
         assert_eq!(result.len(), 5, "Time should be in format HH.MM");
     }
 

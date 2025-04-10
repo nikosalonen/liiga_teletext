@@ -283,9 +283,9 @@ impl TeletextPage {
                     if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
                         && !goal_events.is_empty()
                     {
-                        let mut home_scorers: Vec<_> =
+                        let home_scorers: Vec<_> =
                             goal_events.iter().filter(|e| e.is_home_team).collect();
-                        let mut away_scorers: Vec<_> =
+                        let away_scorers: Vec<_> =
                             goal_events.iter().filter(|e| !e.is_home_team).collect();
                         let max_scorers = home_scorers.len().max(away_scorers.len());
 
@@ -394,18 +394,42 @@ mod tests {
     #[test]
     fn test_page_navigation() {
         let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+        page.screen_height = 20; // Set fixed screen height for testing
 
-        // Add enough games to create multiple pages
+        // Add enough games with goal events to create multiple pages
         for i in 0..10 {
+            let goal_events = vec![
+                GoalEventData {
+                    scorer_player_id: i as i64,
+                    scorer_name: format!("Scorer {}", i),
+                    minute: 10,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    is_winning_goal: false,
+                    goal_types: vec![],
+                    is_home_team: true,
+                },
+                GoalEventData {
+                    scorer_player_id: (i + 100) as i64,
+                    scorer_name: format!("Scorer {}", i + 100),
+                    minute: 20,
+                    home_team_score: 1,
+                    away_team_score: 1,
+                    is_winning_goal: false,
+                    goal_types: vec![],
+                    is_home_team: false,
+                },
+            ];
+
             page.add_game_result(
                 format!("Home {}", i),
                 format!("Away {}", i),
                 "18.00".to_string(),
-                "0-0".to_string(),
-                ScoreType::Scheduled,
+                "1-1".to_string(),
+                ScoreType::Final,
                 false,
                 false,
-                vec![],
+                goal_events,
             );
         }
 
@@ -423,18 +447,42 @@ mod tests {
     #[test]
     fn test_page_wrapping() {
         let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+        page.screen_height = 20; // Set fixed screen height for testing
 
-        // Add enough games for multiple pages
+        // Add enough games with goal events to create multiple pages
         for i in 0..10 {
+            let goal_events = vec![
+                GoalEventData {
+                    scorer_player_id: i as i64,
+                    scorer_name: format!("Scorer {}", i),
+                    minute: 10,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    is_winning_goal: false,
+                    goal_types: vec![],
+                    is_home_team: true,
+                },
+                GoalEventData {
+                    scorer_player_id: (i + 100) as i64,
+                    scorer_name: format!("Scorer {}", i + 100),
+                    minute: 20,
+                    home_team_score: 1,
+                    away_team_score: 1,
+                    is_winning_goal: false,
+                    goal_types: vec![],
+                    is_home_team: false,
+                },
+            ];
+
             page.add_game_result(
                 format!("Home {}", i),
                 format!("Away {}", i),
                 "18.00".to_string(),
-                "0-0".to_string(),
-                ScoreType::Scheduled,
+                "1-1".to_string(),
+                ScoreType::Final,
                 false,
                 false,
-                vec![],
+                goal_events,
             );
         }
 
