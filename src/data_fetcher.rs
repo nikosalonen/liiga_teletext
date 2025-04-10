@@ -27,6 +27,8 @@ pub struct GoalEvent {
     pub goal_types: Vec<String>,
     #[serde(rename = "assistantPlayerIds", default)]
     pub assistant_player_ids: Vec<i32>,
+    #[serde(rename = "videoClipUrl", default)]
+    pub video_clip_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,6 +181,7 @@ pub struct GoalEventData {
     pub is_winning_goal: bool,
     pub goal_types: Vec<String>,
     pub is_home_team: bool,
+    pub video_clip_url: Option<String>,
 }
 
 fn process_goal_events<T>(game: &T, player_names: &HashMap<i64, String>) -> Vec<GoalEventData>
@@ -232,6 +235,7 @@ fn process_team_goals(
             is_winning_goal: goal.winning_goal,
             goal_types: goal.goal_types.clone(),
             is_home_team,
+            video_clip_url: goal.video_clip_url.clone(),
         });
     }
 }
@@ -544,6 +548,7 @@ mod tests {
                     winning_goal: true,
                     goal_types: vec![],
                     assistant_player_ids: vec![],
+                    video_clip_url: None,
                 }],
             },
             away_team: ScheduleTeam {
@@ -593,6 +598,7 @@ mod tests {
                     winning_goal: false,
                     goal_types: vec!["RL0".to_string()],
                     assistant_player_ids: vec![],
+                    video_clip_url: None,
                 }],
             },
             away_team: ScheduleTeam {
@@ -631,6 +637,7 @@ mod tests {
                     winning_goal: false,
                     goal_types: vec![],
                     assistant_player_ids: vec![],
+                    video_clip_url: None,
                 },
                 GoalEvent {
                     scorer_player_id: 456,
@@ -643,6 +650,7 @@ mod tests {
                     winning_goal: false,
                     goal_types: vec!["RL0".to_string()],
                     assistant_player_ids: vec![],
+                    video_clip_url: None,
                 },
             ],
         };

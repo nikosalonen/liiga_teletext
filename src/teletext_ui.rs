@@ -21,6 +21,7 @@ const WINNING_GOAL_FG: Color = Color::Magenta;
 const TELETEXT_WIDTH: u16 = 50; // Increased from 40 to accommodate longer names
 const TEAM_NAME_WIDTH: usize = 15; // Increased from 10 to fit longer team names
 const TITLE_BG: Color = Color::Green;
+const VIDEO_ICON: &str = " ▶";
 
 pub struct TeletextPage {
     page_number: u16,
@@ -302,9 +303,28 @@ impl TeletextPage {
                                     stdout,
                                     MoveTo(0, current_y),
                                     SetForegroundColor(scorer_color),
-                                    Print(format!("{:2} {:<15}", event.minute, event.scorer_name)),
-                                    ResetColor
+                                    Print(format!("{:2} ", event.minute)),
                                 )?;
+
+                                // If there's a video clip, make the scorer name a clickable link
+                                if let Some(url) = &event.video_clip_url {
+                                    execute!(
+                                        stdout,
+                                        SetForegroundColor(scorer_color),
+                                        Print(format!(
+                                            "\x1B]8;;{}\x1B\\{}{}\x1B]8;;\x1B\\",
+                                            url, event.scorer_name, VIDEO_ICON
+                                        )),
+                                        ResetColor
+                                    )?;
+                                } else {
+                                    execute!(
+                                        stdout,
+                                        SetForegroundColor(scorer_color),
+                                        Print(format!("{:<15}", event.scorer_name)),
+                                        ResetColor
+                                    )?;
+                                }
                             } else {
                                 // Print empty space to align away team scorers
                                 execute!(
@@ -326,9 +346,28 @@ impl TeletextPage {
                                     stdout,
                                     MoveTo(TEAM_NAME_WIDTH as u16 + 3, current_y),
                                     SetForegroundColor(scorer_color),
-                                    Print(format!("{:2} {}", event.minute, event.scorer_name)),
-                                    ResetColor
+                                    Print(format!("{:2} ", event.minute)),
                                 )?;
+
+                                // If there's a video clip, make the scorer name a clickable link
+                                if let Some(url) = &event.video_clip_url {
+                                    execute!(
+                                        stdout,
+                                        SetForegroundColor(scorer_color),
+                                        Print(format!(
+                                            "\x1B]8;;{}\x1B\\{}{}\x1B]8;;\x1B\\",
+                                            url, event.scorer_name, VIDEO_ICON
+                                        )),
+                                        ResetColor
+                                    )?;
+                                } else {
+                                    execute!(
+                                        stdout,
+                                        SetForegroundColor(scorer_color),
+                                        Print(format!("{}", event.scorer_name)),
+                                        ResetColor
+                                    )?;
+                                }
                             }
 
                             current_y += 1;
@@ -400,6 +439,7 @@ mod tests {
                     is_winning_goal: false,
                     goal_types: vec![],
                     is_home_team: true,
+                    video_clip_url: None,
                 },
                 GoalEventData {
                     scorer_player_id: (i + 100) as i64,
@@ -410,6 +450,7 @@ mod tests {
                     is_winning_goal: false,
                     goal_types: vec![],
                     is_home_team: false,
+                    video_clip_url: None,
                 },
             ];
 
@@ -453,6 +494,7 @@ mod tests {
                     is_winning_goal: false,
                     goal_types: vec![],
                     is_home_team: true,
+                    video_clip_url: None,
                 },
                 GoalEventData {
                     scorer_player_id: (i + 100) as i64,
@@ -463,6 +505,7 @@ mod tests {
                     is_winning_goal: false,
                     goal_types: vec![],
                     is_home_team: false,
+                    video_clip_url: None,
                 },
             ];
 
@@ -522,6 +565,7 @@ mod tests {
             is_winning_goal: false,
             goal_types: vec![],
             is_home_team: true,
+            video_clip_url: None,
         }];
 
         page.add_game_result(
