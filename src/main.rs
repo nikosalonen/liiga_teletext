@@ -1,19 +1,19 @@
 // src/main.rs
-mod teletext_ui;
-mod data_fetcher;
 mod config;
+mod data_fetcher;
+mod teletext_ui;
 
-use teletext_ui::TeletextPage;
-use data_fetcher::{GameData, fetch_liiga_data};
 use crossterm::{
-    execute,
-    terminal::{enable_raw_mode, disable_raw_mode},
-    event::{read, Event, KeyCode},
     cursor::{Hide, Show},
+    event::{Event, KeyCode, read},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode},
 };
+use data_fetcher::{GameData, fetch_liiga_data};
 use std::io::stdout;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
+use teletext_ui::TeletextPage;
 
 // Function to create multiple pages if there are many games
 fn create_pages(games: &[GameData], page_size: usize) -> Vec<TeletextPage> {
@@ -23,7 +23,7 @@ fn create_pages(games: &[GameData], page_size: usize) -> Vec<TeletextPage> {
 
     for (i, chunk) in chunks.enumerate() {
         let mut page = TeletextPage::new(
-            235, // Example page number for hockey results
+             221, // Example page number for hockey results
             "JÄÄKIEKKO".to_string(),
             "KARSINTA (4 voittoa)".to_string(),
         );
@@ -60,13 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Create pages (4 games per page)
-    let pages = if games.is_empty() {
+    let mut pages = if games.is_empty() {
         // Create a single error page if no data
-        let mut error_page = TeletextPage::new(
-            235,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string()
-        );
+        let mut error_page =
+            TeletextPage::new(221, "JÄÄKIEKKO".to_string(), "SM-LIIGA".to_string());
         error_page.add_error_message("Ei tuloksia saatavilla.");
         error_page.add_spacer();
         error_page.add_error_message("Yritä myöhemmin uudelleen.");
@@ -122,17 +119,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     KeyCode::Char('r') => {
                         // Refresh data
-                        let fresh_games = match fetch_liiga_data() {
-                            Ok(data) => data,
-                            Err(_) => vec![], // Handle empty data
-                        };
+                        let fresh_games = fetch_liiga_data().unwrap_or_else(|_| vec![]);
 
-                        let fresh_pages = if fresh_games.is_empty() {
-                            // Create a single error page if no data
+                        // Update the pages with fresh data
+                        pages = if fresh_games.is_empty() {
                             let mut error_page = TeletextPage::new(
-                                235,
+                                221,
                                 "JÄÄKIEKKO".to_string(),
-                                "SM-LIIGA".to_string()
+                                "SM-LIIGA".to_string(),
                             );
                             error_page.add_error_message("Ei tuloksia saatavilla.");
                             error_page.add_spacer();
@@ -143,10 +137,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             create_pages(&fresh_games, 4)
                         };
 
-                        if !fresh_pages.is_empty() {
-                            // Update pages and reset to first page
-                            let pages = fresh_pages;
-                            current_page_idx = 0;
+                        // Reset to first page and render
+                        current_page_idx = 0;
+                        if !pages.is_empty() {
                             pages[current_page_idx].render(&mut stdout)?;
                         }
                     }
