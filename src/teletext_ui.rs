@@ -182,15 +182,22 @@ impl TeletextPage {
 
     pub fn next_page(&mut self) {
         let total = self.total_pages();
-        if self.current_page + 1 < total {
-            self.current_page += 1;
+        if total <= 1 {
+            return;
         }
+        self.current_page = (self.current_page + 1) % total;
     }
 
     pub fn previous_page(&mut self) {
-        if self.current_page > 0 {
-            self.current_page -= 1;
+        let total = self.total_pages();
+        if total <= 1 {
+            return;
         }
+        self.current_page = if self.current_page == 0 {
+            total - 1
+        } else {
+            self.current_page - 1
+        };
     }
 
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error>> {
