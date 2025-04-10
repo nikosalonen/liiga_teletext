@@ -1,8 +1,5 @@
 // src/config.rs
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::io::Write;
-use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -20,6 +17,17 @@ pub struct Config {
     pub header_bg_color: String,
     pub header_fg_color: String,
     pub result_color: String,
+
+    pub theme: Theme,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Theme {
+    pub header_bg: String,
+    pub header_fg: String,
+    pub subheader_fg: String,
+    pub result_fg: String,
+    pub text_fg: String,
 }
 
 impl Default for Config {
@@ -34,25 +42,32 @@ impl Default for Config {
             header_bg_color: "#0000FF".to_string(), // Blue
             header_fg_color: "#FFFFFF".to_string(), // White
             result_color: "#FFFF00".to_string(),    // Yellow
+            theme: Theme {
+                header_bg: "Blue".to_string(),
+                header_fg: "White".to_string(),
+                subheader_fg: "Green".to_string(),
+                result_fg: "Yellow".to_string(),
+                text_fg: "White".to_string(),
+            },
         }
     }
 }
 
+// Implementation commented out until needed
+/*
 impl Config {
     pub fn load() -> Self {
         let config_path = Config::get_config_path();
 
         if Path::new(&config_path).exists() {
             match fs::read_to_string(&config_path) {
-                Ok(content) => {
-                    match serde_json::from_str(&content) {
-                        Ok(config) => return config,
-                        Err(e) => {
-                            eprintln!("Error parsing config file: {}", e);
-                            println!("Using default configuration");
-                        }
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(config) => return config,
+                    Err(e) => {
+                        eprintln!("Error parsing config file: {}", e);
+                        println!("Using default configuration");
                     }
-                }
+                },
                 Err(e) => {
                     eprintln!("Error reading config file: {}", e);
                     println!("Using default configuration");
@@ -94,3 +109,4 @@ impl Config {
             .to_string()
     }
 }
+*/
