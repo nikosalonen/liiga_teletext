@@ -5,7 +5,13 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 ## Features
 
 - Teletext-style interface with colored headers and content
-- Displays Finnish Liiga hockey results
+- Live game updates with automatic refresh
+- Support for multiple tournaments (regular season, playoffs, playout, qualifications)
+- Detailed game information including:
+  - Game status (scheduled, ongoing, finished)
+  - Score with overtime/shootout indicators
+  - Goal scorers with timestamps
+  - Pagination for multiple games
 - Keyboard navigation
 - Authentic YLE Teksti-TV appearance
 
@@ -13,14 +19,20 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 
 1. Make sure Rust and Cargo are installed on your system. If not, install them from [rustup.rs](https://rustup.rs/).
 
-2. Clone this repository or create a new project using the provided files:
+2. Clone this repository:
 
 ```bash
-cargo new liiga_teletext
+git clone https://github.com/nikosalonen/liiga_teletext.git
 cd liiga_teletext
 ```
 
-3. Replace the default files with the files from this project.
+3. Create a config.toml file in the project root with your API configuration (example.config.toml is in the root):
+
+```toml
+{
+  "api_domain": "YOUR_API_DOMAIN"
+}
+```
 
 4. Build and run the application:
 
@@ -34,38 +46,49 @@ cargo run --release
 ```
 liiga_teletext/
 ├── Cargo.toml
+├── config.json         # API configuration
 ├── src/
-│   ├── main.rs         # Main application logic
+│   ├── main.rs         # Main application logic and event handling
 │   ├── teletext_ui.rs  # UI components and rendering
-│   └── data_fetcher.rs # Data fetching from API (optional)
+│   ├── data_fetcher.rs # API integration and data processing
+│   └── config.rs       # Configuration handling
 ```
 
 ## Usage
 
 - Press `q` to quit the application
-- Use arrow keys to navigate between pages (when implemented)
+- Use left/right arrow keys to navigate between pages
+- Data refreshes automatically:
+  - Every minute for live games
+  - Every hour for non-live games
 
-## Customization
+## Configuration
 
-### API Integration
+The application requires a `config.json` file with the following structure:
 
-To fetch real data instead of using mock data:
+```toml
+{
+  "api_domain": "YOUR_API_DOMAIN"
+}
+```
 
-1. Find a suitable API for Finnish Liiga hockey results
-2. Implement the `fetch_liiga_data()` function in `data_fetcher.rs`
-3. Replace the mock data call in `main.rs` with your implemented function
+## Features Status
 
-### Display Customization
+- [x] Real API integration
+- [x] Multiple pages of content with pagination
+- [x] Live game updates
+- [x] Goal scorer information
+- [x] Support for multiple tournaments
+- [x] Automatic refresh based on game state
+- [ ] Display standings
+- [ ] Display season statistics
+- [ ] Configuration options for refresh intervals
+- [ ] Custom color schemes
 
-- Modify the colors in `teletext_ui.rs` to match your preferred teletext style
-- Add additional content types to the `TeletextRow` enum
-- Implement additional pages for different types of hockey statistics
+## Contributing
 
-## Future Improvements
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-- [ ] Add real API integration
-- [ ] Implement multiple pages of content
-- [ ] Add support for displaying standings
-- [ ] Add support for past game results
-- [ ] Implement caching for data
-- [ ] Add configuration options
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
