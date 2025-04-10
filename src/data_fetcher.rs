@@ -1,19 +1,33 @@
+use crate::teletext_ui::ScoreType;
+use chrono::Local;
+use chrono::{DateTime, Utc};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
 #[derive(Debug, Deserialize, Serialize)]
-struct LiigaMatch {
-    home_team: String,
-    away_team: String,
-    start_time: String,
-    score: Option<String>,
-    status: String,
+struct TeamInfo {
+    #[serde(rename = "teamName")]
+    team_name: String,
+    goals: i32,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Game {
+    #[serde(rename = "homeTeam")]
+    home_team: TeamInfo,
+    #[serde(rename = "awayTeam")]
+    away_team: TeamInfo,
+    start: String,
+    started: bool,
+    ended: bool,
+    #[serde(rename = "finishedType")]
+    finished_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 struct LiigaResponse {
-    matches: Vec<LiigaMatch>,
+    games: Vec<Game>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,86 +36,65 @@ pub struct GameData {
     pub away_team: String,
     pub time: String,
     pub result: String,
-    pub score_type: String,
+    pub score_type: ScoreType,
 }
 
 pub(crate) fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
-    let url = "https://liiga.fi/api/v2/games?tournament=playoffs&date=2025-04-02";
-
+    let today = Local::now().format("%Y-%m-%d").to_string();
+    //let debug_date = "2025-04-02";
+    let tournaments = ["playoffs", "playout", "qualifications"];
     let client = Client::new();
-    let response = client.get(url).send()?.json::<LiigaResponse>()?;
+    let mut all_games = Vec::new();
 
-    let games = response
-        .matches
-        .into_iter()
-        .map(|m| {
-            let score = m.score.unwrap_or_else(|| "-".to_string());
-            let time = format_time(&m.start_time);
+    for tournament in tournaments {
+        let url = format!(
+            "https://liiga.fi/api/v2/games?tournament={}&date={}",
+            tournament, today
+        );
 
-            GameData {
-                home_team: m.home_team,
-                away_team: m.away_team,
-                time,
-                result: score,
-                score_type: "".to_string(),
-            }
-        })
-        .collect();
+        match client.get(&url).send() {
+            Ok(response) => match response.text() {
+                Ok(response_text) => match serde_json::from_str::<LiigaResponse>(&response_text) {
+                    Ok(response) => {
+                        let games = response
+                            .games
+                            .into_iter()
+                            .map(|m| {
+                                let time = format_time(&m.start)?;
+                                let result = format!("{}-{}", m.home_team.goals, m.away_team.goals);
 
-    Ok(games)
+                                let score_type = if !m.started {
+                                    ScoreType::Scheduled
+                                } else if !m.ended {
+                                    ScoreType::Ongoing
+                                } else {
+                                    ScoreType::Final
+                                };
+
+                                Ok(GameData {
+                                    home_team: m.home_team.team_name,
+                                    away_team: m.away_team.team_name,
+                                    time,
+                                    result,
+                                    score_type,
+                                })
+                            })
+                            .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
+                        all_games.extend(games);
+                    }
+                    Err(e) => eprintln!("Failed to parse JSON for {}: {}", tournament, e),
+                },
+                Err(e) => eprintln!("Failed to get response text for {}: {}", tournament, e),
+            },
+            Err(e) => eprintln!("Failed to send request for {}: {}", tournament, e),
+        }
+    }
+
+    Ok(all_games)
 }
 
-fn format_time(timestamp: &str) -> String {
-    // This would parse the API timestamp into the format "18.30"
-    // Implementation depends on the actual format from the API
-    "18.30".to_string() // Placeholder
-}
-
-// Replace get_mock_liiga_data with this in your main application
-fn get_liiga_data() -> Vec<GameData> {
-    fetch_liiga_data().unwrap_or_else(|e| {
-        eprintln!("Error fetching data: {}", e);
-        // Fall back to mock data if fetch fails
-        get_mock_liiga_data()
-    })
-}
-
-fn get_mock_liiga_data() -> Vec<GameData> {
-    vec![
-        GameData {
-            home_team: "HIFK".to_string(),
-            away_team: "Tappara".to_string(),
-            time: "18.30".to_string(),
-            result: "2-1".to_string(),
-            score_type: "".to_string(),
-        },
-        GameData {
-            home_team: "Kärpät".to_string(),
-            away_team: "TPS".to_string(),
-            time: "17.00".to_string(),
-            result: "3-2".to_string(),
-            score_type: "".to_string(),
-        },
-        GameData {
-            home_team: "Ilves".to_string(),
-            away_team: "Lukko".to_string(),
-            time: "18.30".to_string(),
-            result: "1-4".to_string(),
-            score_type: "".to_string(),
-        },
-        GameData {
-            home_team: "KalPa".to_string(),
-            away_team: "Pelicans".to_string(),
-            time: "17.00".to_string(),
-            result: "0-2".to_string(),
-            score_type: "".to_string(),
-        },
-        GameData {
-            home_team: "JYP".to_string(),
-            away_team: "HPK".to_string(),
-            time: "18.30".to_string(),
-            result: "-".to_string(),
-            score_type: "".to_string(),
-        },
-    ]
+fn format_time(timestamp: &str) -> Result<String, Box<dyn Error>> {
+    let utc_time = timestamp.parse::<DateTime<Utc>>()?;
+    let local_time = utc_time.with_timezone(&Local);
+    Ok(local_time.format("%H.%M").to_string())
 }
