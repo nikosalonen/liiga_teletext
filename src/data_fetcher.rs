@@ -31,7 +31,8 @@ pub struct GoalEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleTeam {
-    pub teamId: String,
+    #[serde(rename = "teamId")]
+    pub team_id: String,
     #[serde(rename = "teamName")]
     pub team_name: String,
     pub goals: i32,
@@ -121,6 +122,7 @@ pub struct DetailedGame {
     pub id: i32,
     pub season: i32,
     pub start: String,
+    #[serde(default)]
     pub end: String,
     #[serde(rename = "homeTeam")]
     pub home_team: DetailedTeam,
@@ -367,11 +369,6 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
                     Ok(response_text) => {
                         match serde_json::from_str::<ScheduleResponse>(&response_text) {
                             Ok(response) => {
-                                println!(
-                                    "Found {} games for tournament {}",
-                                    response.games.len(),
-                                    tournament
-                                );
                                 if !response.games.is_empty() {
                                     prev_day_response = Some(response);
                                     found_games = true;
@@ -428,16 +425,68 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
                     ScoreType::Final
                 };
 
+                let has_goals = m
+                    .home_team
+                    .goal_events
+                    .iter()
+                    .any(|g| !g.goal_types.contains(&"RL0".to_string()))
+                    || m.away_team
+                        .goal_events
+                        .iter()
+                        .any(|g| !g.goal_types.contains(&"RL0".to_string()));
+
                 let goal_events = if !m.started {
                     Vec::new()
-                } else if !m.home_team.goal_events.is_empty() || !m.away_team.goal_events.is_empty()
-                {
-                    // Only fetch detailed game data if there are goals and game has started
+                } else if has_goals {
+                    // If there are goals, fetch detailed data regardless of game state
                     match fetch_game_data(&client, &config, m.season, m.id).await {
-                        Ok(detailed_data) => detailed_data.goal_events,
+                        Ok(detailed_data) => detailed_data,
                         Err(e) => {
-                            eprintln!("Failed to fetch detailed game data: {}", e);
-                            process_goal_events(&m, &HashMap::new())
+                            eprintln!(
+                                "Failed to fetch detailed game data: {}. Using basic game data.",
+                                e
+                            );
+                            // If we can't get detailed data, use basic data but format names better
+                            let mut basic_names = HashMap::new();
+                            for goal in &m.home_team.goal_events {
+                                basic_names.insert(
+                                    goal.scorer_player_id,
+                                    format!("Pelaaja {}", goal.scorer_player_id),
+                                );
+                            }
+                            for goal in &m.away_team.goal_events {
+                                basic_names.insert(
+                                    goal.scorer_player_id,
+                                    format!("Pelaaja {}", goal.scorer_player_id),
+                                );
+                            }
+                            process_goal_events(&m, &basic_names)
+                        }
+                    }
+                } else if !m.ended {
+                    // For ongoing games without goals yet, fetch detailed data to get potential new goals
+                    match fetch_game_data(&client, &config, m.season, m.id).await {
+                        Ok(detailed_data) => detailed_data,
+                        Err(e) => {
+                            eprintln!(
+                                "Failed to fetch detailed game data: {}. Using basic game data.",
+                                e
+                            );
+                            // If we can't get detailed data, use basic data but format names better
+                            let mut basic_names = HashMap::new();
+                            for goal in &m.home_team.goal_events {
+                                basic_names.insert(
+                                    goal.scorer_player_id,
+                                    format!("Pelaaja {}", goal.scorer_player_id),
+                                );
+                            }
+                            for goal in &m.away_team.goal_events {
+                                basic_names.insert(
+                                    goal.scorer_player_id,
+                                    format!("Pelaaja {}", goal.scorer_player_id),
+                                );
+                            }
+                            process_goal_events(&m, &basic_names)
                         }
                     }
                 } else {
@@ -470,10 +519,11 @@ async fn fetch_game_data(
     config: &Config,
     season: i32,
     game_id: i32,
-) -> Result<GameData, Box<dyn Error>> {
+) -> Result<Vec<GoalEventData>, Box<dyn Error>> {
     let url = format!("{}/games/{}/{}", config.api_domain, season, game_id);
     let response = client.get(&url).send().await?;
-    let game_response = response.json::<DetailedGameResponse>().await?;
+    let response_text = response.text().await?;
+    let game_response = serde_json::from_str::<DetailedGameResponse>(&response_text)?;
 
     let mut player_names: HashMap<i64, String> = HashMap::new();
 
@@ -490,35 +540,7 @@ async fn fetch_game_data(
         );
     }
 
-    let goal_events = process_goal_events(&game_response.game, &player_names);
-
-    // Debug goal events
-
-    let game_time = game_response.game.game_time;
-    let is_overtime = game_time > 3600;
-    let is_shootout = game_response.game.finished_type.as_deref() == Some("ENDED_IN_SHOOTOUT");
-
-    Ok(GameData {
-        home_team: game_response.game.home_team.team_name,
-        away_team: game_response.game.away_team.team_name,
-        time: format!("{}:00", game_time / 60),
-        result: format!(
-            "{}-{}",
-            game_response.game.home_team.goals, game_response.game.away_team.goals
-        ),
-        score_type: if !game_response.game.started {
-            ScoreType::Scheduled
-        } else if !game_response.game.ended {
-            ScoreType::Ongoing
-        } else {
-            ScoreType::Final
-        },
-        is_overtime,
-        is_shootout,
-        serie: game_response.game.serie,
-        goal_events,
-        finished_type: game_response.game.finished_type.unwrap_or_default(),
-    })
+    Ok(process_goal_events(&game_response.game, &player_names))
 }
 
 fn format_time(timestamp: &str) -> Result<String, Box<dyn Error>> {
