@@ -1,12 +1,12 @@
 // src/teletext_ui.rs - Updated with better display formatting
 
 use crossterm::{
+    cursor::MoveTo,
     execute,
-    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor, Attribute, SetAttribute},
+    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType, size},
-    cursor::{MoveTo},
 };
-use std::io::{Write, Stdout};
+use std::io::{Stdout, Write};
 
 // Constants for teletext appearance
 const HEADER_BG: Color = Color::Blue;
@@ -14,6 +14,8 @@ const HEADER_FG: Color = Color::White;
 const SUBHEADER_FG: Color = Color::Green;
 const RESULT_FG: Color = Color::Yellow;
 const TEXT_FG: Color = Color::White;
+const TELETEXT_WIDTH: u16 = 40; // Standard teletext width
+const TEAM_NAME_WIDTH: usize = 10; // Fixed width for team names
 
 pub struct TeletextPage {
     page_number: u16,
@@ -36,11 +38,11 @@ pub enum TeletextRow {
     Spacer,
 }
 
+#[derive(Debug, Clone)]
 pub enum ScoreType {
-    Final,       // Final score
-    Ongoing,     // Ongoing game with current score
-    Scheduled,   // Scheduled game with no score yet
-    SeriesScore, // Series score (like "voitot 0-1")
+    Final,     // Final score
+    Ongoing,   // Ongoing game with current score
+    Scheduled, // Scheduled game with no score yet
 }
 
 impl TeletextPage {
@@ -72,16 +74,13 @@ impl TeletextPage {
         });
     }
 
-    pub fn add_series_result(&mut self, home: String, away: String, time: String, result: String) {
-        self.add_game_result(home, away, time, result, ScoreType::SeriesScore);
-    }
-
     pub fn add_spacer(&mut self) {
         self.content_rows.push(TeletextRow::Spacer);
     }
 
     pub fn add_error_message(&mut self, message: &str) {
-        self.content_rows.push(TeletextRow::ErrorMessage(message.to_string()));
+        self.content_rows
+            .push(TeletextRow::ErrorMessage(message.to_string()));
     }
 
     pub fn set_pagination(&mut self, current: u16, total: u16) {
@@ -93,84 +92,106 @@ impl TeletextPage {
         // Clear the screen
         execute!(stdout, Clear(ClearType::All))?;
 
-        // Draw header
-        let header_text = format!("{:<15} {:>16} {}/{}",
-                                  self.title,
-                                  format!("SM-LIIGA {}", self.page_number),
-                                  self.current_page,
-                                  self.total_pages
+        // Draw header with full width blue background
+        execute!(
+            stdout,
+            MoveTo(0, 0),
+            SetBackgroundColor(HEADER_BG),
+            SetForegroundColor(HEADER_FG),
+        )?;
+
+        let header_text = format!(
+            "{:<15} {:>15} {:>8}",
+            self.title,
+            format!("SM-LIIGA {}", self.page_number),
+            format!("{}/{}", self.current_page, self.total_pages)
         );
 
         execute!(
             stdout,
-            SetBackgroundColor(HEADER_BG),
-            SetForegroundColor(HEADER_FG),
-            SetAttribute(Attribute::Bold),
-            Print(format!("{}\n", header_text)),
+            Print(format!(
+                "{:width$}",
+                header_text,
+                width = TELETEXT_WIDTH as usize
+            )),
             ResetColor
         )?;
 
-        // Draw subheader
+        // Draw subheader right under header
         execute!(
             stdout,
+            MoveTo(0, 1),
             SetForegroundColor(SUBHEADER_FG),
-            SetAttribute(Attribute::Bold),
-            Print(format!("{}\n", self.subheader)),
+            Print(format!(
+                "{:^width$}",
+                self.subheader,
+                width = TELETEXT_WIDTH as usize
+            )),
             ResetColor
         )?;
 
-        // Draw content
-        for row in &self.content_rows {
+        // Draw content with exact positioning
+        let mut current_y = 3; // Start content one line after subheader
+        for row in self.content_rows.iter() {
             match row {
-                TeletextRow::GameResult { home_team, away_team, time, result, score_type } => {
-                    // Team names and time in white (fixed width formatting for teletext look)
-                    let teams_formatted = format!("{:<12} - {:<12} {}", home_team, away_team, time);
-                    execute!(
-                        stdout,
-                        SetForegroundColor(TEXT_FG),
-                        Print(format!("{}\n", teams_formatted)),
-                    )?;
+                TeletextRow::GameResult {
+                    home_team,
+                    away_team,
+                    time,
+                    result,
+                    score_type,
+                } => {
+                    let formatted_home = format!("{:<width$}", home_team, width = TEAM_NAME_WIDTH);
+                    let formatted_away = format!("{:<width$}", away_team, width = TEAM_NAME_WIDTH);
 
-                    // Format the result based on the score type
-                    let result_text = match score_type {
-                        ScoreType::Final => format!("{}", result),
-                        ScoreType::Ongoing => format!("{} *", result), // Asterisk for ongoing
-                        ScoreType::Scheduled => format!("-"), // Dash for scheduled
-                        ScoreType::SeriesScore => format!("voitot {}", result),
+                    let display_result = match score_type {
+                        ScoreType::Scheduled => time.clone(),
+                        _ => result.clone(),
                     };
 
                     execute!(
                         stdout,
+                        MoveTo(0, current_y),
+                        SetForegroundColor(TEXT_FG),
+                        Print(formatted_home),
+                        Print(" - "),
+                        Print(formatted_away),
                         SetForegroundColor(RESULT_FG),
-                        Print(format!("{}\n", result_text)),
+                        Print(format!(" {}", display_result)),
                         ResetColor
                     )?;
-                },
+                    current_y += 1;
+                }
                 TeletextRow::ErrorMessage(message) => {
-                    // Error messages in yellow (standard teletext alert color)
                     execute!(
                         stdout,
+                        MoveTo(0, current_y),
                         SetForegroundColor(RESULT_FG),
-                        Print(format!("{}\n", message)),
+                        Print(format!(
+                            "{:^width$}",
+                            message,
+                            width = TELETEXT_WIDTH as usize
+                        )),
                         ResetColor
                     )?;
-                },
+                    current_y += 1;
+                }
                 TeletextRow::Spacer => {
-                    execute!(stdout, Print("\n"))?;
-                },
+                    current_y += 1;
+                }
             }
         }
 
-        // Footer with page navigation instructions
+        // Footer at the bottom
         execute!(
             stdout,
-            MoveTo(0, 22), // Position near bottom of screen
+            MoveTo(0, current_y + 1),
             SetForegroundColor(Color::Blue),
-            Print("<<< "),
+            Print("<<<  "),
             SetForegroundColor(Color::White),
-            Print("q=Lopeta ←→=Selaa r=Päivitä"),
+            Print("q=Lopeta  ←→=Selaa  r=Päivitä"),
             SetForegroundColor(Color::Blue),
-            Print(" >>>"),
+            Print("  >>>"),
             ResetColor
         )?;
 
