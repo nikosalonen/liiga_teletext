@@ -4,7 +4,7 @@ use crossterm::{
     cursor::MoveTo,
     execute,
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal::{Clear, ClearType, size},
+    terminal::{Clear, ClearType},
 };
 use std::io::{Stdout, Write};
 
