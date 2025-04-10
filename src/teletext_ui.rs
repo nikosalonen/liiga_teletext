@@ -15,7 +15,6 @@ const SUBHEADER_FG: Color = Color::Green;
 const RESULT_FG: Color = Color::Yellow;
 const TEXT_FG: Color = Color::White;
 const TELETEXT_WIDTH: u16 = 40; // Standard teletext width
-const TELETEXT_MIN_HEIGHT: u16 = 10; // Minimum height of teletext page
 const TEAM_NAME_WIDTH: usize = 10; // Fixed width for team names
 const TITLE_BG: Color = Color::Green;
 
@@ -73,7 +72,7 @@ impl TeletextPage {
             result_text.push_str(" rl");
         }
 
-        let line = format!(
+        let _line = format!(
             "{:<14} - {:<14} {} {}",
             truncate(&home_team, 14),
             truncate(&away_team, 14),
