@@ -209,16 +209,20 @@ impl TeletextPage {
             ResetColor
         )?;
 
-        // Draw subheader right under header
+        // Draw subheader with pagination info on the right
+        let total_pages = self.total_pages();
+        let page_info = if total_pages > 1 {
+            format!("{}/{}", self.current_page + 1, total_pages)
+        } else {
+            String::new()
+        };
+
         execute!(
             stdout,
             MoveTo(0, 1),
             SetForegroundColor(SUBHEADER_FG),
-            Print(format!(
-                "{:<width$}",
-                self.subheader,
-                width = TELETEXT_WIDTH as usize
-            )),
+            Print(format!("{:<20}", self.subheader)),
+            Print(format!("{:>30}", page_info)),
             ResetColor
         )?;
 
@@ -343,14 +347,7 @@ impl TeletextPage {
             }
         }
 
-        // Add pagination info and controls to footer
-        let total_pages = self.total_pages();
-        let page_info = if total_pages > 1 {
-            format!("Sivu {}/{}", self.current_page + 1, total_pages)
-        } else {
-            String::new()
-        };
-
+        // Simplified footer with just controls
         let controls = if total_pages > 1 {
             "q=Lopeta r=Päivitä ←→=Sivut"
         } else {
@@ -363,7 +360,7 @@ impl TeletextPage {
             SetForegroundColor(Color::Blue),
             Print("<<<"),
             SetForegroundColor(Color::White),
-            Print(format!("{:^10}{:^24}{:^10}", "", controls, page_info)),
+            Print(format!("{:^44}", controls)),
             SetForegroundColor(Color::Blue),
             Print(">>>"),
             ResetColor
