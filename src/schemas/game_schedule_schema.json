@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hockey Games Schedule Data",
+  "type": "object",
+  "required": ["games", "previousGameDate", "nextGameDate"],
+  "properties": {
+    "games": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "season", "start", "end", "homeTeam", "awayTeam", "finishedType", "started", "ended"],
+        "properties": {
+          "id": { "type": "integer" },
+          "season": { "type": "integer" },
+          "start": { "type": "string", "format": "date-time" },
+          "end": { "type": "string", "format": "date-time" },
+          "homeTeam": { "$ref": "#/definitions/team" },
+          "awayTeam": { "$ref": "#/definitions/team" },
+          "finishedType": { "type": "string" },
+          "started": { "type": "boolean" },
+          "ended": { "type": "boolean" },
+          "gameTime": { "type": "integer" },
+          "spectators": { "type": "integer" },
+          "playOffPair": { "type": ["integer", "null"] },
+          "playOffPhase": { "type": ["integer", "null"] },
+          "playOffReqWins": { "type": ["integer", "null"] },
+          "buyTicketsUrl": { "type": "string" },
+          "cacheUpdateDate": { "type": "string", "format": "date-time" },
+          "provider": { "type": "string" },
+          "stale": { "type": "boolean" },
+          "serie": { "type": "string" },
+          "gameWeek": { "type": "integer" }
+        }
+      }
+    },
+    "previousGameDate": { "type": "string", "format": "date" },
+    "nextGameDate": { "type": "string", "format": "date" }
+  },
+  "definitions": {
+    "team": {
+      "type": "object",
+      "required": ["teamId", "teamName", "goals", "goalEvents"],
+      "properties": {
+        "teamId": { "type": "string" },
+        "teamPlaceholder": { "type": ["string", "null"] },
+        "teamName": { "type": "string" },
+        "goals": { "type": "integer" },
+        "timeOut": { "type": ["string", "null"] },
+        "goalEvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["scorerPlayerId", "logTime", "gameTime", "period", "eventId", "homeTeamScore", "awayTeamScore"],
+            "properties": {
+              "scorerPlayerId": { "type": "integer" },
+              "logTime": { "type": "string", "format": "date-time" },
+              "winningGoal": { "type": "boolean" },
+              "gameTime": { "type": "integer" },
+              "period": { "type": "integer" },
+              "eventId": { "type": "integer" },
+              "goalTypes": { "type": "array", "items": { "type": "string" } },
+              "assistantPlayerIds": { "type": "array", "items": { "type": "integer" } },
+              "plusPlayerIds": { "type": ["string", "null"] },
+              "minusPlayerIds": { "type": ["string", "null"] },
+              "homeTeamScore": { "type": "integer" },
+              "awayTeamScore": { "type": "integer" },
+              "assistsSoFarInSeason": { "type": "object", "additionalProperties": { "type": "integer" } },
+              "goalsSoFarInSeason": { "type": "integer" },
+              "videoClipUrl": { "type": "string" },
+              "videoThumbnailUrl": { "type": "string" }
+            }
+          }
+        },
+        "powerplayInstances": { "type": "integer" },
+        "powerplayGoals": { "type": "integer" },
+        "shortHandedInstances": { "type": "integer" },
+        "shortHandedGoals": { "type": "integer" },
+        "expectedGoals": { "type": "number" },
+        "ranking": { "type": "integer" },
+        "gameStartDateTime": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
