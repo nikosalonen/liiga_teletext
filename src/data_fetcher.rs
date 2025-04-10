@@ -188,7 +188,11 @@ where
     let home_team = game.home_team();
     let away_team = game.away_team();
 
-    for goal in home_team.goal_events() {
+    for goal in home_team
+        .goal_events()
+        .iter()
+        .filter(|g| !g.goal_types.contains(&"RL0".to_string()))
+    {
         events.push(GoalEventData {
             scorer_player_id: goal.scorer_player_id,
             scorer_name: player_names
@@ -218,7 +222,11 @@ where
         });
     }
 
-    for goal in away_team.goal_events() {
+    for goal in away_team
+        .goal_events()
+        .iter()
+        .filter(|g| !g.goal_types.contains(&"RL0".to_string()))
+    {
         events.push(GoalEventData {
             scorer_player_id: goal.scorer_player_id,
             scorer_name: player_names
