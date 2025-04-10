@@ -48,6 +48,7 @@ fn create_pages(games: &[GameData], page_size: usize) -> Vec<TeletextPage> {
                 game.result.clone(),
                 game.score_type.clone(),
                 game.is_overtime,
+                game.is_shootout,
             );
             page.add_spacer();
         }

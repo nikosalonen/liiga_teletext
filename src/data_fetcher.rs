@@ -38,12 +38,13 @@ pub struct GameData {
     pub result: String,
     pub score_type: ScoreType,
     pub is_overtime: bool,
+    pub is_shootout: bool,
     pub tournament: String,
 }
 
 pub(crate) fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
-    let today = Local::now().format("%Y-%m-%d").to_string();
-    //let debug_date = "2025-04-02";
+    //let today = Local::now().format("%Y-%m-%d").to_string();
+    let today = "2025-01-17";
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let client = Client::new();
     let mut all_games = Vec::new();
@@ -69,6 +70,11 @@ pub(crate) fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
                                     Some("ENDED_DURING_EXTENDED_GAME_TIME")
                                 );
 
+                                let is_shootout = matches!(
+                                    m.finished_type.as_deref(),
+                                    Some("ENDED_DURING_WINNING_SHOT_COMPETITION")
+                                );
+
                                 let score_type = if !m.started {
                                     ScoreType::Scheduled
                                 } else if !m.ended {
@@ -84,6 +90,7 @@ pub(crate) fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
                                     result,
                                     score_type,
                                     is_overtime,
+                                    is_shootout,
                                     tournament: tournament.to_string(),
                                 })
                             })

@@ -61,16 +61,31 @@ impl TeletextPage {
 
     pub fn add_game_result(
         &mut self,
-        home: String,
-        away: String,
+        home_team: String,
+        away_team: String,
         time: String,
         result: String,
         score_type: ScoreType,
         is_overtime: bool,
+        is_shootout: bool,
     ) {
+        let mut result_text = result.clone();
+        if is_overtime {
+            result_text.push_str(" JA");
+        } else if is_shootout {
+            result_text.push_str(" RL");
+        }
+
+        let line = format!(
+            "{:<14} - {:<14} {} {}",
+            truncate(&home_team, 14),
+            truncate(&away_team, 14),
+            time,
+            result_text
+        );
         self.content_rows.push(TeletextRow::GameResult {
-            home_team: home,
-            away_team: away,
+            home_team,
+            away_team,
             time,
             result,
             score_type,
@@ -219,5 +234,13 @@ impl TeletextPage {
 
         stdout.flush()?;
         Ok(())
+    }
+}
+
+fn truncate(s: &str, max_chars: usize) -> String {
+    if s.len() <= max_chars {
+        s.to_string()
+    } else {
+        s.chars().take(max_chars).collect()
     }
 }
