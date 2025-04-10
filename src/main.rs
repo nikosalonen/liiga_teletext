@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         // Wait for key press or timeout
-        let mut last_update = Instant::now();
+        let last_update = Instant::now();
         loop {
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
