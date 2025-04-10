@@ -27,6 +27,8 @@ pub struct TeletextPage {
     title: String,
     subheader: String,
     content_rows: Vec<TeletextRow>,
+    current_page: usize,
+    items_per_page: usize,
 }
 
 pub enum TeletextRow {
@@ -41,7 +43,6 @@ pub enum TeletextRow {
         goal_events: Vec<GoalEventData>,
     },
     ErrorMessage(String),
-    Spacer,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +59,8 @@ impl TeletextPage {
             title,
             subheader,
             content_rows: Vec::new(),
+            current_page: 0,
+            items_per_page: 3,
         }
     }
 
@@ -72,20 +75,6 @@ impl TeletextPage {
         is_shootout: bool,
         goal_events: Vec<GoalEventData>,
     ) {
-        let mut result_text = result.clone();
-        if is_overtime {
-            result_text.push_str(" ja");
-        } else if is_shootout {
-            result_text.push_str(" rl");
-        }
-
-        let _line = format!(
-            "{:<14} - {:<14} {} {}",
-            truncate(&home_team, 14),
-            truncate(&away_team, 14),
-            time,
-            result_text
-        );
         self.content_rows.push(TeletextRow::GameResult {
             home_team,
             away_team,
@@ -98,13 +87,25 @@ impl TeletextPage {
         });
     }
 
-    pub fn add_spacer(&mut self) {
-        self.content_rows.push(TeletextRow::Spacer);
-    }
-
     pub fn add_error_message(&mut self, message: &str) {
         self.content_rows
             .push(TeletextRow::ErrorMessage(message.to_string()));
+    }
+
+    pub fn next_page(&mut self) {
+        if (self.current_page + 1) * self.items_per_page < self.content_rows.len() {
+            self.current_page += 1;
+        }
+    }
+
+    pub fn previous_page(&mut self) {
+        if self.current_page > 0 {
+            self.current_page -= 1;
+        }
+    }
+
+    fn total_pages(&self) -> usize {
+        (self.content_rows.len() + self.items_per_page - 1) / self.items_per_page
     }
 
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error>> {
@@ -136,9 +137,14 @@ impl TeletextPage {
             ResetColor
         )?;
 
+        // Calculate page bounds
+        let start_idx = self.current_page * self.items_per_page;
+        let end_idx = (start_idx + self.items_per_page).min(self.content_rows.len());
+        let visible_rows = &self.content_rows[start_idx..end_idx];
+
         // Draw content with exact positioning
         let mut current_y = 3; // Start content one line after subheader
-        for row in self.content_rows.iter() {
+        for (index, row) in visible_rows.iter().enumerate() {
             match row {
                 TeletextRow::GameResult {
                     home_team,
@@ -183,31 +189,61 @@ impl TeletextPage {
                     if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
                         && !goal_events.is_empty()
                     {
-                        for event in goal_events {
-                            let indent = if event.is_home_team {
-                                0 // Align directly under home team
+                        let mut home_scorers: Vec<_> =
+                            goal_events.iter().filter(|e| e.is_home_team).collect();
+                        let mut away_scorers: Vec<_> =
+                            goal_events.iter().filter(|e| !e.is_home_team).collect();
+                        let max_scorers = home_scorers.len().max(away_scorers.len());
+
+                        for i in 0..max_scorers {
+                            // Home team scorer
+                            if let Some(event) = home_scorers.get(i) {
+                                let scorer_color =
+                                    if event.is_winning_goal && (*is_overtime || *is_shootout) {
+                                        WINNING_GOAL_FG
+                                    } else {
+                                        HOME_SCORER_FG
+                                    };
+                                execute!(
+                                    stdout,
+                                    MoveTo(0, current_y),
+                                    SetForegroundColor(scorer_color),
+                                    Print(format!("{:2} {:<15}", event.minute, event.scorer_name)),
+                                    ResetColor
+                                )?;
                             } else {
-                                TEAM_NAME_WIDTH + 3 // Align directly under away team (after " - ")
-                            };
+                                // Print empty space to align away team scorers
+                                execute!(
+                                    stdout,
+                                    MoveTo(0, current_y),
+                                    Print(format!("{:18}", "")),
+                                )?;
+                            }
 
-                            let scorer_color =
-                                if event.is_winning_goal && (*is_overtime || *is_shootout) {
-                                    WINNING_GOAL_FG
-                                } else if event.is_home_team {
-                                    HOME_SCORER_FG
-                                } else {
-                                    AWAY_SCORER_FG
-                                };
+                            // Away team scorer
+                            if let Some(event) = away_scorers.get(i) {
+                                let scorer_color =
+                                    if event.is_winning_goal && (*is_overtime || *is_shootout) {
+                                        WINNING_GOAL_FG
+                                    } else {
+                                        AWAY_SCORER_FG
+                                    };
+                                execute!(
+                                    stdout,
+                                    MoveTo(TEAM_NAME_WIDTH as u16 + 3, current_y),
+                                    SetForegroundColor(scorer_color),
+                                    Print(format!("{:2} {}", event.minute, event.scorer_name)),
+                                    ResetColor
+                                )?;
+                            }
 
-                            execute!(
-                                stdout,
-                                MoveTo(indent as u16, current_y),
-                                SetForegroundColor(scorer_color),
-                                Print(format!("{:2} {}", event.minute, event.scorer_name)),
-                                ResetColor
-                            )?;
                             current_y += 1;
                         }
+                    }
+
+                    // Add a spacer line after each game except the last one
+                    if index < visible_rows.len() - 1 {
+                        current_y += 1;
                     }
                 }
                 TeletextRow::ErrorMessage(message) => {
@@ -224,20 +260,30 @@ impl TeletextPage {
                     )?;
                     current_y += 1;
                 }
-                TeletextRow::Spacer => {
-                    current_y += 1;
-                }
             }
         }
 
-        // Footer right after content
+        // Add pagination info and controls to footer
+        let total_pages = self.total_pages();
+        let page_info = if total_pages > 1 {
+            format!("Sivu {}/{}", self.current_page + 1, total_pages)
+        } else {
+            String::new()
+        };
+
+        let controls = if total_pages > 1 {
+            "q=Lopeta r=Päivitä ←→=Sivut"
+        } else {
+            "q=Lopeta r=Päivitä"
+        };
+
         execute!(
             stdout,
             MoveTo(0, current_y),
             SetForegroundColor(Color::Blue),
             Print("<<<"),
             SetForegroundColor(Color::White),
-            Print(format!("{:^34}", "q=Lopeta  r=Päivitä")),
+            Print(format!("{:^10}{:^24}{:^10}", "", controls, page_info)),
             SetForegroundColor(Color::Blue),
             Print(">>>"),
             ResetColor
