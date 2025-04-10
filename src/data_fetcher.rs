@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::teletext_ui::ScoreType;
 use chrono::Local;
 use chrono::{DateTime, Utc};
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
@@ -43,10 +43,9 @@ pub struct GameData {
     pub tournament: String,
 }
 
-pub(crate) fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
+pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let today = Local::now().format("%Y-%m-%d").to_string();
-    //let today = "2025-01-17";
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let client = Client::new();
     let mut all_games = Vec::new();
@@ -57,8 +56,8 @@ pub(crate) fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
             config.api_domain, tournament, today
         );
 
-        match client.get(&url).send() {
-            Ok(response) => match response.text() {
+        match client.get(&url).send().await {
+            Ok(response) => match response.text().await {
                 Ok(response_text) => match serde_json::from_str::<LiigaResponse>(&response_text) {
                     Ok(response) => {
                         let games = response

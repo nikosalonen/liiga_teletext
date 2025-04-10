@@ -57,7 +57,8 @@ fn has_live_games(games: &[GameData]) -> bool {
         .any(|game| matches!(game.score_type, ScoreType::Ongoing))
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load config first to fail early if there's an issue
     Config::load()?;
 
@@ -66,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(stdout, EnterAlternateScreen)?;
 
     loop {
-        let games = fetch_liiga_data()?;
+        let games = fetch_liiga_data().await?;
         let page = if games.is_empty() {
             let mut error_page =
                 TeletextPage::new(221, "JÄÄKIEKKO".to_string(), "SM-LIIGA".to_string());
@@ -109,6 +110,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if last_update.elapsed() >= update_interval {
                 break; // Break inner loop to refresh data
             }
+
+            // Small sleep to prevent CPU hogging
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 }
