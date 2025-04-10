@@ -17,6 +17,7 @@ const TEXT_FG: Color = Color::White;
 const TELETEXT_WIDTH: u16 = 40; // Standard teletext width
 const TELETEXT_MIN_HEIGHT: u16 = 10; // Minimum height of teletext page
 const TEAM_NAME_WIDTH: usize = 10; // Fixed width for team names
+const TITLE_BG: Color = Color::Green;
 
 pub struct TeletextPage {
     page_number: u16,
@@ -111,27 +112,18 @@ impl TeletextPage {
         // Clear the screen
         execute!(stdout, Clear(ClearType::All))?;
 
-        // Draw header with full width blue background
+        // Draw header with title having green background and rest blue
         execute!(
             stdout,
             MoveTo(0, 0),
-            SetBackgroundColor(HEADER_BG),
+            SetBackgroundColor(TITLE_BG),
             SetForegroundColor(HEADER_FG),
-        )?;
-
-        let header_text = format!(
-            "{:<15} {:>15} {:>8}",
-            self.title,
-            format!("SM-LIIGA {}", self.page_number),
-            format!("{}/{}", self.current_page, self.total_pages)
-        );
-
-        execute!(
-            stdout,
+            Print(format!("{:<15}", self.title)),
+            SetBackgroundColor(HEADER_BG),
             Print(format!(
-                "{:width$}",
-                header_text,
-                width = TELETEXT_WIDTH as usize
+                "{:>15} {:>8}",
+                format!("SM-LIIGA {}", self.page_number),
+                format!("{}/{}", self.current_page, self.total_pages)
             )),
             ResetColor
         )?;
@@ -142,7 +134,7 @@ impl TeletextPage {
             MoveTo(0, 1),
             SetForegroundColor(SUBHEADER_FG),
             Print(format!(
-                "{:^width$}",
+                "{:<width$}",
                 self.subheader,
                 width = TELETEXT_WIDTH as usize
             )),
