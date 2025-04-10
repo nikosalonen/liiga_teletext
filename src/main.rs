@@ -44,7 +44,6 @@ fn create_page(games: &[GameData]) -> TeletextPage {
             game.is_shootout,
             game.goal_events.clone(),
         );
-        page.add_spacer();
     }
 
     page
@@ -67,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let games = fetch_liiga_data().await?;
-        let page = if games.is_empty() {
+        let mut page = if games.is_empty() {
             let mut error_page =
                 TeletextPage::new(221, "JÄÄKIEKKO".to_string(), "SM-LIIGA".to_string());
             error_page.add_error_message("Ei otteluita tänään");
@@ -76,14 +75,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             create_page(&games)
         };
 
-        // Render page
+        // Initial render
         page.render(&mut stdout)?;
 
         // Check if we need to update more frequently due to live games
         let update_interval = if has_live_games(&games) {
             Duration::from_secs(60) // 1 minute for live games
         } else {
-            Duration::from_secs(300) // 5 minutes for non-live games
+            Duration::from_secs(3600) // 1 hour for non-live games
         };
 
         // Wait for key press or timeout
@@ -99,6 +98,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         KeyCode::Char('r') | KeyCode::Char('R') => {
                             break; // Break inner loop to refresh data
+                        }
+                        KeyCode::Left => {
+                            page.previous_page();
+                            page.render(&mut stdout)?;
+                        }
+                        KeyCode::Right => {
+                            page.next_page();
+                            page.render(&mut stdout)?;
                         }
                         _ => {}
                     }
