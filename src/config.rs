@@ -2,7 +2,7 @@
 use serde::Deserialize;
 use std::fs;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub api_domain: String,
 }
