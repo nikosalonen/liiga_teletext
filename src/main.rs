@@ -3,9 +3,10 @@ mod config;
 mod data_fetcher;
 mod teletext_ui;
 
+use config::Config;
 use crossterm::{
     cursor::{Hide, Show},
-    event::{self, Event, KeyCode, read},
+    event::{self, Event, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -57,6 +58,9 @@ fn has_live_games(games: &[GameData]) -> bool {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load config first to fail early if there's an issue
+    Config::load()?;
+
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen)?;

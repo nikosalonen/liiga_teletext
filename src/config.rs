@@ -1,55 +1,28 @@
 // src/config.rs
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use std::fs;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Config {
-    // UI settings
-    pub page_number: u16,
-    pub title: String,
-    pub auto_switch_pages: bool,
-    pub auto_switch_interval_seconds: u64,
-
-    // Content settings
-    pub games_per_page: usize,
-    pub subheader: String,
-
-    // Colors (as hex strings, e.g. "#0000FF")
-    pub header_bg_color: String,
-    pub header_fg_color: String,
-    pub result_color: String,
-
-    pub theme: Theme,
+    pub api_domain: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Theme {
-    pub header_bg: String,
-    pub header_fg: String,
-    pub subheader_fg: String,
-    pub result_fg: String,
-    pub text_fg: String,
-}
+impl Config {
+    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
+        let config_path = dirs::config_dir()
+            .ok_or("Could not find config directory")?
+            .join("liiga_teletext")
+            .join("config.toml");
 
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            page_number: 235,
-            title: "JÄÄKIEKKO".to_string(),
-            auto_switch_pages: false,
-            auto_switch_interval_seconds: 10,
-            games_per_page: 4,
-            subheader: "KARSINTA (4 voittoa)".to_string(),
-            header_bg_color: "#0000FF".to_string(), // Blue
-            header_fg_color: "#FFFFFF".to_string(), // White
-            result_color: "#FFFF00".to_string(),    // Yellow
-            theme: Theme {
-                header_bg: "Blue".to_string(),
-                header_fg: "White".to_string(),
-                subheader_fg: "Green".to_string(),
-                result_fg: "Yellow".to_string(),
-                text_fg: "White".to_string(),
-            },
+        if !config_path.exists() {
+            // Create default config if it doesn't exist
+            fs::create_dir_all(config_path.parent().unwrap())?;
+            fs::write(&config_path, include_str!("../config.toml"))?;
         }
+
+        let contents = fs::read_to_string(config_path)?;
+        let config: Config = toml::from_str(&contents)?;
+        Ok(config)
     }
 }
 
