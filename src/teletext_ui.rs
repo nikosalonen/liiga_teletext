@@ -378,14 +378,6 @@ impl TeletextPage {
     }
 }
 
-fn truncate(s: &str, max_chars: usize) -> String {
-    if s.len() <= max_chars {
-        s.to_string()
-    } else {
-        s.chars().take(max_chars).collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
