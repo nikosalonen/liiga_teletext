@@ -187,78 +187,53 @@ where
 {
     let mut events = Vec::new();
 
-    let home_team = game.home_team();
-    let away_team = game.away_team();
-
-    for goal in home_team
-        .goal_events()
-        .iter()
-        .filter(|g| !g.goal_types.contains(&"RL0".to_string()))
-    {
-        events.push(GoalEventData {
-            scorer_player_id: goal.scorer_player_id,
-            scorer_name: player_names
-                .get(&goal.scorer_player_id)
-                .map(|name| {
-                    name.split_whitespace()
-                        .last()
-                        .unwrap_or("")
-                        .chars()
-                        .enumerate()
-                        .map(|(i, c)| {
-                            if i == 0 {
-                                c.to_uppercase().next().unwrap_or(c)
-                            } else {
-                                c.to_lowercase().next().unwrap_or(c)
-                            }
-                        })
-                        .collect::<String>()
-                })
-                .unwrap_or_else(|| goal.scorer_player_id.to_string()),
-            minute: goal.game_time / 60,
-            home_team_score: goal.home_team_score,
-            away_team_score: goal.away_team_score,
-            is_winning_goal: goal.winning_goal,
-            goal_types: goal.goal_types.clone(),
-            is_home_team: true,
-        });
-    }
-
-    for goal in away_team
-        .goal_events()
-        .iter()
-        .filter(|g| !g.goal_types.contains(&"RL0".to_string()))
-    {
-        events.push(GoalEventData {
-            scorer_player_id: goal.scorer_player_id,
-            scorer_name: player_names
-                .get(&goal.scorer_player_id)
-                .map(|name| {
-                    name.split_whitespace()
-                        .last()
-                        .unwrap_or("")
-                        .chars()
-                        .enumerate()
-                        .map(|(i, c)| {
-                            if i == 0 {
-                                c.to_uppercase().next().unwrap_or(c)
-                            } else {
-                                c.to_lowercase().next().unwrap_or(c)
-                            }
-                        })
-                        .collect::<String>()
-                })
-                .unwrap_or_else(|| goal.scorer_player_id.to_string()),
-            minute: goal.game_time / 60,
-            home_team_score: goal.home_team_score,
-            away_team_score: goal.away_team_score,
-            is_winning_goal: goal.winning_goal,
-            goal_types: goal.goal_types.clone(),
-            is_home_team: false,
-        });
-    }
+    // Process home team goals
+    process_team_goals(game.home_team(), player_names, true, &mut events);
+    // Process away team goals
+    process_team_goals(game.away_team(), player_names, false, &mut events);
 
     events
+}
+
+fn process_team_goals(
+    team: &dyn HasGoalEvents,
+    player_names: &HashMap<i64, String>,
+    is_home_team: bool,
+    events: &mut Vec<GoalEventData>,
+) {
+    for goal in team
+        .goal_events()
+        .iter()
+        .filter(|g| !g.goal_types.contains(&"RL0".to_string()))
+    {
+        events.push(GoalEventData {
+            scorer_player_id: goal.scorer_player_id,
+            scorer_name: player_names
+                .get(&goal.scorer_player_id)
+                .map(|name| {
+                    name.split_whitespace()
+                        .last()
+                        .unwrap_or("")
+                        .chars()
+                        .enumerate()
+                        .map(|(i, c)| {
+                            if i == 0 {
+                                c.to_uppercase().next().unwrap_or(c)
+                            } else {
+                                c.to_lowercase().next().unwrap_or(c)
+                            }
+                        })
+                        .collect::<String>()
+                })
+                .unwrap_or_else(|| format!("Pelaaja {}", goal.scorer_player_id)),
+            minute: goal.game_time / 60,
+            home_team_score: goal.home_team_score,
+            away_team_score: goal.away_team_score,
+            is_winning_goal: goal.winning_goal,
+            goal_types: goal.goal_types.clone(),
+            is_home_team,
+        });
+    }
 }
 
 trait HasTeams {
@@ -303,7 +278,7 @@ impl HasGoalEvents for DetailedTeam {
 pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
-    let mut date = Local::now().format("%Y-%m-%d").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
     // let mut date = "2025-01-11";
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
@@ -437,58 +412,9 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
 
                 let goal_events = if !m.started {
                     Vec::new()
-                } else if has_goals {
-                    // If there are goals, fetch detailed data regardless of game state
-                    match fetch_game_data(&client, &config, m.season, m.id).await {
-                        Ok(detailed_data) => detailed_data,
-                        Err(e) => {
-                            eprintln!(
-                                "Failed to fetch detailed game data: {}. Using basic game data.",
-                                e
-                            );
-                            // If we can't get detailed data, use basic data but format names better
-                            let mut basic_names = HashMap::new();
-                            for goal in &m.home_team.goal_events {
-                                basic_names.insert(
-                                    goal.scorer_player_id,
-                                    format!("Pelaaja {}", goal.scorer_player_id),
-                                );
-                            }
-                            for goal in &m.away_team.goal_events {
-                                basic_names.insert(
-                                    goal.scorer_player_id,
-                                    format!("Pelaaja {}", goal.scorer_player_id),
-                                );
-                            }
-                            process_goal_events(&m, &basic_names)
-                        }
-                    }
-                } else if !m.ended {
-                    // For ongoing games without goals yet, fetch detailed data to get potential new goals
-                    match fetch_game_data(&client, &config, m.season, m.id).await {
-                        Ok(detailed_data) => detailed_data,
-                        Err(e) => {
-                            eprintln!(
-                                "Failed to fetch detailed game data: {}. Using basic game data.",
-                                e
-                            );
-                            // If we can't get detailed data, use basic data but format names better
-                            let mut basic_names = HashMap::new();
-                            for goal in &m.home_team.goal_events {
-                                basic_names.insert(
-                                    goal.scorer_player_id,
-                                    format!("Pelaaja {}", goal.scorer_player_id),
-                                );
-                            }
-                            for goal in &m.away_team.goal_events {
-                                basic_names.insert(
-                                    goal.scorer_player_id,
-                                    format!("Pelaaja {}", goal.scorer_player_id),
-                                );
-                            }
-                            process_goal_events(&m, &basic_names)
-                        }
-                    }
+                } else if has_goals || !m.ended {
+                    // Fetch detailed data if there are goals or game is ongoing
+                    fetch_detailed_game_data(&client, &config, &m).await
                 } else {
                     Vec::new()
                 };
@@ -512,6 +438,23 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     }
 
     Ok(all_games)
+}
+
+async fn fetch_detailed_game_data(
+    client: &Client,
+    config: &Config,
+    game: &ScheduleGame,
+) -> Vec<GoalEventData> {
+    match fetch_game_data(client, config, game.season, game.id).await {
+        Ok(detailed_data) => detailed_data,
+        Err(e) => {
+            eprintln!(
+                "Failed to fetch detailed game data: {}. Using basic game data.",
+                e
+            );
+            create_basic_goal_events(game)
+        }
+    }
 }
 
 async fn fetch_game_data(
@@ -547,4 +490,21 @@ fn format_time(timestamp: &str) -> Result<String, Box<dyn Error>> {
     let utc_time = timestamp.parse::<DateTime<Utc>>()?;
     let local_time = utc_time.with_timezone(&Local);
     Ok(local_time.format("%H.%M").to_string())
+}
+
+fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
+    let mut basic_names = HashMap::new();
+    for goal in &game.home_team.goal_events {
+        basic_names.insert(
+            goal.scorer_player_id,
+            format!("Pelaaja {}", goal.scorer_player_id),
+        );
+    }
+    for goal in &game.away_team.goal_events {
+        basic_names.insert(
+            goal.scorer_player_id,
+            format!("Pelaaja {}", goal.scorer_player_id),
+        );
+    }
+    process_goal_events(game, &basic_names)
 }
