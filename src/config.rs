@@ -5,6 +5,8 @@ use std::fs;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub api_domain: String,
+    #[serde(default)]
+    pub disable_video_links: bool,
 }
 
 impl Config {
@@ -20,8 +22,14 @@ impl Config {
             fs::write(&config_path, include_str!("../config.toml"))?;
         }
 
-        let contents = fs::read_to_string(config_path)?;
-        let config: Config = toml::from_str(&contents)?;
+        let mut config: Config = toml::from_str(&fs::read_to_string(config_path)?)?;
+
+        // Check for command line arguments
+        let args: Vec<String> = std::env::args().collect();
+        if args.contains(&"novideo".to_string()) {
+            config.disable_video_links = true;
+        }
+
         Ok(config)
     }
 }

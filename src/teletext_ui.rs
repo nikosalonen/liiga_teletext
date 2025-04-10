@@ -30,6 +30,7 @@ pub struct TeletextPage {
     content_rows: Vec<TeletextRow>,
     current_page: usize,
     screen_height: u16,
+    disable_video_links: bool,
 }
 
 pub enum TeletextRow {
@@ -54,7 +55,12 @@ pub enum ScoreType {
 }
 
 impl TeletextPage {
-    pub fn new(page_number: u16, title: String, subheader: String) -> Self {
+    pub fn new(
+        page_number: u16,
+        title: String,
+        subheader: String,
+        disable_video_links: bool,
+    ) -> Self {
         // Get terminal size, fallback to reasonable default if can't get size
         let screen_height = crossterm::terminal::size()
             .map(|(_, height)| height)
@@ -67,6 +73,7 @@ impl TeletextPage {
             content_rows: Vec::new(),
             current_page: 0,
             screen_height,
+            disable_video_links,
         }
     }
 
@@ -239,6 +246,7 @@ impl TeletextPage {
 
         // Draw content with exact positioning
         let mut current_y = 3; // Start content one line after subheader
+
         for row in visible_rows {
             match row {
                 TeletextRow::GameResult {
@@ -251,36 +259,33 @@ impl TeletextPage {
                     is_shootout,
                     goal_events,
                 } => {
-                    let formatted_home = format!("{:<width$}", home_team, width = TEAM_NAME_WIDTH);
-                    let formatted_away = format!("{:<width$}", away_team, width = TEAM_NAME_WIDTH);
-
-                    let display_result = match score_type {
-                        ScoreType::Scheduled => time.clone(),
-                        _ => {
-                            if *is_overtime {
-                                format!("{} JA", result)
-                            } else if *is_shootout {
-                                format!("{} RL", result)
-                            } else {
-                                result.clone()
-                            }
-                        }
+                    // Format result with overtime/shootout indicator
+                    let result_text = if *is_shootout {
+                        format!("{} rl", result)
+                    } else if *is_overtime {
+                        format!("{} ja", result)
+                    } else {
+                        result.clone()
                     };
 
+                    // Draw game result line
                     execute!(
                         stdout,
                         MoveTo(0, current_y),
                         SetForegroundColor(TEXT_FG),
-                        Print(formatted_home),
-                        Print(" - "),
-                        Print(formatted_away),
+                        Print(format!(
+                            "{:<15} - {:<15} ",
+                            home_team.chars().take(15).collect::<String>(),
+                            away_team.chars().take(15).collect::<String>()
+                        )),
                         SetForegroundColor(RESULT_FG),
-                        Print(format!(" {}", display_result)),
+                        Print(format!("{:>5} {}", time, result_text)),
                         ResetColor
                     )?;
+
                     current_y += 1;
 
-                    // Display scorers if game has started and has goal events
+                    // Draw goal events if game has started
                     if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
                         && !goal_events.is_empty()
                     {
@@ -306,17 +311,26 @@ impl TeletextPage {
                                     Print(format!("{:2} ", event.minute)),
                                 )?;
 
-                                // If there's a video clip, make the scorer name a clickable link
+                                // If there's a video clip and video links are not disabled, make the scorer name a clickable link
                                 if let Some(url) = &event.video_clip_url {
-                                    execute!(
-                                        stdout,
-                                        SetForegroundColor(scorer_color),
-                                        Print(format!(
-                                            "\x1B]8;;{}\x1B\\{}{}\x1B]8;;\x1B\\",
-                                            url, event.scorer_name, VIDEO_ICON
-                                        )),
-                                        ResetColor
-                                    )?;
+                                    if !self.disable_video_links {
+                                        execute!(
+                                            stdout,
+                                            SetForegroundColor(scorer_color),
+                                            Print(format!(
+                                                "\x1B]8;;{}\x1B\\{}{}\x1B]8;;\x1B\\",
+                                                url, event.scorer_name, VIDEO_ICON
+                                            )),
+                                            ResetColor
+                                        )?;
+                                    } else {
+                                        execute!(
+                                            stdout,
+                                            SetForegroundColor(scorer_color),
+                                            Print(format!("{:<15}", event.scorer_name)),
+                                            ResetColor
+                                        )?;
+                                    }
                                 } else {
                                     execute!(
                                         stdout,
@@ -349,17 +363,26 @@ impl TeletextPage {
                                     Print(format!("{:2} ", event.minute)),
                                 )?;
 
-                                // If there's a video clip, make the scorer name a clickable link
+                                // If there's a video clip and video links are not disabled, make the scorer name a clickable link
                                 if let Some(url) = &event.video_clip_url {
-                                    execute!(
-                                        stdout,
-                                        SetForegroundColor(scorer_color),
-                                        Print(format!(
-                                            "\x1B]8;;{}\x1B\\{}{}\x1B]8;;\x1B\\",
-                                            url, event.scorer_name, VIDEO_ICON
-                                        )),
-                                        ResetColor
-                                    )?;
+                                    if !self.disable_video_links {
+                                        execute!(
+                                            stdout,
+                                            SetForegroundColor(scorer_color),
+                                            Print(format!(
+                                                "\x1B]8;;{}\x1B\\{}{}\x1B]8;;\x1B\\",
+                                                url, event.scorer_name, VIDEO_ICON
+                                            )),
+                                            ResetColor
+                                        )?;
+                                    } else {
+                                        execute!(
+                                            stdout,
+                                            SetForegroundColor(scorer_color),
+                                            Print(format!("{}", event.scorer_name)),
+                                            ResetColor
+                                        )?;
+                                    }
                                 } else {
                                     execute!(
                                         stdout,
@@ -374,21 +397,17 @@ impl TeletextPage {
                         }
                     }
 
-                    current_y += 1; // Add a spacer line after each game
+                    current_y += 1; // Add space between games
                 }
                 TeletextRow::ErrorMessage(message) => {
                     execute!(
                         stdout,
                         MoveTo(0, current_y),
-                        SetForegroundColor(RESULT_FG),
-                        Print(format!(
-                            "{:^width$}",
-                            message,
-                            width = TELETEXT_WIDTH as usize
-                        )),
+                        SetForegroundColor(TEXT_FG),
+                        Print(message),
                         ResetColor
                     )?;
-                    current_y += 2; // Message + spacer
+                    current_y += 2;
                 }
             }
         }
@@ -424,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_page_navigation() {
-        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false);
         page.screen_height = 20; // Set fixed screen height for testing
 
         // Add enough games with goal events to create multiple pages
@@ -479,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_page_wrapping() {
-        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false);
         page.screen_height = 20; // Set fixed screen height for testing
 
         // Add enough games with goal events to create multiple pages
@@ -541,7 +560,7 @@ mod tests {
 
     #[test]
     fn test_game_height_calculation() {
-        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false);
 
         // Test game without goals
         page.add_game_result(
@@ -585,7 +604,7 @@ mod tests {
 
     #[test]
     fn test_error_message_display() {
-        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string());
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false);
         let error_msg = "Test Error";
         page.add_error_message(error_msg);
 
