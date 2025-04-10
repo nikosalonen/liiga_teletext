@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::teletext_ui::ScoreType;
 use chrono::Local;
 use chrono::{DateTime, Utc};
@@ -43,6 +44,7 @@ pub struct GameData {
 }
 
 pub(crate) fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
+    let config = Config::load()?;
     let today = Local::now().format("%Y-%m-%d").to_string();
     //let today = "2025-01-17";
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
@@ -51,8 +53,8 @@ pub(crate) fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
 
     for tournament in tournaments {
         let url = format!(
-            "https://liiga.fi/api/v2/games?tournament={}&date={}",
-            tournament, today
+            "{}/games?tournament={}&date={}",
+            config.api_domain, tournament, today
         );
 
         match client.get(&url).send() {
