@@ -15,6 +15,7 @@ const SUBHEADER_FG: Color = Color::Green;
 const RESULT_FG: Color = Color::Yellow;
 const TEXT_FG: Color = Color::White;
 const TELETEXT_WIDTH: u16 = 40; // Standard teletext width
+const TELETEXT_MIN_HEIGHT: u16 = 10; // Minimum height of teletext page
 const TEAM_NAME_WIDTH: usize = 10; // Fixed width for team names
 
 pub struct TeletextPage {
@@ -182,10 +183,21 @@ impl TeletextPage {
             }
         }
 
+        // Fill remaining space to meet minimum height
+        while current_y < TELETEXT_MIN_HEIGHT - 2 {
+            // -2 to leave space for footer
+            execute!(
+                stdout,
+                MoveTo(0, current_y),
+                Print(format!("{:width$}", "", width = TELETEXT_WIDTH as usize))
+            )?;
+            current_y += 1;
+        }
+
         // Footer at the bottom
         execute!(
             stdout,
-            MoveTo(0, current_y + 1),
+            MoveTo(0, TELETEXT_MIN_HEIGHT - 1), // Place footer at the bottom of minimum height
             SetForegroundColor(Color::Blue),
             Print("<<<  "),
             SetForegroundColor(Color::White),
