@@ -5,14 +5,12 @@ mod teletext_ui;
 
 use config::Config;
 use crossterm::{
-    cursor::{Hide, Show},
     event::{self, Event, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use data_fetcher::{GameData, fetch_liiga_data};
 use std::io::stdout;
-use std::thread;
 use std::time::{Duration, Instant};
 use teletext_ui::{ScoreType, TeletextPage};
 
