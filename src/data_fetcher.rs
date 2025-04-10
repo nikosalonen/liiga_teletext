@@ -294,7 +294,7 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
     // let mut date = Local::now().format("%Y-%m-%d").to_string();
-    let mut date = "2025-03-12";
+    let mut date = "2025-01-11";
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
     let mut response_data: Option<ScheduleResponse> = None;
