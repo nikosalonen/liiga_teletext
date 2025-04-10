@@ -35,7 +35,7 @@ pub struct ScheduleTeam {
     #[serde(rename = "teamName")]
     pub team_name: String,
     pub goals: i32,
-    #[serde(rename = "goalEvents")]
+    #[serde(rename = "goalEvents", default)]
     pub goal_events: Vec<GoalEvent>,
 }
 
@@ -44,6 +44,7 @@ pub struct ScheduleGame {
     pub id: i32,
     pub season: i32,
     pub start: String,
+    #[serde(default)]
     pub end: String,
     #[serde(rename = "homeTeam")]
     pub home_team: ScheduleTeam,
@@ -51,9 +52,11 @@ pub struct ScheduleGame {
     pub away_team: ScheduleTeam,
     #[serde(rename = "finishedType")]
     pub finished_type: Option<String>,
+    #[serde(default)]
     pub started: bool,
+    #[serde(default)]
     pub ended: bool,
-    #[serde(rename = "gameTime")]
+    #[serde(rename = "gameTime", default)]
     pub game_time: i32,
     pub serie: String,
 }
@@ -290,10 +293,13 @@ impl HasGoalEvents for DetailedTeam {
 pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
-    let mut date = Local::now().format("%Y-%m-%d").to_string();
+    // let mut date = Local::now().format("%Y-%m-%d").to_string();
+    let mut date = "2025-03-12";
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
     let mut response_data: Option<ScheduleResponse> = None;
+    let mut found_games = false;
+    let mut previous_dates = Vec::new();
 
     // Try to get games for today first
     for tournament in &tournaments {
@@ -317,10 +323,17 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
                                 );
                                 if !response.games.is_empty() {
                                     response_data = Some(response);
+                                    found_games = true;
                                     break;
                                 }
-                                // If no games found and this is the first tournament, store response for previousGameDate
-                                if response_data.is_none() {
+                                // Store previous game date if it exists
+                                if !response.previousGameDate.is_empty() {
+                                    previous_dates.push(response.previousGameDate.clone());
+                                }
+                                // Only store the response if we haven't found any games yet and this is the last tournament
+                                if response_data.is_none()
+                                    && *tournament == tournaments[tournaments.len() - 1]
+                                {
                                     response_data = Some(response);
                                 }
                             }
@@ -334,49 +347,62 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
         }
     }
 
-    // If no games today, try previous game date
-    if let Some(ref response) = response_data {
-        if response.games.is_empty() && !response.previousGameDate.is_empty() {
-            date = response.previousGameDate.clone();
-            println!(
-                "No games today, fetching games from previous game date: {}",
-                date
+    // If no games found in any tournament today, try the nearest previous game date
+    if !found_games && !previous_dates.is_empty() {
+        // Sort dates in descending order to get the most recent one
+        previous_dates.sort_by(|a, b| b.cmp(a));
+        let nearest_date = &previous_dates[0];
+        println!(
+            "No games today, fetching games from nearest previous game date: {}",
+            nearest_date
+        );
+
+        let mut prev_day_response: Option<ScheduleResponse> = None;
+
+        for tournament in &tournaments {
+            let url = format!(
+                "{}/games?tournament={}&date={}",
+                config.api_domain, tournament, nearest_date
             );
+            println!("Fetching from URL: {}", url);
 
-            for tournament in &tournaments {
-                let url = format!(
-                    "{}/games?tournament={}&date={}",
-                    config.api_domain, tournament, date
-                );
-                println!("Fetching from URL: {}", url);
-
-                match client.get(&url).send().await {
-                    Ok(response) => match response.text().await {
-                        Ok(response_text) => {
-                            match serde_json::from_str::<ScheduleResponse>(&response_text) {
-                                Ok(response) => {
-                                    println!(
-                                        "Found {} games for tournament {}",
-                                        response.games.len(),
-                                        tournament
-                                    );
-                                    if !response.games.is_empty() {
-                                        response_data = Some(response);
-                                        break;
-                                    }
+            match client.get(&url).send().await {
+                Ok(response) => match response.text().await {
+                    Ok(response_text) => {
+                        match serde_json::from_str::<ScheduleResponse>(&response_text) {
+                            Ok(response) => {
+                                println!(
+                                    "Found {} games for tournament {}",
+                                    response.games.len(),
+                                    tournament
+                                );
+                                if !response.games.is_empty() {
+                                    prev_day_response = Some(response);
+                                    found_games = true;
+                                    break;
                                 }
-                                Err(e) => {
-                                    eprintln!("Failed to parse JSON for {}: {}", tournament, e)
+                                // Only store the response if we haven't found any games yet and this is the last tournament
+                                if prev_day_response.is_none()
+                                    && *tournament == tournaments[tournaments.len() - 1]
+                                {
+                                    prev_day_response = Some(response);
                                 }
                             }
+                            Err(e) => {
+                                eprintln!("Failed to parse JSON for {}: {}", tournament, e)
+                            }
                         }
-                        Err(e) => {
-                            eprintln!("Failed to get response text for {}: {}", tournament, e)
-                        }
-                    },
-                    Err(e) => eprintln!("Failed to send request for {}: {}", tournament, e),
-                }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to get response text for {}: {}", tournament, e)
+                    }
+                },
+                Err(e) => eprintln!("Failed to send request for {}: {}", tournament, e),
             }
+        }
+
+        if found_games {
+            response_data = prev_day_response;
         }
     }
 
@@ -406,19 +432,21 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
                     ScoreType::Final
                 };
 
-                let goal_events =
-                    if !m.home_team.goal_events.is_empty() || !m.away_team.goal_events.is_empty() {
-                        // Only fetch detailed game data if there are goals
-                        match fetch_game_data(&client, &config, m.season, m.id).await {
-                            Ok(detailed_data) => detailed_data.goal_events,
-                            Err(e) => {
-                                eprintln!("Failed to fetch detailed game data: {}", e);
-                                process_goal_events(&m, &HashMap::new())
-                            }
+                let goal_events = if !m.started {
+                    Vec::new()
+                } else if !m.home_team.goal_events.is_empty() || !m.away_team.goal_events.is_empty()
+                {
+                    // Only fetch detailed game data if there are goals and game has started
+                    match fetch_game_data(&client, &config, m.season, m.id).await {
+                        Ok(detailed_data) => detailed_data.goal_events,
+                        Err(e) => {
+                            eprintln!("Failed to fetch detailed game data: {}", e);
+                            process_goal_events(&m, &HashMap::new())
                         }
-                    } else {
-                        Vec::new()
-                    };
+                    }
+                } else {
+                    Vec::new()
+                };
 
                 Ok::<GameData, Box<dyn Error>>(GameData {
                     home_team: m.home_team.team_name,
@@ -448,10 +476,12 @@ async fn fetch_game_data(
     game_id: i32,
 ) -> Result<GameData, Box<dyn Error>> {
     let url = format!("{}/games/{}/{}", config.api_domain, season, game_id);
+    println!("Fetching detailed game data from: {}", url);
     let response = client.get(&url).send().await?;
     let game_response = response.json::<DetailedGameResponse>().await?;
 
     let mut player_names: HashMap<i64, String> = HashMap::new();
+
     for player in &game_response.home_team_players {
         player_names.insert(
             player.id,
@@ -466,6 +496,17 @@ async fn fetch_game_data(
     }
 
     let goal_events = process_goal_events(&game_response.game, &player_names);
+
+    // Debug goal events
+    for event in &goal_events {
+        println!(
+            "Goal at minute {}: Player ID {} -> Name '{}' (found in map: {})",
+            event.minute,
+            event.scorer_player_id,
+            event.scorer_name,
+            player_names.contains_key(&event.scorer_player_id)
+        );
+    }
 
     let game_time = game_response.game.game_time;
     let is_overtime = game_time > 3600;
