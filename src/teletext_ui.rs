@@ -64,6 +64,7 @@ pub enum TeletextRow {
         is_overtime: bool,
         is_shootout: bool,
         goal_events: Vec<GoalEventData>,
+        played_time: i32,
     },
     ErrorMessage(String),
 }
@@ -112,6 +113,7 @@ impl TeletextPage {
         is_overtime: bool,
         is_shootout: bool,
         goal_events: Vec<GoalEventData>,
+        played_time: i32,
     ) {
         self.content_rows.push(TeletextRow::GameResult {
             home_team,
@@ -122,6 +124,7 @@ impl TeletextPage {
             is_overtime,
             is_shootout,
             goal_events,
+            played_time,
         });
     }
 
@@ -288,6 +291,7 @@ impl TeletextPage {
                     is_overtime,
                     is_shootout,
                     goal_events,
+                    played_time,
                 } => {
                     // Format result with overtime/shootout indicator
                     let result_text = if *is_shootout {
@@ -296,6 +300,15 @@ impl TeletextPage {
                         format!("{} ja", result)
                     } else {
                         result.clone()
+                    };
+
+                    // Format played time for ongoing games
+                    let formatted_time = format!("{:02}:{:02}", played_time / 60, played_time % 60);
+                    let ongoing_display = format!("{} {}", formatted_time, result_text);
+                    let time_display = match score_type {
+                        ScoreType::Scheduled => time.as_str(),
+                        ScoreType::Ongoing => ongoing_display.as_str(),
+                        ScoreType::Final => result_text.as_str(),
                     };
 
                     // Draw game result line
@@ -314,12 +327,12 @@ impl TeletextPage {
                             "{:<20}",
                             away_team.chars().take(20).collect::<String>()
                         )),
-                        SetForegroundColor(result_fg()),
-                        MoveTo(45, current_y),
-                        Print(match score_type {
-                            ScoreType::Scheduled => time.as_str(),
-                            _ => result_text.as_str(),
+                        SetForegroundColor(match score_type {
+                            ScoreType::Final => result_fg(),
+                            _ => text_fg(),
                         }),
+                        MoveTo(45, current_y),
+                        Print(time_display),
                         ResetColor
                     )?;
 
@@ -338,12 +351,11 @@ impl TeletextPage {
                         for i in 0..max_scorers {
                             // Home team scorer
                             if let Some(event) = home_scorers.get(i) {
-                                let scorer_color =
-                                    if event.is_winning_goal && (*is_overtime || *is_shootout) {
-                                        winning_goal_fg()
-                                    } else {
-                                        home_scorer_fg()
-                                    };
+                                let scorer_color = if event.is_winning_goal && (*is_overtime || *is_shootout) {
+                                    winning_goal_fg()
+                                } else {
+                                    home_scorer_fg()
+                                };
                                 execute!(
                                     stdout,
                                     MoveTo(0, current_y),
@@ -391,7 +403,10 @@ impl TeletextPage {
                                     execute!(
                                         stdout,
                                         Print(" "),
-                                        SetForegroundColor(result_fg()),
+                                        SetForegroundColor(match score_type {
+                                            ScoreType::Final => result_fg(),
+                                            _ => text_fg(),
+                                        }),
                                         Print(goal_type),
                                         ResetColor
                                     )?;
@@ -400,12 +415,11 @@ impl TeletextPage {
 
                             // Away team scorer
                             if let Some(event) = away_scorers.get(i) {
-                                let scorer_color =
-                                    if event.is_winning_goal && (*is_overtime || *is_shootout) {
-                                        winning_goal_fg()
-                                    } else {
-                                        away_scorer_fg()
-                                    };
+                                let scorer_color = if event.is_winning_goal && (*is_overtime || *is_shootout) {
+                                    winning_goal_fg()
+                                } else {
+                                    away_scorer_fg()
+                                };
                                 execute!(
                                     stdout,
                                     MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
@@ -453,7 +467,10 @@ impl TeletextPage {
                                     execute!(
                                         stdout,
                                         Print(" "),
-                                        SetForegroundColor(result_fg()),
+                                        SetForegroundColor(match score_type {
+                                            ScoreType::Final => result_fg(),
+                                            _ => text_fg(),
+                                        }),
                                         Print(goal_type),
                                         ResetColor
                                     )?;
@@ -562,6 +579,7 @@ mod tests {
                 false,
                 false,
                 goal_events,
+                1200,
             );
         }
 
@@ -624,6 +642,7 @@ mod tests {
                 false,
                 false,
                 goal_events,
+                1200,
             );
         }
 
@@ -666,6 +685,7 @@ mod tests {
             false,
             false,
             vec![],
+            0,
         );
 
         // Test game with goals
@@ -690,6 +710,7 @@ mod tests {
             false,
             false,
             goals,
+            600,
         );
 
         let (content, _) = page.get_page_content();

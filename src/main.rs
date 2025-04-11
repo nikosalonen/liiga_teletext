@@ -24,7 +24,7 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Finnish Hockey League (Liiga) Teletext Viewer
 ///
 /// A nostalgic teletext-style viewer for Finnish Hockey League scores and game information.
-/// Displays game scores, goal scorers, and special situations (powerplay, overtime, shootout).
+/// Displays game scores, goalscorers, and special situations (powerplay, overtime, shootout).
 ///
 /// In interactive mode (default):
 /// - Use arrow keys (←/→) to navigate between pages
@@ -92,6 +92,7 @@ fn create_page(
             game.is_overtime,
             game.is_shootout,
             game.goal_events.clone(),
+            game.played_time,
         );
     }
 

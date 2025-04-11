@@ -175,6 +175,7 @@ pub struct GameData {
     pub is_shootout: bool,
     pub serie: String,
     pub goal_events: Vec<GoalEventData>,
+    pub played_time: i32,
     #[allow(dead_code)] // Kept for API compatibility and potential future use
     pub finished_type: String,
 }
@@ -479,6 +480,7 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
                     is_shootout,
                     serie: m.serie,
                     goal_events,
+                    played_time: m.game_time,
                     finished_type: m.finished_type.unwrap_or_default(),
                 })
             }
