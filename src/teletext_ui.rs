@@ -295,25 +295,22 @@ impl TeletextPage {
                         MoveTo(0, current_y),
                         SetForegroundColor(text_fg()),
                         Print(format!(
-                            "{:<15}",
-                            home_team.chars().take(15).collect::<String>()
+                            "{:<20}",
+                            home_team.chars().take(20).collect::<String>()
                         )),
-                        MoveTo(SEPARATOR_OFFSET as u16, current_y), // Use new separator position
+                        MoveTo(SEPARATOR_OFFSET as u16, current_y),
                         Print("- "),
-                        MoveTo(AWAY_TEAM_OFFSET as u16, current_y), // Use adjusted away team position
+                        MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
                         Print(format!(
-                            "{}",
-                            away_team.chars().take(15).collect::<String>()
+                            "{:<20}",
+                            away_team.chars().take(20).collect::<String>()
                         )),
                         SetForegroundColor(result_fg()),
-                        Print(format!(
-                            "{:>10} {}",
-                            time,
-                            match score_type {
-                                ScoreType::Scheduled => String::new(),
-                                _ => result_text,
-                            }
-                        )),
+                        MoveTo(45, current_y), // Fixed position for scores
+                        Print(match score_type {
+                            ScoreType::Scheduled => time.as_str(),
+                            _ => result_text.as_str(),
+                        }),
                         ResetColor
                     )?;
 
