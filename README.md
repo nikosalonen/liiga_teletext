@@ -21,6 +21,20 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 
 ## Installation
 
+### Install from crates.io
+
+```bash
+cargo install liiga_teletext
+```
+
+You can create a symlink to the binary to make it available from anywhere:
+
+```bash
+sudo ln -s ~/.cargo/bin/liiga_teletext /usr/local/bin/211 # 211 is the channel number of YLE Teksti-TV
+```
+
+### Install from source
+
 1. Make sure Rust and Cargo are installed on your system. If not, install them from [rustup.rs](https://rustup.rs/).
 
 2. Clone this repository:
