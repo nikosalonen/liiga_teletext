@@ -52,6 +52,7 @@ pub struct TeletextPage {
     current_page: usize,
     screen_height: u16,
     disable_video_links: bool,
+    show_footer: bool,
 }
 
 pub enum TeletextRow {
@@ -81,6 +82,7 @@ impl TeletextPage {
         title: String,
         subheader: String,
         disable_video_links: bool,
+        show_footer: bool,
     ) -> Self {
         // Get terminal size, fallback to reasonable default if can't get size
         let screen_height = crossterm::terminal::size()
@@ -95,6 +97,7 @@ impl TeletextPage {
             current_page: 0,
             screen_height,
             disable_video_links,
+            show_footer,
         }
     }
 
@@ -266,7 +269,7 @@ impl TeletextPage {
         let (visible_rows, _) = self.get_page_content();
 
         // Draw content with exact positioning
-        let mut current_y = 3; // Start content one line after subheader
+        let mut current_y = 2; // Start content right after subheader, reduced from 3
 
         for row in visible_rows {
             match row {
@@ -306,7 +309,7 @@ impl TeletextPage {
                             away_team.chars().take(20).collect::<String>()
                         )),
                         SetForegroundColor(result_fg()),
-                        MoveTo(45, current_y), // Fixed position for scores
+                        MoveTo(45, current_y),
                         Print(match score_type {
                             ScoreType::Scheduled => time.as_str(),
                             _ => result_text.as_str(),
@@ -460,7 +463,7 @@ impl TeletextPage {
                         }
                     }
 
-                    current_y += 1; // Add space between games
+                    // Reduce space between games from 1 to 0
                 }
                 TeletextRow::ErrorMessage(message) => {
                     execute!(
@@ -470,30 +473,32 @@ impl TeletextPage {
                         Print(message),
                         ResetColor
                     )?;
-                    current_y += 2;
+                    current_y += 1; // Reduced from 2 to 1
                 }
             }
         }
 
-        // Simplified footer with just controls
-        let controls = if total_pages > 1 {
-            "q=Lopeta ←→=Sivut"
-        } else {
-            "q=Lopeta"
-        };
+        // Only render footer if show_footer is true
+        if self.show_footer {
+            let controls = if total_pages > 1 {
+                "q=Lopeta ←→=Sivut"
+            } else {
+                "q=Lopeta"
+            };
 
-        execute!(
-            stdout,
-            MoveTo(0, self.screen_height.saturating_sub(1)),
-            SetBackgroundColor(header_bg()),
-            SetForegroundColor(Color::Blue),
-            Print(if total_pages > 1 { "<<<" } else { "   " }),
-            SetForegroundColor(Color::White),
-            Print(format!("{:^44}", controls)),
-            SetForegroundColor(Color::Blue),
-            Print(if total_pages > 1 { ">>>" } else { "   " }),
-            ResetColor
-        )?;
+            execute!(
+                stdout,
+                MoveTo(0, self.screen_height.saturating_sub(1)),
+                SetBackgroundColor(header_bg()),
+                SetForegroundColor(Color::Blue),
+                Print(if total_pages > 1 { "<<<" } else { "   " }),
+                SetForegroundColor(Color::White),
+                Print(format!("{:^44}", controls)),
+                SetForegroundColor(Color::Blue),
+                Print(if total_pages > 1 { ">>>" } else { "   " }),
+                ResetColor
+            )?;
+        }
 
         stdout.flush()?;
         Ok(())
@@ -507,7 +512,7 @@ mod tests {
 
     #[test]
     fn test_page_navigation() {
-        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false);
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false, true);
         page.screen_height = 20; // Set fixed screen height for testing
 
         // Add enough games with goal events to create multiple pages
@@ -562,7 +567,7 @@ mod tests {
 
     #[test]
     fn test_page_wrapping() {
-        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false);
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false, true);
         page.screen_height = 20; // Set fixed screen height for testing
 
         // Add enough games with goal events to create multiple pages
@@ -624,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_game_height_calculation() {
-        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false);
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false, true);
 
         // Test game without goals
         page.add_game_result(
@@ -668,7 +673,7 @@ mod tests {
 
     #[test]
     fn test_error_message_display() {
-        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false);
+        let mut page = TeletextPage::new(221, "TEST".to_string(), "TEST".to_string(), false, true);
         let error_msg = "Test Error";
         page.add_error_message(error_msg);
 
