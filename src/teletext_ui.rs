@@ -307,7 +307,7 @@ impl TeletextPage {
                         )),
                         SetForegroundColor(result_fg()),
                         Print(format!(
-                            "{:>12} {}",
+                            "{:>10} {}",
                             time,
                             match score_type {
                                 ScoreType::Scheduled => String::new(),
@@ -480,20 +480,21 @@ impl TeletextPage {
 
         // Simplified footer with just controls
         let controls = if total_pages > 1 {
-            "q=Lopeta r=Päivitä ←→=Sivut"
+            "q=Lopeta ←→=Sivut"
         } else {
-            "q=Lopeta r=Päivitä"
+            "q=Lopeta"
         };
 
         execute!(
             stdout,
             MoveTo(0, self.screen_height.saturating_sub(1)),
+            SetBackgroundColor(header_bg()),
             SetForegroundColor(Color::Blue),
-            Print("<<<"),
+            Print(if total_pages > 1 { "<<<" } else { "   " }),
             SetForegroundColor(Color::White),
             Print(format!("{:^44}", controls)),
             SetForegroundColor(Color::Blue),
-            Print(">>>"),
+            Print(if total_pages > 1 { ">>>" } else { "   " }),
             ResetColor
         )?;
 
