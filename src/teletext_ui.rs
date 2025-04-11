@@ -34,6 +34,9 @@ fn away_scorer_fg() -> Color {
 fn winning_goal_fg() -> Color {
     Color::AnsiValue(201)
 } // Bright magenta
+fn goal_type_fg() -> Color {
+    Color::AnsiValue(226)
+} // Bright yellow
 fn title_bg() -> Color {
     Color::AnsiValue(46)
 } // Bright green
@@ -404,10 +407,7 @@ impl TeletextPage {
                                     execute!(
                                         stdout,
                                         Print(" "),
-                                        SetForegroundColor(match score_type {
-                                            ScoreType::Final => result_fg(),
-                                            _ => text_fg(),
-                                        }),
+                                        SetForegroundColor(goal_type_fg()),
                                         Print(goal_type),
                                         ResetColor
                                     )?;
@@ -468,10 +468,7 @@ impl TeletextPage {
                                     execute!(
                                         stdout,
                                         Print(" "),
-                                        SetForegroundColor(match score_type {
-                                            ScoreType::Final => result_fg(),
-                                            _ => text_fg(),
-                                        }),
+                                        SetForegroundColor(goal_type_fg()),
                                         Print(goal_type),
                                         ResetColor
                                     )?;
