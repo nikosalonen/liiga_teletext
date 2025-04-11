@@ -38,8 +38,6 @@ fn title_bg() -> Color {
     Color::AnsiValue(46)
 } // Bright green
 
-const TELETEXT_WIDTH: u16 = 55;
-const TEAM_NAME_WIDTH: usize = 15;
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 const VIDEO_ICON: &str = " ▶";
