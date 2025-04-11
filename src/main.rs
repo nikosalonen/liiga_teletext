@@ -38,7 +38,7 @@ struct Args {
 
     /// Disable clickable video links in the output.
     /// Useful for terminals that don't support links or for plain text output.
-    #[arg(long = "plain", help_heading = "Display Options")]
+    #[arg(long = "plain", short = 'p', help_heading = "Display Options")]
     disable_links: bool,
 }
 
