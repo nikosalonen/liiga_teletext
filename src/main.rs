@@ -61,7 +61,12 @@ fn get_subheader(games: &[GameData]) -> String {
     }
 }
 
-fn create_page(games: &[GameData], disable_video_links: bool, show_footer: bool) -> TeletextPage {
+fn create_page(
+    games: &[GameData],
+    disable_video_links: bool,
+    show_footer: bool,
+    ignore_height_limit: bool,
+) -> TeletextPage {
     let subheader = get_subheader(games);
     let mut page = TeletextPage::new(
         221,
@@ -69,6 +74,7 @@ fn create_page(games: &[GameData], disable_video_links: bool, show_footer: bool)
         subheader,
         disable_video_links,
         show_footer,
+        ignore_height_limit,
     );
 
     for game in games {
@@ -137,11 +143,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "SM-LIIGA".to_string(),
                 args.disable_links,
                 false, // Don't show footer in quick view mode
+                true,  // Ignore height limit in quick view mode
             );
             error_page.add_error_message("Ei otteluita tänään");
             error_page
         } else {
-            create_page(&games, args.disable_links, false)
+            create_page(&games, args.disable_links, false, true) // Ignore height limit in quick view mode
         };
 
         let mut stdout = stdout();
@@ -169,12 +176,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "JÄÄKIEKKO".to_string(),
                 "SM-LIIGA".to_string(),
                 args.disable_links,
-                true, // Show footer in interactive mode
+                true,  // Show footer in interactive mode
+                false, // Don't ignore height limit in interactive mode
             );
             error_page.add_error_message("Ei otteluita tänään");
             error_page
         } else {
-            create_page(&games, args.disable_links, true)
+            create_page(&games, args.disable_links, true, false) // Don't ignore height limit in interactive mode
         };
 
         // Initial render
