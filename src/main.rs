@@ -105,23 +105,36 @@ fn has_live_games(games: &[GameData]) -> bool {
         .any(|game| matches!(game.score_type, ScoreType::Ongoing))
 }
 
+/// Checks for the latest version of this crate on crates.io.
+///
+/// Returns `Some(version_string)` if a newer version is available,
+/// or `None` if there was an error checking or if the current version is up to date.
 async fn check_latest_version() -> Option<String> {
+    const CRATES_IO_URL: &str = "https://crates.io/api/v1/crates/liiga_teletext";
+    
     let client = reqwest::Client::new();
-    let url = "https://crates.io/api/v1/crates/liiga_teletext";
-
-    match client.get(url).send().await {
-        Ok(response) => {
-            if let Ok(json) = response.json::<serde_json::Value>().await {
-                if let Some(versions) = json.get("versions") {
-                    if let Some(latest) = versions.as_array()?.first() {
-                        return latest.get("num")?.as_str().map(String::from);
-                    }
-                }
-            }
+    let response = match client.get(CRATES_IO_URL).send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            eprintln!("Failed to check for updates: {}", e);
+            return None;
         }
-        Err(_) => return None,
-    }
-    None
+    };
+
+    let json: serde_json::Value = match response.json().await {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("Failed to parse update response: {}", e);
+            return None;
+        }
+    };
+
+    json.get("versions")?
+        .as_array()?
+        .first()?
+        .get("num")?
+        .as_str()
+        .map(String::from)
 }
 
 fn print_version_info(latest_version: &str) {
