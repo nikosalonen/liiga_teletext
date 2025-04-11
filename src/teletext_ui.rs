@@ -352,13 +352,12 @@ impl TeletextPage {
                                             stdout,
                                             Print(" "),
                                             SetForegroundColor(scorer_color),
-                                            Print(&event.scorer_name),
-                                            Print(" "),
                                             Print("\x1B]8;;"),
                                             Print(url),
-                                            Print("\x1B\\"),
-                                            Print("▶"),
-                                            Print("\x1B]8;;\x1B\\"),
+                                            Print("\x07"),
+                                            Print(&event.scorer_name),
+                                            Print(" ▶"),
+                                            Print("\x1B]8;;\x07"),
                                             ResetColor
                                         )?;
                                     } else {
@@ -418,13 +417,12 @@ impl TeletextPage {
                                             stdout,
                                             Print(" "),
                                             SetForegroundColor(scorer_color),
-                                            Print(&event.scorer_name),
-                                            Print(" "),
                                             Print("\x1B]8;;"),
                                             Print(url),
-                                            Print("\x1B\\"),
-                                            Print("▶"),
-                                            Print("\x1B]8;;\x1B\\"),
+                                            Print("\x07"),
+                                            Print(&event.scorer_name),
+                                            Print(" ▶"),
+                                            Print("\x1B]8;;\x07"),
                                             ResetColor
                                         )?;
                                     } else {
