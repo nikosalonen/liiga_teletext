@@ -38,7 +38,7 @@ fn title_bg() -> Color {
     Color::AnsiValue(46)
 } // Bright green
 
-const TELETEXT_WIDTH: u16 = 50;
+const TELETEXT_WIDTH: u16 = 55;
 const TEAM_NAME_WIDTH: usize = 15;
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
@@ -244,7 +244,7 @@ impl TeletextPage {
             SetForegroundColor(header_fg()),
             Print(format!("{:<20}", self.title)),
             SetBackgroundColor(header_bg()),
-            Print(format!("{:>30}", format!("SM-LIIGA {}", self.page_number))),
+            Print(format!("{:>35}", format!("SM-LIIGA {}", self.page_number))),
             ResetColor
         )?;
 
@@ -269,7 +269,7 @@ impl TeletextPage {
         let (visible_rows, _) = self.get_page_content();
 
         // Draw content with exact positioning
-        let mut current_y = 2; // Start content right after subheader, reduced from 3
+        let mut current_y = 3; // Start content after one row space from subheader
 
         for row in visible_rows {
             match row {
@@ -493,7 +493,7 @@ impl TeletextPage {
                 SetForegroundColor(Color::Blue),
                 Print(if total_pages > 1 { "<<<" } else { "   " }),
                 SetForegroundColor(Color::White),
-                Print(format!("{:^44}", controls)),
+                Print(format!("{:^49}", controls)),
                 SetForegroundColor(Color::Blue),
                 Print(if total_pages > 1 { ">>>" } else { "   " }),
                 ResetColor
