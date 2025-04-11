@@ -19,11 +19,20 @@ impl Config {
             let config: Config = toml::from_str(&content)?;
             Ok(config)
         } else {
-            Err(format!(
-                "Config not found. Copy example.config.toml to {} and set api_domain",
-                config_path
-            )
-            .into())
+            // Try to copy from example config
+            let example_path = "example.config.toml";
+            if Path::new(example_path).exists() {
+                let example_content = fs::read_to_string(example_path)?;
+                let config: Config = toml::from_str(&example_content)?;
+                config.save()?; // Save the copied config
+                Ok(config)
+            } else {
+                Err(format!(
+                    "Neither config nor example config found. Expected config at {} or example at {}",
+                    config_path, example_path
+                )
+                .into())
+            }
         }
     }
 
