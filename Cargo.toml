@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 authors = ["Niko Salonen <nikotsalonen@gmail.com>"]
 description = "A terminal application that displays Finnish Liiga hockey results in a teletext style"
+license = "MIT"
+repository = "https://github.com/nikosalonen/liiga_teletext"
+homepage = "https://github.com/nikosalonen/liiga_teletext"
+documentation = "https://github.com/nikosalonen/liiga_teletext#readme"
 
 [dependencies]
 chrono = "0.4.40"
