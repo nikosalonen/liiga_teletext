@@ -3,10 +3,17 @@ use crate::teletext_ui::ScoreType;
 use chrono::Local;
 use chrono::{DateTime, NaiveTime, Utc};
 use futures;
+use lazy_static::lazy_static;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Mutex;
+
+// Cache structure for player information
+lazy_static! {
+    static ref PLAYER_CACHE: Mutex<HashMap<i32, HashMap<i64, String>>> = Mutex::new(HashMap::new());
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoalEvent {
@@ -303,16 +310,17 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
     let now = Local::now();
-    let date = if should_show_todays_games() {
-        now.format("%Y-%m-%d").to_string()
-    } else {
-        // If before 15:00, try to get previous day's games first
-        let yesterday = now
-            .date_naive()
-            .pred_opt()
-            .expect("Date underflow cannot happen with Local::now()");
-        yesterday.format("%Y-%m-%d").to_string()
-    };
+    // let date = if should_show_todays_games() {
+    //     now.format("%Y-%m-%d").to_string()
+    // } else {
+    //     // If before 15:00, try to get previous day's games first
+    //     let yesterday = now
+    //         .date_naive()
+    //         .pred_opt()
+    //         .expect("Date underflow cannot happen with Local::now()");
+    //     yesterday.format("%Y-%m-%d").to_string()
+    // };
+    let date = "2025-01-08".to_string();
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
     let mut response_data: Option<ScheduleResponse> = None;
@@ -506,8 +514,15 @@ async fn fetch_game_data(
     let response_text = response.text().await?;
     let game_response = serde_json::from_str::<DetailedGameResponse>(&response_text)?;
 
-    let mut player_names: HashMap<i64, String> = HashMap::new();
+    // Check cache first
+    let mut player_names = HashMap::new();
+    {
+        if let Some(cached_players) = PLAYER_CACHE.lock().unwrap().get(&game_id) {
+            return Ok(process_goal_events(&game_response.game, cached_players));
+        }
+    }
 
+    // Build player names map if not in cache
     for player in &game_response.home_team_players {
         player_names.insert(
             player.id,
@@ -520,6 +535,12 @@ async fn fetch_game_data(
             format!("{} {}", player.firstName, player.lastName),
         );
     }
+
+    // Update cache
+    PLAYER_CACHE
+        .lock()
+        .unwrap()
+        .insert(game_id, player_names.clone());
 
     Ok(process_goal_events(&game_response.game, &player_names))
 }
