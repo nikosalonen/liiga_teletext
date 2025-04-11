@@ -3,6 +3,7 @@ mod config;
 mod data_fetcher;
 mod teletext_ui;
 
+use clap::Parser;
 use config::Config;
 use crossterm::{
     event::{self, Event, KeyCode},
@@ -13,6 +14,15 @@ use data_fetcher::{GameData, fetch_liiga_data};
 use std::io::stdout;
 use std::time::{Duration, Instant};
 use teletext_ui::{ScoreType, TeletextPage};
+
+/// Liiga Teletext viewer
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Show scores once and exit
+    #[arg(short, long)]
+    once: bool,
+}
 
 fn get_subheader(games: &[GameData]) -> String {
     if games.is_empty() {
@@ -28,9 +38,15 @@ fn get_subheader(games: &[GameData]) -> String {
     }
 }
 
-fn create_page(games: &[GameData], disable_video_links: bool) -> TeletextPage {
+fn create_page(games: &[GameData], disable_video_links: bool, show_footer: bool) -> TeletextPage {
     let subheader = get_subheader(games);
-    let mut page = TeletextPage::new(221, "JÄÄKIEKKO".to_string(), subheader, disable_video_links);
+    let mut page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        subheader,
+        disable_video_links,
+        show_footer,
+    );
 
     for game in games {
         page.add_game_result(
@@ -56,9 +72,37 @@ fn has_live_games(games: &[GameData]) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
     // Load config first to fail early if there's an issue
     let config = Config::load()?;
 
+    if args.once {
+        // Quick view mode - just show the data once and exit
+        let games = fetch_liiga_data().await?;
+        let page = if games.is_empty() {
+            let mut error_page = TeletextPage::new(
+                221,
+                "JÄÄKIEKKO".to_string(),
+                "SM-LIIGA".to_string(),
+                config.disable_video_links,
+                false, // Don't show footer in quick view mode
+            );
+            error_page.add_error_message("Ei otteluita tänään");
+            error_page
+        } else {
+            create_page(&games, config.disable_video_links, false)
+        };
+
+        let mut stdout = stdout();
+        enable_raw_mode()?;
+        page.render(&mut stdout)?;
+        disable_raw_mode()?;
+        println!(); // Add a newline at the end
+        return Ok(());
+    }
+
+    // Interactive mode
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -75,11 +119,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "JÄÄKIEKKO".to_string(),
                 "SM-LIIGA".to_string(),
                 config.disable_video_links,
+                true, // Show footer in interactive mode
             );
             error_page.add_error_message("Ei otteluita tänään");
             error_page
         } else {
-            create_page(&games, config.disable_video_links)
+            create_page(&games, config.disable_video_links, true)
         };
 
         // Initial render
