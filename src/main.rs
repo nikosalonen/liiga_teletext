@@ -183,7 +183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Load config first to fail early if there's an issue
-    let config = Config::load()?;
+    let _config = Config::load()?;
 
     if args.once {
         // Quick view mode - just show the data once and exit
