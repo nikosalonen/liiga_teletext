@@ -1,2 +1,2 @@
 # Default configuration for Liiga Teletext
-api_domain = "https://myapi.com"
+api_domain = "###"  # Replace with your API domain

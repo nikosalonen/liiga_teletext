@@ -8,6 +8,13 @@ license = "MIT"
 repository = "https://github.com/nikosalonen/liiga_teletext"
 homepage = "https://github.com/nikosalonen/liiga_teletext"
 documentation = "https://github.com/nikosalonen/liiga_teletext#readme"
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+    "example.config.toml"
+]
 
 [dependencies]
 chrono = "0.4.40"
