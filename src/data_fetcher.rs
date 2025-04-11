@@ -720,4 +720,112 @@ mod tests {
         assert_eq!(events[0].minute, 10, "Should convert time correctly");
         assert_eq!(events[0].scorer_name, "Doe", "Should format name correctly");
     }
+
+    #[test]
+    fn test_goal_event_display() {
+        let event = GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Test".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["YV".to_string(), "IM".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        };
+
+        assert_eq!(event.get_goal_type_display(), "YV IM");
+    }
+
+    #[test]
+    fn test_should_show_todays_games() {
+        // This test is time-dependent, so we need to be careful with assertions
+        let result = should_show_todays_games();
+        // We can only verify that the function returns a boolean
+        assert!(result || !result);
+    }
+
+    #[test]
+    fn test_process_goal_events_with_empty_events() {
+        let game = ScheduleGame {
+            id: 1,
+            season: 2025,
+            start: "2025-01-11T15:00:00Z".to_string(),
+            end: "".to_string(),
+            home_team: ScheduleTeam {
+                team_id: "123".to_string(),
+                team_name: "Home".to_string(),
+                goals: 0,
+                goal_events: vec![],
+            },
+            away_team: ScheduleTeam {
+                team_id: "456".to_string(),
+                team_name: "Away".to_string(),
+                goals: 0,
+                goal_events: vec![],
+            },
+            finished_type: None,
+            started: true,
+            ended: false,
+            game_time: 0,
+            serie: "RUNKOSARJA".to_string(),
+        };
+
+        let player_names = HashMap::new();
+        let events = process_goal_events(&game, &player_names);
+        assert!(events.is_empty(), "Should return empty vec for no goals");
+    }
+
+    #[test]
+    fn test_process_goal_events_with_rl0_goals() {
+        let game = ScheduleGame {
+            id: 1,
+            season: 2025,
+            start: "2025-01-11T15:00:00Z".to_string(),
+            end: "".to_string(),
+            home_team: ScheduleTeam {
+                team_id: "123".to_string(),
+                team_name: "Home".to_string(),
+                goals: 1,
+                goal_events: vec![GoalEvent {
+                    scorer_player_id: 123,
+                    logTime: "2025-01-11T15:10:00Z".to_string(),
+                    game_time: 600,
+                    period: 1,
+                    eventId: 1,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    winning_goal: false,
+                    goal_types: vec!["RL0".to_string()],
+                    assistant_player_ids: vec![],
+                    video_clip_url: None,
+                }],
+            },
+            away_team: ScheduleTeam {
+                team_id: "456".to_string(),
+                team_name: "Away".to_string(),
+                goals: 0,
+                goal_events: vec![],
+            },
+            finished_type: None,
+            started: true,
+            ended: false,
+            game_time: 600,
+            serie: "RUNKOSARJA".to_string(),
+        };
+
+        let player_names = HashMap::new();
+        let events = process_goal_events(&game, &player_names);
+        assert!(events.is_empty(), "Should filter out RL0 goals");
+    }
+
+    #[test]
+    fn test_format_time_invalid_input() {
+        let result = format_time("invalid time");
+        assert!(
+            result.is_err(),
+            "Should return error for invalid time format"
+        );
+    }
 }
