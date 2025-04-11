@@ -310,17 +310,17 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
     let now = Local::now();
-    // let date = if should_show_todays_games() {
-    //     now.format("%Y-%m-%d").to_string()
-    // } else {
-    //     // If before 15:00, try to get previous day's games first
-    //     let yesterday = now
-    //         .date_naive()
-    //         .pred_opt()
-    //         .expect("Date underflow cannot happen with Local::now()");
-    //     yesterday.format("%Y-%m-%d").to_string()
-    // };
-    let date = "2025-01-08".to_string();
+    let date = if should_show_todays_games() {
+        now.format("%Y-%m-%d").to_string()
+    } else {
+        // If before 15:00, try to get previous day's games first
+        let yesterday = now
+            .date_naive()
+            .pred_opt()
+            .expect("Date underflow cannot happen with Local::now()");
+        yesterday.format("%Y-%m-%d").to_string()
+    };
+    // let date = "2025-01-08".to_string();
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
     let mut response_data: Option<ScheduleResponse> = None;
