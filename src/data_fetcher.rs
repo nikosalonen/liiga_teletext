@@ -175,6 +175,7 @@ pub struct GameData {
     pub is_shootout: bool,
     pub serie: String,
     pub goal_events: Vec<GoalEventData>,
+    #[allow(dead_code)] // Kept for API compatibility and potential future use
     pub finished_type: String,
 }
 
