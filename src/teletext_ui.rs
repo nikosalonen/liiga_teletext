@@ -10,17 +10,36 @@ use crossterm::{
 use std::io::{Stdout, Write};
 
 // Constants for teletext appearance
-const HEADER_BG: Color = Color::Blue;
-const HEADER_FG: Color = Color::White;
-const SUBHEADER_FG: Color = Color::Green;
-const RESULT_FG: Color = Color::Yellow;
-const TEXT_FG: Color = Color::White;
-const HOME_SCORER_FG: Color = Color::Cyan;
-const AWAY_SCORER_FG: Color = Color::Cyan;
-const WINNING_GOAL_FG: Color = Color::Magenta;
+fn header_bg() -> Color {
+    Color::AnsiValue(21)
+} // Bright blue
+fn header_fg() -> Color {
+    Color::AnsiValue(231)
+} // Pure white
+fn subheader_fg() -> Color {
+    Color::AnsiValue(46)
+} // Bright green
+fn result_fg() -> Color {
+    Color::AnsiValue(226)
+} // Bright yellow
+fn text_fg() -> Color {
+    Color::AnsiValue(231)
+} // Pure white
+fn home_scorer_fg() -> Color {
+    Color::AnsiValue(51)
+} // Bright cyan
+fn away_scorer_fg() -> Color {
+    Color::AnsiValue(51)
+} // Bright cyan
+fn winning_goal_fg() -> Color {
+    Color::AnsiValue(201)
+} // Bright magenta
+fn title_bg() -> Color {
+    Color::AnsiValue(46)
+} // Bright green
+
 const TELETEXT_WIDTH: u16 = 50; // Increased from 40 to accommodate longer names
 const TEAM_NAME_WIDTH: usize = 15; // Increased from 10 to fit longer team names
-const TITLE_BG: Color = Color::Green;
 const VIDEO_ICON: &str = " ▶";
 
 pub struct TeletextPage {
@@ -216,10 +235,10 @@ impl TeletextPage {
         execute!(
             stdout,
             MoveTo(0, 0),
-            SetBackgroundColor(TITLE_BG),
-            SetForegroundColor(HEADER_FG),
+            SetBackgroundColor(title_bg()),
+            SetForegroundColor(header_fg()),
             Print(format!("{:<20}", self.title)),
-            SetBackgroundColor(HEADER_BG),
+            SetBackgroundColor(header_bg()),
             Print(format!("{:>30}", format!("SM-LIIGA {}", self.page_number))),
             ResetColor
         )?;
@@ -235,7 +254,7 @@ impl TeletextPage {
         execute!(
             stdout,
             MoveTo(0, 1),
-            SetForegroundColor(SUBHEADER_FG),
+            SetForegroundColor(subheader_fg()),
             Print(format!("{:<20}", self.subheader)),
             Print(format!("{:>30}", page_info)),
             ResetColor
@@ -272,13 +291,13 @@ impl TeletextPage {
                     execute!(
                         stdout,
                         MoveTo(0, current_y),
-                        SetForegroundColor(TEXT_FG),
+                        SetForegroundColor(text_fg()),
                         Print(format!(
                             "{:<15} - {:<15} ",
                             home_team.chars().take(15).collect::<String>(),
                             away_team.chars().take(15).collect::<String>()
                         )),
-                        SetForegroundColor(RESULT_FG),
+                        SetForegroundColor(result_fg()),
                         Print(format!("{:>5} {}", time, result_text)),
                         ResetColor
                     )?;
@@ -300,9 +319,9 @@ impl TeletextPage {
                             if let Some(event) = home_scorers.get(i) {
                                 let scorer_color =
                                     if event.is_winning_goal && (*is_overtime || *is_shootout) {
-                                        WINNING_GOAL_FG
+                                        winning_goal_fg()
                                     } else {
-                                        HOME_SCORER_FG
+                                        home_scorer_fg()
                                     };
                                 execute!(
                                     stdout,
@@ -345,7 +364,7 @@ impl TeletextPage {
                                 if !goal_type.is_empty() {
                                     execute!(
                                         stdout,
-                                        SetForegroundColor(RESULT_FG),
+                                        SetForegroundColor(result_fg()),
                                         Print(format!(" {}", goal_type)),
                                         ResetColor
                                     )?;
@@ -363,9 +382,9 @@ impl TeletextPage {
                             if let Some(event) = away_scorers.get(i) {
                                 let scorer_color =
                                     if event.is_winning_goal && (*is_overtime || *is_shootout) {
-                                        WINNING_GOAL_FG
+                                        winning_goal_fg()
                                     } else {
-                                        AWAY_SCORER_FG
+                                        away_scorer_fg()
                                     };
                                 execute!(
                                     stdout,
@@ -408,7 +427,7 @@ impl TeletextPage {
                                 if !goal_type.is_empty() {
                                     execute!(
                                         stdout,
-                                        SetForegroundColor(RESULT_FG),
+                                        SetForegroundColor(result_fg()),
                                         Print(format!(" {}", goal_type)),
                                         ResetColor
                                     )?;
@@ -425,7 +444,7 @@ impl TeletextPage {
                     execute!(
                         stdout,
                         MoveTo(0, current_y),
-                        SetForegroundColor(TEXT_FG),
+                        SetForegroundColor(text_fg()),
                         Print(message),
                         ResetColor
                     )?;
