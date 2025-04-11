@@ -2,7 +2,8 @@
 
 A Rust terminal application that displays Finnish Liiga hockey results in a YLE Teksti-TV style interface.
 
-![image](https://github.com/user-attachments/assets/98ae3ece-c2a6-4253-b25b-c1e211624070)
+<img width="503" alt="image" src="https://github.com/user-attachments/assets/e4c44281-039e-4152-b505-13cef5ec2889" />
+
 
 ## Features
 
