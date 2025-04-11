@@ -11,7 +11,8 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use data_fetcher::{GameData, fetch_liiga_data};
-use std::io::stdout;
+use std::io::{Write, stdout};
+use std::path::Path;
 use std::time::{Duration, Instant};
 use teletext_ui::{ScoreType, TeletextPage};
 
@@ -40,6 +41,10 @@ struct Args {
     /// Useful for terminals that don't support links or for plain text output.
     #[arg(long = "plain", short = 'p', help_heading = "Display Options")]
     disable_links: bool,
+
+    /// Update API domain in config. Will prompt for new domain if not provided.
+    #[arg(long = "config", short = 'c', help_heading = "Configuration")]
+    new_api_domain: Option<String>,
 }
 
 fn get_subheader(games: &[GameData]) -> String {
@@ -91,6 +96,33 @@ fn has_live_games(games: &[GameData]) -> bool {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    // Handle config update if requested
+    if args.new_api_domain.is_some() {
+        let config_path = Config::get_config_path();
+        let mut config = if Path::new(&config_path).exists() {
+            Config::load()?
+        } else {
+            Config {
+                api_domain: String::new(),
+            }
+        };
+
+        let new_domain = if let Some(domain) = args.new_api_domain {
+            domain
+        } else {
+            print!("Please enter new API domain: ");
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            input.trim().to_string()
+        };
+
+        config.api_domain = new_domain;
+        config.save()?;
+        println!("Config updated successfully!");
+        return Ok(());
+    }
 
     // Load config first to fail early if there's an issue
     let config = Config::load()?;
