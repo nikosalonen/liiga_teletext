@@ -30,7 +30,7 @@ cargo install liiga_teletext
 You can create a symlink to the binary to make it available from anywhere:
 
 ```bash
-sudo ln -s ~/.cargo/bin/liiga_teletext /usr/local/bin/211 # 211 is the channel number of YLE Teksti-TV
+sudo ln -s ~/.cargo/bin/liiga_teletext /usr/local/bin/221 # 221 is the channel number of YLE Teksti-TV
 ```
 
 ### Install from source
@@ -44,21 +44,12 @@ git clone https://github.com/nikosalonen/liiga_teletext.git
 cd liiga_teletext
 ```
 
-3. Create a config.toml file in the project root with your API configuration (example.config.toml is in the root):
-
-```toml
-api_domain = "YOUR_API_DOMAIN"
-disable_video_links = false  # Optional: Set to true to disable video links
-```
-
-4. Build and run the application:
+3. Build and run the application:
 
 ```bash
 cargo build --release
 cargo run --release
 
-# To run without video links:
-cargo run --release -- novideo
 ```
 
 ## Project Structure
@@ -66,7 +57,6 @@ cargo run --release -- novideo
 ```
 liiga_teletext/
 ├── Cargo.toml          # Project dependencies and metadata
-├── config.toml         # API configuration
 ├── src/
 │   ├── main.rs         # Main application logic and event handling
 │   ├── teletext_ui.rs  # UI components and rendering
@@ -81,7 +71,6 @@ liiga_teletext/
 - Data refreshes automatically:
   - Every minute for live games
   - Every hour for non-live games
-- Launch with `novideo` parameter to disable video links (e.g., `cargo run --release -- novideo`)
 
 ## Configuration
 
@@ -91,7 +80,9 @@ On first run, you will be prompted to enter your API domain. This will be saved 
 - macOS: `~/Library/Application Support/liiga_teletext/config.toml`
 - Windows: `%APPDATA%\liiga_teletext\config.toml`
 
-The configuration can be manually edited at any time by modifying this file.
+The configuration can be manually edited at any time by modifying this file. You can:
+
+- Update the API domain
 
 ## Dependencies
 
