@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::teletext_ui::ScoreType;
 use chrono::Local;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveTime, Utc};
 use futures;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -292,18 +292,34 @@ impl HasGoalEvents for DetailedTeam {
     }
 }
 
+fn should_show_todays_games() -> bool {
+    let now = Local::now();
+    let cutoff_time = NaiveTime::from_hms_opt(14, 0, 0).unwrap();
+    let today_cutoff = now.date_naive().and_time(cutoff_time);
+    now.naive_local() >= today_cutoff
+}
+
 pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    // let mut date = "2025-01-11";
+    let now = Local::now();
+    let date = if should_show_todays_games() {
+        now.format("%Y-%m-%d").to_string()
+    } else {
+        // If before 15:00, try to get previous day's games first
+        let yesterday = now
+            .date_naive()
+            .pred_opt()
+            .expect("Date underflow cannot happen with Local::now()");
+        yesterday.format("%Y-%m-%d").to_string()
+    };
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
     let mut response_data: Option<ScheduleResponse> = None;
     let mut found_games = false;
     let mut previous_dates = Vec::new();
 
-    // Try to get games for today first
+    // Try to get games for the selected date first
     for tournament in &tournaments {
         let url = format!(
             "{}/games?tournament={}&date={}",
