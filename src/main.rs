@@ -15,13 +15,31 @@ use std::io::stdout;
 use std::time::{Duration, Instant};
 use teletext_ui::{ScoreType, TeletextPage};
 
-/// Liiga Teletext viewer
+/// Finnish Hockey League (Liiga) Teletext Viewer
+///
+/// A nostalgic teletext-style viewer for Finnish Hockey League scores and game information.
+/// Displays game scores, goal scorers, and special situations (powerplay, overtime, shootout).
+///
+/// In interactive mode (default):
+/// - Use arrow keys (←/→) to navigate between pages
+/// - Press 'r' to refresh data (10s cooldown between refreshes)
+/// - Press 'q' to quit
+///
+/// The viewer automatically refreshes:
+/// - Every minute when there are ongoing games
+/// - Every hour when showing only completed games
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author = "Niko Salonen", version, about, long_about = None)]
 struct Args {
-    /// Show scores once and exit
+    /// Show scores once and exit immediately. Useful for scripts or quick score checks.
+    /// The output stays visible in terminal history.
     #[arg(short, long)]
     once: bool,
+
+    /// Disable clickable video links in the output.
+    /// Useful for terminals that don't support links or for plain text output.
+    #[arg(long = "plain", help_heading = "Display Options")]
+    disable_links: bool,
 }
 
 fn get_subheader(games: &[GameData]) -> String {
@@ -85,13 +103,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 221,
                 "JÄÄKIEKKO".to_string(),
                 "SM-LIIGA".to_string(),
-                config.disable_video_links,
+                args.disable_links,
                 false, // Don't show footer in quick view mode
             );
             error_page.add_error_message("Ei otteluita tänään");
             error_page
         } else {
-            create_page(&games, config.disable_video_links, false)
+            create_page(&games, args.disable_links, false)
         };
 
         let mut stdout = stdout();
@@ -118,13 +136,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 221,
                 "JÄÄKIEKKO".to_string(),
                 "SM-LIIGA".to_string(),
-                config.disable_video_links,
+                args.disable_links,
                 true, // Show footer in interactive mode
             );
             error_page.add_error_message("Ei otteluita tänään");
             error_page
         } else {
-            create_page(&games, config.disable_video_links, true)
+            create_page(&games, args.disable_links, true)
         };
 
         // Initial render
