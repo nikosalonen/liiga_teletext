@@ -38,7 +38,6 @@ fn title_bg() -> Color {
     Color::AnsiValue(46)
 } // Bright green
 
-const TELETEXT_WIDTH: u16 = 50; // Increased from 40 to accommodate longer names
 const TEAM_NAME_WIDTH: usize = 15; // Increased from 10 to fit longer team names
 const VIDEO_ICON: &str = " ▶";
 
@@ -298,7 +297,14 @@ impl TeletextPage {
                             away_team.chars().take(15).collect::<String>()
                         )),
                         SetForegroundColor(result_fg()),
-                        Print(format!("{:>5} {}", time, result_text)),
+                        Print(format!(
+                            "{:>5} {}",
+                            time,
+                            match score_type {
+                                ScoreType::Scheduled => String::new(),
+                                _ => result_text,
+                            }
+                        )),
                         ResetColor
                     )?;
 
