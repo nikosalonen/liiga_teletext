@@ -19,39 +19,17 @@ impl Config {
             let config: Config = toml::from_str(&content)?;
             Ok(config)
         } else {
-            // Try to copy from example config
-            let example_paths = [
-                Path::new("example.config.toml").to_path_buf(), // Current directory
-                std::env::current_exe()?
-                    .parent()
-                    .unwrap()
-                    .join("example.config.toml"), // Executable directory
-            ];
+            print!("Please enter your API domain: ");
+            io::stdout().flush()?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
 
-            for example_path in example_paths {
-                if example_path.exists() {
-                    let example_content = fs::read_to_string(&example_path)?;
-                    let mut config: Config = toml::from_str(&example_content)?;
+            let config = Config {
+                api_domain: input.trim().to_string(),
+            };
 
-                    // If api_domain is ###, prompt user for input
-                    if config.api_domain == "###" {
-                        print!("Please enter your API domain: ");
-                        io::stdout().flush()?;
-                        let mut input = String::new();
-                        io::stdin().read_line(&mut input)?;
-                        config.api_domain = input.trim().to_string();
-                    }
-
-                    config.save()?; // Save the copied config
-                    return Ok(config);
-                }
-            }
-
-            Err(format!(
-                "Neither config nor example config found. Expected config at {} or example at example.config.toml",
-                config_path
-            )
-            .into())
+            config.save()?;
+            Ok(config)
         }
     }
 

@@ -85,17 +85,13 @@ liiga_teletext/
 
 ## Configuration
 
-The application requires a `config.toml` file with the following structure:
+On first run, you will be prompted to enter your API domain. This will be saved to a config file at:
 
-```toml
-api_domain = "YOUR_API_DOMAIN"
-disable_video_links = false  # Optional: Set to true to disable video links
-```
+- Linux: `~/.config/liiga_teletext/config.toml`
+- macOS: `~/Library/Application Support/liiga_teletext/config.toml`
+- Windows: `%APPDATA%\liiga_teletext\config.toml`
 
-You can also disable video links by:
-
-1. Setting `disable_video_links = true` in config.toml
-2. Running the application with the `novideo` parameter
+The configuration can be manually edited at any time by modifying this file.
 
 ## Dependencies
 
