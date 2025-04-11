@@ -370,11 +370,11 @@ impl TeletextPage {
                                             stdout,
                                             Print(" "),
                                             SetForegroundColor(scorer_color),
+                                            Print(format!("{:<12}", event.scorer_name)),
                                             Print("\x1B]8;;"),
                                             Print(url),
                                             Print("\x07"),
-                                            Print(&event.scorer_name),
-                                            Print(" ▶"),
+                                            Print("▶"),
                                             Print("\x1B]8;;\x07"),
                                             ResetColor
                                         )?;
@@ -434,11 +434,11 @@ impl TeletextPage {
                                             stdout,
                                             Print(" "),
                                             SetForegroundColor(scorer_color),
+                                            Print(format!("{:<12}", event.scorer_name)),
                                             Print("\x1B]8;;"),
                                             Print(url),
                                             Print("\x07"),
-                                            Print(&event.scorer_name),
-                                            Print(" ▶"),
+                                            Print("▶"),
                                             Print("\x1B]8;;\x07"),
                                             ResetColor
                                         )?;
