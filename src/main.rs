@@ -63,6 +63,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen)?;
 
+    let mut last_manual_refresh = Instant::now()
+        .checked_sub(Duration::from_secs(10))
+        .unwrap_or_else(Instant::now);
+
     loop {
         let games = fetch_liiga_data().await?;
         let mut page = if games.is_empty() {
@@ -100,7 +104,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             return Ok(());
                         }
                         KeyCode::Char('r') | KeyCode::Char('R') => {
-                            break; // Break inner loop to refresh data
+                            let now = Instant::now();
+                            if now.duration_since(last_manual_refresh) >= Duration::from_secs(10) {
+                                last_manual_refresh = now;
+                                break; // Break inner loop to refresh data
+                            }
                         }
                         KeyCode::Left => {
                             page.previous_page();
