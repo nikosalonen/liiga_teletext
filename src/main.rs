@@ -6,15 +6,20 @@ mod teletext_ui;
 use clap::Parser;
 use config::Config;
 use crossterm::{
+    cursor::MoveTo,
     event::{self, Event, KeyCode},
     execute,
+    style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use data_fetcher::{GameData, fetch_liiga_data};
+use semver::Version;
 use std::io::{Write, stdout};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use teletext_ui::{ScoreType, TeletextPage};
+
+const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Finnish Hockey League (Liiga) Teletext Viewer
 ///
@@ -99,9 +104,51 @@ fn has_live_games(games: &[GameData]) -> bool {
         .any(|game| matches!(game.score_type, ScoreType::Ongoing))
 }
 
+async fn check_latest_version() -> Option<String> {
+    let client = reqwest::Client::new();
+    let url = "https://crates.io/api/v1/crates/liiga_teletext";
+
+    match client.get(url).send().await {
+        Ok(response) => {
+            if let Ok(json) = response.json::<serde_json::Value>().await {
+                if let Some(versions) = json.get("versions") {
+                    if let Some(latest) = versions.as_array()?.first() {
+                        return latest.get("num")?.as_str().map(String::from);
+                    }
+                }
+            }
+        }
+        Err(_) => return None,
+    }
+    None
+}
+
+fn print_version_info(latest_version: &str) {
+    let current = Version::parse(CURRENT_VERSION).unwrap_or_else(|_| Version::new(0, 0, 0));
+    let latest = Version::parse(latest_version).unwrap_or_else(|_| Version::new(0, 0, 0));
+
+    if latest > current {
+        println!();
+        execute!(
+            stdout(),
+            SetForegroundColor(Color::Yellow),
+            Print(format!(
+                "New version available: {} (current: {})\n",
+                latest_version, CURRENT_VERSION
+            )),
+            Print("Update with: cargo install liiga_teletext\n"),
+            ResetColor
+        )
+        .ok();
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    // Check for new version in the background
+    let version_check = tokio::spawn(check_latest_version());
 
     // Handle config update if requested
     if args.new_api_domain.is_some() {
@@ -127,6 +174,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.api_domain = new_domain;
         config.save()?;
         println!("Config updated successfully!");
+
+        // Show version info before exiting
+        if let Ok(Some(latest_version)) = version_check.await {
+            print_version_info(&latest_version);
+        }
         return Ok(());
     }
 
@@ -156,6 +208,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         page.render(&mut stdout)?;
         disable_raw_mode()?;
         println!(); // Add a newline at the end
+
+        // Show version info before exiting
+        if let Ok(Some(latest_version)) = version_check.await {
+            print_version_info(&latest_version);
+        }
         return Ok(());
     }
 
@@ -163,6 +220,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen)?;
+
+    // Show version info in interactive mode if available
+    if let Ok(Some(latest_version)) = version_check.await {
+        if let Ok(current) = Version::parse(CURRENT_VERSION) {
+            if let Ok(latest) = Version::parse(&latest_version) {
+                if latest > current {
+                    execute!(
+                        stdout,
+                        MoveTo(0, 0),
+                        SetForegroundColor(Color::Yellow),
+                        Print(format!(
+                            "New version {} available! Press 'q' and run: cargo install liiga_teletext",
+                            latest_version
+                        )),
+                        ResetColor,
+                    )?;
+                    // Wait a moment to show the message
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+            }
+        }
+    }
 
     let mut last_manual_refresh = Instant::now()
         .checked_sub(Duration::from_secs(10))
