@@ -38,7 +38,10 @@ fn title_bg() -> Color {
     Color::AnsiValue(46)
 } // Bright green
 
-const TEAM_NAME_WIDTH: usize = 15; // Increased from 10 to fit longer team names
+const TELETEXT_WIDTH: u16 = 50;
+const TEAM_NAME_WIDTH: usize = 15;
+const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
+const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 const VIDEO_ICON: &str = " ▶";
 
 pub struct TeletextPage {
@@ -292,13 +295,19 @@ impl TeletextPage {
                         MoveTo(0, current_y),
                         SetForegroundColor(text_fg()),
                         Print(format!(
-                            "{:<15} - {:<15} ",
-                            home_team.chars().take(15).collect::<String>(),
+                            "{:<15}",
+                            home_team.chars().take(15).collect::<String>()
+                        )),
+                        MoveTo(SEPARATOR_OFFSET as u16, current_y), // Use new separator position
+                        Print("- "),
+                        MoveTo(AWAY_TEAM_OFFSET as u16, current_y), // Use adjusted away team position
+                        Print(format!(
+                            "{}",
                             away_team.chars().take(15).collect::<String>()
                         )),
                         SetForegroundColor(result_fg()),
                         Print(format!(
-                            "{:>5} {}",
+                            "{:>12} {}",
                             time,
                             match score_type {
                                 ScoreType::Scheduled => String::new(),
@@ -333,7 +342,7 @@ impl TeletextPage {
                                     stdout,
                                     MoveTo(0, current_y),
                                     SetForegroundColor(scorer_color),
-                                    Print(format!("{:2} ", event.minute)),
+                                    Print(format!("{:2}", event.minute)),
                                 )?;
 
                                 // If there's a video clip and video links are not disabled, make the scorer name a clickable link
@@ -341,6 +350,7 @@ impl TeletextPage {
                                     if !self.disable_video_links {
                                         execute!(
                                             stdout,
+                                            Print(" "),
                                             SetForegroundColor(scorer_color),
                                             Print(format!(
                                                 "\x1B]8;;{}\x1B\\{}{}\x1B]8;;\x1B\\",
@@ -351,16 +361,18 @@ impl TeletextPage {
                                     } else {
                                         execute!(
                                             stdout,
+                                            Print(" "),
                                             SetForegroundColor(scorer_color),
-                                            Print(format!("{:<15}", event.scorer_name)),
+                                            Print(format!("{:<12}", event.scorer_name)),
                                             ResetColor
                                         )?;
                                     }
                                 } else {
                                     execute!(
                                         stdout,
+                                        Print(" "),
                                         SetForegroundColor(scorer_color),
-                                        Print(format!("{:<15}", event.scorer_name)),
+                                        Print(format!("{:<12}", event.scorer_name)),
                                         ResetColor
                                     )?;
                                 }
@@ -370,18 +382,15 @@ impl TeletextPage {
                                 if !goal_type.is_empty() {
                                     execute!(
                                         stdout,
+                                        Print(" "),
                                         SetForegroundColor(result_fg()),
-                                        Print(format!(" {}", goal_type)),
+                                        Print(goal_type),
                                         ResetColor
                                     )?;
                                 }
                             } else {
                                 // Print empty space to align away team scorers
-                                execute!(
-                                    stdout,
-                                    MoveTo(0, current_y),
-                                    Print(format!("{:18}", "")),
-                                )?;
+                                execute!(stdout, Print(format!("{:16}", "")),)?;
                             }
 
                             // Away team scorer
@@ -394,9 +403,9 @@ impl TeletextPage {
                                     };
                                 execute!(
                                     stdout,
-                                    MoveTo(TEAM_NAME_WIDTH as u16 + 3, current_y),
+                                    MoveTo(AWAY_TEAM_OFFSET as u16, current_y), // Use new offset for away team
                                     SetForegroundColor(scorer_color),
-                                    Print(format!("{:2} ", event.minute)),
+                                    Print(format!("{:2}", event.minute)),
                                 )?;
 
                                 // If there's a video clip and video links are not disabled, make the scorer name a clickable link
@@ -404,6 +413,7 @@ impl TeletextPage {
                                     if !self.disable_video_links {
                                         execute!(
                                             stdout,
+                                            Print(" "),
                                             SetForegroundColor(scorer_color),
                                             Print(format!(
                                                 "\x1B]8;;{}\x1B\\{}{}\x1B]8;;\x1B\\",
@@ -414,16 +424,18 @@ impl TeletextPage {
                                     } else {
                                         execute!(
                                             stdout,
+                                            Print(" "),
                                             SetForegroundColor(scorer_color),
-                                            Print(format!("{}", event.scorer_name)),
+                                            Print(format!("{:<12}", event.scorer_name)),
                                             ResetColor
                                         )?;
                                     }
                                 } else {
                                     execute!(
                                         stdout,
+                                        Print(" "),
                                         SetForegroundColor(scorer_color),
-                                        Print(format!("{}", event.scorer_name)),
+                                        Print(format!("{:<12}", event.scorer_name)),
                                         ResetColor
                                     )?;
                                 }
@@ -433,8 +445,9 @@ impl TeletextPage {
                                 if !goal_type.is_empty() {
                                     execute!(
                                         stdout,
+                                        Print(" "),
                                         SetForegroundColor(result_fg()),
-                                        Print(format!(" {}", goal_type)),
+                                        Print(goal_type),
                                         ResetColor
                                     )?;
                                 }
