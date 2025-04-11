@@ -20,8 +20,8 @@ fn subheader_fg() -> Color {
     Color::AnsiValue(46)
 } // Bright green
 fn result_fg() -> Color {
-    Color::AnsiValue(226)
-} // Bright yellow
+    Color::AnsiValue(46)
+} // Bright green
 fn text_fg() -> Color {
     Color::AnsiValue(231)
 } // Pure white
@@ -329,7 +329,8 @@ impl TeletextPage {
                         )),
                         SetForegroundColor(match score_type {
                             ScoreType::Final => result_fg(),
-                            _ => text_fg(),
+                            ScoreType::Ongoing => text_fg(),
+                            ScoreType::Scheduled => text_fg(),
                         }),
                         MoveTo(45, current_y),
                         Print(time_display),
