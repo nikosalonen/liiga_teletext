@@ -200,6 +200,9 @@ impl GoalEventData {
         if self.goal_types.contains(&"IM".to_string()) {
             indicators.push("IM");
         }
+        if self.goal_types.contains(&"VT".to_string()) {
+            indicators.push("VT");
+        }
         indicators.join(" ")
     }
 }
