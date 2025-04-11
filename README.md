@@ -4,12 +4,12 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 
 <img width="503" alt="image" src="https://github.com/user-attachments/assets/e4c44281-039e-4152-b505-13cef5ec2889" />
 
-
 ## Features
 
 - Teletext-style interface with colored headers and content
 - Live game updates with automatic refresh
 - Support for multiple tournaments (regular season, playoffs, playout, qualifications)
+- Command-line argument support using clap
 - Detailed game information including:
   - Game status (scheduled, ongoing, finished)
   - Score with overtime/shootout indicators
@@ -51,7 +51,7 @@ cargo run --release -- novideo
 
 ```
 liiga_teletext/
-├── Cargo.toml
+├── Cargo.toml          # Project dependencies and metadata
 ├── config.toml         # API configuration
 ├── src/
 │   ├── main.rs         # Main application logic and event handling
@@ -83,6 +83,18 @@ You can also disable video links by:
 1. Setting `disable_video_links = true` in config.toml
 2. Running the application with the `novideo` parameter
 
+## Dependencies
+
+Key dependencies include:
+
+- chrono 0.4.40 - Date and time functionality
+- crossterm 0.29.0 - Terminal manipulation
+- reqwest 0.12.15 - HTTP client
+- tokio 1.44 - Async runtime
+- clap 4.5.35 - Command-line argument parsing
+- serde 1.0 - Serialization framework
+- toml 0.8 - Configuration file parsing
+
 ## Features Status
 
 - [x] Real API integration
@@ -92,6 +104,7 @@ You can also disable video links by:
 - [x] Support for multiple tournaments
 - [x] Automatic refresh based on game state
 - [x] Configurable video link display
+- [x] Command-line argument support
 - [ ] Display standings
 - [ ] Display season statistics
 - [ ] Configuration options for refresh intervals
