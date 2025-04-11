@@ -32,6 +32,7 @@ You can create a symlink to the binary to make it available from anywhere:
 
 ```bash
 sudo ln -s ~/.cargo/bin/liiga_teletext /usr/local/bin/221 # 221 is the channel number of YLE Teksti-TV
+
 ```
 
 ### Install from source
@@ -107,10 +108,7 @@ Key dependencies include:
 - [x] Automatic refresh based on game state
 - [x] Configurable video link display
 - [x] Command-line argument support
-- [ ] Display standings
-- [ ] Display season statistics
-- [ ] Configuration options for refresh intervals
-- [ ] Custom color schemes
+
 
 ## Contributing
 
