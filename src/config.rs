@@ -1,72 +1,33 @@
 // src/config.rs
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::error::Error;
 use std::fs;
+use std::io::Write;
+use std::path::Path;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub api_domain: String,
-    #[serde(default)]
-    pub disable_video_links: bool,
 }
 
 impl Config {
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        let config_path = dirs::config_dir()
-            .ok_or("Could not find config directory")?
-            .join("liiga_teletext")
-            .join("config.toml");
-
-        if !config_path.exists() {
-            // Create default config if it doesn't exist
-            fs::create_dir_all(config_path.parent().unwrap())?;
-            fs::write(&config_path, include_str!("../config.toml"))?;
-        }
-
-        let mut config: Config = toml::from_str(&fs::read_to_string(config_path)?)?;
-
-        // Check for command line arguments
-        let args: Vec<String> = std::env::args().collect();
-        if args.contains(&"novideo".to_string()) {
-            config.disable_video_links = true;
-        }
-
-        Ok(config)
-    }
-}
-
-// Implementation commented out until needed
-/*
-impl Config {
-    pub fn load() -> Self {
+    pub fn load() -> Result<Self, Box<dyn Error>> {
         let config_path = Config::get_config_path();
 
         if Path::new(&config_path).exists() {
-            match fs::read_to_string(&config_path) {
-                Ok(content) => match serde_json::from_str(&content) {
-                    Ok(config) => return config,
-                    Err(e) => {
-                        eprintln!("Error parsing config file: {}", e);
-                        println!("Using default configuration");
-                    }
-                },
-                Err(e) => {
-                    eprintln!("Error reading config file: {}", e);
-                    println!("Using default configuration");
-                }
-            }
+            let content = fs::read_to_string(&config_path)?;
+            let config: Config = toml::from_str(&content)?;
+            Ok(config)
         } else {
-            println!("No config file found. Creating default configuration.");
-            let config = Config::default();
-            if let Err(e) = config.save() {
-                eprintln!("Error saving default config: {}", e);
-            }
-            return config;
+            Err(format!(
+                "Config not found. Copy example.config.toml to {} and set api_domain",
+                config_path
+            )
+            .into())
         }
-
-        Config::default()
     }
 
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(&self) -> Result<(), Box<dyn Error>> {
         let config_path = Config::get_config_path();
         let config_dir = Path::new(&config_path).parent().unwrap();
 
@@ -74,7 +35,7 @@ impl Config {
             fs::create_dir_all(config_dir)?;
         }
 
-        let content = serde_json::to_string_pretty(self)?;
+        let content = toml::to_string_pretty(self)?;
         let mut file = fs::File::create(&config_path)?;
         file.write_all(content.as_bytes())?;
 
@@ -82,12 +43,11 @@ impl Config {
     }
 
     fn get_config_path() -> String {
-        let home = dirs::home_dir().unwrap_or_else(|| Path::new(".").to_path_buf());
-        home.join(".config")
+        dirs::config_dir()
+            .unwrap_or_else(|| Path::new(".").to_path_buf())
             .join("liiga_teletext")
-            .join("config.json")
+            .join("config.toml")
             .to_string_lossy()
             .to_string()
     }
 }
-*/
