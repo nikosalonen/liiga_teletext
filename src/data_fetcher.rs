@@ -311,6 +311,72 @@ fn should_show_todays_games() -> bool {
     now.naive_local() >= today_cutoff
 }
 
+async fn fetch_tournament_data(
+    client: &Client,
+    config: &Config,
+    tournament: &str,
+    date: &str,
+) -> Result<Option<ScheduleResponse>, Box<dyn Error>> {
+    let url = format!(
+        "{}/games?tournament={}&date={}",
+        config.api_domain, tournament, date
+    );
+
+    let response = client.get(&url).send().await?;
+    let response_text = response.text().await?;
+    let response = serde_json::from_str::<ScheduleResponse>(&response_text)?;
+    
+    Ok(Some(response))
+}
+
+async fn fetch_previous_day_data(
+    client: &Client,
+    config: &Config,
+    tournaments: &[&str],
+    previous_dates: &[String],
+) -> Result<Option<Vec<ScheduleResponse>>, Box<dyn Error>> {
+    if previous_dates.is_empty() {
+        return Ok(None);
+    }
+
+    // Sort dates in descending order to get the most recent one
+    let mut sorted_dates = previous_dates.to_vec();
+    sorted_dates.sort_by(|a, b| b.cmp(a));
+    let nearest_date = &sorted_dates[0];
+
+    for tournament in tournaments {
+        if let Ok(Some(response)) = fetch_tournament_data(client, config, tournament, nearest_date).await {
+            if !response.games.is_empty() {
+                return Ok(Some(vec![response]));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
+    let is_overtime = matches!(
+        game.finished_type.as_deref(),
+        Some("ENDED_DURING_EXTENDED_GAME_TIME")
+    );
+
+    let is_shootout = matches!(
+        game.finished_type.as_deref(),
+        Some("ENDED_DURING_WINNING_SHOT_COMPETITION")
+    );
+
+    let score_type = if !game.started {
+        ScoreType::Scheduled
+    } else if !game.ended {
+        ScoreType::Ongoing
+    } else {
+        ScoreType::Final
+    };
+
+    (score_type, is_overtime, is_shootout)
+}
+
 pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
@@ -334,160 +400,85 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
 
     // Try to get games for the selected date first
     for tournament in &tournaments {
-        let url = format!(
-            "{}/games?tournament={}&date={}",
-            config.api_domain, tournament, date
-        );
-
-        match client.get(&url).send().await {
-            Ok(response) => {
-                match response.text().await {
-                    Ok(response_text) => {
-                        match serde_json::from_str::<ScheduleResponse>(&response_text) {
-                            Ok(response) => {
-                                if !response.games.is_empty() {
-                                    response_data.push(response);
-                                    found_games = true;
-                                    continue;
-                                }
-                                // Store previous game date if it exists
-                                if !response.previousGameDate.is_empty() {
-                                    previous_dates.push(response.previousGameDate.clone());
-                                }
-                                // Only store the response if we haven't found any games yet and this is the last tournament
-                                if response_data.is_empty()
-                                    && *tournament == tournaments[tournaments.len() - 1]
-                                {
-                                    response_data.push(response);
-                                }
-                            }
-                            Err(e) => eprintln!("Failed to parse JSON for {}: {}", tournament, e),
-                        }
-                    }
-                    Err(e) => eprintln!("Failed to get response text for {}: {}", tournament, e),
+        match fetch_tournament_data(&client, &config, tournament, &date).await {
+            Ok(Some(response)) => {
+                if !response.games.is_empty() {
+                    response_data.push(response);
+                    found_games = true;
+                    continue;
+                }
+                // Store previous game date if it exists
+                if !response.previousGameDate.is_empty() {
+                    previous_dates.push(response.previousGameDate.clone());
+                }
+                // Only store the response if we haven't found any games yet and this is the last tournament
+                if response_data.is_empty() && *tournament == tournaments[tournaments.len() - 1] {
+                    response_data.push(response);
                 }
             }
-            Err(e) => eprintln!("Failed to send request for {}: {}", tournament, e),
+            Err(e) => eprintln!("Failed to fetch data for {}: {}", tournament, e),
+            Ok(None) => continue,
         }
     }
 
     // If no games found in any tournament today, try the nearest previous game date
-    if !found_games && !previous_dates.is_empty() {
-        // Sort dates in descending order to get the most recent one
-        previous_dates.sort_by(|a, b| b.cmp(a));
-        let nearest_date = &previous_dates[0];
-
-        let mut prev_day_response: Vec<ScheduleResponse> = Vec::new();
-
-        for tournament in &tournaments {
-            let url = format!(
-                "{}/games?tournament={}&date={}",
-                config.api_domain, tournament, nearest_date
-            );
-
-            match client.get(&url).send().await {
-                Ok(response) => match response.text().await {
-                    Ok(response_text) => {
-                        match serde_json::from_str::<ScheduleResponse>(&response_text) {
-                            Ok(response) => {
-                                if !response.games.is_empty() {
-                                    prev_day_response.push(response);
-                                    found_games = true;
-                                    break;
-                                }
-                                // Only store the response if we haven't found any games yet and this is the last tournament
-                                if prev_day_response.is_empty()
-                                    && *tournament == tournaments[tournaments.len() - 1]
-                                {
-                                    prev_day_response.push(response);
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("Failed to parse JSON for {}: {}", tournament, e)
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to get response text for {}: {}", tournament, e)
-                    }
-                },
-                Err(e) => eprintln!("Failed to send request for {}: {}", tournament, e),
-            }
-        }
-
-        if found_games {
-            response_data = prev_day_response.to_vec();
+    if !found_games {
+        if let Ok(Some(prev_day_response)) = fetch_previous_day_data(&client, &config, &tournaments, &previous_dates).await {
+            response_data = prev_day_response;
         }
     }
 
     // Process games if we found any
     if !response_data.is_empty() {
         for response in &response_data {
-            let games =
-                futures::future::try_join_all(response.games.clone().into_iter().map(|m| {
-                    let client = client.clone();
-                    let config = config.clone();
-                    async move {
-                        let time = if !m.started {
-                            format_time(&m.start)?
-                        } else {
-                            String::new()
-                        };
+            let games = futures::future::try_join_all(response.games.clone().into_iter().map(|m| {
+                let client = client.clone();
+                let config = config.clone();
+                async move {
+                    let time = if !m.started {
+                        format_time(&m.start)?
+                    } else {
+                        String::new()
+                    };
 
-                        let result = format!("{}-{}", m.home_team.goals, m.away_team.goals);
-                        let is_overtime = matches!(
-                            m.finished_type.as_deref(),
-                            Some("ENDED_DURING_EXTENDED_GAME_TIME")
-                        );
+                    let result = format!("{}-{}", m.home_team.goals, m.away_team.goals);
+                    let (score_type, is_overtime, is_shootout) = determine_game_status(&m);
 
-                        let is_shootout = matches!(
-                            m.finished_type.as_deref(),
-                            Some("ENDED_DURING_WINNING_SHOT_COMPETITION")
-                        );
-
-                        let score_type = if !m.started {
-                            ScoreType::Scheduled
-                        } else if !m.ended {
-                            ScoreType::Ongoing
-                        } else {
-                            ScoreType::Final
-                        };
-
-                        let has_goals = m
-                            .home_team
+                    let has_goals = m
+                        .home_team
+                        .goal_events
+                        .iter()
+                        .any(|g| !g.goal_types.contains(&"RL0".to_string()))
+                        || m.away_team
                             .goal_events
                             .iter()
-                            .any(|g| !g.goal_types.contains(&"RL0".to_string()))
-                            || m.away_team
-                                .goal_events
-                                .iter()
-                                .any(|g| !g.goal_types.contains(&"RL0".to_string()));
+                            .any(|g| !g.goal_types.contains(&"RL0".to_string()));
 
-                        let goal_events = if !m.started {
-                            Vec::new()
-                        } else if has_goals || !m.ended {
-                            // Fetch detailed data if there are goals or game is ongoing
-                            fetch_detailed_game_data(&client, &config, &m).await
-                        } else {
-                            Vec::new()
-                        };
+                    let goal_events = if !m.started {
+                        Vec::new()
+                    } else if has_goals || !m.ended {
+                        // Fetch detailed data if there are goals or game is ongoing
+                        fetch_detailed_game_data(&client, &config, &m).await
+                    } else {
+                        Vec::new()
+                    };
 
-                        Ok::<GameData, Box<dyn Error>>(GameData {
-                            home_team: m.home_team.team_name,
-                            away_team: m.away_team.team_name,
-                            time,
-                            result,
-                            score_type,
-                            is_overtime,
-                            is_shootout,
-                            serie: m.serie,
-                            goal_events,
-                            played_time: m.game_time,
-                            finished_type: m.finished_type.unwrap_or_default(),
-                        })
-                    }
-                }))
-                .await?;
+                    Ok::<GameData, Box<dyn Error>>(GameData {
+                        home_team: m.home_team.team_name,
+                        away_team: m.away_team.team_name,
+                        time,
+                        result,
+                        score_type,
+                        is_overtime,
+                        is_shootout,
+                        serie: m.serie,
+                        goal_events,
+                        played_time: m.game_time,
+                        finished_type: m.finished_type.unwrap_or_default(),
+                    })
+                }
+            }))
+            .await?;
             all_games.extend(games);
         }
     }
