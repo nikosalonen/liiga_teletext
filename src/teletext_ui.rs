@@ -355,7 +355,7 @@ impl TeletextPage {
                         for i in 0..max_scorers {
                             // Home team scorer
                             if let Some(event) = home_scorers.get(i) {
-                                let scorer_color = if event.is_winning_goal && (*is_overtime || *is_shootout) {
+                                let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout)) || event.goal_types.contains(&"VL".to_string()) {
                                     winning_goal_fg()
                                 } else {
                                     home_scorer_fg()
@@ -416,7 +416,7 @@ impl TeletextPage {
 
                             // Away team scorer
                             if let Some(event) = away_scorers.get(i) {
-                                let scorer_color = if event.is_winning_goal && (*is_overtime || *is_shootout) {
+                                let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout)) || event.goal_types.contains(&"VL".to_string()) {
                                     winning_goal_fg()
                                 } else {
                                     away_scorer_fg()
