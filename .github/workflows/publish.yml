@@ -14,6 +14,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -33,9 +34,13 @@ jobs:
 
       - name: Commit version update
         run: |
-          git add Cargo.toml Cargo.lock
-          git commit -m "CI: update version to ${VERSION}"
-          git push
+          # Get the default branch name
+          DEFAULT_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
+          # Checkout the default branch
+          git checkout $DEFAULT_BRANCH
+          git add Cargo.toml
+          git commit -m "chore: update version to ${VERSION}"
+          git push origin $DEFAULT_BRANCH
 
       - name: Run tests
         run: cargo test --all-features
