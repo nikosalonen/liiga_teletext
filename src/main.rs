@@ -265,6 +265,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut last_manual_refresh = Instant::now()
         .checked_sub(Duration::from_secs(10))
         .unwrap_or_else(Instant::now);
+    let mut last_page_change = Instant::now()
+        .checked_sub(Duration::from_millis(200))
+        .unwrap_or_else(Instant::now);
 
     loop {
         let games = fetch_liiga_data(args.date.clone()).await?;
@@ -312,12 +315,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         KeyCode::Left => {
-                            page.previous_page();
-                            page.render(&mut stdout)?;
+                            let now = Instant::now();
+                            if now.duration_since(last_page_change) >= Duration::from_millis(200) {
+                                last_page_change = now;
+                                page.previous_page();
+                                page.render(&mut stdout)?;
+                            }
                         }
                         KeyCode::Right => {
-                            page.next_page();
-                            page.render(&mut stdout)?;
+                            let now = Instant::now();
+                            if now.duration_since(last_page_change) >= Duration::from_millis(200) {
+                                last_page_change = now;
+                                page.next_page();
+                                page.render(&mut stdout)?;
+                            }
                         }
                         _ => {}
                     }
