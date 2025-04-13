@@ -765,4 +765,204 @@ mod tests {
             _ => panic!("Should be an error message"),
         }
     }
+
+    #[test]
+    fn test_game_result_display() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+        );
+
+        // Test scheduled game display
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "Home".to_string(),
+            away_team: "Away".to_string(),
+            time: "18.00".to_string(),
+            result: "0-0".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 0,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+        }));
+
+        // Test ongoing game with goals
+        let goal_events = vec![
+            GoalEventData {
+                scorer_player_id: 123,
+                scorer_name: "Scorer".to_string(),
+                minute: 10,
+                home_team_score: 1,
+                away_team_score: 0,
+                is_winning_goal: false,
+                goal_types: vec!["YV".to_string()],
+                is_home_team: true,
+                video_clip_url: Some("http://example.com".to_string()),
+            },
+            GoalEventData {
+                scorer_player_id: 456,
+                scorer_name: "Away Scorer".to_string(),
+                minute: 25,
+                home_team_score: 1,
+                away_team_score: 1,
+                is_winning_goal: false,
+                goal_types: vec![],
+                is_home_team: false,
+                video_clip_url: None,
+            },
+        ];
+
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "Home".to_string(),
+            away_team: "Away".to_string(),
+            time: "".to_string(),
+            result: "1-1".to_string(),
+            score_type: ScoreType::Ongoing,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: goal_events.clone(),
+            played_time: 1500,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+        }));
+
+        // Test finished game with overtime
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "Home OT".to_string(),
+            away_team: "Away OT".to_string(),
+            time: "".to_string(),
+            result: "3-2".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: true,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 3900,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+        }));
+
+        // Test finished game with shootout
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "Home SO".to_string(),
+            away_team: "Away SO".to_string(),
+            time: "".to_string(),
+            result: "4-3".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: true,
+            goal_events: vec![],
+            played_time: 3600,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+        }));
+
+        let (content, _) = page.get_page_content();
+        assert_eq!(content.len(), 4, "Should show all games");
+
+        // Verify each game type is present
+        let mut found_scheduled = false;
+        let mut found_ongoing = false;
+        let mut found_overtime = false;
+        let mut found_shootout = false;
+
+        for row in content {
+            if let TeletextRow::GameResult {
+                score_type,
+                is_overtime,
+                is_shootout,
+                ..
+            } = row
+            {
+                match score_type {
+                    ScoreType::Scheduled => found_scheduled = true,
+                    ScoreType::Ongoing => found_ongoing = true,
+                    ScoreType::Final if *is_overtime => found_overtime = true,
+                    ScoreType::Final if *is_shootout => found_shootout = true,
+                    _ => {}
+                }
+            }
+        }
+
+        assert!(found_scheduled, "Should contain scheduled game");
+        assert!(found_ongoing, "Should contain ongoing game");
+        assert!(found_overtime, "Should contain overtime game");
+        assert!(found_shootout, "Should contain shootout game");
+    }
+
+    #[test]
+    fn test_video_link_display() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false, // video links enabled
+            true,
+            false,
+        );
+
+        let goal_events = vec![GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Scorer".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec![],
+            is_home_team: true,
+            video_clip_url: Some("http://example.com".to_string()),
+        }];
+
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "Home".to_string(),
+            away_team: "Away".to_string(),
+            time: "".to_string(),
+            result: "1-0".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: goal_events.clone(),
+            played_time: 3600,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+        }));
+
+        // Create another page with video links disabled
+        let mut page_no_video = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            true, // video links disabled
+            true,
+            false,
+        );
+
+        page_no_video.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "Home".to_string(),
+            away_team: "Away".to_string(),
+            time: "".to_string(),
+            result: "1-0".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: goal_events,
+            played_time: 3600,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+        }));
+
+        let (content, _) = page.get_page_content();
+        let (content_no_video, _) = page_no_video.get_page_content();
+
+        assert_eq!(
+            content.len(),
+            content_no_video.len(),
+            "Should have same number of games"
+        );
+    }
 }
