@@ -79,6 +79,35 @@ pub enum ScoreType {
     Scheduled, // Scheduled game with no score yet
 }
 
+#[derive(Debug, Clone)]
+pub struct GameResultData {
+    pub home_team: String,
+    pub away_team: String,
+    pub time: String,
+    pub result: String,
+    pub score_type: ScoreType,
+    pub is_overtime: bool,
+    pub is_shootout: bool,
+    pub goal_events: Vec<GoalEventData>,
+    pub played_time: i32,
+}
+
+impl GameResultData {
+    pub fn new(game_data: &crate::data_fetcher::GameData) -> Self {
+        Self {
+            home_team: game_data.home_team.clone(),
+            away_team: game_data.away_team.clone(),
+            time: game_data.time.clone(),
+            result: game_data.result.clone(),
+            score_type: game_data.score_type.clone(),
+            is_overtime: game_data.is_overtime,
+            is_shootout: game_data.is_shootout,
+            goal_events: game_data.goal_events.clone(),
+            played_time: game_data.played_time,
+        }
+    }
+}
+
 impl TeletextPage {
     pub fn new(
         page_number: u16,
@@ -106,28 +135,17 @@ impl TeletextPage {
         }
     }
 
-    pub fn add_game_result(
-        &mut self,
-        home_team: String,
-        away_team: String,
-        time: String,
-        result: String,
-        score_type: ScoreType,
-        is_overtime: bool,
-        is_shootout: bool,
-        goal_events: Vec<GoalEventData>,
-        played_time: i32,
-    ) {
+    pub fn add_game_result(&mut self, game_data: GameResultData) {
         self.content_rows.push(TeletextRow::GameResult {
-            home_team,
-            away_team,
-            time,
-            result,
-            score_type,
-            is_overtime,
-            is_shootout,
-            goal_events,
-            played_time,
+            home_team: game_data.home_team,
+            away_team: game_data.away_team,
+            time: game_data.time,
+            result: game_data.result,
+            score_type: game_data.score_type,
+            is_overtime: game_data.is_overtime,
+            is_shootout: game_data.is_shootout,
+            goal_events: game_data.goal_events,
+            played_time: game_data.played_time,
         });
     }
 
@@ -144,7 +162,7 @@ impl TeletextPage {
                 let away_scorers = goal_events.iter().filter(|e| !e.is_home_team).count();
                 let scorer_lines = home_scorers.max(away_scorers);
                 let spacer = 1; // Space between games
-                (base_height + scorer_lines as u16 + spacer) as u16
+                base_height + scorer_lines as u16 + spacer
             }
             TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
         }
@@ -170,12 +188,10 @@ impl TeletextPage {
             if current_height + game_height <= available_height {
                 current_page_items.push(game);
                 current_height += game_height;
-            } else {
-                if !current_page_items.is_empty() {
-                    items_per_page.push(current_page_items.len());
-                    current_page_items = vec![game];
-                    current_height = game_height;
-                }
+            } else if !current_page_items.is_empty() {
+                items_per_page.push(current_page_items.len());
+                current_page_items = vec![game];
+                current_height = game_height;
             }
         }
         if !current_page_items.is_empty() {
@@ -185,7 +201,7 @@ impl TeletextPage {
         // Calculate the starting index for the current page
         let mut start_idx = 0;
         for (page_idx, &items) in items_per_page.iter().enumerate() {
-            if page_idx as usize == self.current_page {
+            if page_idx == self.current_page {
                 break;
             }
             start_idx += items;
@@ -355,7 +371,10 @@ impl TeletextPage {
                         for i in 0..max_scorers {
                             // Home team scorer
                             if let Some(event) = home_scorers.get(i) {
-                                let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout)) || event.goal_types.contains(&"VL".to_string()) {
+                                let scorer_color = if (event.is_winning_goal
+                                    && (*is_overtime || *is_shootout))
+                                    || event.goal_types.contains(&"VL".to_string())
+                                {
                                     winning_goal_fg()
                                 } else {
                                     home_scorer_fg()
@@ -416,7 +435,10 @@ impl TeletextPage {
 
                             // Away team scorer
                             if let Some(event) = away_scorers.get(i) {
-                                let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout)) || event.goal_types.contains(&"VL".to_string()) {
+                                let scorer_color = if (event.is_winning_goal
+                                    && (*is_overtime || *is_shootout))
+                                    || event.goal_types.contains(&"VL".to_string())
+                                {
                                     winning_goal_fg()
                                 } else {
                                     away_scorer_fg()
@@ -568,17 +590,19 @@ mod tests {
                 },
             ];
 
-            page.add_game_result(
-                format!("Home {}", i),
-                format!("Away {}", i),
-                "18.00".to_string(),
-                "1-1".to_string(),
-                ScoreType::Final,
-                false,
-                false,
-                goal_events,
-                1200,
-            );
+            page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+                home_team: format!("Home {}", i),
+                away_team: format!("Away {}", i),
+                time: "18.00".to_string(),
+                result: "1-1".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                goal_events: goal_events,
+                played_time: 1200,
+                serie: "RUNKOSARJA".to_string(),
+                finished_type: String::new(),
+            }));
         }
 
         let initial_page = page.current_page;
@@ -631,17 +655,19 @@ mod tests {
                 },
             ];
 
-            page.add_game_result(
-                format!("Home {}", i),
-                format!("Away {}", i),
-                "18.00".to_string(),
-                "1-1".to_string(),
-                ScoreType::Final,
-                false,
-                false,
-                goal_events,
-                1200,
-            );
+            page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+                home_team: format!("Home {}", i),
+                away_team: format!("Away {}", i),
+                time: "18.00".to_string(),
+                result: "1-1".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                goal_events: goal_events,
+                played_time: 1200,
+                serie: "RUNKOSARJA".to_string(),
+                finished_type: String::new(),
+            }));
         }
 
         let total_pages = page.total_pages();
@@ -674,17 +700,19 @@ mod tests {
         );
 
         // Test game without goals
-        page.add_game_result(
-            "Home".to_string(),
-            "Away".to_string(),
-            "18.00".to_string(),
-            "0-0".to_string(),
-            ScoreType::Scheduled,
-            false,
-            false,
-            vec![],
-            0,
-        );
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "Home".to_string(),
+            away_team: "Away".to_string(),
+            time: "18.00".to_string(),
+            result: "0-0".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 0,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+        }));
 
         // Test game with goals
         let goals = vec![GoalEventData {
@@ -699,17 +727,19 @@ mod tests {
             video_clip_url: None,
         }];
 
-        page.add_game_result(
-            "Home".to_string(),
-            "Away".to_string(),
-            "18.00".to_string(),
-            "1-0".to_string(),
-            ScoreType::Final,
-            false,
-            false,
-            goals,
-            600,
-        );
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "Home".to_string(),
+            away_team: "Away".to_string(),
+            time: "18.00".to_string(),
+            result: "1-0".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: goals,
+            played_time: 600,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+        }));
 
         let (content, _) = page.get_page_content();
         assert_eq!(content.len(), 2, "Should show both games");
