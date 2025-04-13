@@ -43,7 +43,6 @@ fn title_bg() -> Color {
 
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
-const VIDEO_ICON: &str = " ▶";
 
 pub struct TeletextPage {
     page_number: u16,
