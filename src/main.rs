@@ -17,7 +17,7 @@ use semver::Version;
 use std::io::{Write, stdout};
 use std::path::Path;
 use std::time::{Duration, Instant};
-use teletext_ui::{ScoreType, TeletextPage};
+use teletext_ui::{GameResultData, ScoreType, TeletextPage};
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -88,17 +88,7 @@ fn create_page(
     );
 
     for game in games {
-        page.add_game_result(
-            game.home_team.clone(),
-            game.away_team.clone(),
-            game.time.clone(),
-            game.result.clone(),
-            game.score_type.clone(),
-            game.is_overtime,
-            game.is_shootout,
-            game.goal_events.clone(),
-            game.played_time,
-        );
+        page.add_game_result(GameResultData::new(game));
     }
 
     page

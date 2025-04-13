@@ -2,7 +2,6 @@ use crate::config::Config;
 use crate::teletext_ui::ScoreType;
 use chrono::Local;
 use chrono::{DateTime, NaiveTime, Utc};
-use futures;
 use lazy_static::lazy_static;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
