@@ -50,6 +50,11 @@ struct Args {
     /// Update API domain in config. Will prompt for new domain if not provided.
     #[arg(long = "config", short = 'c', help_heading = "Configuration")]
     new_api_domain: Option<String>,
+
+    /// Show games for a specific date in YYYY-MM-DD format.
+    /// If not provided, shows today's or yesterday's games based on current time.
+    #[arg(long = "date", short = 'd', help_heading = "Display Options")]
+    date: Option<String>,
 }
 
 fn get_subheader(games: &[GameData]) -> String {
@@ -111,7 +116,7 @@ fn has_live_games(games: &[GameData]) -> bool {
 /// or `None` if there was an error checking or if the current version is up to date.
 async fn check_latest_version() -> Option<String> {
     const CRATES_IO_URL: &str = "https://crates.io/api/v1/crates/liiga_teletext";
-    
+
     let client = reqwest::Client::new();
     let response = match client.get(CRATES_IO_URL).send().await {
         Ok(resp) => resp,
@@ -201,7 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.once {
         // Quick view mode - just show the data once and exit
-        let games = fetch_liiga_data().await?;
+        let games = fetch_liiga_data(args.date).await?;
         let page = if games.is_empty() {
             let mut error_page = TeletextPage::new(
                 221,
@@ -262,7 +267,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(Instant::now);
 
     loop {
-        let games = fetch_liiga_data().await?;
+        let games = fetch_liiga_data(args.date.clone()).await?;
         let mut page = if games.is_empty() {
             let mut error_page = TeletextPage::new(
                 221,

@@ -229,11 +229,9 @@ fn process_team_goals(
     is_home_team: bool,
     events: &mut Vec<GoalEventData>,
 ) {
-    for goal in team
-        .goal_events()
-        .iter()
-        .filter(|g| !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string()))
-    {
+    for goal in team.goal_events().iter().filter(|g| {
+        !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
+    }) {
         events.push(GoalEventData {
             scorer_player_id: goal.scorer_player_id,
             scorer_name: player_names
@@ -325,7 +323,7 @@ async fn fetch_tournament_data(
     let response = client.get(&url).send().await?;
     let response_text = response.text().await?;
     let response = serde_json::from_str::<ScheduleResponse>(&response_text)?;
-    
+
     Ok(Some(response))
 }
 
@@ -345,7 +343,9 @@ async fn fetch_previous_day_data(
     let nearest_date = &sorted_dates[0];
 
     for tournament in tournaments {
-        if let Ok(Some(response)) = fetch_tournament_data(client, config, tournament, nearest_date).await {
+        if let Ok(Some(response)) =
+            fetch_tournament_data(client, config, tournament, nearest_date).await
+        {
             if !response.games.is_empty() {
                 return Ok(Some(vec![response]));
             }
@@ -377,21 +377,27 @@ fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
     (score_type, is_overtime, is_shootout)
 }
 
-pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
+pub async fn fetch_liiga_data(
+    custom_date: Option<String>,
+) -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
-    let now = Local::now();
-    // let date = if should_show_todays_games() {
-    //     now.format("%Y-%m-%d").to_string()
-    // } else {
-    //     // If before 15:00, try to get previous day's games first
-    //     let yesterday = now
-    //         .date_naive()
-    //         .pred_opt()
-    //         .expect("Date underflow cannot happen with Local::now()");
-    //     yesterday.format("%Y-%m-%d").to_string()
-    // };
-     let date = "2025-02-26".to_string();
+    let date = if let Some(date) = custom_date {
+        date
+    } else {
+        let now = Local::now();
+        if should_show_todays_games() {
+            now.format("%Y-%m-%d").to_string()
+        } else {
+            // If before 15:00, try to get previous day's games first
+            let yesterday = now
+                .date_naive()
+                .pred_opt()
+                .expect("Date underflow cannot happen with Local::now()");
+            yesterday.format("%Y-%m-%d").to_string()
+        }
+    };
+    // let date = "2025-02-01".to_string();
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
     let mut response_data: Vec<ScheduleResponse> = Vec::new();
@@ -423,7 +429,9 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
 
     // If no games found in any tournament today, try the nearest previous game date
     if !found_games {
-        if let Ok(Some(prev_day_response)) = fetch_previous_day_data(&client, &config, &tournaments, &previous_dates).await {
+        if let Ok(Some(prev_day_response)) =
+            fetch_previous_day_data(&client, &config, &tournaments, &previous_dates).await
+        {
             response_data = prev_day_response;
         }
     }
@@ -431,54 +439,55 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     // Process games if we found any
     if !response_data.is_empty() {
         for response in &response_data {
-            let games = futures::future::try_join_all(response.games.clone().into_iter().map(|m| {
-                let client = client.clone();
-                let config = config.clone();
-                async move {
-                    let time = if !m.started {
-                        format_time(&m.start)?
-                    } else {
-                        String::new()
-                    };
+            let games =
+                futures::future::try_join_all(response.games.clone().into_iter().map(|m| {
+                    let client = client.clone();
+                    let config = config.clone();
+                    async move {
+                        let time = if !m.started {
+                            format_time(&m.start)?
+                        } else {
+                            String::new()
+                        };
 
-                    let result = format!("{}-{}", m.home_team.goals, m.away_team.goals);
-                    let (score_type, is_overtime, is_shootout) = determine_game_status(&m);
+                        let result = format!("{}-{}", m.home_team.goals, m.away_team.goals);
+                        let (score_type, is_overtime, is_shootout) = determine_game_status(&m);
 
-                    let has_goals = m
-                        .home_team
-                        .goal_events
-                        .iter()
-                        .any(|g| !g.goal_types.contains(&"RL0".to_string()))
-                        || m.away_team
+                        let has_goals = m
+                            .home_team
                             .goal_events
                             .iter()
-                            .any(|g| !g.goal_types.contains(&"RL0".to_string()));
+                            .any(|g| !g.goal_types.contains(&"RL0".to_string()))
+                            || m.away_team
+                                .goal_events
+                                .iter()
+                                .any(|g| !g.goal_types.contains(&"RL0".to_string()));
 
-                    let goal_events = if !m.started {
-                        Vec::new()
-                    } else if has_goals || !m.ended {
-                        // Fetch detailed data if there are goals or game is ongoing
-                        fetch_detailed_game_data(&client, &config, &m).await
-                    } else {
-                        Vec::new()
-                    };
+                        let goal_events = if !m.started {
+                            Vec::new()
+                        } else if has_goals || !m.ended {
+                            // Fetch detailed data if there are goals or game is ongoing
+                            fetch_detailed_game_data(&client, &config, &m).await
+                        } else {
+                            Vec::new()
+                        };
 
-                    Ok::<GameData, Box<dyn Error>>(GameData {
-                        home_team: m.home_team.team_name,
-                        away_team: m.away_team.team_name,
-                        time,
-                        result,
-                        score_type,
-                        is_overtime,
-                        is_shootout,
-                        serie: m.serie,
-                        goal_events,
-                        played_time: m.game_time,
-                        finished_type: m.finished_type.unwrap_or_default(),
-                    })
-                }
-            }))
-            .await?;
+                        Ok::<GameData, Box<dyn Error>>(GameData {
+                            home_team: m.home_team.team_name,
+                            away_team: m.away_team.team_name,
+                            time,
+                            result,
+                            score_type,
+                            is_overtime,
+                            is_shootout,
+                            serie: m.serie,
+                            goal_events,
+                            played_time: m.game_time,
+                            finished_type: m.finished_type.unwrap_or_default(),
+                        })
+                    }
+                }))
+                .await?;
             all_games.extend(games);
         }
     }
