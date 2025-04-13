@@ -17,7 +17,7 @@ use semver::Version;
 use std::io::{Write, stdout};
 use std::path::Path;
 use std::time::{Duration, Instant};
-use teletext_ui::{GameResultData, ScoreType, TeletextPage};
+use teletext_ui::{GameResultData, TeletextPage, has_live_games};
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -92,12 +92,6 @@ fn create_page(
     }
 
     page
-}
-
-fn has_live_games(games: &[GameData]) -> bool {
-    games
-        .iter()
-        .any(|game| matches!(game.score_type, ScoreType::Ongoing))
 }
 
 /// Checks for the latest version of this crate on crates.io.
