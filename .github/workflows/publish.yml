@@ -38,7 +38,7 @@ jobs:
           DEFAULT_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
           # Checkout the default branch
           git checkout $DEFAULT_BRANCH
-          git add Cargo.toml
+          git add Cargo.toml Cargo.lock
           git commit -m "chore: update version to ${VERSION}"
           git push origin $DEFAULT_BRANCH
 
