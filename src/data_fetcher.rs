@@ -576,6 +576,12 @@ fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
     process_goal_events(game, &basic_names)
 }
 
+pub fn has_live_games(games: &[GameData]) -> bool {
+    games
+        .iter()
+        .any(|game| matches!(game.score_type, ScoreType::Ongoing))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -847,5 +853,152 @@ mod tests {
             result.is_err(),
             "Should return error for invalid time format"
         );
+    }
+
+    #[test]
+    fn test_determine_game_status() {
+        // Test scheduled game
+        let scheduled_game = ScheduleGame {
+            id: 1,
+            season: 2025,
+            start: "2025-01-11T15:00:00Z".to_string(),
+            end: "".to_string(),
+            home_team: ScheduleTeam {
+                team_id: "123".to_string(),
+                team_name: "Home".to_string(),
+                goals: 0,
+                goal_events: vec![],
+            },
+            away_team: ScheduleTeam {
+                team_id: "456".to_string(),
+                team_name: "Away".to_string(),
+                goals: 0,
+                goal_events: vec![],
+            },
+            finished_type: None,
+            started: false,
+            ended: false,
+            game_time: 0,
+            serie: "RUNKOSARJA".to_string(),
+        };
+        let (status, is_ot, is_so) = determine_game_status(&scheduled_game);
+        assert!(matches!(status, ScoreType::Scheduled));
+        assert!(!is_ot);
+        assert!(!is_so);
+
+        // Test ongoing game
+        let mut ongoing_game = scheduled_game.clone();
+        ongoing_game.started = true;
+        let (status, is_ot, is_so) = determine_game_status(&ongoing_game);
+        assert!(matches!(status, ScoreType::Ongoing));
+        assert!(!is_ot);
+        assert!(!is_so);
+
+        // Test finished regular game
+        let mut finished_game = ongoing_game.clone();
+        finished_game.ended = true;
+        finished_game.finished_type = Some("ENDED_DURING_REGULAR_GAME_TIME".to_string());
+        let (status, is_ot, is_so) = determine_game_status(&finished_game);
+        assert!(matches!(status, ScoreType::Final));
+        assert!(!is_ot);
+        assert!(!is_so);
+
+        // Test overtime game
+        let mut ot_game = finished_game.clone();
+        ot_game.finished_type = Some("ENDED_DURING_EXTENDED_GAME_TIME".to_string());
+        let (status, is_ot, is_so) = determine_game_status(&ot_game);
+        assert!(matches!(status, ScoreType::Final));
+        assert!(is_ot);
+        assert!(!is_so);
+
+        // Test shootout game
+        let mut so_game = finished_game.clone();
+        so_game.finished_type = Some("ENDED_DURING_WINNING_SHOT_COMPETITION".to_string());
+        let (status, is_ot, is_so) = determine_game_status(&so_game);
+        assert!(matches!(status, ScoreType::Final));
+        assert!(!is_ot);
+        assert!(is_so);
+    }
+
+    #[test]
+    fn test_format_time_edge_cases() {
+        // Test empty string
+        assert!(format_time("").is_err());
+
+        // Test invalid format
+        assert!(format_time("2025-13-11T15:00:00Z").is_err());
+
+        // Test missing timezone
+        assert!(format_time("2025-01-11T15:00:00").is_err());
+
+        // Test different timezone
+        let result = format_time("2025-01-11T15:00:00+02:00").unwrap();
+        assert_eq!(result.len(), 5, "Time should be in format HH.MM");
+        assert!(result.contains("."), "Time should contain .");
+    }
+
+    #[test]
+    fn test_has_live_games() {
+        let games = vec![
+            GameData {
+                home_team: "Home".to_string(),
+                away_team: "Away".to_string(),
+                time: "18.00".to_string(),
+                result: "0-0".to_string(),
+                score_type: ScoreType::Scheduled,
+                is_overtime: false,
+                is_shootout: false,
+                goal_events: vec![],
+                played_time: 0,
+                serie: "RUNKOSARJA".to_string(),
+                finished_type: String::new(),
+            },
+            GameData {
+                home_team: "Home2".to_string(),
+                away_team: "Away2".to_string(),
+                time: "".to_string(),
+                result: "1-1".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                goal_events: vec![],
+                played_time: 1200,
+                serie: "RUNKOSARJA".to_string(),
+                finished_type: String::new(),
+            },
+        ];
+
+        assert!(has_live_games(&games));
+
+        let no_live_games = vec![
+            GameData {
+                home_team: "Home".to_string(),
+                away_team: "Away".to_string(),
+                time: "18.00".to_string(),
+                result: "0-0".to_string(),
+                score_type: ScoreType::Scheduled,
+                is_overtime: false,
+                is_shootout: false,
+                goal_events: vec![],
+                played_time: 0,
+                serie: "RUNKOSARJA".to_string(),
+                finished_type: String::new(),
+            },
+            GameData {
+                home_team: "Home2".to_string(),
+                away_team: "Away2".to_string(),
+                time: "".to_string(),
+                result: "2-1".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                goal_events: vec![],
+                played_time: 3600,
+                serie: "RUNKOSARJA".to_string(),
+                finished_type: String::new(),
+            },
+        ];
+
+        assert!(!has_live_games(&no_live_games));
     }
 }
