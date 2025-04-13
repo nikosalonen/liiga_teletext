@@ -47,6 +47,9 @@ jobs:
       - name: Run tests
         run: cargo test --all-features
 
+      - name: Verify package
+        run: cargo publish --dry-run
+
       - name: Publish to crates.io
         run: cargo publish --token ${CRATES_TOKEN}
         env:
