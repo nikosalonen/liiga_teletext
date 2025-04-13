@@ -341,17 +341,25 @@ async fn fetch_previous_day_data(
     sorted_dates.sort_by(|a, b| b.cmp(a));
     let nearest_date = &sorted_dates[0];
 
+    let mut responses = Vec::new();
+    let mut found_games = false;
+
     for tournament in tournaments {
         if let Ok(Some(response)) =
             fetch_tournament_data(client, config, tournament, nearest_date).await
         {
             if !response.games.is_empty() {
-                return Ok(Some(vec![response]));
+                responses.push(response);
+                found_games = true;
             }
         }
     }
 
-    Ok(None)
+    if found_games {
+        Ok(Some(responses))
+    } else {
+        Ok(None)
+    }
 }
 
 fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
@@ -396,7 +404,6 @@ pub async fn fetch_liiga_data(
             yesterday.format("%Y-%m-%d").to_string()
         }
     };
-    // let date = "2025-02-01".to_string();
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
     let mut response_data: Vec<ScheduleResponse> = Vec::new();
@@ -410,15 +417,11 @@ pub async fn fetch_liiga_data(
                 if !response.games.is_empty() {
                     response_data.push(response);
                     found_games = true;
-                    continue;
-                }
-                // Store previous game date if it exists
-                if !response.previousGameDate.is_empty() {
-                    previous_dates.push(response.previousGameDate.clone());
-                }
-                // Only store the response if we haven't found any games yet and this is the last tournament
-                if response_data.is_empty() && *tournament == tournaments[tournaments.len() - 1] {
-                    response_data.push(response);
+                } else {
+                    // Store previous game date if it exists
+                    if !response.previousGameDate.is_empty() {
+                        previous_dates.push(response.previousGameDate.clone());
+                    }
                 }
             }
             Err(e) => eprintln!("Failed to fetch data for {}: {}", tournament, e),
