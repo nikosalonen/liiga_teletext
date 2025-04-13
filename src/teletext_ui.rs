@@ -79,6 +79,12 @@ pub enum ScoreType {
     Scheduled, // Scheduled game with no score yet
 }
 
+pub fn has_live_games(games: &[crate::data_fetcher::GameData]) -> bool {
+    games
+        .iter()
+        .any(|game| matches!(game.score_type, ScoreType::Ongoing))
+}
+
 #[derive(Debug, Clone)]
 pub struct GameResultData {
     pub home_team: String,

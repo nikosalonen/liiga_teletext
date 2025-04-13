@@ -576,15 +576,10 @@ fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
     process_goal_events(game, &basic_names)
 }
 
-pub fn has_live_games(games: &[GameData]) -> bool {
-    games
-        .iter()
-        .any(|game| matches!(game.score_type, ScoreType::Ongoing))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::teletext_ui::has_live_games;
 
     #[test]
     fn test_format_time() {
