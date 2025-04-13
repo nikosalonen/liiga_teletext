@@ -232,7 +232,7 @@ fn process_team_goals(
     for goal in team
         .goal_events()
         .iter()
-        .filter(|g| !g.goal_types.contains(&"RL0".to_string()))
+        .filter(|g| !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string()))
     {
         events.push(GoalEventData {
             scorer_player_id: goal.scorer_player_id,
@@ -381,17 +381,17 @@ pub async fn fetch_liiga_data() -> Result<Vec<GameData>, Box<dyn Error>> {
     let config = Config::load()?;
     let client = Client::new();
     let now = Local::now();
-    let date = if should_show_todays_games() {
-        now.format("%Y-%m-%d").to_string()
-    } else {
-        // If before 15:00, try to get previous day's games first
-        let yesterday = now
-            .date_naive()
-            .pred_opt()
-            .expect("Date underflow cannot happen with Local::now()");
-        yesterday.format("%Y-%m-%d").to_string()
-    };
-    // let date = "2025-01-08".to_string();
+    // let date = if should_show_todays_games() {
+    //     now.format("%Y-%m-%d").to_string()
+    // } else {
+    //     // If before 15:00, try to get previous day's games first
+    //     let yesterday = now
+    //         .date_naive()
+    //         .pred_opt()
+    //         .expect("Date underflow cannot happen with Local::now()");
+    //     yesterday.format("%Y-%m-%d").to_string()
+    // };
+     let date = "2025-02-26".to_string();
     let tournaments = ["runkosarja", "playoffs", "playout", "qualifications"];
     let mut all_games = Vec::new();
     let mut response_data: Vec<ScheduleResponse> = Vec::new();
@@ -806,7 +806,19 @@ mod tests {
                 team_id: "456".to_string(),
                 team_name: "Away".to_string(),
                 goals: 0,
-                goal_events: vec![],
+                goal_events: vec![GoalEvent {
+                    scorer_player_id: 456,
+                    logTime: "2025-01-11T15:20:00Z".to_string(),
+                    game_time: 1200,
+                    period: 1,
+                    eventId: 2,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    winning_goal: false,
+                    goal_types: vec!["VT0".to_string()],
+                    assistant_player_ids: vec![],
+                    video_clip_url: None,
+                }],
             },
             finished_type: None,
             started: true,
@@ -817,7 +829,7 @@ mod tests {
 
         let player_names = HashMap::new();
         let events = process_goal_events(&game, &player_names);
-        assert!(events.is_empty(), "Should filter out RL0 goals");
+        assert!(events.is_empty(), "Should filter out RL0 and VT0 goals");
     }
 
     #[test]
