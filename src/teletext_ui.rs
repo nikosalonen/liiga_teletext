@@ -633,6 +633,7 @@ mod tests {
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
                 finished_type: String::new(),
+                log_time: String::new(),
             }));
         }
 
@@ -698,6 +699,7 @@ mod tests {
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
                 finished_type: String::new(),
+                log_time: String::new(),
             }));
         }
 
@@ -743,6 +745,7 @@ mod tests {
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
             finished_type: String::new(),
+            log_time: String::new(),
         }));
 
         // Test game with goals
@@ -770,6 +773,7 @@ mod tests {
             played_time: 600,
             serie: "RUNKOSARJA".to_string(),
             finished_type: String::new(),
+            log_time: String::new(),
         }));
 
         let (content, _) = page.get_page_content();
@@ -821,6 +825,7 @@ mod tests {
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
             finished_type: String::new(),
+            log_time: String::new(),
         }));
 
         // Test ongoing game with goals
@@ -861,6 +866,7 @@ mod tests {
             played_time: 1500,
             serie: "RUNKOSARJA".to_string(),
             finished_type: String::new(),
+            log_time: String::new(),
         }));
 
         // Test finished game with overtime
@@ -876,6 +882,7 @@ mod tests {
             played_time: 3900,
             serie: "RUNKOSARJA".to_string(),
             finished_type: String::new(),
+            log_time: String::new(),
         }));
 
         // Test finished game with shootout
@@ -891,6 +898,7 @@ mod tests {
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
             finished_type: String::new(),
+            log_time: String::new(),
         }));
 
         let (content, _) = page.get_page_content();
@@ -913,9 +921,13 @@ mod tests {
                 match score_type {
                     ScoreType::Scheduled => found_scheduled = true,
                     ScoreType::Ongoing => found_ongoing = true,
-                    ScoreType::Final if *is_overtime => found_overtime = true,
-                    ScoreType::Final if *is_shootout => found_shootout = true,
-                    _ => {}
+                    ScoreType::Final => {
+                        if *is_overtime {
+                            found_overtime = true;
+                        } else if *is_shootout {
+                            found_shootout = true;
+                        }
+                    }
                 }
             }
         }
@@ -961,6 +973,7 @@ mod tests {
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
             finished_type: String::new(),
+            log_time: String::new(),
         }));
 
         // Create another page with video links disabled
@@ -985,6 +998,7 @@ mod tests {
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
             finished_type: String::new(),
+            log_time: String::new(),
         }));
 
         let (content, _) = page.get_page_content();
