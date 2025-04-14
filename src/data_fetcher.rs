@@ -175,8 +175,8 @@ pub struct GameData {
     pub serie: String,
     pub goal_events: Vec<GoalEventData>,
     pub played_time: i32,
-    #[allow(dead_code)] // Kept for API compatibility and potential future use
     pub finished_type: String,
+    pub log_time: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -486,6 +486,7 @@ pub async fn fetch_liiga_data(
                             goal_events,
                             played_time: m.game_time,
                             finished_type: m.finished_type.unwrap_or_default(),
+                            log_time: m.start.clone(),
                         })
                     }
                 }))
@@ -950,6 +951,7 @@ mod tests {
                 played_time: 0,
                 serie: "RUNKOSARJA".to_string(),
                 finished_type: String::new(),
+                log_time: String::new(),
             },
             GameData {
                 home_team: "Home2".to_string(),
@@ -963,6 +965,7 @@ mod tests {
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
                 finished_type: String::new(),
+                log_time: String::new(),
             },
         ];
 
@@ -981,6 +984,7 @@ mod tests {
                 played_time: 0,
                 serie: "RUNKOSARJA".to_string(),
                 finished_type: String::new(),
+                log_time: String::new(),
             },
             GameData {
                 home_team: "Home2".to_string(),
@@ -994,6 +998,7 @@ mod tests {
                 played_time: 3600,
                 serie: "RUNKOSARJA".to_string(),
                 finished_type: String::new(),
+                log_time: String::new(),
             },
         ];
 
