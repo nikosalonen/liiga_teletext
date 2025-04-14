@@ -152,27 +152,27 @@ fn print_version_info(latest_version: &str) {
         execute!(
             stdout(),
             SetForegroundColor(Color::White),
-            Print("╔════════════════════════════════╗\n"),
-            Print("║ Liiga Teletext Status          ║\n"),
-            Print("╠════════════════════════════════╣\n"),
+            Print("╔════════════════════════════════════╗\n"),
+            Print("║ Liiga Teletext Status              ║\n"),
+            Print("╠════════════════════════════════════╣\n"),
             Print("║ Current Version: "),
             SetForegroundColor(Color::Yellow),
             Print(CURRENT_VERSION),
             SetForegroundColor(Color::White),
-            Print("         ║\n"),
+            Print("             ║\n"),
             Print("║ Latest Version:  "),
             SetForegroundColor(Color::Cyan),
             Print(latest_version),
             SetForegroundColor(Color::White),
-            Print("         ║\n"),
-            Print("╠════════════════════════════════╣\n"),
-            Print("║ Update available! Run:         ║\n"),
+            Print("             ║\n"),
+            Print("╠════════════════════════════════════╣\n"),
+            Print("║ Update available! Run:             ║\n"),
             Print("║ "),
             SetForegroundColor(Color::Cyan),
             Print("cargo install liiga_teletext"),
             SetForegroundColor(Color::White),
-            Print("   ║\n"),
-            Print("╚════════════════════════════════╝\n"),
+            Print("       ║\n"),
+            Print("╚════════════════════════════════════╝\n"),
             ResetColor
         )
         .ok();
@@ -203,7 +203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .ok();
 
-        // Check for updates
+        // Check for updates and show version info
         if let Some(latest_version) = check_latest_version().await {
             let current = Version::parse(CURRENT_VERSION).unwrap_or_else(|e| {
                 eprintln!("Failed to parse current version: {}", e);
@@ -215,34 +215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
 
             if latest > current {
-                println!();
-                execute!(
-                    stdout(),
-                    SetForegroundColor(Color::White),
-                    Print("╔════════════════════════════════╗\n"),
-                    Print("║ Liiga Teletext Status          ║\n"),
-                    Print("╠════════════════════════════════╣\n"),
-                    Print("║ Current Version: "),
-                    SetForegroundColor(Color::Yellow),
-                    Print(CURRENT_VERSION),
-                    SetForegroundColor(Color::White),
-                    Print("         ║\n"),
-                    Print("║ Latest Version:  "),
-                    SetForegroundColor(Color::Cyan),
-                    Print(latest_version),
-                    SetForegroundColor(Color::White),
-                    Print("         ║\n"),
-                    Print("╠════════════════════════════════╣\n"),
-                    Print("║ Update available! Run:         ║\n"),
-                    Print("║ "),
-                    SetForegroundColor(Color::Cyan),
-                    Print("cargo install liiga_teletext"),
-                    SetForegroundColor(Color::White),
-                    Print("   ║\n"),
-                    Print("╚════════════════════════════════╝\n"),
-                    ResetColor
-                )
-                .ok();
+                print_version_info(&latest_version);
             } else {
                 println!();
                 execute!(
@@ -294,11 +267,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.api_domain = new_domain;
         config.save()?;
         println!("Config updated successfully!");
-
-        // Show version info before exiting
-        if let Ok(Some(latest_version)) = version_check.await {
-            print_version_info(&latest_version);
-        }
         return Ok(());
     }
 
@@ -329,7 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         disable_raw_mode()?;
         println!(); // Add a newline at the end
 
-        // Show version info before exiting
+        // Show version info after display if update is available
         if let Ok(Some(latest_version)) = version_check.await {
             print_version_info(&latest_version);
         }
@@ -341,28 +309,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen)?;
 
-    // Show version info in interactive mode if available
+    // Run the interactive UI
+    let result = run_interactive_ui(&mut stdout, &args).await;
+
+    // Clean up terminal
+    execute!(stdout, LeaveAlternateScreen)?;
+    disable_raw_mode()?;
+
+    // Show version info after UI closes if update is available
     if let Ok(Some(latest_version)) = version_check.await {
-        if let Ok(current) = Version::parse(CURRENT_VERSION) {
-            if let Ok(latest) = Version::parse(&latest_version) {
-                if latest > current {
-                    execute!(
-                        stdout,
-                        MoveTo(0, 0),
-                        SetForegroundColor(Color::Yellow),
-                        Print(format!(
-                            "New version {} available! Press 'q' and run: cargo install liiga_teletext",
-                            latest_version
-                        )),
-                        ResetColor,
-                    )?;
-                    // Wait a moment to show the message
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                }
-            }
-        }
+        print_version_info(&latest_version);
     }
 
+    result
+}
+
+async fn run_interactive_ui(
+    stdout: &mut std::io::Stdout,
+    args: &Args,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut last_manual_refresh = Instant::now()
         .checked_sub(Duration::from_secs(10))
         .unwrap_or_else(Instant::now);
@@ -388,7 +353,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         // Initial render
-        page.render(&mut stdout)?;
+        page.render(stdout)?;
 
         // Check if we need to update more frequently due to live games
         let update_interval = if has_live_games(&games) {
@@ -404,8 +369,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Event::Key(key) = event::read()? {
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Char('Q') => {
-                            execute!(stdout, LeaveAlternateScreen)?;
-                            disable_raw_mode()?;
                             return Ok(());
                         }
                         KeyCode::Char('r') | KeyCode::Char('R') => {
@@ -420,7 +383,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if now.duration_since(last_page_change) >= Duration::from_millis(200) {
                                 last_page_change = now;
                                 page.previous_page();
-                                page.render(&mut stdout)?;
+                                page.render(stdout)?;
                             }
                         }
                         KeyCode::Right => {
@@ -428,7 +391,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if now.duration_since(last_page_change) >= Duration::from_millis(200) {
                                 last_page_change = now;
                                 page.next_page();
-                                page.render(&mut stdout)?;
+                                page.render(stdout)?;
                             }
                         }
                         _ => {}
