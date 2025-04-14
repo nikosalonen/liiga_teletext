@@ -176,24 +176,6 @@ fn print_version_info(latest_version: &str) {
             ResetColor
         )
         .ok();
-    } else {
-        println!();
-        execute!(
-            stdout(),
-            SetForegroundColor(Color::White),
-            Print("╔════════════════════════════════════╗\n"),
-            Print("║ Liiga Teletext Status              ║\n"),
-            Print("╠════════════════════════════════════╣\n"),
-            Print("║ Version: "),
-            SetForegroundColor(Color::Green),
-            Print(CURRENT_VERSION),
-            SetForegroundColor(Color::White),
-            Print("                     ║\n"),
-            Print("║ You're running the latest version! ║\n"),
-            Print("╚════════════════════════════════════╝\n"),
-            ResetColor
-        )
-        .ok();
     }
 }
 
@@ -223,7 +205,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Check for updates
         if let Some(latest_version) = check_latest_version().await {
-            print_version_info(&latest_version);
+            let current = Version::parse(CURRENT_VERSION).unwrap_or_else(|e| {
+                eprintln!("Failed to parse current version: {}", e);
+                Version::new(0, 0, 0)
+            });
+            let latest = Version::parse(&latest_version).unwrap_or_else(|e| {
+                eprintln!("Failed to parse latest version: {}", e);
+                Version::new(0, 0, 0)
+            });
+
+            if latest > current {
+                println!();
+                execute!(
+                    stdout(),
+                    SetForegroundColor(Color::White),
+                    Print("╔════════════════════════════════╗\n"),
+                    Print("║ Liiga Teletext Status          ║\n"),
+                    Print("╠════════════════════════════════╣\n"),
+                    Print("║ Current Version: "),
+                    SetForegroundColor(Color::Yellow),
+                    Print(CURRENT_VERSION),
+                    SetForegroundColor(Color::White),
+                    Print("         ║\n"),
+                    Print("║ Latest Version:  "),
+                    SetForegroundColor(Color::Cyan),
+                    Print(latest_version),
+                    SetForegroundColor(Color::White),
+                    Print("         ║\n"),
+                    Print("╠════════════════════════════════╣\n"),
+                    Print("║ Update available! Run:         ║\n"),
+                    Print("║ "),
+                    SetForegroundColor(Color::Cyan),
+                    Print("cargo install liiga_teletext"),
+                    SetForegroundColor(Color::White),
+                    Print("   ║\n"),
+                    Print("╚════════════════════════════════╝\n"),
+                    ResetColor
+                )
+                .ok();
+            } else {
+                println!();
+                execute!(
+                    stdout(),
+                    SetForegroundColor(Color::White),
+                    Print("╔════════════════════════════════════╗\n"),
+                    Print("║ Liiga Teletext Status              ║\n"),
+                    Print("╠════════════════════════════════════╣\n"),
+                    Print("║ Version: "),
+                    SetForegroundColor(Color::Green),
+                    Print(CURRENT_VERSION),
+                    SetForegroundColor(Color::White),
+                    Print("                     ║\n"),
+                    Print("║ You're running the latest version! ║\n"),
+                    Print("╚════════════════════════════════════╝\n"),
+                    ResetColor
+                )
+                .ok();
+            }
         }
 
         return Ok(());
