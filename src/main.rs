@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use teletext_ui::{GameResultData, TeletextPage, has_live_games};
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
 
 /// Finnish Hockey League (Liiga) Teletext Viewer
 ///
@@ -35,7 +36,8 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// - Every minute when there are ongoing games
 /// - Every hour when showing only completed games
 #[derive(Parser, Debug)]
-#[command(author = "Niko Salonen", version, about, long_about = None)]
+#[command(author = "Niko Salonen", about, long_about = None)]
+#[command(disable_version_flag = true)]
 struct Args {
     /// Show scores once and exit immediately. Useful for scripts or quick score checks.
     /// The output stays visible in terminal history.
@@ -55,6 +57,10 @@ struct Args {
     /// If not provided, shows today's or yesterday's games based on current time.
     #[arg(long = "date", short = 'd', help_heading = "Display Options")]
     date: Option<String>,
+
+    /// Show version information
+    #[arg(short = 'V', long = "version", help_heading = "Info")]
+    version: bool,
 }
 
 fn get_subheader(games: &[GameData]) -> String {
@@ -99,10 +105,16 @@ fn create_page(
 /// Returns `Some(version_string)` if a newer version is available,
 /// or `None` if there was an error checking or if the current version is up to date.
 async fn check_latest_version() -> Option<String> {
-    const CRATES_IO_URL: &str = "https://crates.io/api/v1/crates/liiga_teletext";
+    let crates_io_url = format!("https://crates.io/api/v1/crates/{}", CRATE_NAME);
 
     let client = reqwest::Client::new();
-    let response = match client.get(CRATES_IO_URL).send().await {
+    let user_agent = format!("{}/{}", CRATE_NAME, CURRENT_VERSION);
+    let response = match client
+        .get(&crates_io_url)
+        .header("User-Agent", user_agent)
+        .send()
+        .await
+    {
         Ok(resp) => resp,
         Err(e) => {
             eprintln!("Failed to check for updates: {}", e);
@@ -110,7 +122,7 @@ async fn check_latest_version() -> Option<String> {
         }
     };
 
-    let json: serde_json::Value = match response.json().await {
+    let json: serde_json::Value = match response.json::<serde_json::Value>().await {
         Ok(json) => json,
         Err(e) => {
             eprintln!("Failed to parse update response: {}", e);
@@ -118,28 +130,67 @@ async fn check_latest_version() -> Option<String> {
         }
     };
 
-    json.get("versions")?
-        .as_array()?
-        .first()?
-        .get("num")?
-        .as_str()
+    // Try max_stable_version instead of newest_version
+    json.get("crate")
+        .and_then(|c| c.get("max_stable_version"))
+        .and_then(|v| v.as_str())
         .map(String::from)
 }
 
 fn print_version_info(latest_version: &str) {
-    let current = Version::parse(CURRENT_VERSION).unwrap_or_else(|_| Version::new(0, 0, 0));
-    let latest = Version::parse(latest_version).unwrap_or_else(|_| Version::new(0, 0, 0));
+    let current = Version::parse(CURRENT_VERSION).unwrap_or_else(|e| {
+        eprintln!("Failed to parse current version: {}", e);
+        Version::new(0, 0, 0)
+    });
+    let latest = Version::parse(latest_version).unwrap_or_else(|e| {
+        eprintln!("Failed to parse latest version: {}", e);
+        Version::new(0, 0, 0)
+    });
 
     if latest > current {
         println!();
         execute!(
             stdout(),
+            SetForegroundColor(Color::White),
+            Print("╔════════════════════════════════╗\n"),
+            Print("║ Liiga Teletext Status          ║\n"),
+            Print("╠════════════════════════════════╣\n"),
+            Print("║ Current Version: "),
             SetForegroundColor(Color::Yellow),
-            Print(format!(
-                "New version available: {} (current: {})\n",
-                latest_version, CURRENT_VERSION
-            )),
-            Print("Update with: cargo install liiga_teletext\n"),
+            Print(CURRENT_VERSION),
+            SetForegroundColor(Color::White),
+            Print("         ║\n"),
+            Print("║ Latest Version:  "),
+            SetForegroundColor(Color::Cyan),
+            Print(latest_version),
+            SetForegroundColor(Color::White),
+            Print("         ║\n"),
+            Print("╠════════════════════════════════╣\n"),
+            Print("║ Update available! Run:         ║\n"),
+            Print("║ "),
+            SetForegroundColor(Color::Cyan),
+            Print("cargo install liiga_teletext"),
+            SetForegroundColor(Color::White),
+            Print("   ║\n"),
+            Print("╚════════════════════════════════╝\n"),
+            ResetColor
+        )
+        .ok();
+    } else {
+        println!();
+        execute!(
+            stdout(),
+            SetForegroundColor(Color::White),
+            Print("╔════════════════════════════════════╗\n"),
+            Print("║ Liiga Teletext Status              ║\n"),
+            Print("╠════════════════════════════════════╣\n"),
+            Print("║ Version: "),
+            SetForegroundColor(Color::Green),
+            Print(CURRENT_VERSION),
+            SetForegroundColor(Color::White),
+            Print("                     ║\n"),
+            Print("║ You're running the latest version! ║\n"),
+            Print("╚════════════════════════════════════╝\n"),
             ResetColor
         )
         .ok();
@@ -150,7 +201,35 @@ fn print_version_info(latest_version: &str) {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Check for new version in the background
+    // Handle version flag first
+    if args.version {
+        execute!(
+            stdout(),
+            SetForegroundColor(Color::Cyan),
+            Print(format!(
+                "\n{}",
+                r#"
+ _     _ _               _____    _      _            _
+| |   (_|_) __ _  __ _  |_   _|__| | ___| |_ _____  _| |_
+| |   | | |/ _` |/ _` |   | |/ _ \ |/ _ \ __/ _ \ \/ / __|
+| |___| | | (_| | (_| |   | |  __/ |  __/ ||  __/>  <| |_
+|_____|_|_|\__, |\__,_|   |_|\___|_|\___|\__\___/_/\_\\__|
+           |___/
+"#
+            )),
+            ResetColor
+        )
+        .ok();
+
+        // Check for updates
+        if let Some(latest_version) = check_latest_version().await {
+            print_version_info(&latest_version);
+        }
+
+        return Ok(());
+    }
+
+    // Check for new version in the background for other commands
     let version_check = tokio::spawn(check_latest_version());
 
     // Handle config update if requested
