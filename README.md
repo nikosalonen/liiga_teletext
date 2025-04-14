@@ -4,8 +4,6 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 
 ![image](https://github.com/user-attachments/assets/f0e4003a-98e6-4ab8-8bb9-4adac18f5a46)
 
-
-
 ## Features
 
 - Teletext-style interface with colored headers and content
@@ -64,7 +62,8 @@ liiga_teletext/
 │   ├── main.rs         # Main application logic and event handling
 │   ├── teletext_ui.rs  # UI components and rendering
 │   ├── data_fetcher.rs # API integration and data processing
-│   └── config.rs       # Configuration handling
+│   ├── config.rs       # Configuration handling
+│   └── schemas/        # JSON schema definitions
 ```
 
 ## Usage
@@ -95,9 +94,13 @@ Key dependencies include:
 - crossterm 0.29.0 - Terminal manipulation
 - reqwest 0.12.15 - HTTP client
 - tokio 1.44 - Async runtime
-- clap 4.5.35 - Command-line argument parsing
+- clap 4.5.36 - Command-line argument parsing
 - serde 1.0 - Serialization framework
 - toml 0.8 - Configuration file parsing
+- dirs 6.0.0 - Directory handling
+- futures 0.3 - Async utilities
+- lazy_static 1.5.0 - Static initialization
+- semver 1.0.22 - Version parsing
 
 ## Features Status
 
@@ -109,7 +112,6 @@ Key dependencies include:
 - [x] Automatic refresh based on game state
 - [x] Configurable video link display
 - [x] Command-line argument support
-
 
 ## Contributing
 
