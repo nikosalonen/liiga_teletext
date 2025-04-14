@@ -334,10 +334,6 @@ async fn run_interactive_ui(
     let mut last_page_change = Instant::now()
         .checked_sub(Duration::from_millis(200))
         .unwrap_or_else(Instant::now);
-    let mut last_render = Instant::now();
-    let mut last_resize = Instant::now()
-        .checked_sub(Duration::from_millis(100))
-        .unwrap_or_else(Instant::now);
     let mut needs_refresh = true;
     let mut current_page = None;
     let mut pending_resize = false;
@@ -346,7 +342,7 @@ async fn run_interactive_ui(
     loop {
         if needs_refresh {
             let games = fetch_liiga_data(args.date.clone()).await?;
-            let mut page = if games.is_empty() {
+            let page = if games.is_empty() {
                 let mut error_page = TeletextPage::new(
                     221,
                     "JÄÄKIEKKO".to_string(),
@@ -367,7 +363,6 @@ async fn run_interactive_ui(
             // Render only when we have new data
             if let Some(page) = &current_page {
                 page.render(stdout)?;
-                last_render = Instant::now();
             }
             needs_refresh = false;
 
@@ -386,7 +381,6 @@ async fn run_interactive_ui(
             if let Some(page) = &mut current_page {
                 page.handle_resize();
                 page.render(stdout)?;
-                last_render = Instant::now();
             }
             pending_resize = false;
         }
@@ -408,7 +402,6 @@ async fn run_interactive_ui(
                                 if let Some(page) = &mut current_page {
                                     page.previous_page();
                                     page.render(stdout)?;
-                                    last_render = Instant::now();
                                 }
                                 last_page_change = Instant::now();
                             }
@@ -418,7 +411,6 @@ async fn run_interactive_ui(
                                 if let Some(page) = &mut current_page {
                                     page.next_page();
                                     page.render(stdout)?;
-                                    last_render = Instant::now();
                                 }
                                 last_page_change = Instant::now();
                             }
@@ -427,7 +419,6 @@ async fn run_interactive_ui(
                     }
                 }
                 Event::Resize(_, _) => {
-                    last_resize = Instant::now();
                     resize_timer = Instant::now();
                     pending_resize = true;
                 }
