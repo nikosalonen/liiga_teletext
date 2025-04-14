@@ -376,8 +376,8 @@ async fn run_interactive_ui(
             }
         }
 
-        // Handle pending resize after a short delay
-        if pending_resize && resize_timer.elapsed() >= Duration::from_millis(50) {
+        // Handle pending resize after a shorter delay
+        if pending_resize && resize_timer.elapsed() >= Duration::from_millis(20) {
             if let Some(page) = &mut current_page {
                 page.handle_resize();
                 page.render(stdout)?;
@@ -386,7 +386,7 @@ async fn run_interactive_ui(
         }
 
         // Event loop with shorter timeout
-        if event::poll(Duration::from_millis(50))? {
+        if event::poll(Duration::from_millis(20))? {
             match event::read()? {
                 Event::Key(key_event) => {
                     match key_event.code {
@@ -427,6 +427,6 @@ async fn run_interactive_ui(
         }
 
         // Add a smaller delay between polls
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
