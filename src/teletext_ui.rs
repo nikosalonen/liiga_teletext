@@ -140,6 +140,32 @@ impl TeletextPage {
         }
     }
 
+    pub fn handle_resize(&mut self) {
+        // Update screen height
+        if let Ok((_, height)) = crossterm::terminal::size() {
+            self.screen_height = height;
+            
+            // Recalculate current page to ensure content fits
+            let available_height = self.screen_height.saturating_sub(5); // Reserve space for header, subheader, and footer
+            let mut current_height = 0u16;
+            let mut current_page = 0;
+            
+            for game in &self.content_rows {
+                let game_height = Self::calculate_game_height(game);
+                
+                if current_height + game_height > available_height {
+                    current_page += 1;
+                    current_height = game_height;
+                } else {
+                    current_height += game_height;
+                }
+            }
+            
+            // Ensure current_page is within bounds
+            self.current_page = self.current_page.min(current_page);
+        }
+    }
+
     pub fn add_game_result(&mut self, game_data: GameResultData) {
         self.content_rows.push(TeletextRow::GameResult {
             home_team: game_data.home_team,

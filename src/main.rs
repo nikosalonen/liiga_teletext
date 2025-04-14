@@ -334,78 +334,108 @@ async fn run_interactive_ui(
     let mut last_page_change = Instant::now()
         .checked_sub(Duration::from_millis(200))
         .unwrap_or_else(Instant::now);
+    let mut last_render = Instant::now();
+    let mut last_resize = Instant::now()
+        .checked_sub(Duration::from_millis(100))
+        .unwrap_or_else(Instant::now);
+    let mut needs_refresh = true;
+    let mut current_page = None;
+    let mut pending_resize = false;
+    let mut resize_timer = Instant::now();
 
     loop {
-        let games = fetch_liiga_data(args.date.clone()).await?;
-        let mut page = if games.is_empty() {
-            let mut error_page = TeletextPage::new(
-                221,
-                "JÄÄKIEKKO".to_string(),
-                "SM-LIIGA".to_string(),
-                args.disable_links,
-                true,  // Show footer in interactive mode
-                false, // Don't ignore height limit in interactive mode
-            );
-            error_page.add_error_message("Ei otteluita tänään");
-            error_page
-        } else {
-            create_page(&games, args.disable_links, true, false) // Don't ignore height limit in interactive mode
-        };
+        if needs_refresh {
+            let games = fetch_liiga_data(args.date.clone()).await?;
+            let mut page = if games.is_empty() {
+                let mut error_page = TeletextPage::new(
+                    221,
+                    "JÄÄKIEKKO".to_string(),
+                    "SM-LIIGA".to_string(),
+                    args.disable_links,
+                    true,
+                    false,
+                );
+                error_page.add_error_message("Ei otteluita tänään");
+                error_page
+            } else {
+                create_page(&games, args.disable_links, true, false)
+            };
 
-        // Initial render
-        page.render(stdout)?;
+            // Store the current page state
+            current_page = Some(page);
 
-        // Check if we need to update more frequently due to live games
-        let update_interval = if has_live_games(&games) {
-            Duration::from_secs(60) // 1 minute for live games
-        } else {
-            Duration::from_secs(3600) // 1 hour for non-live games
-        };
+            // Render only when we have new data
+            if let Some(page) = &current_page {
+                page.render(stdout)?;
+                last_render = Instant::now();
+            }
+            needs_refresh = false;
 
-        // Wait for key press or timeout
-        let last_update = Instant::now();
-        loop {
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Char('Q') => {
-                            return Ok(());
-                        }
-                        KeyCode::Char('r') | KeyCode::Char('R') => {
-                            let now = Instant::now();
-                            if now.duration_since(last_manual_refresh) >= Duration::from_secs(10) {
-                                last_manual_refresh = now;
-                                break; // Break inner loop to refresh data
+            // Check if we need to refresh based on game state
+            if has_live_games(&games) {
+                if last_manual_refresh.elapsed() >= Duration::from_secs(60) {
+                    needs_refresh = true;
+                }
+            } else if last_manual_refresh.elapsed() >= Duration::from_secs(3600) {
+                needs_refresh = true;
+            }
+        }
+
+        // Handle pending resize after a short delay
+        if pending_resize && resize_timer.elapsed() >= Duration::from_millis(50) {
+            if let Some(page) = &mut current_page {
+                page.handle_resize();
+                page.render(stdout)?;
+                last_render = Instant::now();
+            }
+            pending_resize = false;
+        }
+
+        // Event loop with shorter timeout
+        if event::poll(Duration::from_millis(50))? {
+            match event::read()? {
+                Event::Key(key_event) => {
+                    match key_event.code {
+                        KeyCode::Char('q') => return Ok(()),
+                        KeyCode::Char('r') => {
+                            if last_manual_refresh.elapsed() >= Duration::from_secs(10) {
+                                needs_refresh = true;
+                                last_manual_refresh = Instant::now();
                             }
                         }
                         KeyCode::Left => {
-                            let now = Instant::now();
-                            if now.duration_since(last_page_change) >= Duration::from_millis(200) {
-                                last_page_change = now;
-                                page.previous_page();
-                                page.render(stdout)?;
+                            if last_page_change.elapsed() >= Duration::from_millis(200) {
+                                if let Some(page) = &mut current_page {
+                                    page.previous_page();
+                                    page.render(stdout)?;
+                                    last_render = Instant::now();
+                                }
+                                last_page_change = Instant::now();
                             }
                         }
                         KeyCode::Right => {
-                            let now = Instant::now();
-                            if now.duration_since(last_page_change) >= Duration::from_millis(200) {
-                                last_page_change = now;
-                                page.next_page();
-                                page.render(stdout)?;
+                            if last_page_change.elapsed() >= Duration::from_millis(200) {
+                                if let Some(page) = &mut current_page {
+                                    page.next_page();
+                                    page.render(stdout)?;
+                                    last_render = Instant::now();
+                                }
+                                last_page_change = Instant::now();
                             }
                         }
                         _ => {}
                     }
                 }
+                Event::Resize(_, _) => {
+                    last_resize = Instant::now();
+                    resize_timer = Instant::now();
+                    pending_resize = true;
+                }
+                _ => {}
             }
-
-            // Check if it's time to update for live games
-            if last_update.elapsed() >= update_interval {
-                break; // Break inner loop to refresh data
-            }
-
-            // Small sleep to prevent CPU hogging
-            tokio::time::sleep(Duration::from_millis(50)).await;
         }
+
+        // Add a smaller delay between polls
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
