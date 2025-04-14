@@ -341,6 +341,9 @@ async fn run_interactive_ui(
     let mut current_page = None;
     let mut pending_resize = false;
     let mut resize_timer = Instant::now();
+    let mut last_resize = Instant::now()
+        .checked_sub(Duration::from_millis(500))
+        .unwrap_or_else(Instant::now);
     let mut last_games = Vec::new();
 
     loop {
@@ -384,15 +387,13 @@ async fn run_interactive_ui(
             last_auto_refresh = Instant::now();
         }
 
-        // Handle pending resize after a shorter delay
-        if pending_resize && resize_timer.elapsed() >= Duration::from_millis(20) {
+        // Handle pending resize after a longer delay
+        if pending_resize && resize_timer.elapsed() >= Duration::from_millis(500) {
             if let Some(page) = &mut current_page {
                 page.handle_resize();
                 page.render(stdout)?;
             }
             pending_resize = false;
-            // Force a refresh after resize to ensure we have the latest data
-            needs_refresh = true;
         }
 
         // Event loop with shorter timeout
@@ -429,8 +430,12 @@ async fn run_interactive_ui(
                     }
                 }
                 Event::Resize(_, _) => {
-                    resize_timer = Instant::now();
-                    pending_resize = true;
+                    // Only set pending resize if enough time has passed since last resize
+                    if last_resize.elapsed() >= Duration::from_millis(500) {
+                        resize_timer = Instant::now();
+                        pending_resize = true;
+                        last_resize = Instant::now();
+                    }
                 }
                 _ => {}
             }
