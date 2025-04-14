@@ -329,6 +329,9 @@ async fn run_interactive_ui(
     args: &Args,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut last_manual_refresh = Instant::now()
+        .checked_sub(Duration::from_secs(15))
+        .unwrap_or_else(Instant::now);
+    let mut last_auto_refresh = Instant::now()
         .checked_sub(Duration::from_secs(10))
         .unwrap_or_else(Instant::now);
     let mut last_page_change = Instant::now()
@@ -338,10 +341,23 @@ async fn run_interactive_ui(
     let mut current_page = None;
     let mut pending_resize = false;
     let mut resize_timer = Instant::now();
+    let mut last_games = Vec::new();
 
     loop {
+        // Check for auto-refresh first
+        if !needs_refresh && !last_games.is_empty() {
+            if has_live_games(&last_games) {
+                if last_auto_refresh.elapsed() >= Duration::from_secs(60) {
+                    needs_refresh = true;
+                }
+            } else if last_auto_refresh.elapsed() >= Duration::from_secs(3600) {
+                needs_refresh = true;
+            }
+        }
+
         if needs_refresh {
             let games = fetch_liiga_data(args.date.clone()).await?;
+            last_games = games.clone();
             let page = if games.is_empty() {
                 let mut error_page = TeletextPage::new(
                     221,
@@ -365,15 +381,7 @@ async fn run_interactive_ui(
                 page.render(stdout)?;
             }
             needs_refresh = false;
-
-            // Check if we need to refresh based on game state
-            if has_live_games(&games) {
-                if last_manual_refresh.elapsed() >= Duration::from_secs(60) {
-                    needs_refresh = true;
-                }
-            } else if last_manual_refresh.elapsed() >= Duration::from_secs(3600) {
-                needs_refresh = true;
-            }
+            last_auto_refresh = Instant::now();
         }
 
         // Handle pending resize after a shorter delay
@@ -383,6 +391,8 @@ async fn run_interactive_ui(
                 page.render(stdout)?;
             }
             pending_resize = false;
+            // Force a refresh after resize to ensure we have the latest data
+            needs_refresh = true;
         }
 
         // Event loop with shorter timeout
@@ -392,7 +402,7 @@ async fn run_interactive_ui(
                     match key_event.code {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Char('r') => {
-                            if last_manual_refresh.elapsed() >= Duration::from_secs(10) {
+                            if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
                                 needs_refresh = true;
                                 last_manual_refresh = Instant::now();
                             }
