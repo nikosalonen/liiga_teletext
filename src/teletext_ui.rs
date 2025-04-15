@@ -78,12 +78,29 @@ pub enum ScoreType {
     Scheduled, // Scheduled game with no score yet
 }
 
+/// Checks if there are any live/ongoing games in the provided game list.
+///
+/// # Arguments
+/// * `games` - A slice of GameData containing game information
+///
+/// # Returns
+/// * `bool` - true if there are any games with ScoreType::Ongoing, false otherwise
+///
+/// # Example
+/// ```
+/// let games = vec![game1, game2];
+/// if has_live_games(&games) {
+///     println!("There are live games in progress!");
+/// }
+/// ```
 pub fn has_live_games(games: &[crate::data_fetcher::GameData]) -> bool {
     games
         .iter()
         .any(|game| matches!(game.score_type, ScoreType::Ongoing))
 }
 
+/// Represents a game result with all relevant information for display.
+/// This struct acts as a data transfer object between the data fetcher and UI components.
 #[derive(Debug, Clone)]
 pub struct GameResultData {
     pub home_team: String,
@@ -98,6 +115,19 @@ pub struct GameResultData {
 }
 
 impl GameResultData {
+    /// Creates a new GameResultData instance from a GameData object.
+    ///
+    /// # Arguments
+    /// * `game_data` - Reference to a GameData object containing raw game information
+    ///
+    /// # Returns
+    /// * `GameResultData` - A new instance containing formatted game result data
+    ///
+    /// # Example
+    /// ```
+    /// let game_data = fetch_game_data();
+    /// let result = GameResultData::new(&game_data);
+    /// ```
     pub fn new(game_data: &crate::data_fetcher::GameData) -> Self {
         Self {
             home_team: game_data.home_team.clone(),
@@ -114,6 +144,30 @@ impl GameResultData {
 }
 
 impl TeletextPage {
+    /// Creates a new TeletextPage instance with the specified parameters.
+    ///
+    /// # Arguments
+    /// * `page_number` - The teletext page number (e.g., 221 for sports)
+    /// * `title` - The title displayed at the top of the page
+    /// * `subheader` - The subtitle displayed below the title
+    /// * `disable_video_links` - Whether to disable clickable video links
+    /// * `show_footer` - Whether to show the control footer
+    /// * `ignore_height_limit` - Whether to ignore terminal height limits
+    ///
+    /// # Returns
+    /// * `TeletextPage` - A new instance configured with the provided parameters
+    ///
+    /// # Example
+    /// ```
+    /// let page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false
+    /// );
+    /// ```
     pub fn new(
         page_number: u16,
         title: String,
@@ -140,6 +194,15 @@ impl TeletextPage {
         }
     }
 
+    /// Updates the page layout when terminal size changes.
+    /// Recalculates content positioning and pagination based on new dimensions.
+    ///
+    /// # Example
+    /// ```
+    /// // When terminal is resized
+    /// page.handle_resize();
+    /// page.render(&mut stdout)?;
+    /// ```
     pub fn handle_resize(&mut self) {
         // Update screen height
         if let Ok((_, height)) = crossterm::terminal::size() {
@@ -166,6 +229,17 @@ impl TeletextPage {
         }
     }
 
+    /// Adds a game result to the page content.
+    /// The game will be displayed according to the page's current layout settings.
+    ///
+    /// # Arguments
+    /// * `game_data` - The game result data to add to the page
+    ///
+    /// # Example
+    /// ```
+    /// let game = GameResultData::new(&fetched_game);
+    /// page.add_game_result(game);
+    /// ```
     pub fn add_game_result(&mut self, game_data: GameResultData) {
         self.content_rows.push(TeletextRow::GameResult {
             home_team: game_data.home_team,
@@ -180,6 +254,16 @@ impl TeletextPage {
         });
     }
 
+    /// Adds an error message to be displayed on the page.
+    /// The message will be formatted and displayed prominently.
+    ///
+    /// # Arguments
+    /// * `message` - The error message to display
+    ///
+    /// # Example
+    /// ```
+    /// page.add_error_message("Failed to fetch game data");
+    /// ```
     pub fn add_error_message(&mut self, message: &str) {
         // Split message into lines and format each line
         let formatted_message = message
@@ -290,6 +374,15 @@ impl TeletextPage {
         total_pages
     }
 
+    /// Moves to the next page of content if available.
+    /// Wraps around to the first page when at the end.
+    ///
+    /// # Example
+    /// ```
+    /// if event == KeyCode::Right {
+    ///     page.next_page();
+    /// }
+    /// ```
     pub fn next_page(&mut self) {
         let total = self.total_pages();
         if total <= 1 {
@@ -298,6 +391,15 @@ impl TeletextPage {
         self.current_page = (self.current_page + 1) % total;
     }
 
+    /// Moves to the previous page of content if available.
+    /// Wraps around to the last page when at the beginning.
+    ///
+    /// # Example
+    /// ```
+    /// if event == KeyCode::Left {
+    ///     page.previous_page();
+    /// }
+    /// ```
     pub fn previous_page(&mut self) {
         let total = self.total_pages();
         if total <= 1 {
@@ -310,6 +412,20 @@ impl TeletextPage {
         };
     }
 
+    /// Renders the page content to the provided stdout.
+    /// Handles all formatting, colors, and layout according to current settings.
+    ///
+    /// # Arguments
+    /// * `stdout` - Mutable reference to stdout for writing
+    ///
+    /// # Returns
+    /// * `Result<(), Box<dyn std::error::Error>>` - Ok if rendering succeeded, Err otherwise
+    ///
+    /// # Example
+    /// ```
+    /// let mut stdout = stdout();
+    /// page.render(&mut stdout)?;
+    /// ```
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error>> {
         // Clear the screen
         execute!(stdout, Clear(ClearType::All))?;
