@@ -144,15 +144,15 @@ impl TeletextPage {
         // Update screen height
         if let Ok((_, height)) = crossterm::terminal::size() {
             self.screen_height = height;
-            
+
             // Recalculate current page to ensure content fits
             let available_height = self.screen_height.saturating_sub(5); // Reserve space for header, subheader, and footer
             let mut current_height = 0u16;
             let mut current_page = 0;
-            
+
             for game in &self.content_rows {
                 let game_height = Self::calculate_game_height(game);
-                
+
                 if current_height + game_height > available_height {
                     current_page += 1;
                     current_height = game_height;
@@ -160,7 +160,7 @@ impl TeletextPage {
                     current_height += game_height;
                 }
             }
-            
+
             // Ensure current_page is within bounds
             self.current_page = self.current_page.min(current_page);
         }
@@ -181,8 +181,14 @@ impl TeletextPage {
     }
 
     pub fn add_error_message(&mut self, message: &str) {
+        // Split message into lines and format each line
+        let formatted_message = message
+            .lines()
+            .map(|line| line.trim())
+            .collect::<Vec<_>>()
+            .join("\n"); // Remove the indentation
         self.content_rows
-            .push(TeletextRow::ErrorMessage(message.to_string()));
+            .push(TeletextRow::ErrorMessage(formatted_message));
     }
 
     fn calculate_game_height(game: &TeletextRow) -> u16 {
@@ -538,14 +544,20 @@ impl TeletextPage {
                     }
                 }
                 TeletextRow::ErrorMessage(message) => {
-                    execute!(
-                        stdout,
-                        MoveTo(0, current_y),
-                        SetForegroundColor(text_fg()),
-                        Print(message),
-                        ResetColor
-                    )?;
-                    current_y += 1; // Reduced from 2 to 1
+                    for (i, line) in message.lines().enumerate() {
+                        execute!(
+                            stdout,
+                            MoveTo(0, current_y),
+                            SetForegroundColor(text_fg()),
+                            Print(if i == 0 {
+                                "Virhe haettaessa otteluita:"
+                            } else {
+                                line
+                            }),
+                            ResetColor
+                        )?;
+                        current_y += 1;
+                    }
                 }
             }
         }

@@ -71,10 +71,10 @@ pub struct ScheduleGame {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-struct ScheduleResponse {
-    games: Vec<ScheduleGame>,
-    previousGameDate: String,
-    nextGameDate: String,
+pub struct ScheduleResponse {
+    pub games: Vec<ScheduleGame>,
+    pub previousGameDate: String,
+    pub nextGameDate: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -308,7 +308,7 @@ fn should_show_todays_games() -> bool {
     now.naive_local() >= today_cutoff
 }
 
-async fn fetch_tournament_data(
+pub async fn fetch_tournament_data(
     client: &Client,
     config: &Config,
     tournament: &str,
@@ -319,11 +319,56 @@ async fn fetch_tournament_data(
         config.api_domain, tournament, date
     );
 
-    let response = client.get(&url).send().await?;
-    let response_text = response.text().await?;
-    let response = serde_json::from_str::<ScheduleResponse>(&response_text)?;
+    let response = match client.get(&url).send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            return Err(format!(
+                "Failed to fetch data from API\nError: {}\nAPI domain: {}\nConfig: {}",
+                e,
+                config.api_domain,
+                Config::get_config_path()
+            )
+            .into());
+        }
+    };
 
-    Ok(Some(response))
+    // Check status code first
+    if !response.status().is_success() {
+        return Err(format!(
+            "Failed to fetch data from API\nError: {}\nAPI domain: {}\nConfig: {}",
+            response
+                .status()
+                .canonical_reason()
+                .unwrap_or("Unknown error"),
+            config.api_domain,
+            Config::get_config_path()
+        )
+        .into());
+    }
+
+    let response_text = match response.text().await {
+        Ok(text) => text,
+        Err(e) => {
+            return Err(format!(
+                "Failed to read API response\nError: {}\nAPI domain: {}\nConfig: {}",
+                e,
+                config.api_domain,
+                Config::get_config_path()
+            )
+            .into());
+        }
+    };
+
+    match serde_json::from_str::<ScheduleResponse>(&response_text) {
+        Ok(response) => Ok(Some(response)),
+        Err(e) => Err(format!(
+            "Failed to parse API response\nError: {}\nAPI domain: {}\nConfig: {}",
+            e,
+            config.api_domain,
+            Config::get_config_path()
+        )
+        .into()),
+    }
 }
 
 async fn fetch_previous_day_data(
@@ -409,6 +454,7 @@ pub async fn fetch_liiga_data(
     let mut response_data: Vec<ScheduleResponse> = Vec::new();
     let mut found_games = false;
     let mut previous_dates = Vec::new();
+    let mut last_error = None;
 
     // Try to get games for the selected date first
     for tournament in &tournaments {
@@ -424,9 +470,18 @@ pub async fn fetch_liiga_data(
                     }
                 }
             }
-            Err(e) => eprintln!("Failed to fetch data for {}: {}", tournament, e),
+            Err(e) => {
+                last_error = Some(e);
+                // Break early on API errors to avoid unnecessary retries
+                break;
+            }
             Ok(None) => continue,
         }
+    }
+
+    // If we got any errors, return the last error immediately
+    if let Some(e) = last_error {
+        return Err(e);
     }
 
     // If no games found in any tournament today, try the nearest previous game date

@@ -275,7 +275,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.once {
         // Quick view mode - just show the data once and exit
-        let games = fetch_liiga_data(args.date).await?;
+        let games = match fetch_liiga_data(args.date.clone()).await {
+            Ok(games) => games,
+            Err(e) => {
+                let mut error_page = TeletextPage::new(
+                    221,
+                    "JÄÄKIEKKO".to_string(),
+                    "SM-LIIGA".to_string(),
+                    args.disable_links,
+                    false,
+                    true,
+                );
+                error_page.add_error_message(&format!("Virhe haettaessa otteluita:\n{}", e));
+                let mut stdout = stdout();
+                enable_raw_mode()?;
+                error_page.render(&mut stdout)?;
+                disable_raw_mode()?;
+                println!();
+                return Ok(());
+            }
+        };
         let page = if games.is_empty() {
             let mut error_page = TeletextPage::new(
                 221,
@@ -338,7 +357,7 @@ async fn run_interactive_ui(
         .checked_sub(Duration::from_millis(200))
         .unwrap_or_else(Instant::now);
     let mut needs_refresh = true;
-    let mut current_page = None;
+    let mut current_page: Option<TeletextPage> = None;
     let mut pending_resize = false;
     let mut resize_timer = Instant::now();
     let mut last_resize = Instant::now()
@@ -359,29 +378,53 @@ async fn run_interactive_ui(
         }
 
         if needs_refresh {
-            let games = fetch_liiga_data(args.date.clone()).await?;
-            last_games = games.clone();
-            let page = if games.is_empty() {
-                let mut error_page = TeletextPage::new(
-                    221,
-                    "JÄÄKIEKKO".to_string(),
-                    "SM-LIIGA".to_string(),
-                    args.disable_links,
-                    true,
-                    false,
-                );
-                error_page.add_error_message("Ei otteluita tänään");
-                error_page
-            } else {
-                create_page(&games, args.disable_links, true, false)
+            let (games, had_error) = match fetch_liiga_data(args.date.clone()).await {
+                Ok(games) => (games, false),
+                Err(e) => {
+                    let mut error_page = TeletextPage::new(
+                        221,
+                        "JÄÄKIEKKO".to_string(),
+                        "SM-LIIGA".to_string(),
+                        args.disable_links,
+                        true,
+                        false,
+                    );
+                    error_page.add_error_message(&format!("Virhe haettaessa otteluita:\n{}", e));
+                    current_page = Some(error_page);
+                    if let Some(page) = &current_page {
+                        page.render(stdout)?;
+                    }
+                    needs_refresh = false;
+                    last_auto_refresh = Instant::now();
+                    (Vec::new(), true)
+                }
             };
+            last_games = games.clone();
 
-            // Store the current page state
-            current_page = Some(page);
+            // Only create a new page if we didn't have an error
+            if !had_error {
+                let page = if games.is_empty() {
+                    let mut error_page = TeletextPage::new(
+                        221,
+                        "JÄÄKIEKKO".to_string(),
+                        "SM-LIIGA".to_string(),
+                        args.disable_links,
+                        true,
+                        false,
+                    );
+                    error_page.add_error_message("Ei otteluita tänään");
+                    error_page
+                } else {
+                    create_page(&games, args.disable_links, true, false)
+                };
 
-            // Render only when we have new data
-            if let Some(page) = &current_page {
-                page.render(stdout)?;
+                // Store the current page state
+                current_page = Some(page);
+
+                // Render only when we have new data
+                if let Some(page) = &current_page {
+                    page.render(stdout)?;
+                }
             }
             needs_refresh = false;
             last_auto_refresh = Instant::now();
@@ -399,36 +442,34 @@ async fn run_interactive_ui(
         // Event loop with shorter timeout
         if event::poll(Duration::from_millis(20))? {
             match event::read()? {
-                Event::Key(key_event) => {
-                    match key_event.code {
-                        KeyCode::Char('q') => return Ok(()),
-                        KeyCode::Char('r') => {
-                            if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
-                                needs_refresh = true;
-                                last_manual_refresh = Instant::now();
-                            }
+                Event::Key(key_event) => match key_event.code {
+                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('r') => {
+                        if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
+                            needs_refresh = true;
+                            last_manual_refresh = Instant::now();
                         }
-                        KeyCode::Left => {
-                            if last_page_change.elapsed() >= Duration::from_millis(200) {
-                                if let Some(page) = &mut current_page {
-                                    page.previous_page();
-                                    page.render(stdout)?;
-                                }
-                                last_page_change = Instant::now();
-                            }
-                        }
-                        KeyCode::Right => {
-                            if last_page_change.elapsed() >= Duration::from_millis(200) {
-                                if let Some(page) = &mut current_page {
-                                    page.next_page();
-                                    page.render(stdout)?;
-                                }
-                                last_page_change = Instant::now();
-                            }
-                        }
-                        _ => {}
                     }
-                }
+                    KeyCode::Left => {
+                        if last_page_change.elapsed() >= Duration::from_millis(200) {
+                            if let Some(page) = &mut current_page {
+                                page.previous_page();
+                                page.render(stdout)?;
+                            }
+                            last_page_change = Instant::now();
+                        }
+                    }
+                    KeyCode::Right => {
+                        if last_page_change.elapsed() >= Duration::from_millis(200) {
+                            if let Some(page) = &mut current_page {
+                                page.next_page();
+                                page.render(stdout)?;
+                            }
+                            last_page_change = Instant::now();
+                        }
+                    }
+                    _ => {}
+                },
                 Event::Resize(_, _) => {
                     // Only set pending resize if enough time has passed since last resize
                     if last_resize.elapsed() >= Duration::from_millis(500) {
