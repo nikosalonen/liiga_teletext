@@ -1063,4 +1063,183 @@ mod tests {
             _ => panic!("Should be an error message"),
         }
     }
+
+    #[test]
+    fn test_game_result_display_scheduled() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            false,
+        );
+
+        // Add a scheduled game
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "TPS".to_string(),
+            time: "18:30".to_string(),
+            result: "".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 0,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+            log_time: String::new(),
+        }));
+
+        let (content, _) = page.get_page_content();
+        assert_eq!(content.len(), 1, "Should have one game");
+        match &content[0] {
+            TeletextRow::GameResult {
+                home_team,
+                away_team,
+                time,
+                score_type,
+                goal_events,
+                ..
+            } => {
+                assert_eq!(home_team, "HIFK");
+                assert_eq!(away_team, "TPS");
+                assert_eq!(time, "18:30");
+                assert!(matches!(score_type, ScoreType::Scheduled));
+                assert!(
+                    goal_events.is_empty(),
+                    "Scheduled game should have no goals"
+                );
+            }
+            _ => panic!("Should be a game result"),
+        }
+    }
+
+    #[test]
+    fn test_game_result_display_ongoing() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            false,
+        );
+
+        let goal_events = vec![GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Granlund".to_string(),
+            minute: 15,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["YV".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        }];
+
+        // Add an ongoing game
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "TPS".to_string(),
+            time: "19:30".to_string(),
+            result: "1-0".to_string(),
+            score_type: ScoreType::Ongoing,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events,
+            played_time: 1200, // 20:00
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+            log_time: String::new(),
+        }));
+
+        let (content, _) = page.get_page_content();
+        assert_eq!(content.len(), 1, "Should have one game");
+        match &content[0] {
+            TeletextRow::GameResult {
+                home_team,
+                away_team,
+                score_type,
+                goal_events,
+                played_time,
+                ..
+            } => {
+                assert_eq!(home_team, "HIFK");
+                assert_eq!(away_team, "TPS");
+                assert!(matches!(score_type, ScoreType::Ongoing));
+                assert_eq!(*played_time, 1200);
+                assert_eq!(goal_events.len(), 1);
+                assert_eq!(goal_events[0].scorer_name, "Granlund");
+                assert!(goal_events[0].goal_types.contains(&"YV".to_string()));
+            }
+            _ => panic!("Should be a game result"),
+        }
+    }
+
+    #[test]
+    fn test_game_result_display_final() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            false,
+        );
+
+        let goal_events = vec![GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Granlund".to_string(),
+            minute: 15,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: true,
+            goal_types: vec![],
+            is_home_team: true,
+            video_clip_url: None,
+        }];
+
+        // Add a finished game with overtime
+        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "TPS".to_string(),
+            time: "19:30".to_string(),
+            result: "1-0".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: true,
+            is_shootout: false,
+            goal_events,
+            played_time: 3600,
+            serie: "RUNKOSARJA".to_string(),
+            finished_type: String::new(),
+            log_time: String::new(),
+        }));
+
+        let (content, _) = page.get_page_content();
+        assert_eq!(content.len(), 1, "Should have one game");
+        match &content[0] {
+            TeletextRow::GameResult {
+                home_team,
+                away_team,
+                score_type,
+                is_overtime,
+                is_shootout,
+                goal_events,
+                ..
+            } => {
+                assert_eq!(home_team, "HIFK");
+                assert_eq!(away_team, "TPS");
+                assert!(matches!(score_type, ScoreType::Final));
+                assert!(*is_overtime);
+                assert!(!*is_shootout);
+                assert_eq!(goal_events.len(), 1);
+                assert!(goal_events[0].is_winning_goal);
+            }
+            _ => panic!("Should be a game result"),
+        }
+    }
 }
