@@ -57,13 +57,17 @@ cargo run --release
 
 ```
 liiga_teletext/
-├── Cargo.toml          # Project dependencies and metadata
-├── src/
-│   ├── main.rs         # Main application logic and event handling
-│   ├── teletext_ui.rs  # UI components and rendering
-│   ├── data_fetcher.rs # API integration and data processing
-│   ├── config.rs       # Configuration handling
-│   └── schemas/        # JSON schema definitions
+
+├── src/               # Source code directory
+│   ├── main.rs        # Main application logic and event handling
+│   ├── teletext_ui.rs # UI components and rendering
+│   ├── data_fetcher/  # Data fetching related modules
+│   ├── data_fetcher.rs# API integration and data processing
+│   ├── config.rs      # Configuration handling
+│   └── schemas/       # JSON schema definitions
+│       ├── game_schema.json         # Game data structure schema
+│       └── game_schedule_schema.json# Game schedule data structure schema
+
 ```
 
 ## Usage
