@@ -41,7 +41,14 @@ impl Config {
             fs::create_dir_all(config_dir)?;
         }
 
-        let content = toml::to_string_pretty(self)?;
+        // Ensure api_domain has https:// prefix
+        let api_domain = if !self.api_domain.starts_with("https://") {
+            format!("https://{}", self.api_domain.trim_start_matches("http://"))
+        } else {
+            self.api_domain.clone()
+        };
+
+        let content = toml::to_string_pretty(&Config { api_domain })?;
         let mut file = fs::File::create(&config_path)?;
         file.write_all(content.as_bytes())?;
 
