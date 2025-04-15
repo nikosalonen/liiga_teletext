@@ -81,6 +81,7 @@ liiga_teletext/
 - Use `-o` or `--once` to show scores once and exit immediately.
 - Use `-p` or `--plain` to disable clickable video links.
 - Use `-c` or `--config` to update the API domain.
+- Use `-l` or `--list-config` to list the current configuration.
 
 ## Configuration
 
