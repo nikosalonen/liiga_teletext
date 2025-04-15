@@ -12,6 +12,23 @@ use reqwest::Client;
 use std::collections::HashMap;
 use std::error::Error;
 
+/// Fetches game data for a specific tournament and date from the API.
+///
+/// # Arguments
+/// * `client` - HTTP client for making API requests
+/// * `config` - Application configuration containing API domain
+/// * `tournament` - Tournament identifier
+/// * `date` - Date string in YYYY-MM-DD format
+///
+/// # Returns
+/// * `Ok(Option<ScheduleResponse>)` - Successfully fetched schedule data, None if no data found
+/// * `Err(Box<dyn Error>)` - Error occurred during fetch with detailed error message
+///
+/// # Notes
+/// - Handles API connection errors with detailed error messages
+/// - Validates response status code
+/// - Includes config path in error messages for troubleshooting
+/// - Returns structured error messages for common failure cases
 pub async fn fetch_tournament_data(
     client: &Client,
     config: &Config,
