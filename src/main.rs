@@ -382,11 +382,7 @@ async fn run_interactive_ui(
     loop {
         // Check for auto-refresh first
         if !needs_refresh && !last_games.is_empty() {
-            if has_live_games(&last_games) {
-                if last_auto_refresh.elapsed() >= Duration::from_secs(60) {
-                    needs_refresh = true;
-                }
-            } else if last_auto_refresh.elapsed() >= Duration::from_secs(3600) {
+            if last_auto_refresh.elapsed() >= Duration::from_secs(60) {
                 needs_refresh = true;
             }
         }
