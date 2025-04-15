@@ -265,7 +265,7 @@ async fn fetch_game_data(
 
     // Check cache first
     let mut player_names = HashMap::new();
-    if let Some(cached_players) = get_cached_players(game_id) {
+    if let Some(cached_players) = get_cached_players(game_id).await {
         return Ok(process_goal_events(&game_response.game, &cached_players));
     }
 
@@ -284,7 +284,7 @@ async fn fetch_game_data(
     }
 
     // Update cache
-    cache_players(game_id, player_names.clone());
+    cache_players(game_id, player_names.clone()).await;
 
     Ok(process_goal_events(&game_response.game, &player_names))
 }
