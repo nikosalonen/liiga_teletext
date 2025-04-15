@@ -11,7 +11,30 @@ use std::collections::HashMap;
 /// * `player_names` - HashMap mapping player IDs to their full names
 ///
 /// # Returns
-/// A vector of GoalEventData containing processed goal events for both teams in chronological order
+/// * `Vec<GoalEventData>` - A vector of processed goal events in chronological order
+///
+/// # Features
+/// - Formats player names consistently (e.g., "Koivu" instead of "Mikko Koivu")
+/// - Includes goal timing and score information
+/// - Marks special goal types (powerplay, empty net, etc.)
+/// - Preserves video clip links when available
+/// - Maintains chronological order of goals from both teams
+///
+/// # Example
+/// ```rust
+/// use std::collections::HashMap;
+/// use data_fetcher::{GameData, GoalEventData, HasTeams, HasGoalEvents};
+///
+/// let mut player_names = HashMap::new();
+/// player_names.insert(123, "Mikko Koivu".to_string());
+/// player_names.insert(456, "Teemu Selänne".to_string());
+///
+/// let events = process_goal_events(&game, &player_names);
+/// // Events will contain formatted goal data with:
+/// // - Properly formatted player names
+/// // - Goals in chronological order
+/// // - Special indicators for powerplay goals, etc.
+/// ```
 pub fn process_goal_events<T>(game: &T, player_names: &HashMap<i64, String>) -> Vec<GoalEventData>
 where
     T: HasTeams,
@@ -28,16 +51,36 @@ where
 
 /// Processes goal events for a single team, filtering out certain goal types and formatting player names.
 ///
+/// This function handles:
+/// - Filtering out cancelled and removed goals
+/// - Formatting player names to show only capitalized last names
+/// - Handling missing player names gracefully
+/// - Preserving goal metadata like timing and special types
+///
 /// # Arguments
 /// * `team` - Team data implementing HasGoalEvents trait
 /// * `player_names` - HashMap mapping player IDs to their full names
 /// * `is_home_team` - Boolean indicating if this is the home team
 /// * `events` - Mutable vector to append processed goal events to
 ///
-/// # Notes
-/// - Filters out "RL0" (removed) and "VT0" (cancelled) goals
-/// - Formats player names to show only capitalized last name
-/// - Handles missing player names by using a generic "Pelaaja {id}" format
+/// # Examples
+///
+/// ```rust
+/// use std::collections::HashMap;
+/// use data_fetcher::{GoalEventData, HasGoalEvents};
+///
+/// let mut events = Vec::new();
+/// let mut player_names = HashMap::new();
+/// player_names.insert(123, "Mikko Koivu".to_string());
+///
+/// // Process goals for home team
+/// process_team_goals(&home_team, &player_names, true, &mut events);
+///
+/// // Events will now contain home team goals with:
+/// // - "Koivu" instead of "Mikko Koivu"
+/// // - No cancelled goals (RL0, VT0)
+/// // - Proper home/away team attribution
+/// ```
 pub fn process_team_goals(
     team: &dyn HasGoalEvents,
     player_names: &HashMap<i64, String>,
@@ -78,6 +121,31 @@ pub fn process_team_goals(
     }
 }
 
+/// Determines whether to show today's games based on the current time.
+///
+/// Games are shown for "today" if the current time is after 14:00 (2 PM).
+/// Before 14:00, yesterday's games are shown instead. This helps ensure that
+/// late-night games are still visible the next morning.
+///
+/// # Returns
+/// * `true` - Show today's games (current time is after 14:00)
+/// * `false` - Show yesterday's games (current time is before 14:00)
+///
+/// # Examples
+///
+/// ```rust
+/// use chrono::Local;
+///
+/// // At 13:59, returns false (show yesterday's games)
+/// // At 14:00, returns true (show today's games)
+/// let show_today = should_show_todays_games();
+///
+/// if show_today {
+///     println!("Showing today's games");
+/// } else {
+///     println!("Showing yesterday's games");
+/// }
+/// ```
 pub fn should_show_todays_games() -> bool {
     let now = Local::now();
     let cutoff_time = NaiveTime::from_hms_opt(14, 0, 0).unwrap();
