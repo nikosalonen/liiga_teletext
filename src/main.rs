@@ -65,6 +65,11 @@ struct Args {
     /// Show version information
     #[arg(short = 'V', long = "version", help_heading = "Info")]
     version: bool,
+
+    /// Disable all colors and special characters in output.
+    /// Useful for terminals that don't support colors or for plain text output.
+    #[arg(long = "no-color", short = 'n', help_heading = "Display Options")]
+    no_color: bool,
 }
 
 fn get_subheader(games: &[GameData]) -> String {
@@ -86,6 +91,7 @@ fn create_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    no_color: bool,
 ) -> TeletextPage {
     let subheader = get_subheader(games);
     let mut page = TeletextPage::new(
@@ -95,6 +101,7 @@ fn create_page(
         disable_video_links,
         show_footer,
         ignore_height_limit,
+        no_color,
     );
 
     for game in games {
@@ -299,6 +306,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     args.disable_links,
                     false,
                     true,
+                    args.no_color,
                 );
                 error_page.add_error_message(&format!("Virhe haettaessa otteluita:\n{}", e));
                 let mut stdout = stdout();
@@ -317,11 +325,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 args.disable_links,
                 false, // Don't show footer in quick view mode
                 true,  // Ignore height limit in quick view mode
+                args.no_color,
             );
             error_page.add_error_message("Ei otteluita tänään");
             error_page
         } else {
-            create_page(&games, args.disable_links, false, true) // Ignore height limit in quick view mode
+            create_page(&games, args.disable_links, false, true, args.no_color) // Ignore height limit in quick view mode
         };
 
         let mut stdout = stdout();
@@ -402,6 +411,7 @@ async fn run_interactive_ui(
                         args.disable_links,
                         true,
                         false,
+                        args.no_color,
                     );
                     error_page.add_error_message(&format!("Virhe haettaessa otteluita:\n{}", e));
                     current_page = Some(error_page);
@@ -425,11 +435,12 @@ async fn run_interactive_ui(
                         args.disable_links,
                         true,
                         false,
+                        args.no_color,
                     );
                     error_page.add_error_message("Ei otteluita tänään");
                     error_page
                 } else {
-                    create_page(&games, args.disable_links, true, false)
+                    create_page(&games, args.disable_links, true, false, args.no_color)
                 };
 
                 // Store the current page state

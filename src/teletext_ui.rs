@@ -54,6 +54,7 @@ pub struct TeletextPage {
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    no_color: bool,
 }
 
 pub enum TeletextRow {
@@ -76,6 +77,12 @@ pub enum ScoreType {
     Final,     // Final score
     Ongoing,   // Ongoing game with current score
     Scheduled, // Scheduled game with no score yet
+}
+
+impl ScoreType {
+    pub fn is_scheduled(&self) -> bool {
+        matches!(self, ScoreType::Scheduled)
+    }
 }
 
 /// Checks if there are any live/ongoing games in the provided game list.
@@ -153,6 +160,7 @@ impl TeletextPage {
     /// * `disable_video_links` - Whether to disable clickable video links
     /// * `show_footer` - Whether to show the control footer
     /// * `ignore_height_limit` - Whether to ignore terminal height limits
+    /// * `no_color` - Whether to disable color output
     ///
     /// # Returns
     /// * `TeletextPage` - A new instance configured with the provided parameters
@@ -165,6 +173,7 @@ impl TeletextPage {
     ///     "SM-LIIGA".to_string(),
     ///     false,
     ///     true,
+    ///     false,
     ///     false
     /// );
     /// ```
@@ -175,6 +184,7 @@ impl TeletextPage {
         disable_video_links: bool,
         show_footer: bool,
         ignore_height_limit: bool,
+        no_color: bool,
     ) -> Self {
         // Get terminal size, fallback to reasonable default if can't get size
         let screen_height = crossterm::terminal::size()
@@ -191,6 +201,7 @@ impl TeletextPage {
             disable_video_links,
             show_footer,
             ignore_height_limit,
+            no_color,
         }
     }
 
@@ -430,17 +441,27 @@ impl TeletextPage {
         // Clear the screen
         execute!(stdout, Clear(ClearType::All))?;
 
-        // Draw header with title having green background and rest blue
-        execute!(
-            stdout,
-            MoveTo(0, 0),
-            SetBackgroundColor(title_bg()),
-            SetForegroundColor(header_fg()),
-            Print(format!("{:<20}", self.title)),
-            SetBackgroundColor(header_bg()),
-            Print(format!("{:>35}", format!("SM-LIIGA {}", self.page_number))),
-            ResetColor
-        )?;
+        if !self.no_color {
+            // Draw header with title having green background and rest blue
+            execute!(
+                stdout,
+                MoveTo(0, 0),
+                SetBackgroundColor(title_bg()),
+                SetForegroundColor(header_fg()),
+                Print(format!("{:<20}", self.title)),
+                SetBackgroundColor(header_bg()),
+                Print(format!("{:>35}", format!("SM-LIIGA {}", self.page_number))),
+                ResetColor
+            )?;
+        } else {
+            // Draw header without colors
+            execute!(
+                stdout,
+                MoveTo(0, 0),
+                Print(format!("{:<20}", self.title)),
+                Print(format!("{:>35}", format!("SM-LIIGA {}", self.page_number)))
+            )?;
+        }
 
         // Draw subheader with pagination info on the right
         let total_pages = self.total_pages();
@@ -450,14 +471,23 @@ impl TeletextPage {
             String::new()
         };
 
-        execute!(
-            stdout,
-            MoveTo(0, 1),
-            SetForegroundColor(subheader_fg()),
-            Print(format!("{:<20}", self.subheader)),
-            Print(format!("{:>30}", page_info)),
-            ResetColor
-        )?;
+        if !self.no_color {
+            execute!(
+                stdout,
+                MoveTo(0, 1),
+                SetForegroundColor(subheader_fg()),
+                Print(format!("{:<20}", self.subheader)),
+                Print(format!("{:>30}", page_info)),
+                ResetColor
+            )?;
+        } else {
+            execute!(
+                stdout,
+                MoveTo(0, 1),
+                Print(format!("{:<20}", self.subheader)),
+                Print(format!("{:>30}", page_info))
+            )?;
+        }
 
         // Get content for current page
         let (visible_rows, _) = self.get_page_content();
@@ -497,41 +527,64 @@ impl TeletextPage {
                     };
 
                     // Draw game result line
-                    execute!(
-                        stdout,
-                        MoveTo(0, current_y),
-                        SetForegroundColor(text_fg()),
-                        Print(format!(
-                            "{:<20}",
-                            home_team.chars().take(20).collect::<String>()
-                        )),
-                        MoveTo(SEPARATOR_OFFSET as u16, current_y),
-                        Print("- "),
-                        MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
-                        Print(format!(
-                            "{:<20}",
-                            away_team.chars().take(20).collect::<String>()
-                        )),
-                        SetForegroundColor(match score_type {
-                            ScoreType::Final => result_fg(),
-                            ScoreType::Ongoing => text_fg(),
-                            ScoreType::Scheduled => text_fg(),
-                        }),
-                        MoveTo(45, current_y),
-                        Print(time_display),
-                        ResetColor
-                    )?;
+                    if !self.no_color {
+                        execute!(
+                            stdout,
+                            MoveTo(0, current_y),
+                            SetForegroundColor(text_fg()),
+                            Print(format!(
+                                "{:<20}",
+                                home_team.chars().take(20).collect::<String>()
+                            )),
+                            MoveTo(SEPARATOR_OFFSET as u16, current_y),
+                            Print("- "),
+                            MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
+                            Print(format!(
+                                "{:<20}",
+                                away_team.chars().take(20).collect::<String>()
+                            )),
+                            SetForegroundColor(match score_type {
+                                ScoreType::Final => result_fg(),
+                                ScoreType::Ongoing => text_fg(),
+                                ScoreType::Scheduled => text_fg(),
+                            }),
+                            MoveTo(45, current_y),
+                            Print(time_display),
+                            ResetColor
+                        )?;
+                    } else {
+                        execute!(
+                            stdout,
+                            MoveTo(0, current_y),
+                            Print(format!(
+                                "{:<20}",
+                                home_team.chars().take(20).collect::<String>()
+                            )),
+                            MoveTo(SEPARATOR_OFFSET as u16, current_y),
+                            Print("- "),
+                            MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
+                            Print(format!(
+                                "{:<20}",
+                                away_team.chars().take(20).collect::<String>()
+                            )),
+                            MoveTo(45, current_y),
+                            Print(time_display)
+                        )?;
+                    }
 
                     current_y += 1;
 
                     // Draw goal events if game has started
-                    if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
-                        && !goal_events.is_empty()
-                    {
-                        let home_scorers: Vec<_> =
-                            goal_events.iter().filter(|e| e.is_home_team).collect();
-                        let away_scorers: Vec<_> =
-                            goal_events.iter().filter(|e| !e.is_home_team).collect();
+                    if !score_type.is_scheduled() {
+                        let mut home_scorers = goal_events
+                            .iter()
+                            .filter(|e| e.is_home_team)
+                            .collect::<Vec<_>>();
+                        let mut away_scorers = goal_events
+                            .iter()
+                            .filter(|e| !e.is_home_team)
+                            .collect::<Vec<_>>();
+
                         let max_scorers = home_scorers.len().max(away_scorers.len());
 
                         for i in 0..max_scorers {
@@ -545,28 +598,39 @@ impl TeletextPage {
                                 } else {
                                     home_scorer_fg()
                                 };
-                                execute!(
-                                    stdout,
-                                    MoveTo(0, current_y),
-                                    SetForegroundColor(scorer_color),
-                                    Print(format!("{:2}", event.minute)),
-                                )?;
 
-                                // If there's a video clip and video links are not disabled, make the scorer name a clickable link
-                                if let Some(url) = &event.video_clip_url {
-                                    if !self.disable_video_links {
-                                        execute!(
-                                            stdout,
-                                            Print(" "),
-                                            SetForegroundColor(scorer_color),
-                                            Print(format!("{:<12}", event.scorer_name)),
-                                            Print("\x1B]8;;"),
-                                            Print(url),
-                                            Print("\x07"),
-                                            Print("▶"),
-                                            Print("\x1B]8;;\x07"),
-                                            ResetColor
-                                        )?;
+                                if !self.no_color {
+                                    execute!(
+                                        stdout,
+                                        MoveTo(0, current_y),
+                                        SetForegroundColor(scorer_color),
+                                        Print(format!("{:2}", event.minute)),
+                                    )?;
+
+                                    // If there's a video clip and video links are not disabled, make the scorer name a clickable link
+                                    if let Some(url) = &event.video_clip_url {
+                                        if !self.disable_video_links {
+                                            execute!(
+                                                stdout,
+                                                Print(" "),
+                                                SetForegroundColor(scorer_color),
+                                                Print(format!("{:<12}", event.scorer_name)),
+                                                Print("\x1B]8;;"),
+                                                Print(url),
+                                                Print("\x07"),
+                                                Print("▶"),
+                                                Print("\x1B]8;;\x07"),
+                                                ResetColor
+                                            )?;
+                                        } else {
+                                            execute!(
+                                                stdout,
+                                                Print(" "),
+                                                SetForegroundColor(scorer_color),
+                                                Print(format!("{:<12}", event.scorer_name)),
+                                                ResetColor
+                                            )?;
+                                        }
                                     } else {
                                         execute!(
                                             stdout,
@@ -576,26 +640,32 @@ impl TeletextPage {
                                             ResetColor
                                         )?;
                                     }
+
+                                    // Add goal type indicators if present
+                                    let goal_type = event.get_goal_type_display();
+                                    if !goal_type.is_empty() {
+                                        execute!(
+                                            stdout,
+                                            Print(" "),
+                                            SetForegroundColor(goal_type_fg()),
+                                            Print(goal_type),
+                                            ResetColor
+                                        )?;
+                                    }
                                 } else {
                                     execute!(
                                         stdout,
+                                        MoveTo(0, current_y),
+                                        Print(format!("{:2}", event.minute)),
                                         Print(" "),
-                                        SetForegroundColor(scorer_color),
-                                        Print(format!("{:<12}", event.scorer_name)),
-                                        ResetColor
+                                        Print(format!("{:<12}", event.scorer_name))
                                     )?;
-                                }
 
-                                // Add goal type indicators if present
-                                let goal_type = event.get_goal_type_display();
-                                if !goal_type.is_empty() {
-                                    execute!(
-                                        stdout,
-                                        Print(" "),
-                                        SetForegroundColor(goal_type_fg()),
-                                        Print(goal_type),
-                                        ResetColor
-                                    )?;
+                                    // Add goal type indicators if present
+                                    let goal_type = event.get_goal_type_display();
+                                    if !goal_type.is_empty() {
+                                        execute!(stdout, Print(" "), Print(goal_type))?;
+                                    }
                                 }
                             }
 
@@ -609,28 +679,39 @@ impl TeletextPage {
                                 } else {
                                     away_scorer_fg()
                                 };
-                                execute!(
-                                    stdout,
-                                    MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
-                                    SetForegroundColor(scorer_color),
-                                    Print(format!("{:2}", event.minute)),
-                                )?;
 
-                                // If there's a video clip and video links are not disabled, make the scorer name a clickable link
-                                if let Some(url) = &event.video_clip_url {
-                                    if !self.disable_video_links {
-                                        execute!(
-                                            stdout,
-                                            Print(" "),
-                                            SetForegroundColor(scorer_color),
-                                            Print(format!("{:<12}", event.scorer_name)),
-                                            Print("\x1B]8;;"),
-                                            Print(url),
-                                            Print("\x07"),
-                                            Print("▶"),
-                                            Print("\x1B]8;;\x07"),
-                                            ResetColor
-                                        )?;
+                                if !self.no_color {
+                                    execute!(
+                                        stdout,
+                                        MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
+                                        SetForegroundColor(scorer_color),
+                                        Print(format!("{:2}", event.minute)),
+                                    )?;
+
+                                    // If there's a video clip and video links are not disabled, make the scorer name a clickable link
+                                    if let Some(url) = &event.video_clip_url {
+                                        if !self.disable_video_links {
+                                            execute!(
+                                                stdout,
+                                                Print(" "),
+                                                SetForegroundColor(scorer_color),
+                                                Print(format!("{:<12}", event.scorer_name)),
+                                                Print("\x1B]8;;"),
+                                                Print(url),
+                                                Print("\x07"),
+                                                Print("▶"),
+                                                Print("\x1B]8;;\x07"),
+                                                ResetColor
+                                            )?;
+                                        } else {
+                                            execute!(
+                                                stdout,
+                                                Print(" "),
+                                                SetForegroundColor(scorer_color),
+                                                Print(format!("{:<12}", event.scorer_name)),
+                                                ResetColor
+                                            )?;
+                                        }
                                     } else {
                                         execute!(
                                             stdout,
@@ -640,26 +721,32 @@ impl TeletextPage {
                                             ResetColor
                                         )?;
                                     }
+
+                                    // Add goal type indicators if present
+                                    let goal_type = event.get_goal_type_display();
+                                    if !goal_type.is_empty() {
+                                        execute!(
+                                            stdout,
+                                            Print(" "),
+                                            SetForegroundColor(goal_type_fg()),
+                                            Print(goal_type),
+                                            ResetColor
+                                        )?;
+                                    }
                                 } else {
                                     execute!(
                                         stdout,
+                                        MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
+                                        Print(format!("{:2}", event.minute)),
                                         Print(" "),
-                                        SetForegroundColor(scorer_color),
-                                        Print(format!("{:<12}", event.scorer_name)),
-                                        ResetColor
+                                        Print(format!("{:<12}", event.scorer_name))
                                     )?;
-                                }
 
-                                // Add goal type indicators if present
-                                let goal_type = event.get_goal_type_display();
-                                if !goal_type.is_empty() {
-                                    execute!(
-                                        stdout,
-                                        Print(" "),
-                                        SetForegroundColor(goal_type_fg()),
-                                        Print(goal_type),
-                                        ResetColor
-                                    )?;
+                                    // Add goal type indicators if present
+                                    let goal_type = event.get_goal_type_display();
+                                    if !goal_type.is_empty() {
+                                        execute!(stdout, Print(" "), Print(goal_type))?;
+                                    }
                                 }
                             }
 
@@ -674,17 +761,29 @@ impl TeletextPage {
                 }
                 TeletextRow::ErrorMessage(message) => {
                     for (i, line) in message.lines().enumerate() {
-                        execute!(
-                            stdout,
-                            MoveTo(0, current_y),
-                            SetForegroundColor(text_fg()),
-                            Print(if i == 0 {
-                                "Virhe haettaessa otteluita:"
-                            } else {
-                                line
-                            }),
-                            ResetColor
-                        )?;
+                        if !self.no_color {
+                            execute!(
+                                stdout,
+                                MoveTo(0, current_y),
+                                SetForegroundColor(text_fg()),
+                                Print(if i == 0 {
+                                    "Virhe haettaessa otteluita:"
+                                } else {
+                                    line
+                                }),
+                                ResetColor
+                            )?;
+                        } else {
+                            execute!(
+                                stdout,
+                                MoveTo(0, current_y),
+                                Print(if i == 0 {
+                                    "Virhe haettaessa otteluita:"
+                                } else {
+                                    line
+                                })
+                            )?;
+                        }
                         current_y += 1;
                     }
                 }
@@ -699,18 +798,28 @@ impl TeletextPage {
                 "q=Lopeta"
             };
 
-            execute!(
-                stdout,
-                MoveTo(0, self.screen_height.saturating_sub(1)),
-                SetBackgroundColor(header_bg()),
-                SetForegroundColor(Color::Blue),
-                Print(if total_pages > 1 { "<<<" } else { "   " }),
-                SetForegroundColor(Color::White),
-                Print(format!("{:^49}", controls)),
-                SetForegroundColor(Color::Blue),
-                Print(if total_pages > 1 { ">>>" } else { "   " }),
-                ResetColor
-            )?;
+            if !self.no_color {
+                execute!(
+                    stdout,
+                    MoveTo(0, self.screen_height.saturating_sub(1)),
+                    SetBackgroundColor(header_bg()),
+                    SetForegroundColor(Color::Blue),
+                    Print(if total_pages > 1 { "<<<" } else { "   " }),
+                    SetForegroundColor(Color::White),
+                    Print(format!("{:^49}", controls)),
+                    SetForegroundColor(Color::Blue),
+                    Print(if total_pages > 1 { ">>>" } else { "   " }),
+                    ResetColor
+                )?;
+            } else {
+                execute!(
+                    stdout,
+                    MoveTo(0, self.screen_height.saturating_sub(1)),
+                    Print(if total_pages > 1 { "<<<" } else { "   " }),
+                    Print(format!("{:^49}", controls)),
+                    Print(if total_pages > 1 { ">>>" } else { "   " })
+                )?;
+            }
         }
 
         stdout.flush()?;
@@ -731,6 +840,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
+            false,
             false,
         );
         page.screen_height = 20; // Set fixed screen height for testing
@@ -778,14 +888,23 @@ mod tests {
             }));
         }
 
+        let total_pages = page.total_pages();
+        assert!(total_pages > 1, "Should have multiple pages");
+
+        // Test moving to next page
         let initial_page = page.current_page;
         page.next_page();
-        assert!(page.current_page > initial_page, "Should move to next page");
+        assert_eq!(
+            page.current_page,
+            initial_page + 1,
+            "Should move to next page"
+        );
 
+        // Test moving back
         page.previous_page();
         assert_eq!(
             page.current_page, initial_page,
-            "Should return to initial page"
+            "Should move back to previous page"
         );
     }
 
@@ -797,6 +916,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
+            false,
             false,
         );
         page.screen_height = 20; // Set fixed screen height for testing
@@ -871,6 +991,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
 
         // Test game without goals
@@ -930,6 +1051,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
         let error_msg = "Test Error";
         page.add_error_message(error_msg);
@@ -940,215 +1062,5 @@ mod tests {
             TeletextRow::ErrorMessage(msg) => assert_eq!(msg, error_msg),
             _ => panic!("Should be an error message"),
         }
-    }
-
-    #[test]
-    fn test_game_result_display() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-        );
-
-        // Test scheduled game display
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
-            home_team: "Home".to_string(),
-            away_team: "Away".to_string(),
-            time: "18.00".to_string(),
-            result: "0-0".to_string(),
-            score_type: ScoreType::Scheduled,
-            is_overtime: false,
-            is_shootout: false,
-            goal_events: vec![],
-            played_time: 0,
-            serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
-        }));
-
-        // Test ongoing game with goals
-        let goal_events = vec![
-            GoalEventData {
-                scorer_player_id: 123,
-                scorer_name: "Scorer".to_string(),
-                minute: 10,
-                home_team_score: 1,
-                away_team_score: 0,
-                is_winning_goal: false,
-                goal_types: vec!["YV".to_string()],
-                is_home_team: true,
-                video_clip_url: Some("http://example.com".to_string()),
-            },
-            GoalEventData {
-                scorer_player_id: 456,
-                scorer_name: "Away Scorer".to_string(),
-                minute: 25,
-                home_team_score: 1,
-                away_team_score: 1,
-                is_winning_goal: false,
-                goal_types: vec![],
-                is_home_team: false,
-                video_clip_url: None,
-            },
-        ];
-
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
-            home_team: "Home".to_string(),
-            away_team: "Away".to_string(),
-            time: "".to_string(),
-            result: "1-1".to_string(),
-            score_type: ScoreType::Ongoing,
-            is_overtime: false,
-            is_shootout: false,
-            goal_events: goal_events.clone(),
-            played_time: 1500,
-            serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
-        }));
-
-        // Test finished game with overtime
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
-            home_team: "Home OT".to_string(),
-            away_team: "Away OT".to_string(),
-            time: "".to_string(),
-            result: "3-2".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: true,
-            is_shootout: false,
-            goal_events: vec![],
-            played_time: 3900,
-            serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
-        }));
-
-        // Test finished game with shootout
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
-            home_team: "Home SO".to_string(),
-            away_team: "Away SO".to_string(),
-            time: "".to_string(),
-            result: "4-3".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: true,
-            goal_events: vec![],
-            played_time: 3600,
-            serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
-        }));
-
-        let (content, _) = page.get_page_content();
-        assert_eq!(content.len(), 4, "Should show all games");
-
-        // Verify each game type is present
-        let mut found_scheduled = false;
-        let mut found_ongoing = false;
-        let mut found_overtime = false;
-        let mut found_shootout = false;
-
-        for row in content {
-            if let TeletextRow::GameResult {
-                score_type,
-                is_overtime,
-                is_shootout,
-                ..
-            } = row
-            {
-                match score_type {
-                    ScoreType::Scheduled => found_scheduled = true,
-                    ScoreType::Ongoing => found_ongoing = true,
-                    ScoreType::Final => {
-                        if *is_overtime {
-                            found_overtime = true;
-                        } else if *is_shootout {
-                            found_shootout = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        assert!(found_scheduled, "Should contain scheduled game");
-        assert!(found_ongoing, "Should contain ongoing game");
-        assert!(found_overtime, "Should contain overtime game");
-        assert!(found_shootout, "Should contain shootout game");
-    }
-
-    #[test]
-    fn test_video_link_display() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false, // video links enabled
-            true,
-            false,
-        );
-
-        let goal_events = vec![GoalEventData {
-            scorer_player_id: 123,
-            scorer_name: "Scorer".to_string(),
-            minute: 10,
-            home_team_score: 1,
-            away_team_score: 0,
-            is_winning_goal: false,
-            goal_types: vec![],
-            is_home_team: true,
-            video_clip_url: Some("http://example.com".to_string()),
-        }];
-
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
-            home_team: "Home".to_string(),
-            away_team: "Away".to_string(),
-            time: "".to_string(),
-            result: "1-0".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            goal_events: goal_events.clone(),
-            played_time: 3600,
-            serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
-        }));
-
-        // Create another page with video links disabled
-        let mut page_no_video = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            true, // video links disabled
-            true,
-            false,
-        );
-
-        page_no_video.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
-            home_team: "Home".to_string(),
-            away_team: "Away".to_string(),
-            time: "".to_string(),
-            result: "1-0".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            goal_events: goal_events,
-            played_time: 3600,
-            serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
-        }));
-
-        let (content, _) = page.get_page_content();
-        let (content_no_video, _) = page_no_video.get_page_content();
-
-        assert_eq!(
-            content.len(),
-            content_no_video.len(),
-            "Should have same number of games"
-        );
     }
 }
