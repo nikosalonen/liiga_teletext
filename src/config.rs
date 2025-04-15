@@ -63,4 +63,24 @@ impl Config {
             .to_string_lossy()
             .to_string()
     }
+
+    pub fn display() -> Result<(), Box<dyn Error>> {
+        let config_path = Config::get_config_path();
+
+        if Path::new(&config_path).exists() {
+            let config = Config::load()?;
+            println!("\nCurrent Configuration");
+            println!("────────────────────────────────────");
+            println!("Config Location:");
+            println!("{}", config_path);
+            println!("────────────────────────────────────");
+            println!("API Domain:");
+            println!("{}", config.api_domain);
+        } else {
+            println!("\nNo configuration file found at:");
+            println!("{}", config_path);
+        }
+
+        Ok(())
+    }
 }
