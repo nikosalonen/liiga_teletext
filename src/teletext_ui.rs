@@ -425,8 +425,23 @@ impl TeletextPage {
     /// ```
     /// let mut stdout = stdout();
     /// page.render(&mut stdout)?;
+    /// Renders the teletext-style UI for hockey game results to the terminal.
+    ///
+    /// Clears the terminal and displays the page header, subheader, paginated game results or error messages, and an optional footer with controls. The layout and alignment dynamically adjust to the current terminal width. Game results include team names, scores, goal events, and clickable video links if enabled.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if terminal operations fail.
+    ///
+    /// # Examples
+    ///
     /// ```
-    pub fn render(&self, stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error>> {
+    /// use std::io::{stdout, Stdout};
+    /// let mut page = TeletextPage::new(100, "Results".to_string(), "Today".to_string(), false, true, false);
+    /// // Add game results or error messages to the page...
+    /// let mut out = stdout();
+    /// page.render(&mut out).unwrap();
+    /// ```    pub fn render(&self, stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error>> {
         // Clear the screen
         execute!(stdout, Clear(ClearType::All))?;
 
