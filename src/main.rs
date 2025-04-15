@@ -53,6 +53,10 @@ struct Args {
     #[arg(long = "config", short = 'c', help_heading = "Configuration")]
     new_api_domain: Option<String>,
 
+    /// List current configuration settings
+    #[arg(long = "list-config", short = 'l', help_heading = "Configuration")]
+    list_config: bool,
+
     /// Show games for a specific date in YYYY-MM-DD format.
     /// If not provided, shows today's or yesterday's games based on current time.
     #[arg(long = "date", short = 'd', help_heading = "Display Options")]
@@ -240,10 +244,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Check for new version in the background for other commands
-    let version_check = tokio::spawn(check_latest_version());
+    // Handle configuration operations without version check
+    if args.list_config {
+        Config::display()?;
+        return Ok(());
+    }
 
-    // Handle config update if requested
     if args.new_api_domain.is_some() {
         let config_path = Config::get_config_path();
         let mut config = if Path::new(&config_path).exists() {
@@ -269,6 +275,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Config updated successfully!");
         return Ok(());
     }
+
+    // Check for new version in the background for non-config operations
+    let version_check = tokio::spawn(check_latest_version());
 
     // Load config first to fail early if there's an issue
     let _config = Config::load()?;
