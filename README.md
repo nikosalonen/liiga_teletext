@@ -73,6 +73,10 @@ liiga_teletext/
 - Data refreshes automatically:
   - Every minute for live games
   - Every hour for non-live games
+- Use `-d` or `--date` to specify a date to show games for.
+- Use `-o` or `--once` to show scores once and exit immediately.
+- Use `-p` or `--plain` to disable clickable video links.
+- Use `-c` or `--config` to update the API domain.
 
 ## Configuration
 
@@ -85,22 +89,6 @@ On first run, you will be prompted to enter your API domain. This will be saved 
 The configuration can be manually edited at any time by modifying this file. You can:
 
 - Update the API domain
-
-## Dependencies
-
-Key dependencies include:
-
-- chrono 0.4.40 - Date and time functionality
-- crossterm 0.29.0 - Terminal manipulation
-- reqwest 0.12.15 - HTTP client
-- tokio 1.44 - Async runtime
-- clap 4.5.36 - Command-line argument parsing
-- serde 1.0 - Serialization framework
-- toml 0.8 - Configuration file parsing
-- dirs 6.0.0 - Directory handling
-- futures 0.3 - Async utilities
-- lazy_static 1.5.0 - Static initialization
-- semver 1.0.22 - Version parsing
 
 ## Features Status
 
@@ -115,7 +103,7 @@ Key dependencies include:
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please feel free to submit a Pull Request. See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
 ## License
 
