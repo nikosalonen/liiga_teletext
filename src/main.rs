@@ -183,18 +183,13 @@ fn print_version_info(latest_version: &str) {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-
-    // Handle version flag first
-    if args.version {
-        execute!(
-            stdout(),
-            SetForegroundColor(Color::Cyan),
-            Print(format!(
-                "\n{}",
-                r#"
+fn print_logo() {
+    execute!(
+        stdout(),
+        SetForegroundColor(Color::Cyan),
+        Print(format!(
+            "\n{}",
+            r#"
  _     _ _               _____    _      _            _
 | |   (_|_) __ _  __ _  |_   _|__| | ___| |_ _____  _| |_
 | |   | | |/ _` |/ _` |   | |/ _ \ |/ _ \ __/ _ \ \/ / __|
@@ -202,10 +197,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 |_____|_|_|\__, |\__,_|   |_|\___|_|\___|\__\___/_/\_\\__|
            |___/
 "#
-            )),
-            ResetColor
-        )
-        .ok();
+        )),
+        ResetColor
+    )
+    .ok();
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
+    // Handle version flag first
+    if args.version {
+        print_logo();
 
         // Check for updates and show version info
         if let Some(latest_version) = check_latest_version().await {
@@ -246,6 +250,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Handle configuration operations without version check
     if args.list_config {
+        print_logo();
         Config::display()?;
         return Ok(());
     }
