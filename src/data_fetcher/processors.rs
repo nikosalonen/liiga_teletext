@@ -3,6 +3,15 @@ use crate::teletext_ui::ScoreType;
 use chrono::{DateTime, Local, NaiveTime, Utc};
 use std::collections::HashMap;
 
+/// Processes goal events for both teams in a game, converting them into a standardized format
+/// with player names and additional metadata.
+///
+/// # Arguments
+/// * `game` - A type implementing HasTeams trait containing both home and away team data
+/// * `player_names` - HashMap mapping player IDs to their full names
+///
+/// # Returns
+/// A vector of GoalEventData containing processed goal events for both teams in chronological order
 pub fn process_goal_events<T>(game: &T, player_names: &HashMap<i64, String>) -> Vec<GoalEventData>
 where
     T: HasTeams,
@@ -17,6 +26,18 @@ where
     events
 }
 
+/// Processes goal events for a single team, filtering out certain goal types and formatting player names.
+///
+/// # Arguments
+/// * `team` - Team data implementing HasGoalEvents trait
+/// * `player_names` - HashMap mapping player IDs to their full names
+/// * `is_home_team` - Boolean indicating if this is the home team
+/// * `events` - Mutable vector to append processed goal events to
+///
+/// # Notes
+/// - Filters out "RL0" (removed) and "VT0" (cancelled) goals
+/// - Formats player names to show only capitalized last name
+/// - Handles missing player names by using a generic "Pelaaja {id}" format
 pub fn process_team_goals(
     team: &dyn HasGoalEvents,
     player_names: &HashMap<i64, String>,

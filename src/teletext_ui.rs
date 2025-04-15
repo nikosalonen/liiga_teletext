@@ -205,6 +205,19 @@ impl TeletextPage {
         }
     }
 
+    /// Calculates and returns the content that should be displayed on the current page.
+    /// Handles pagination based on available screen height and content size.
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// * Vec<&TeletextRow> - Content rows that should be displayed on the current page
+    /// * bool - Whether there are more pages after the current one
+    ///
+    /// # Notes
+    /// - When ignore_height_limit is true, returns all content in a single page
+    /// - Otherwise, calculates how many items fit on each page based on screen height
+    /// - Reserves 5 lines for header, subheader, and footer
+    /// - Maintains consistent item grouping across pages
     fn get_page_content(&self) -> (Vec<&TeletextRow>, bool) {
         if self.ignore_height_limit {
             // When ignoring height limit, return all content in one page
