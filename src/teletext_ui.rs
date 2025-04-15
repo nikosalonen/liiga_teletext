@@ -431,6 +431,7 @@ impl TeletextPage {
         execute!(stdout, Clear(ClearType::All))?;
 
         // Draw header with title having green background and rest blue
+        let (width, _) = crossterm::terminal::size()?;
         execute!(
             stdout,
             MoveTo(0, 0),
@@ -438,7 +439,7 @@ impl TeletextPage {
             SetForegroundColor(header_fg()),
             Print(format!("{:<20}", self.title)),
             SetBackgroundColor(header_bg()),
-            Print(format!("{:>35}", format!("SM-LIIGA {}", self.page_number))),
+            Print(format!("{:>width$}", format!("SM-LIIGA {}", self.page_number), width = (width as usize).saturating_sub(20))),
             ResetColor
         )?;
 
@@ -455,7 +456,7 @@ impl TeletextPage {
             MoveTo(0, 1),
             SetForegroundColor(subheader_fg()),
             Print(format!("{:<20}", self.subheader)),
-            Print(format!("{:>30}", page_info)),
+            Print(format!("{:>width$}", page_info, width = (width as usize).saturating_sub(20))),
             ResetColor
         )?;
 
@@ -706,7 +707,7 @@ impl TeletextPage {
                 SetForegroundColor(Color::Blue),
                 Print(if total_pages > 1 { "<<<" } else { "   " }),
                 SetForegroundColor(Color::White),
-                Print(format!("{:^49}", controls)),
+                Print(format!("{:^width$}", controls, width = (width as usize).saturating_sub(6))),
                 SetForegroundColor(Color::Blue),
                 Print(if total_pages > 1 { ">>>" } else { "   " }),
                 ResetColor
