@@ -439,6 +439,7 @@ impl TeletextPage {
             SetForegroundColor(header_fg()),
             Print(format!("{:<20}", self.title)),
             SetBackgroundColor(header_bg()),
+            SetForegroundColor(Color::AnsiValue(231)), // Pure white
             Print(format!("{:>width$}", format!("SM-LIIGA {}", self.page_number), width = (width as usize).saturating_sub(20))),
             ResetColor
         )?;
