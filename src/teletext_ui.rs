@@ -14,8 +14,8 @@ fn header_bg() -> Color {
     Color::AnsiValue(21)
 } // Bright blue
 fn header_fg() -> Color {
-    Color::AnsiValue(231)
-} // Pure white
+    Color::AnsiValue(21)
+} // Bright blue
 fn subheader_fg() -> Color {
     Color::AnsiValue(46)
 } // Bright green
