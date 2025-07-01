@@ -15,7 +15,7 @@ use crossterm::{
 use data_fetcher::{GameData, fetch_liiga_data};
 use error::AppError;
 use semver::Version;
-use chrono::Local;
+use chrono::{Local, NaiveDate};
 use std::io::stdout;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -94,14 +94,10 @@ struct Args {
 }
 
 fn format_date_for_display(date_str: &str) -> String {
-    // Parse the date from YYYY-MM-DD format
-    let date_parts: Vec<&str> = date_str.split('-').collect();
-    if date_parts.len() >= 3 {
-        // Format as DD.MM.
-        format!("{}.{}.", date_parts[2], date_parts[1])
-    } else {
-        // Fallback if date format is unexpected
-        date_str.to_string()
+    // Parse the date using chrono for better error handling
+    match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        Ok(date) => date.format("%d.%m.").to_string(),
+        Err(_) => date_str.to_string(), // Fallback if parsing fails
     }
 }
 
