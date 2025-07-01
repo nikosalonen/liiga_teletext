@@ -253,21 +253,17 @@ async fn main() -> Result<(), AppError> {
     let config_log_path = Config::load().await.ok().and_then(|config| config.log_file_path);
 
     // Set up logging to both console and file
-    let (log_dir, log_file_name) = if let Some(custom_log_path) = args.log_file.as_ref().or(config_log_path.as_ref()) {
-        // If a custom log file path is provided (via args or config), use it
-        let path = Path::new(custom_log_path);
-        let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        let file_name = path.file_name().unwrap_or_else(|| std::ffi::OsStr::new("liiga_teletext.log"));
-        (
-            parent.to_string_lossy().to_string(),
-            file_name.to_string_lossy().to_string()
-        )
-    } else {
-        // Otherwise use the default log directory and file name
-        (
-            Config::get_log_dir_path(),
-            "liiga_teletext.log".to_string()
-        )
+    let custom_log_path = args.log_file.as_ref().or(config_log_path.as_ref());
+    let (log_dir, log_file_name) = match custom_log_path {
+        Some(custom_path) => {
+            let path = Path::new(custom_path);
+            let parent = path.parent().unwrap_or(Path::new("."));
+            let file_name = path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("liiga_teletext.log");
+            (parent.to_string_lossy().to_string(), file_name.to_string())
+        }
+        None => (Config::get_log_dir_path(), "liiga_teletext.log".to_string())
     };
 
     // Create log directory if it doesn't exist
