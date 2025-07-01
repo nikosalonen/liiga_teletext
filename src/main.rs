@@ -288,14 +288,7 @@ async fn main() -> Result<(), AppError> {
     // Create a non-blocking writer for the file appender
     // The guard must be kept alive for the duration of the program
     // to ensure logs are flushed properly
-    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
-
-    // Store the guard in a static variable to keep it alive
-    // for the duration of the program
-    static mut GUARD: Option<tracing_appender::non_blocking::WorkerGuard> = None;
-    unsafe {
-        GUARD = Some(guard);
-    }
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
     // Set up the subscriber with appropriate outputs based on mode
     let registry = tracing_subscriber::registry();
