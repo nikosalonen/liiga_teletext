@@ -214,29 +214,8 @@ api_domain = "https://api.example.com"
             log_file_path: Some("/custom/log/path".to_string()),
         };
 
-        // Test the save logic by manually creating the directory and saving
-        let config_dir = config_path.parent().unwrap();
-        if !config_dir.exists() {
-            fs::create_dir_all(config_dir).unwrap();
-        }
-
-        // Ensure api_domain has https:// prefix
-        let api_domain = if !config.api_domain.starts_with("https://") {
-            format!(
-                "https://{}",
-                config.api_domain.trim_start_matches("http://")
-            )
-        } else {
-            config.api_domain.clone()
-        };
-
-        let content = toml::to_string_pretty(&Config {
-            api_domain,
-            log_file_path: config.log_file_path.clone(),
-        })
-        .unwrap();
-        let mut file = fs::File::create(&config_path).unwrap();
-        std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
+        // Use the actual save method
+        config.save().await.unwrap();
 
         // Verify file was created and contains correct content
         assert!(config_path.exists());
@@ -255,29 +234,8 @@ api_domain = "https://api.example.com"
             log_file_path: None,
         };
 
-        // Test the save logic manually
-        let config_dir = config_path.parent().unwrap();
-        if !config_dir.exists() {
-            fs::create_dir_all(config_dir).unwrap();
-        }
-
-        // Ensure api_domain has https:// prefix
-        let api_domain = if !config.api_domain.starts_with("https://") {
-            format!(
-                "https://{}",
-                config.api_domain.trim_start_matches("http://")
-            )
-        } else {
-            config.api_domain.clone()
-        };
-
-        let content = toml::to_string_pretty(&Config {
-            api_domain,
-            log_file_path: config.log_file_path.clone(),
-        })
-        .unwrap();
-        let mut file = fs::File::create(&config_path).unwrap();
-        std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
+        // Use the actual save method
+        config.save().await.unwrap();
 
         // Verify the api_domain was prefixed with https://
         let content = fs::read_to_string(&config_path).unwrap();
@@ -294,29 +252,8 @@ api_domain = "https://api.example.com"
             log_file_path: None,
         };
 
-        // Test the save logic manually
-        let config_dir = config_path.parent().unwrap();
-        if !config_dir.exists() {
-            fs::create_dir_all(config_dir).unwrap();
-        }
-
-        // Ensure api_domain has https:// prefix
-        let api_domain = if !config.api_domain.starts_with("https://") {
-            format!(
-                "https://{}",
-                config.api_domain.trim_start_matches("http://")
-            )
-        } else {
-            config.api_domain.clone()
-        };
-
-        let content = toml::to_string_pretty(&Config {
-            api_domain,
-            log_file_path: config.log_file_path.clone(),
-        })
-        .unwrap();
-        let mut file = fs::File::create(&config_path).unwrap();
-        std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
+        // Use the actual save method
+        config.save().await.unwrap();
 
         // Verify the http:// was replaced with https://
         let content = fs::read_to_string(&config_path).unwrap();
@@ -334,28 +271,8 @@ api_domain = "https://api.example.com"
             log_file_path: None,
         };
 
-        // Test the save logic manually
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).unwrap();
-        }
-
-        // Ensure api_domain has https:// prefix
-        let api_domain = if !config.api_domain.starts_with("https://") {
-            format!(
-                "https://{}",
-                config.api_domain.trim_start_matches("http://")
-            )
-        } else {
-            config.api_domain.clone()
-        };
-
-        let content = toml::to_string_pretty(&Config {
-            api_domain,
-            log_file_path: config.log_file_path.clone(),
-        })
-        .unwrap();
-        let mut file = fs::File::create(&config_path).unwrap();
-        std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
+        // Use the actual save method
+        config.save().await.unwrap();
 
         // Verify directory was created
         assert!(config_dir.exists());
@@ -429,29 +346,8 @@ invalid_field = [1, 2, 3, "unclosed_string
             log_file_path: Some("/custom/log/path".to_string()),
         };
 
-        // Test the save logic manually
-        let config_dir = config_path.parent().unwrap();
-        if !config_dir.exists() {
-            fs::create_dir_all(config_dir).unwrap();
-        }
-
-        // Ensure api_domain has https:// prefix
-        let api_domain = if !original_config.api_domain.starts_with("https://") {
-            format!(
-                "https://{}",
-                original_config.api_domain.trim_start_matches("http://")
-            )
-        } else {
-            original_config.api_domain.clone()
-        };
-
-        let content = toml::to_string_pretty(&Config {
-            api_domain,
-            log_file_path: original_config.log_file_path.clone(),
-        })
-        .unwrap();
-        let mut file = fs::File::create(&config_path).unwrap();
-        std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
+        // Use the actual save method
+        original_config.save().await.unwrap();
 
         // Load config from the file
         let content = fs::read_to_string(&config_path).unwrap();
