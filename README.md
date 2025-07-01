@@ -8,16 +8,20 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 
 - Teletext-style interface with colored headers and content
 - Live game updates with automatic refresh
-- Support for multiple tournaments (regular season, playoffs, playout, qualifications)
+- Support for multiple tournaments (regular season, playoffs, playout, qualifications, practice games)
 - Command-line argument support using clap
+- Comprehensive logging system with configurable log file locations
+- Version checking and update notifications
 - Detailed game information including:
   - Game status (scheduled, ongoing, finished)
   - Score with overtime/shootout indicators
   - Goal scorers with timestamps
   - Video links for goals (can be disabled)
   - Pagination for multiple games
+  - Future games display with date headers
 - Keyboard navigation
 - Authentic YLE Teksti-TV appearance
+- Debug mode for development and troubleshooting
 
 ## Installation
 
@@ -31,7 +35,6 @@ You can create a symlink to the binary to make it available from anywhere:
 
 ```bash
 sudo ln -s ~/.cargo/bin/liiga_teletext /usr/local/bin/221 # 221 is the channel number of YLE Teksti-TV
-
 ```
 
 ### Install from source
@@ -50,7 +53,6 @@ cd liiga_teletext
 ```bash
 cargo build --release
 cargo run --release
-
 ```
 
 ## Project Structure
@@ -67,21 +69,36 @@ liiga_teletext/
     └── schemas/       # JSON schema definitions
         ├── game_schema.json         # Game data structure schema
         └── game_schedule_schema.json# Game schedule data structure schema
-
 ```
 
 ## Usage
 
+### Interactive Mode (Default)
 - Press `q` to quit the application
 - Use left/right arrow keys to navigate between pages
 - Data refreshes automatically:
   - Every minute for live games
   - Every hour for non-live games
-- Use `-d` or `--date` to specify a date to show games for.
-- Use `-o` or `--once` to show scores once and exit immediately.
-- Use `-p` or `--plain` to disable clickable video links.
-- Use `-c` or `--config` to update the API domain.
-- Use `-l` or `--list-config` to list the current configuration.
+
+### Command Line Options
+
+#### Display Options
+- `-d, --date <DATE>` - Show games for a specific date in YYYY-MM-DD format
+- `-o, --once` - Show scores once and exit immediately (useful for scripts)
+- `-p, --plain` - Disable clickable video links in the output
+
+#### Configuration
+- `-c, --config [DOMAIN]` - Update API domain in config (prompts if not provided)
+- `--set-log-file <PATH>` - Set a persistent custom log file location
+- `--clear-log-file` - Clear custom log file path and revert to default location
+- `-l, --list-config` - List current configuration settings
+
+#### Debug Options
+- `--debug` - Enable debug mode (doesn't clear terminal, logs to file)
+- `--log-file <PATH>` - Specify a custom log file path for this session
+
+#### Info
+- `-V, --version` - Show version information
 
 ## Configuration
 
@@ -94,6 +111,26 @@ On first run, you will be prompted to enter your API domain. This will be saved 
 The configuration can be manually edited at any time by modifying this file. You can:
 
 - Update the API domain
+- Set a custom log file path
+
+### Logging
+
+The application includes comprehensive logging that can be configured:
+
+- **Default location**: `~/.config/liiga_teletext/logs/liiga_teletext.log`
+- **Custom location**: Can be set via `--set-log-file` or `--log-file`
+- **Debug mode**: Logs are written to file instead of terminal display
+- **Log rotation**: Logs are automatically rotated by date
+
+## Tournament Support
+
+The application supports all major Liiga tournaments:
+
+- **Regular Season** (`runkosarja`) - Main league games
+- **Playoffs** (`playoffs`) - Championship playoffs
+- **Playout** (`playout`) - Relegation playoffs
+- **Qualifications** (`qualifications`) - Qualification games
+- **Practice Games** (`valmistavat_ottelut`) - Preseason practice games (May-September)
 
 ## Features Status
 
@@ -101,10 +138,15 @@ The configuration can be manually edited at any time by modifying this file. You
 - [x] Multiple pages of content with pagination
 - [x] Live game updates
 - [x] Goal scorer information
-- [x] Support for multiple tournaments
+- [x] Support for multiple tournaments including practice games
 - [x] Automatic refresh based on game state
 - [x] Configurable video link display
 - [x] Command-line argument support
+- [x] Comprehensive logging system
+- [x] Version checking and update notifications
+- [x] Debug mode for development
+- [x] Future games display with date headers
+- [x] Configuration management
 
 ## Contributing
 
