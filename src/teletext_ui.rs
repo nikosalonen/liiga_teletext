@@ -1,13 +1,17 @@
 // src/teletext_ui.rs - Updated with better display formatting
 
+use crate::config::Config;
 use crate::data_fetcher::GoalEventData;
+use crate::data_fetcher::api::fetch_regular_season_start_date;
 use crate::error::AppError;
+use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use crossterm::{
     cursor::MoveTo,
     execute,
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
+use reqwest::Client;
 use std::io::{Stdout, Write};
 
 // Constants for teletext appearance
@@ -45,6 +49,114 @@ fn title_bg() -> Color {
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 
+/// Calculates the number of days until the regular season starts.
+/// Returns None if the regular season has already started or if we can't determine the start date.
+async fn calculate_days_until_regular_season() -> Option<i64> {
+    // Try to fetch the actual season start date from the API
+    let config = match Config::load().await {
+        Ok(config) => config,
+        Err(_) => {
+            // Fallback to hardcoded dates if config loading fails
+            return calculate_days_until_regular_season_fallback();
+        }
+    };
+
+    let client = Client::new();
+    let current_year = Local::now().year();
+
+    // Try current year first
+    match fetch_regular_season_start_date(&client, &config, current_year).await {
+        Ok(Some(start_date)) => {
+            // Parse the ISO 8601 date from the API
+            if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
+                let today = Utc::now();
+                let days_until = (season_start.naive_utc().date() - today.naive_utc().date()).num_days();
+
+                if days_until > 0 {
+                    return Some(days_until);
+                }
+            }
+        }
+        Ok(None) => {
+            // No games found for current year, try next year
+        }
+        Err(_) => {
+            // API call failed, fallback to hardcoded dates
+            return calculate_days_until_regular_season_fallback();
+        }
+    }
+
+    // Try next year if current year failed or no games found
+    match fetch_regular_season_start_date(&client, &config, current_year + 1).await {
+        Ok(Some(start_date)) => {
+            // Parse the ISO 8601 date from the API
+            if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
+                let today = Utc::now();
+                let days_until = (season_start.naive_utc().date() - today.naive_utc().date()).num_days();
+
+                if days_until > 0 {
+                    return Some(days_until);
+                }
+            }
+        }
+        Ok(None) => {
+            // No games found for next year either
+        }
+        Err(_) => {
+            // API call failed, fallback to hardcoded dates
+            return calculate_days_until_regular_season_fallback();
+        }
+    }
+
+    // If all API calls failed, fallback to hardcoded dates
+    calculate_days_until_regular_season_fallback()
+}
+
+/// Fallback function that uses hardcoded dates when API is unavailable.
+/// This maintains the original behavior as a backup.
+fn calculate_days_until_regular_season_fallback() -> Option<i64> {
+    // For now, we'll use a simple approach based on typical Liiga season start dates
+    // The regular season typically starts in early September
+    let current_year = Local::now().year() + 1;
+
+    // Try to find the regular season start date for the current year
+    // Liiga regular season typically starts in early September
+    let season_start_candidates = vec![
+        format!("{}-09-01", current_year), // September 1st
+        format!("{}-09-02", current_year), // September 2nd
+        format!("{}-09-03", current_year), // September 3rd
+        format!("{}-09-04", current_year), // September 4th
+        format!("{}-09-05", current_year), // September 5th
+        format!("{}-09-06", current_year), // September 6th
+        format!("{}-09-07", current_year), // September 7th
+        format!("{}-09-08", current_year), // September 8th
+        format!("{}-09-09", current_year), // September 9th
+        format!("{}-09-10", current_year), // September 10th
+    ];
+
+    let today = Local::now().date_naive();
+
+    for date_str in season_start_candidates {
+        if let Ok(season_start) = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
+            if season_start > today {
+                let days_until = (season_start - today).num_days();
+                return Some(days_until);
+            }
+        }
+    }
+
+    // If we're past September, check next year
+    let next_year = current_year + 1;
+    let next_season_start = format!("{}-09-01", next_year);
+
+    if let Ok(season_start) = NaiveDate::parse_from_str(&next_season_start, "%Y-%m-%d") {
+        let days_until = (season_start - today).num_days();
+        return Some(days_until);
+    }
+
+    None
+}
+
 pub struct TeletextPage {
     page_number: u16,
     title: String,
@@ -55,6 +167,8 @@ pub struct TeletextPage {
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    auto_refresh_disabled: bool,
+    season_countdown: Option<String>,
 }
 
 pub enum TeletextRow {
@@ -70,6 +184,7 @@ pub enum TeletextRow {
         played_time: i32,
     },
     ErrorMessage(String),
+    FutureGamesHeader(String), // For "Seuraavat ottelut {date}" line
 }
 
 #[derive(Debug, Clone)]
@@ -171,6 +286,8 @@ impl TeletextPage {
             disable_video_links,
             show_footer,
             ignore_height_limit,
+            auto_refresh_disabled: false,
+            season_countdown: None,
         }
     }
 
@@ -255,6 +372,42 @@ impl TeletextPage {
             .push(TeletextRow::ErrorMessage(formatted_message));
     }
 
+    /// Adds a header row indicating future games with the specified text.
+    /// Typically used to display "Seuraavat ottelut" (Next games) with a date.
+    pub fn add_future_games_header(&mut self, header_text: String) {
+        self.content_rows
+            .push(TeletextRow::FutureGamesHeader(header_text));
+    }
+
+    /// Sets whether auto-refresh should be disabled for this page.
+    /// Useful for pages showing only future/scheduled games that don't need frequent updates.
+    pub fn set_auto_refresh_disabled(&mut self, disabled: bool) {
+        self.auto_refresh_disabled = disabled;
+    }
+
+    /// Sets whether to show the season countdown in the footer.
+    /// The countdown will be displayed in the footer area if enabled and regular season hasn't started.
+    pub async fn set_show_season_countdown(&mut self, games: &[crate::data_fetcher::GameData]) {
+        // Only show countdown if we have games and they're not from the regular season yet
+        if games.is_empty() {
+            return;
+        }
+
+        // Check if any game is from the regular season (runkosarja)
+        let has_regular_season_games = games.iter().any(|game| game.serie == "RUNKOSARJA");
+
+        if has_regular_season_games {
+            // Regular season has started, don't show countdown
+            return;
+        }
+
+        // Find the earliest regular season game by fetching future regular season games
+        if let Some(days_until_season) = calculate_days_until_regular_season().await {
+            let countdown_text = format!("Liiga kauden alkuun {} päivää", days_until_season);
+            self.season_countdown = Some(countdown_text);
+        }
+    }
+
     fn calculate_game_height(game: &TeletextRow) -> u16 {
         match game {
             TeletextRow::GameResult { goal_events, .. } => {
@@ -266,6 +419,7 @@ impl TeletextPage {
                 base_height + scorer_lines as u16 + spacer
             }
             TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
+            TeletextRow::FutureGamesHeader(_) => 1u16, // Single line for future games header
         }
     }
 
@@ -407,7 +561,7 @@ impl TeletextPage {
     /// page.render(&mut stdout)?;
     /// ```
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), AppError> {
-        // Clear the screen
+        // Always clear the screen to ensure proper rendering
         execute!(stdout, Clear(ClearType::All))?;
 
         // Draw header with title having green background and rest blue
@@ -420,7 +574,11 @@ impl TeletextPage {
             Print(format!("{:<20}", self.title)),
             SetBackgroundColor(header_bg()),
             SetForegroundColor(Color::AnsiValue(231)), // Pure white
-            Print(format!("{:>width$}", format!("SM-LIIGA {}", self.page_number), width = (width as usize).saturating_sub(20))),
+            Print(format!(
+                "{:>width$}",
+                format!("SM-LIIGA {}", self.page_number),
+                width = (width as usize).saturating_sub(20)
+            )),
             ResetColor
         )?;
 
@@ -437,7 +595,11 @@ impl TeletextPage {
             MoveTo(0, 1),
             SetForegroundColor(subheader_fg()),
             Print(format!("{:<20}", self.subheader)),
-            Print(format!("{:>width$}", page_info, width = (width as usize).saturating_sub(20))),
+            Print(format!(
+                "{:>width$}",
+                page_info,
+                width = (width as usize).saturating_sub(20)
+            )),
             ResetColor
         )?;
 
@@ -655,40 +817,97 @@ impl TeletextPage {
                     }
                 }
                 TeletextRow::ErrorMessage(message) => {
-                    for (i, line) in message.lines().enumerate() {
+                    execute!(
+                        stdout,
+                        MoveTo(0, current_y),
+                        SetForegroundColor(text_fg()),
+                        Print("Virhe haettaessa otteluita:"),
+                        ResetColor
+                    )?;
+                    current_y += 1;
+                    for line in message.lines() {
                         execute!(
                             stdout,
                             MoveTo(0, current_y),
                             SetForegroundColor(text_fg()),
-                            Print(if i == 0 {
-                                "Virhe haettaessa otteluita:"
-                            } else {
-                                line
-                            }),
+                            Print(line),
                             ResetColor
                         )?;
                         current_y += 1;
                     }
                 }
+                TeletextRow::FutureGamesHeader(header_text) => {
+                    execute!(
+                        stdout,
+                        MoveTo(0, current_y),
+                        SetForegroundColor(subheader_fg()),
+                        Print(header_text),
+                        ResetColor
+                    )?;
+                    current_y += 1;
+                }
             }
         }
 
-        // Only render footer if show_footer is true
+        // Render footer area if show_footer is true
         if self.show_footer {
-            let controls = if total_pages > 1 {
+            let footer_y = self.screen_height.saturating_sub(1);
+            let countdown_y = footer_y.saturating_sub(2);
+            let empty_y = footer_y.saturating_sub(1);
+
+            // Show countdown two lines above the blue bar, if available
+            if let Some(ref countdown_text) = self.season_countdown {
+                // Center the countdown text
+                let countdown_width = countdown_text.chars().count();
+                let left_padding = if width as usize > countdown_width {
+                    (width as usize - countdown_width) / 2
+                } else {
+                    0
+                };
+                execute!(
+                    stdout,
+                    MoveTo(0, countdown_y),
+                    SetForegroundColor(subheader_fg()),
+                    Print(format!(
+                        "{space:>pad$}{text}",
+                        space = "",
+                        pad = left_padding,
+                        text = countdown_text
+                    )),
+                    ResetColor
+                )?;
+            }
+
+            // Always print an empty line above the blue bar
+            execute!(stdout, MoveTo(0, empty_y), Print(""))?;
+
+            let mut controls = if total_pages > 1 {
                 "q=Lopeta ←→=Sivut"
             } else {
                 "q=Lopeta"
             };
 
+            // Add auto-refresh status if disabled
+            if self.auto_refresh_disabled {
+                controls = if total_pages > 1 {
+                    "q=Lopeta ←→=Sivut (Ei päivity)"
+                } else {
+                    "q=Lopeta (Ei päivity)"
+                };
+            }
+
             execute!(
                 stdout,
-                MoveTo(0, self.screen_height.saturating_sub(1)),
+                MoveTo(0, footer_y),
                 SetBackgroundColor(header_bg()),
                 SetForegroundColor(Color::Blue),
                 Print(if total_pages > 1 { "<<<" } else { "   " }),
                 SetForegroundColor(Color::White),
-                Print(format!("{:^width$}", controls, width = (width as usize).saturating_sub(6))),
+                Print(format!(
+                    "{:^width$}",
+                    controls,
+                    width = (width as usize).saturating_sub(6)
+                )),
                 SetForegroundColor(Color::Blue),
                 Print(if total_pages > 1 { ">>>" } else { "   " }),
                 ResetColor
@@ -752,9 +971,10 @@ mod tests {
                 score_type: ScoreType::Final,
                 is_overtime: false,
                 is_shootout: false,
-                goal_events: goal_events,
+                goal_events,
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
+                start: "2025-01-01T00:00:00Z".to_string(),
             }));
         }
 
@@ -816,9 +1036,10 @@ mod tests {
                 score_type: ScoreType::Final,
                 is_overtime: false,
                 is_shootout: false,
-                goal_events: goal_events,
+                goal_events,
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
+                start: "2025-01-01T00:00:00Z".to_string(),
             }));
         }
 
@@ -863,6 +1084,7 @@ mod tests {
             goal_events: vec![],
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Test game with goals
@@ -889,6 +1111,7 @@ mod tests {
             goal_events: goals,
             played_time: 600,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         let (content, _) = page.get_page_content();
@@ -939,6 +1162,7 @@ mod tests {
             goal_events: vec![],
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Test ongoing game with goals
@@ -978,6 +1202,7 @@ mod tests {
             goal_events: goal_events.clone(),
             played_time: 1500,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Test finished game with overtime
@@ -992,6 +1217,7 @@ mod tests {
             goal_events: vec![],
             played_time: 3900,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Test finished game with shootout
@@ -1006,6 +1232,7 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         let (content, _) = page.get_page_content();
@@ -1022,8 +1249,8 @@ mod tests {
                 score_type,
                 is_overtime,
                 is_shootout,
-                ..}
-             = row
+                ..
+            } = row
             {
                 match score_type {
                     ScoreType::Scheduled => found_scheduled = true,
@@ -1079,6 +1306,7 @@ mod tests {
             goal_events: goal_events.clone(),
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Create another page with video links disabled
@@ -1102,6 +1330,7 @@ mod tests {
             goal_events: goal_events,
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         let (content, _) = page.get_page_content();
