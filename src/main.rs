@@ -4,6 +4,7 @@ mod data_fetcher;
 mod error;
 mod teletext_ui;
 
+use chrono::{Local, NaiveDate};
 use clap::Parser;
 use config::Config;
 use crossterm::{
@@ -16,11 +17,29 @@ use data_fetcher::{GameData, fetch_liiga_data};
 use error::AppError;
 use semver::Version;
 use std::io::stdout;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use teletext_ui::{GameResultData, TeletextPage};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::{
+    EnvFilter,
+    fmt::{self, format::FmtSpan},
+    prelude::*,
+};
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
+
+/// Determines if the application should run in non-interactive mode
+/// based on the provided command line arguments.
+fn is_noninteractive_mode(args: &Args) -> bool {
+    args.once
+        || args.list_config
+        || args.version
+        || args.new_api_domain.is_some()
+        || args.new_log_file_path.is_some()
+        || args.clear_log_file_path
+}
 
 /// Finnish Hockey League (Liiga) Teletext Viewer
 ///
@@ -53,6 +72,14 @@ struct Args {
     #[arg(long = "config", short = 'c', help_heading = "Configuration")]
     new_api_domain: Option<String>,
 
+    /// Update log file path in config. This sets a persistent custom log file location.
+    #[arg(long = "set-log-file", help_heading = "Configuration")]
+    new_log_file_path: Option<String>,
+
+    /// Clear the custom log file path from config. This reverts to using the default log location.
+    #[arg(long = "clear-log-file", help_heading = "Configuration")]
+    clear_log_file_path: bool,
+
     /// List current configuration settings
     #[arg(long = "list-config", short = 'l', help_heading = "Configuration")]
     list_config: bool,
@@ -65,6 +92,24 @@ struct Args {
     /// Show version information
     #[arg(short = 'V', long = "version", help_heading = "Info")]
     version: bool,
+
+    /// Enable debug mode which doesn't clear the terminal before drawing the UI.
+    /// In this mode, info logs are written to the log file instead of being displayed in the terminal.
+    /// The log file is created if it doesn't exist.
+    #[arg(long = "debug", help_heading = "Debug")]
+    debug: bool,
+
+    /// Specify a custom log file path. If not provided, logs will be written to the default location.
+    #[arg(long = "log-file", help_heading = "Debug")]
+    log_file: Option<String>,
+}
+
+fn format_date_for_display(date_str: &str) -> String {
+    // Parse the date using chrono for better error handling
+    match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        Ok(date) => date.format("%d.%m.").to_string(),
+        Err(_) => date_str.to_string(), // Fallback if parsing fails
+    }
 }
 
 fn get_subheader(games: &[GameData]) -> String {
@@ -77,15 +122,20 @@ fn get_subheader(games: &[GameData]) -> String {
         "PLAYOFFS" => "PLAYOFFS".to_string(),
         "PLAYOUT" => "PLAYOUT-OTTELUT".to_string(),
         "QUALIFICATIONS" => "LIIGAKARSINTA".to_string(),
+        "valmistavat_ottelut" => "HARJOITUSOTTELUT".to_string(),
+        "PRACTICE" => "HARJOITUSOTTELUT".to_string(),
         _ => "RUNKOSARJA".to_string(),
     }
 }
 
-fn create_page(
+/// Creates a base TeletextPage with common initialization logic.
+/// This helper function reduces code duplication between create_page and create_future_games_page.
+async fn create_base_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    future_games_header: Option<String>,
 ) -> TeletextPage {
     let subheader = get_subheader(games);
     let mut page = TeletextPage::new(
@@ -97,11 +147,103 @@ fn create_page(
         ignore_height_limit,
     );
 
+    // Add future games header first if provided
+    if let Some(header) = future_games_header {
+        page.add_future_games_header(header);
+    }
+
     for game in games {
         page.add_game_result(GameResultData::new(game));
     }
 
+    // Set season countdown if regular season hasn't started yet
+    page.set_show_season_countdown(games).await;
+
     page
+}
+
+async fn create_page(
+    games: &[GameData],
+    disable_video_links: bool,
+    show_footer: bool,
+    ignore_height_limit: bool,
+) -> TeletextPage {
+    create_base_page(games, disable_video_links, show_footer, ignore_height_limit, None).await
+}
+
+/// Validates if a game is in the future by checking both time and start fields.
+/// Returns true if the game has a non-empty time field and a valid future start date.
+fn is_future_game(game: &GameData) -> bool {
+    // Check if time field is non-empty (indicates scheduled game)
+    if game.time.is_empty() {
+        return false;
+    }
+
+    // Check if start field contains a valid future date
+    if game.start.is_empty() {
+        return false;
+    }
+
+    // Parse the start date to validate it's in the future
+    // Expected format: YYYY-MM-DDThh:mm:ssZ
+    match chrono::DateTime::parse_from_rfc3339(&game.start) {
+        Ok(game_start) => {
+            let now = chrono::Utc::now();
+            let is_future = game_start > now;
+
+            if !is_future {
+                tracing::debug!(
+                    "Game start time {} is not in the future (current: {})",
+                    game_start,
+                    now
+                );
+            }
+
+            is_future
+        }
+        Err(e) => {
+            tracing::warn!("Failed to parse game start time '{}': {}", game.start, e);
+            false
+        }
+    }
+}
+
+/// Creates a TeletextPage for future games if the games are scheduled.
+/// Returns Some(TeletextPage) if the games are future games, None otherwise.
+async fn create_future_games_page(
+    games: &[GameData],
+    disable_video_links: bool,
+    show_footer: bool,
+    ignore_height_limit: bool,
+    show_future_header: bool,
+) -> Option<TeletextPage> {
+    // Check if these are future games by validating both time and start fields
+    if !games.is_empty() && is_future_game(&games[0]) {
+        // Extract date from the first game's start field (assuming format YYYY-MM-DDThh:mm:ssZ)
+        let start_str = &games[0].start;
+        let date_str = start_str.split('T').next().unwrap_or("");
+        let formatted_date = format_date_for_display(date_str);
+
+        tracing::debug!(
+            "First game serie: '{}', subheader: '{}'",
+            games[0].serie,
+            get_subheader(games)
+        );
+
+        let future_games_header = if show_future_header {
+            Some(format!("Seuraavat ottelut {}", formatted_date))
+        } else {
+            None
+        };
+        let mut page = create_base_page(games, disable_video_links, show_footer, ignore_height_limit, future_games_header).await;
+
+        // Set auto-refresh disabled for scheduled games
+        page.set_auto_refresh_disabled(true);
+
+        Some(page)
+    } else {
+        None
+    }
 }
 
 /// Checks for the latest version of this crate on crates.io.
@@ -191,7 +333,7 @@ fn print_logo() {
             "\n{}",
             r#"
  _     _ _               _____    _      _            _
-| |   (_|_) __ _  __ _  |_   _|__| | ___| |_ _____  _| |_ 
+| |   (_|_) __ _  __ _  |_   _|__| | ___| |_ _____  _| |_
 | |   | | |/ _` |/ _` |   | |/ _ \ |/ _ \ __/ _ \ \/ / __|
 | |___| | | (_| | (_| |   | |  __/ |  __/ ||  __/>  <| |_
 |_____|_|_|\__, |\__,_|   |_|\___|_|\___|\__\___/_/\_\\__|
@@ -206,6 +348,106 @@ fn print_logo() {
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     let args = Args::parse();
+
+    // Try to load config to get log file path if specified
+    let config_log_path = Config::load()
+        .await
+        .ok()
+        .and_then(|config| config.log_file_path);
+
+    // Set up logging to both console and file
+    let custom_log_path = args.log_file.as_ref().or(config_log_path.as_ref());
+    let (log_dir, log_file_name) = match custom_log_path {
+        Some(custom_path) => {
+            let path = Path::new(custom_path);
+            let parent = path.parent().unwrap_or(Path::new("."));
+            let file_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("liiga_teletext.log");
+            (parent.to_string_lossy().to_string(), file_name.to_string())
+        }
+        None => (Config::get_log_dir_path(), "liiga_teletext.log".to_string()),
+    };
+
+    // Create log directory if it doesn't exist
+    if !Path::new(&log_dir).exists() {
+        std::fs::create_dir_all(&log_dir).map_err(|e| {
+            eprintln!("Failed to create log directory: {}", e);
+            e
+        })?;
+    }
+
+    // Set up a rolling file appender that creates a new log file each day
+    let file_appender = RollingFileAppender::new(Rotation::DAILY, &log_dir, &log_file_name);
+
+    // Create a non-blocking writer for the file appender
+    // The guard must be kept alive for the duration of the program
+    // to ensure logs are flushed properly
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    // Set up the subscriber with appropriate outputs based on mode
+    let registry = tracing_subscriber::registry();
+    let is_noninteractive = is_noninteractive_mode(&args);
+
+    if is_noninteractive {
+        if args.once && !args.debug {
+            // Once mode without debug: log only to file, not to stdout
+            registry
+                .with(
+                    fmt::Layer::new()
+                        .with_writer(non_blocking)
+                        .with_ansi(false)
+                        .with_span_events(FmtSpan::CLOSE)
+                        .with_filter(
+                            EnvFilter::from_default_env()
+                                .add_directive("liiga_teletext=debug".parse().unwrap()),
+                        ),
+                )
+                .init();
+        } else {
+            // Other non-interactive modes: log to both stdout and file
+            registry
+                .with(
+                    fmt::Layer::new()
+                        .with_writer(std::io::stdout)
+                        .with_ansi(true)
+                        .with_filter(
+                            EnvFilter::from_default_env()
+                                .add_directive("liiga_teletext=info".parse().unwrap()),
+                        ),
+                )
+                .with(
+                    fmt::Layer::new()
+                        .with_writer(non_blocking)
+                        .with_ansi(false)
+                        .with_span_events(FmtSpan::CLOSE)
+                        .with_filter(
+                            EnvFilter::from_default_env()
+                                .add_directive("liiga_teletext=debug".parse().unwrap()),
+                        ),
+                )
+                .init();
+        }
+    } else {
+        // Interactive: log only to file
+        registry
+            .with(
+                fmt::Layer::new()
+                    .with_writer(non_blocking)
+                    .with_ansi(false)
+                    .with_span_events(FmtSpan::CLOSE)
+                    .with_filter(
+                        EnvFilter::from_default_env()
+                            .add_directive("liiga_teletext=debug".parse().unwrap()),
+                    ),
+            )
+            .init();
+    }
+
+    // Log the location of the log file
+    let log_file_path = format!("{}/{}", log_dir, log_file_name);
+    tracing::info!("Logs are being written to: {}", log_file_path);
 
     // Handle version flag first
     if args.version {
@@ -251,16 +493,30 @@ async fn main() -> Result<(), AppError> {
     // Handle configuration operations without version check
     if args.list_config {
         print_logo();
-        Config::display()?;
+        Config::display().await?;
         return Ok(());
     }
 
-    if let Some(new_domain) = args.new_api_domain {
-        let mut config = Config::load().unwrap_or_else(|_| Config {
+    // Handle configuration updates
+    if args.new_api_domain.is_some() || args.new_log_file_path.is_some() || args.clear_log_file_path
+    {
+        let mut config = Config::load().await.unwrap_or_else(|_| Config {
             api_domain: String::new(),
+            log_file_path: None,
         });
-        config.api_domain = new_domain;
-        config.save()?;
+
+        if let Some(new_domain) = args.new_api_domain {
+            config.api_domain = new_domain;
+        }
+
+        if let Some(new_log_path) = args.new_log_file_path {
+            config.log_file_path = Some(new_log_path);
+        } else if args.clear_log_file_path {
+            config.log_file_path = None;
+            println!("Custom log file path cleared. Using default location.");
+        }
+
+        config.save().await?;
         println!("Config updated successfully!");
         return Ok(());
     }
@@ -269,12 +525,12 @@ async fn main() -> Result<(), AppError> {
     let version_check = tokio::spawn(check_latest_version());
 
     // Load config first to fail early if there's an issue
-    let _config = Config::load()?;
+    let _config = Config::load().await?;
 
     if args.once {
         // Quick view mode - just show the data once and exit
-        let games = match fetch_liiga_data(args.date.clone()).await {
-            Ok(games) => games,
+        let (games, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
+            Ok((games, fetched_date)) => (games, fetched_date),
             Err(e) => {
                 let mut error_page = TeletextPage::new(
                     221,
@@ -284,11 +540,8 @@ async fn main() -> Result<(), AppError> {
                     false,
                     true,
                 );
-                error_page.add_error_message(&format!("Virhe haettaessa otteluita:\n{}", e));
-                let mut stdout = stdout();
-                enable_raw_mode()?;
-                error_page.render(&mut stdout)?;
-                disable_raw_mode()?;
+                error_page.add_error_message(&e.to_string());
+                error_page.render(&mut stdout())?;
                 println!();
                 return Ok(());
             }
@@ -302,16 +555,28 @@ async fn main() -> Result<(), AppError> {
                 false, // Don't show footer in quick view mode
                 true,  // Ignore height limit in quick view mode
             );
-            error_page.add_error_message("Ei otteluita tänään");
+            let today = Local::now().format("%Y-%m-%d").to_string();
+            if fetched_date == today {
+                error_page.add_error_message("Ei otteluita tänään");
+            } else {
+                error_page.add_error_message(&format!(
+                    "Ei otteluita {} päivälle",
+                    format_date_for_display(&fetched_date)
+                ));
+            }
             error_page
         } else {
-            create_page(&games, args.disable_links, false, true) // Ignore height limit in quick view mode
+            // Try to create a future games page, fall back to regular page if not future games
+            // Only show future games header if no specific date was requested
+            let show_future_header = args.date.is_none();
+            match create_future_games_page(&games, args.disable_links, true, true, show_future_header).await
+            {
+                Some(page) => page,
+                None => create_page(&games, args.disable_links, true, true).await,
+            }
         };
 
-        let mut stdout = stdout();
-        enable_raw_mode()?;
-        page.render(&mut stdout)?;
-        disable_raw_mode()?;
+        page.render(&mut stdout())?;
         println!(); // Add a newline at the end
 
         // Show version info after display if update is available
@@ -341,10 +606,7 @@ async fn main() -> Result<(), AppError> {
     result
 }
 
-async fn run_interactive_ui(
-    stdout: &mut std::io::Stdout,
-    args: &Args,
-) -> Result<(), AppError> {
+async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result<(), AppError> {
     let mut last_manual_refresh = Instant::now()
         .checked_sub(Duration::from_secs(15))
         .unwrap_or_else(Instant::now);
@@ -362,18 +624,18 @@ async fn run_interactive_ui(
         .checked_sub(Duration::from_millis(500))
         .unwrap_or_else(Instant::now);
     let mut last_games = Vec::new();
+    let mut all_games_scheduled = false;
 
     loop {
         // Check for auto-refresh first
-        if !needs_refresh && !last_games.is_empty() {
-            if last_auto_refresh.elapsed() >= Duration::from_secs(60) {
-                needs_refresh = true;
-            }
+        // Don't auto-refresh if all games are scheduled (future games)
+        if !needs_refresh && !last_games.is_empty() && !all_games_scheduled && last_auto_refresh.elapsed() >= Duration::from_secs(60) {
+            needs_refresh = true;
         }
 
         if needs_refresh {
-            let (games, had_error) = match fetch_liiga_data(args.date.clone()).await {
-                Ok(games) => (games, false),
+            let (games, had_error, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
+                Ok((games, fetched_date)) => (games, false, fetched_date),
                 Err(e) => {
                     let mut error_page = TeletextPage::new(
                         221,
@@ -383,15 +645,23 @@ async fn run_interactive_ui(
                         true,
                         false,
                     );
-                    error_page.add_error_message(&format!("Virhe haettaessa otteluita:\n{}", e));
+                    error_page.add_error_message(&e.to_string());
                     current_page = Some(error_page);
                     if let Some(page) = &current_page {
                         page.render(stdout)?;
                     }
-                    (Vec::new(), true)
+                    (Vec::new(), true, String::new())
                 }
             };
             last_games = games.clone();
+
+            // Check if all games are scheduled (future games)
+            all_games_scheduled =
+                !games.is_empty() && games.iter().all(is_future_game);
+
+            if all_games_scheduled {
+                tracing::info!("All games are scheduled - auto-refresh disabled");
+            }
 
             // Only create a new page if we didn't have an error
             if !had_error {
@@ -404,10 +674,34 @@ async fn run_interactive_ui(
                         true,
                         false,
                     );
-                    error_page.add_error_message("Ei otteluita tänään");
+                    let today = Local::now().format("%Y-%m-%d").to_string();
+                    if fetched_date == today {
+                        error_page.add_error_message("Ei otteluita tänään");
+                    } else {
+                        error_page.add_error_message(&format!(
+                            "Ei otteluita {} päivälle",
+                            format_date_for_display(&fetched_date)
+                        ));
+                    }
                     error_page
                 } else {
-                    create_page(&games, args.disable_links, true, false)
+                    // Try to create a future games page, fall back to regular page if not future games
+                    // Only show future games header if no specific date was requested
+                    let show_future_header = args.date.is_none();
+                    match create_future_games_page(
+                        &games,
+                        args.disable_links,
+                        true,
+                        false,
+                        show_future_header,
+                    )
+                    .await
+                    {
+                        Some(page) => page,
+                        None => {
+                            create_page(&games, args.disable_links, true, false).await
+                        }
+                    }
                 };
 
                 // Store the current page state

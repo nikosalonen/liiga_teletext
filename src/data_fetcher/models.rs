@@ -29,10 +29,26 @@ pub struct GoalEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleTeam {
     #[serde(rename = "teamId")]
-    pub team_id: String,
+    pub team_id: Option<String>,
+    #[serde(rename = "teamPlaceholder")]
+    pub team_placeholder: Option<String>,
     #[serde(rename = "teamName")]
-    pub team_name: String,
+    pub team_name: Option<String>,
     pub goals: i32,
+    #[serde(rename = "timeOut", default)]
+    pub time_out: Option<String>,
+    #[serde(rename = "powerplayInstances", default)]
+    pub powerplay_instances: i32,
+    #[serde(rename = "powerplayGoals", default)]
+    pub powerplay_goals: i32,
+    #[serde(rename = "shortHandedInstances", default)]
+    pub short_handed_instances: i32,
+    #[serde(rename = "shortHandedGoals", default)]
+    pub short_handed_goals: i32,
+    #[serde(rename = "ranking", default)]
+    pub ranking: Option<i32>,
+    #[serde(rename = "gameStartDateTime", default)]
+    pub game_start_date_time: Option<String>,
     #[serde(rename = "goalEvents", default)]
     pub goal_events: Vec<GoalEvent>,
 }
@@ -43,7 +59,7 @@ pub struct ScheduleGame {
     pub season: i32,
     pub start: String,
     #[serde(default)]
-    pub end: String,
+    pub end: Option<String>,
     #[serde(rename = "homeTeam")]
     pub home_team: ScheduleTeam,
     #[serde(rename = "awayTeam")]
@@ -59,13 +75,32 @@ pub struct ScheduleGame {
     pub serie: String,
 }
 
+/// Model for the schedule API response structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleApiGame {
+    pub id: i32,
+    pub season: i32,
+    pub start: String,
+    #[serde(rename = "homeTeamName")]
+    pub home_team_name: String,
+    #[serde(rename = "awayTeamName")]
+    pub away_team_name: String,
+    pub serie: i32, // This is an integer in the schedule API
+    #[serde(rename = "finishedType")]
+    pub finished_type: Option<String>,
+    pub started: bool,
+    pub ended: bool,
+    #[serde(rename = "gameTime")]
+    pub game_time: Option<i32>, // Can be null in the API response
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ScheduleResponse {
     pub games: Vec<ScheduleGame>,
     #[serde(rename = "previousGameDate")]
-    pub previous_game_date: String,
+    pub previous_game_date: Option<String>,
     #[serde(rename = "nextGameDate")]
-    pub next_game_date: String,
+    pub next_game_date: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,7 +159,7 @@ pub struct DetailedGame {
     pub season: i32,
     pub start: String,
     #[serde(default)]
-    pub end: String,
+    pub end: Option<String>,
     #[serde(rename = "homeTeam")]
     pub home_team: DetailedTeam,
     #[serde(rename = "awayTeam")]
@@ -170,6 +205,7 @@ pub struct GameData {
     pub serie: String,
     pub goal_events: Vec<GoalEventData>,
     pub played_time: i32,
+    pub start: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

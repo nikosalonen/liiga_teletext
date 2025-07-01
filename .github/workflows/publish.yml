@@ -1,56 +1,50 @@
 name: Publish to crates.io
 
 on:
-  release:
-    types: [ published]
+  push:
+    tags:
+      - 'v*.*.*'
 
 jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Update version in Cargo.toml
+      - name: Verify tag matches Cargo.toml version
         run: |
-          # Remove 'v' prefix if present in the tag
-          VERSION=${GITHUB_REF#refs/tags/}
-          VERSION=${VERSION#v}
-          # Update version in Cargo.toml
-          sed -i "s/^version = .*/version = \"${VERSION}\"/" Cargo.toml
-          # Update Cargo.lock
-          cargo update -p $(grep -m1 "name" Cargo.toml | cut -d'"' -f2)
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
 
-      - name: Setup Git
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "❌ Tag version ($TAG_VERSION) doesn't match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
 
-      - name: Commit version update
-        run: |
-          # Get the default branch name
-          DEFAULT_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
-          # Checkout the default branch
-          git checkout $DEFAULT_BRANCH
-          git add Cargo.toml Cargo.lock
-          git commit -m "chore: update version to ${VERSION}"
-          git push origin $DEFAULT_BRANCH
+          echo "✅ Tag version matches Cargo.toml version: $TAG_VERSION"
 
       - name: Run tests
         run: cargo test --all-features
 
-      - name: Verify package
-        run: cargo publish --dry-run
-
       - name: Publish to crates.io
-        run: cargo publish --token ${CRATES_TOKEN}
-        env:
-          CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
+        uses: katyo/publish-crates@v2
+        with:
+          registry-token: ${{ secrets.CRATES_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            ## 📦 Published to crates.io
+
+            This release is now available on [crates.io](https://crates.io/crates/liiga_teletext)
+
+            ### Install or Update
+            ```bash
+            cargo install liiga_teletext
+            ```
