@@ -1,3 +1,4 @@
+---
 name: Publish to crates.io
 
 on:
@@ -18,10 +19,12 @@ jobs:
       - name: Verify tag matches Cargo.toml version
         run: |
           TAG_VERSION=${GITHUB_REF#refs/tags/v}
-          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 \
+              | jq -r '.packages[0].version')
 
           if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
-            echo "❌ Tag version ($TAG_VERSION) doesn't match Cargo.toml version ($CARGO_VERSION)"
+            printf "❌ Tag version (%s) doesn't match Cargo.toml version (%s)\n" \
+                "$TAG_VERSION" "$CARGO_VERSION"
             exit 1
           fi
 
@@ -34,17 +37,3 @@ jobs:
         uses: katyo/publish-crates@v2
         with:
           registry-token: ${{ secrets.CRATES_TOKEN }}
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          body: |
-            ## 📦 Published to crates.io
-
-            This release is now available on [crates.io](https://crates.io/crates/liiga_teletext)
-
-            ### Install or Update
-            ```bash
-            cargo install liiga_teletext
-            ```
