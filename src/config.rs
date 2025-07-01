@@ -321,25 +321,30 @@ api_domain = "https://api.example.com"
         assert!(log_dir_path.ends_with("logs"));
     }
 
-    #[tokio::test]
+            #[tokio::test]
     async fn test_config_display_with_existing_config() {
-        // Clean up any existing config file first
-        let config_path = Config::get_config_path();
-        let _ = tokio::fs::remove_file(&config_path).await;
+        // Test the core functionality that display() uses by testing the load() method
+        // This avoids modifying the real config file while still testing the same logic
 
-        // Create a config file first
-        let config = Config {
+        // Create a temporary config file to test the loading functionality
+        let temp_dir = tempdir().unwrap();
+        let temp_config_path = temp_dir.path().join("config.toml");
+        let temp_config_path_str = temp_config_path.to_string_lossy();
+
+        // Create a test config file in temporary location
+        let test_config = Config {
             api_domain: "https://api.example.com".to_string(),
-            log_file_path: None,
+            log_file_path: Some("/custom/log/path".to_string()),
         };
-        config.save().await.unwrap();
+        test_config.save_to_path(&temp_config_path_str).await.unwrap();
 
-        // Test that display() works with existing config
-        let result = Config::display().await;
-        assert!(result.is_ok());
+        // Test that we can load the config (this is what display() does internally)
+        let loaded_config = Config::load_from_path(&temp_config_path_str).await.unwrap();
+        assert_eq!(loaded_config.api_domain, "https://api.example.com");
+        assert_eq!(loaded_config.log_file_path, Some("/custom/log/path".to_string()));
 
-        // Clean up
-        let _ = tokio::fs::remove_file(&config_path).await;
+        // The temporary directory and file will be automatically cleaned up
+        // when temp_dir goes out of scope
     }
 
     #[tokio::test]
