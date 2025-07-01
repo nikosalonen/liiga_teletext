@@ -15,6 +15,14 @@ include = [
     "LICENSE"
 ]
 
+[[bin]]
+name = "liiga_teletext"
+path = "src/main.rs"
+
+[lib]
+name = "liiga_teletext"
+path = "src/lib.rs"
+
 [dependencies]
 chrono = "0.4.40"
 crossterm = "0.29.0"
