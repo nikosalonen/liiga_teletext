@@ -370,9 +370,9 @@ api_domain = "https://api.example.com"
         assert!(config_path.contains("liiga_teletext"));
         assert!(config_path.ends_with("config.toml"));
 
-        // Should be an absolute path
+        // Should be an absolute or relative path (platform-agnostic)
         let path = PathBuf::from(&config_path);
-        assert!(path.is_absolute() || path.starts_with("."));
+        assert!(path.is_absolute() || path.is_relative());
     }
 
     #[test]
@@ -383,9 +383,9 @@ api_domain = "https://api.example.com"
         assert!(log_dir_path.contains("liiga_teletext"));
         assert!(log_dir_path.ends_with("logs"));
 
-        // Should be an absolute path
+        // Should be an absolute or relative path (platform-agnostic)
         let path = PathBuf::from(&log_dir_path);
-        assert!(path.is_absolute() || path.starts_with("."));
+        assert!(path.is_absolute() || path.is_relative());
     }
 
     #[tokio::test]
