@@ -153,6 +153,40 @@ fn create_page(
     page
 }
 
+/// Validates if a game is in the future by checking both time and start fields.
+/// Returns true if the game has a non-empty time field and a valid future start date.
+fn is_future_game(game: &GameData) -> bool {
+    // Check if time field is non-empty (indicates scheduled game)
+    if game.time.is_empty() {
+        return false;
+    }
+
+    // Check if start field contains a valid future date
+    if game.start.is_empty() {
+        return false;
+    }
+
+    // Parse the start date to validate it's in the future
+    // Expected format: YYYY-MM-DDThh:mm:ssZ
+    match chrono::DateTime::parse_from_rfc3339(&game.start) {
+        Ok(game_start) => {
+            let now = chrono::Utc::now();
+            let is_future = game_start > now;
+
+            if !is_future {
+                tracing::debug!("Game start time {} is not in the future (current: {})",
+                    game_start, now);
+            }
+
+            is_future
+        }
+        Err(e) => {
+            tracing::warn!("Failed to parse game start time '{}': {}", game.start, e);
+            false
+        }
+    }
+}
+
 /// Creates a TeletextPage for future games if the games are scheduled.
 /// Returns Some(TeletextPage) if the games are future games, None otherwise.
 fn create_future_games_page(
@@ -162,9 +196,8 @@ fn create_future_games_page(
     ignore_height_limit: bool,
     debug_mode: bool,
 ) -> Option<TeletextPage> {
-    // Check if these are future games by looking at the first game's time
-    // If time is not empty, it's a future game
-    if !games.is_empty() && !games[0].time.is_empty() {
+    // Check if these are future games by validating both time and start fields
+    if !games.is_empty() && is_future_game(&games[0]) {
         // Extract date from the first game's start field (assuming format YYYY-MM-DDThh:mm:ssZ)
         let start_str = &games[0].start;
         let date_str = start_str.split('T').next().unwrap_or("");
@@ -583,7 +616,7 @@ async fn run_interactive_ui(
             last_games = games.clone();
 
             // Check if all games are scheduled (future games)
-            all_games_scheduled = !games.is_empty() && games.iter().all(|game| !game.time.is_empty());
+            all_games_scheduled = !games.is_empty() && games.iter().all(|game| is_future_game(game));
 
             if all_games_scheduled {
                 tracing::info!("All games are scheduled - auto-refresh disabled");
