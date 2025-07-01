@@ -1,18 +1,18 @@
 // src/teletext_ui.rs - Updated with better display formatting
 
-use crate::data_fetcher::GoalEventData;
-use crate::error::AppError;
 use crate::config::Config;
+use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::api::fetch_regular_season_start_date;
+use crate::error::AppError;
+use chrono::{DateTime, Datelike, Local, NaiveDate};
 use crossterm::{
     cursor::MoveTo,
     execute,
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
-use std::io::{Stdout, Write};
-use chrono::{Local, NaiveDate, Datelike, DateTime};
 use reqwest::Client;
+use std::io::{Stdout, Write};
 
 // Constants for teletext appearance
 fn header_bg() -> Color {
@@ -76,10 +76,10 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
                     return Some(days_until);
                 }
             }
-        },
+        }
         Ok(None) => {
             // No games found for current year, try next year
-        },
+        }
         Err(_) => {
             // API call failed, fallback to hardcoded dates
             return calculate_days_until_regular_season_fallback();
@@ -98,10 +98,10 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
                     return Some(days_until);
                 }
             }
-        },
+        }
         Ok(None) => {
             // No games found for next year either
-        },
+        }
         Err(_) => {
             // API call failed, fallback to hardcoded dates
             return calculate_days_until_regular_season_fallback();
@@ -390,7 +390,7 @@ impl TeletextPage {
         self.auto_refresh_disabled = disabled;
     }
 
-            /// Sets whether to show the season countdown in the footer.
+    /// Sets whether to show the season countdown in the footer.
     /// The countdown will be displayed in the footer area if enabled and regular season hasn't started.
     pub async fn set_show_season_countdown(&mut self, games: &[crate::data_fetcher::GameData]) {
         // Only show countdown if we have games and they're not from the regular season yet
@@ -579,7 +579,11 @@ impl TeletextPage {
             Print(format!("{:<20}", self.title)),
             SetBackgroundColor(header_bg()),
             SetForegroundColor(Color::AnsiValue(231)), // Pure white
-            Print(format!("{:>width$}", format!("SM-LIIGA {}", self.page_number), width = (width as usize).saturating_sub(20))),
+            Print(format!(
+                "{:>width$}",
+                format!("SM-LIIGA {}", self.page_number),
+                width = (width as usize).saturating_sub(20)
+            )),
             ResetColor
         )?;
 
@@ -596,7 +600,11 @@ impl TeletextPage {
             MoveTo(0, 1),
             SetForegroundColor(subheader_fg()),
             Print(format!("{:<20}", self.subheader)),
-            Print(format!("{:>width$}", page_info, width = (width as usize).saturating_sub(20))),
+            Print(format!(
+                "{:>width$}",
+                page_info,
+                width = (width as usize).saturating_sub(20)
+            )),
             ResetColor
         )?;
 
@@ -846,7 +854,7 @@ impl TeletextPage {
             }
         }
 
-                // Render footer area if show_footer is true
+        // Render footer area if show_footer is true
         if self.show_footer {
             let footer_y = self.screen_height.saturating_sub(1);
             let countdown_y = footer_y.saturating_sub(2);
@@ -865,17 +873,18 @@ impl TeletextPage {
                     stdout,
                     MoveTo(0, countdown_y),
                     SetForegroundColor(subheader_fg()),
-                    Print(format!("{space:>pad$}{text}", space="", pad=left_padding, text=countdown_text)),
+                    Print(format!(
+                        "{space:>pad$}{text}",
+                        space = "",
+                        pad = left_padding,
+                        text = countdown_text
+                    )),
                     ResetColor
                 )?;
             }
 
             // Always print an empty line above the blue bar
-            execute!(
-                stdout,
-                MoveTo(0, empty_y),
-                Print("")
-            )?;
+            execute!(stdout, MoveTo(0, empty_y), Print(""))?;
 
             let mut controls = if total_pages > 1 {
                 "q=Lopeta ←→=Sivut"
@@ -899,7 +908,11 @@ impl TeletextPage {
                 SetForegroundColor(Color::Blue),
                 Print(if total_pages > 1 { "<<<" } else { "   " }),
                 SetForegroundColor(Color::White),
-                Print(format!("{:^width$}", controls, width = (width as usize).saturating_sub(6))),
+                Print(format!(
+                    "{:^width$}",
+                    controls,
+                    width = (width as usize).saturating_sub(6)
+                )),
                 SetForegroundColor(Color::Blue),
                 Print(if total_pages > 1 { ">>>" } else { "   " }),
                 ResetColor
@@ -964,7 +977,7 @@ mod tests {
                 score_type: ScoreType::Final,
                 is_overtime: false,
                 is_shootout: false,
-                goal_events: goal_events,
+                goal_events,
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
                 start: "2025-01-01T00:00:00Z".to_string(),
@@ -1030,7 +1043,7 @@ mod tests {
                 score_type: ScoreType::Final,
                 is_overtime: false,
                 is_shootout: false,
-                goal_events: goal_events,
+                goal_events,
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
                 start: "2025-01-01T00:00:00Z".to_string(),
@@ -1246,8 +1259,8 @@ mod tests {
                 score_type,
                 is_overtime,
                 is_shootout,
-                ..}
-             = row
+                ..
+            } = row
             {
                 match score_type {
                     ScoreType::Scheduled => found_scheduled = true,
@@ -1326,7 +1339,7 @@ mod tests {
             score_type: ScoreType::Final,
             is_overtime: false,
             is_shootout: false,
-            goal_events: goal_events,
+            goal_events,
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
