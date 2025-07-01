@@ -263,11 +263,15 @@ impl TeletextPage {
             .push(TeletextRow::ErrorMessage(formatted_message));
     }
 
+    /// Adds a header row indicating future games with the specified text.
+    /// Typically used to display "Seuraavat ottelut" (Next games) with a date.
     pub fn add_future_games_header(&mut self, header_text: String) {
         self.content_rows
             .push(TeletextRow::FutureGamesHeader(header_text));
     }
 
+    /// Sets whether auto-refresh should be disabled for this page.
+    /// Useful for pages showing only future/scheduled games that don't need frequent updates.
     pub fn set_auto_refresh_disabled(&mut self, disabled: bool) {
         self.auto_refresh_disabled = disabled;
     }
