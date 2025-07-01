@@ -22,95 +22,10 @@ fn get_team_name(team: &ScheduleTeam) -> &str {
         .unwrap_or("Unknown")
 }
 
-#[instrument(skip(client))]
-async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, AppError> {
-    info!("Fetching data from URL: {}", url);
-    let response = client.get(url).send().await?;
-    let status = response.status();
-    let headers = response.headers().clone();
-
-    info!("Response status: {}", status);
-    debug!("Response headers: {:?}", headers);
-
-    if !status.is_success() {
-        let error_message = format!(
-            "Failed to fetch data from API: {} (URL: {})",
-            status.canonical_reason().unwrap_or("Unknown error"),
-            url
-        );
-        error!("{}", error_message);
-        return Err(AppError::Custom(error_message));
-    }
-
-    let response_text = response.text().await?;
-    info!("Response length: {} bytes", response_text.len());
-    debug!("Response text: {}", response_text);
-
-    match serde_json::from_str::<T>(&response_text) {
-        Ok(parsed) => Ok(parsed),
-        Err(e) => {
-            error!("Failed to parse API response: {} (URL: {})", e, url);
-            error!("Response text (first 200 chars): {}", &response_text.chars().take(200).collect::<String>());
-            Err(AppError::ApiParse(e))
-        }
-    }
-}
-
-/// Fetches game data for a specific tournament and date from the API.
-#[instrument(skip(client, config))]
-pub async fn fetch_tournament_data(
-    client: &Client,
-    config: &Config,
-    tournament: &str,
-    date: &str,
-) -> Result<ScheduleResponse, AppError> {
-    info!("Fetching tournament data");
-    let url = format!(
-        "{}/games?tournament={}&date={}",
-        config.api_domain, tournament, date
-    );
-    fetch(client, &url).await
-}
-
-#[instrument(skip(client, config))]
-async fn fetch_day_data(
-    client: &Client,
-    config: &Config,
-    tournaments: &[&str],
-    date: &str,
-) -> Result<(Option<Vec<ScheduleResponse>>, HashMap<String, ScheduleResponse>), AppError> {
-    let mut responses = Vec::new();
-    let mut found_games = false;
-    let mut tournament_responses = HashMap::new();
-
-    // Process tournaments sequentially to respect priority order
-    for tournament in tournaments {
-        if let Ok(response) = fetch_tournament_data(client, config, tournament, date).await {
-            // Store all responses in the HashMap for potential reuse
-            let tournament_key = format!("{}-{}", tournament, date);
-            tournament_responses.insert(tournament_key, response.clone());
-
-            if !response.games.is_empty() {
-                responses.push(response);
-                found_games = true;
-            }
-        }
-    }
-
-    if found_games {
-        Ok((Some(responses), tournament_responses))
-    } else {
-        Ok((None, tournament_responses))
-    }
-}
-
-#[instrument(skip(custom_date))]
-pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameData>, String), AppError> {
-    info!("Starting to fetch Liiga data");
-    let config = Config::load().await?;
-    info!("Config loaded successfully");
-    let client = Client::new();
-    let date = custom_date.unwrap_or_else(|| {
+/// Determines the date to fetch data for based on custom date or current time.
+/// Returns today's date if games should be shown today, otherwise yesterday's date.
+fn determine_fetch_date(custom_date: Option<String>) -> String {
+    custom_date.unwrap_or_else(|| {
         let now = Local::now();
         if should_show_todays_games() {
             let date_str = now.format("%Y-%m-%d").to_string();
@@ -125,8 +40,12 @@ pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameDa
             info!("Using yesterday's date: {}", date_str);
             date_str
         }
-    });
+    })
+}
 
+/// Builds the list of tournaments to fetch based on the month.
+/// Different tournaments are active during different parts of the season.
+fn build_tournament_list(date: &str) -> Vec<&'static str> {
     // Parse the date to get the month
     let date_parts: Vec<&str> = date.split('-').collect();
     let month = if date_parts.len() >= 2 {
@@ -136,7 +55,6 @@ pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameDa
         Local::now().month()
     };
 
-    // Build tournament list based on month
     let mut tournaments = Vec::new();
 
     // Only include valmistavat_ottelut during August and September
@@ -149,7 +67,7 @@ pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameDa
     tournaments.push("runkosarja");
 
     // Only include playoffs, playout, and qualifications if month is March (3) or later
-    if month >= 3 && month  <= 6 {
+    if month >= 3 && month <= 6 {
         info!("Including playoffs, playout, and qualifications (month is {} >= 3)", month);
         tournaments.push("playoffs");
         tournaments.push("playout");
@@ -157,109 +75,124 @@ pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameDa
     } else {
         info!("Excluding playoffs, playout, and qualifications (month is {} < 3)", month);
     }
-    let mut all_games = Vec::new();
-    let mut response_data: Vec<ScheduleResponse> = Vec::new();
+
+    tournaments
+}
+
+/// Processes next game dates when no games are found for the current date.
+/// Returns the earliest next game date and tournaments that have games on that date.
+async fn process_next_game_dates(
+    client: &Client,
+    config: &Config,
+    tournaments: &[&str],
+    date: &str,
+    tournament_responses: HashMap<String, ScheduleResponse>,
+) -> Result<(Option<String>, Vec<ScheduleResponse>), AppError> {
     let mut tournament_next_dates: HashMap<&str, String> = HashMap::new();
     let mut earliest_date: Option<String> = None;
 
-    // First try to fetch data for the current date
-    info!("Fetching data for date: {} with tournaments: {:?}", date, tournaments);
-    let (games_option, tournament_responses) = fetch_day_data(&client, &config, &tournaments, &date).await?;
+    // Check for next game dates using the tournament responses we already have
+    for tournament in tournaments {
+        let tournament_key = format!("{}-{}", tournament, date);
 
-    if let Some(responses) = games_option {
-        info!("Found games for the current date. Number of responses: {}", responses.len());
-        response_data = responses;
-    } else {
-        info!("No games found for the current date, checking for next game dates");
-        // No games found for the current date, check for next game dates
-        // Use the tournament responses we already have from fetch_day_data
-        for tournament in &tournaments {
-            let tournament_key = format!("{}-{}", tournament, date);
-
-            if let Some(response) = tournament_responses.get(&tournament_key) {
-                if let Some(next_date) = &response.next_game_date {
-                    // Update earliest date if this is the first date or earlier than current earliest
-                    if earliest_date.is_none() || next_date < earliest_date.as_ref().unwrap() {
-                        earliest_date = Some(next_date.clone());
-                        info!("Updated earliest date to: {}", next_date);
-                    }
-                    tournament_next_dates.insert(*tournament, next_date.clone());
-                    info!("Tournament {} has next game date: {}", tournament, next_date);
-                } else {
-                    info!("Tournament {} has no next game date", tournament);
+        if let Some(response) = tournament_responses.get(&tournament_key) {
+            if let Some(next_date) = &response.next_game_date {
+                // Update earliest date if this is the first date or earlier than current earliest
+                if earliest_date.is_none() || next_date < earliest_date.as_ref().unwrap() {
+                    earliest_date = Some(next_date.clone());
+                    info!("Updated earliest date to: {}", next_date);
                 }
+                tournament_next_dates.insert(*tournament, next_date.clone());
+                info!("Tournament {} has next game date: {}", tournament, next_date);
             } else {
-                info!("No response found for tournament key: {}", tournament_key);
-            }
-        }
-
-        if let Some(next_date) = earliest_date.clone() {
-            info!("Found earliest next game date: {}", next_date);
-            // Only fetch tournaments that have games on the earliest date
-            let tournaments_to_fetch: Vec<&str> = tournament_next_dates
-                .iter()
-                .filter_map(|(tournament, date)| {
-                    if date == &next_date {
-                        info!("Tournament {} has games on the earliest date", tournament);
-                        Some(*tournament)
-                    } else {
-                        info!("Tournament {} has games on a later date: {}", tournament, date);
-                        None
-                    }
-                })
-                .collect();
-
-            if !tournaments_to_fetch.is_empty() {
-                info!("Fetching games for next date: {} for tournaments: {:?}", next_date, tournaments_to_fetch);
-
-                // Directly fetch tournament data for each tournament
-                for tournament in &tournaments_to_fetch {
-                    info!("Fetching data for tournament {} on date {}", tournament, next_date);
-                    match fetch_tournament_data(&client, &config, tournament, &next_date).await {
-                        Ok(response) => {
-                            if !response.games.is_empty() {
-                                info!("Found {} games for tournament {} on date {}",
-                                      response.games.len(), tournament, next_date);
-                                response_data.push(response);
-                            } else {
-                                info!("No games found for tournament {} on date {} despite next_game_date indicating games should exist",
-                                      tournament, next_date);
-                            }
-                        },
-                        Err(e) => {
-                            error!("Failed to fetch tournament data for {} on date {}: {}",
-                                  tournament, next_date, e);
-                        }
-                    }
-                }
-
-                // If we didn't find any games with direct fetching, try the regular fetch_day_data
-                if response_data.is_empty() {
-                    info!("No games found with direct tournament fetching, trying fetch_day_data");
-                    match fetch_day_data(&client, &config, &tournaments_to_fetch, &next_date).await {
-                        Ok((next_games_option, _)) => {
-                            if let Some(responses) = next_games_option {
-                                info!("Found {} responses with fetch_day_data", responses.len());
-                                response_data = responses;
-                            } else {
-                                info!("No games found with fetch_day_data either");
-                            }
-                        },
-                        Err(e) => {
-                            // Log the error but continue with empty response_data
-                            error!("Failed to fetch next games with fetch_day_data: {}. Continuing with empty data.", e);
-                        }
-                    }
-                }
-            } else {
-                info!("No tournaments have games on the earliest date: {}", next_date);
+                info!("Tournament {} has no next game date", tournament);
             }
         } else {
-            info!("No next game date found for any tournament");
+            info!("No response found for tournament key: {}", tournament_key);
         }
     }
 
-    // Process games if we found any
+    if let Some(next_date) = earliest_date.clone() {
+        info!("Found earliest next game date: {}", next_date);
+        // Only fetch tournaments that have games on the earliest date
+        let tournaments_to_fetch: Vec<&str> = tournament_next_dates
+            .iter()
+            .filter_map(|(tournament, date)| {
+                if date == &next_date {
+                    info!("Tournament {} has games on the earliest date", tournament);
+                    Some(*tournament)
+                } else {
+                    info!("Tournament {} has games on a later date: {}", tournament, date);
+                    None
+                }
+            })
+            .collect();
+
+        if !tournaments_to_fetch.is_empty() {
+            info!("Fetching games for next date: {} for tournaments: {:?}", next_date, tournaments_to_fetch);
+
+            let mut response_data = Vec::new();
+
+            // Directly fetch tournament data for each tournament
+            for tournament in &tournaments_to_fetch {
+                info!("Fetching data for tournament {} on date {}", tournament, next_date);
+                match fetch_tournament_data(client, config, tournament, &next_date).await {
+                    Ok(response) => {
+                        if !response.games.is_empty() {
+                            info!("Found {} games for tournament {} on date {}",
+                                  response.games.len(), tournament, next_date);
+                            response_data.push(response);
+                        } else {
+                            info!("No games found for tournament {} on date {} despite next_game_date indicating games should exist",
+                                  tournament, next_date);
+                        }
+                    },
+                    Err(e) => {
+                        error!("Failed to fetch tournament data for {} on date {}: {}",
+                              tournament, next_date, e);
+                    }
+                }
+            }
+
+            // If we didn't find any games with direct fetching, try the regular fetch_day_data
+            if response_data.is_empty() {
+                info!("No games found with direct tournament fetching, trying fetch_day_data");
+                match fetch_day_data(client, config, &tournaments_to_fetch, &next_date).await {
+                    Ok((next_games_option, _)) => {
+                        if let Some(responses) = next_games_option {
+                            info!("Found {} responses with fetch_day_data", responses.len());
+                            response_data = responses;
+                        } else {
+                            info!("No games found with fetch_day_data either");
+                        }
+                    },
+                    Err(e) => {
+                        // Log the error but continue with empty response_data
+                        error!("Failed to fetch next games with fetch_day_data: {}. Continuing with empty data.", e);
+                    }
+                }
+            }
+
+            Ok((Some(next_date), response_data))
+        } else {
+            info!("No tournaments have games on the earliest date: {}", next_date);
+            Ok((Some(next_date), Vec::new()))
+        }
+    } else {
+        info!("No next game date found for any tournament");
+        Ok((None, Vec::new()))
+    }
+}
+
+/// Processes game data from API responses and converts them to GameData objects.
+/// Handles team names, game times, results, and detailed goal events.
+async fn process_games(
+    client: &Client,
+    config: &Config,
+    response_data: Vec<ScheduleResponse>,
+) -> Result<Vec<GameData>, AppError> {
+    let mut all_games = Vec::new();
+
     if !response_data.is_empty() {
         info!("Processing {} response(s) with game data", response_data.len());
         for (i, response) in response_data.iter().enumerate() {
@@ -354,6 +287,122 @@ pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameDa
         info!("No response data to process");
     }
 
+    Ok(all_games)
+}
+
+#[instrument(skip(client))]
+async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, AppError> {
+    info!("Fetching data from URL: {}", url);
+    let response = client.get(url).send().await?;
+    let status = response.status();
+    let headers = response.headers().clone();
+
+    info!("Response status: {}", status);
+    debug!("Response headers: {:?}", headers);
+
+    if !status.is_success() {
+        let error_message = format!(
+            "Failed to fetch data from API: {} (URL: {})",
+            status.canonical_reason().unwrap_or("Unknown error"),
+            url
+        );
+        error!("{}", error_message);
+        return Err(AppError::Custom(error_message));
+    }
+
+    let response_text = response.text().await?;
+    info!("Response length: {} bytes", response_text.len());
+    debug!("Response text: {}", response_text);
+
+    match serde_json::from_str::<T>(&response_text) {
+        Ok(parsed) => Ok(parsed),
+        Err(e) => {
+            error!("Failed to parse API response: {} (URL: {})", e, url);
+            error!("Response text (first 200 chars): {}", &response_text.chars().take(200).collect::<String>());
+            Err(AppError::ApiParse(e))
+        }
+    }
+}
+
+/// Fetches game data for a specific tournament and date from the API.
+#[instrument(skip(client, config))]
+pub async fn fetch_tournament_data(
+    client: &Client,
+    config: &Config,
+    tournament: &str,
+    date: &str,
+) -> Result<ScheduleResponse, AppError> {
+    info!("Fetching tournament data");
+    let url = format!(
+        "{}/games?tournament={}&date={}",
+        config.api_domain, tournament, date
+    );
+    fetch(client, &url).await
+}
+
+#[instrument(skip(client, config))]
+async fn fetch_day_data(
+    client: &Client,
+    config: &Config,
+    tournaments: &[&str],
+    date: &str,
+) -> Result<(Option<Vec<ScheduleResponse>>, HashMap<String, ScheduleResponse>), AppError> {
+    let mut responses = Vec::new();
+    let mut found_games = false;
+    let mut tournament_responses = HashMap::new();
+
+    // Process tournaments sequentially to respect priority order
+    for tournament in tournaments {
+        if let Ok(response) = fetch_tournament_data(client, config, tournament, date).await {
+            // Store all responses in the HashMap for potential reuse
+            let tournament_key = format!("{}-{}", tournament, date);
+            tournament_responses.insert(tournament_key, response.clone());
+
+            if !response.games.is_empty() {
+                responses.push(response);
+                found_games = true;
+            }
+        }
+    }
+
+    if found_games {
+        Ok((Some(responses), tournament_responses))
+    } else {
+        Ok((None, tournament_responses))
+    }
+}
+
+#[instrument(skip(custom_date))]
+pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameData>, String), AppError> {
+    info!("Starting to fetch Liiga data");
+    let config = Config::load().await?;
+    info!("Config loaded successfully");
+    let client = Client::new();
+
+    // Determine the date to fetch data for
+    let date = determine_fetch_date(custom_date);
+
+    // Build the list of tournaments to fetch based on the month
+    let tournaments = build_tournament_list(&date);
+
+    // First try to fetch data for the current date
+    info!("Fetching data for date: {} with tournaments: {:?}", date, tournaments);
+    let (games_option, tournament_responses) = fetch_day_data(&client, &config, &tournaments, &date).await?;
+
+    let (response_data, earliest_date) = if let Some(responses) = games_option {
+        info!("Found games for the current date. Number of responses: {}", responses.len());
+        (responses, None)
+    } else {
+        info!("No games found for the current date, checking for next game dates");
+        // Process next game dates when no games are found for the current date
+        let (next_date, next_responses) = process_next_game_dates(&client, &config, &tournaments, &date, tournament_responses).await?;
+        (next_responses, next_date)
+    };
+
+    // Process games if we found any
+    let all_games = process_games(&client, &config, response_data).await?;
+
+    // Return results with appropriate date
     if all_games.is_empty() {
         info!("No games found after processing all data");
         if let Some(next_date) = earliest_date {
