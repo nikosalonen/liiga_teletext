@@ -128,7 +128,7 @@ fn get_subheader(games: &[GameData]) -> String {
     }
 }
 
-fn create_page(
+async fn create_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
@@ -149,6 +149,9 @@ fn create_page(
     for game in games {
         page.add_game_result(GameResultData::new(game));
     }
+
+    // Set season countdown if regular season hasn't started yet
+    page.set_show_season_countdown(games).await;
 
     page
 }
@@ -189,7 +192,7 @@ fn is_future_game(game: &GameData) -> bool {
 
 /// Creates a TeletextPage for future games if the games are scheduled.
 /// Returns Some(TeletextPage) if the games are future games, None otherwise.
-fn create_future_games_page(
+async fn create_future_games_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
@@ -225,6 +228,9 @@ fn create_future_games_page(
         for game in games {
             page.add_game_result(GameResultData::new(game));
         }
+
+        // Set season countdown if regular season hasn't started yet
+        page.set_show_season_countdown(games).await;
 
         Some(page)
     } else {
@@ -526,8 +532,10 @@ async fn main() -> Result<(), AppError> {
             error_page
         } else {
             // Try to create a future games page, fall back to regular page if not future games
-            create_future_games_page(&games, args.disable_links, false, true, args.debug)
-                .unwrap_or_else(|| create_page(&games, args.disable_links, false, true, args.debug))
+            match create_future_games_page(&games, args.disable_links, true, true, args.debug).await {
+                Some(page) => page,
+                None => create_page(&games, args.disable_links, true, true, args.debug).await,
+            }
         };
 
         page.render(&mut stdout())?;
@@ -643,8 +651,10 @@ async fn run_interactive_ui(
                     error_page
                 } else {
                     // Try to create a future games page, fall back to regular page if not future games
-                    create_future_games_page(&games, args.disable_links, true, false, args.debug)
-                        .unwrap_or_else(|| create_page(&games, args.disable_links, true, false, args.debug))
+                    match create_future_games_page(&games, args.disable_links, true, false, args.debug).await {
+                        Some(page) => page,
+                        None => create_page(&games, args.disable_links, true, false, args.debug).await,
+                    }
                 };
 
                 // Store the current page state

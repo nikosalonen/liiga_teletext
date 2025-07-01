@@ -2,6 +2,8 @@
 
 use crate::data_fetcher::GoalEventData;
 use crate::error::AppError;
+use crate::config::Config;
+use crate::data_fetcher::api::fetch_regular_season_start_date;
 use crossterm::{
     cursor::MoveTo,
     execute,
@@ -9,6 +11,8 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 use std::io::{Stdout, Write};
+use chrono::{Local, NaiveDate, Datelike, DateTime};
+use reqwest::Client;
 
 // Constants for teletext appearance
 fn header_bg() -> Color {
@@ -45,6 +49,114 @@ fn title_bg() -> Color {
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 
+/// Calculates the number of days until the regular season starts.
+/// Returns None if the regular season has already started or if we can't determine the start date.
+async fn calculate_days_until_regular_season() -> Option<i64> {
+    // Try to fetch the actual season start date from the API
+    let config = match Config::load().await {
+        Ok(config) => config,
+        Err(_) => {
+            // Fallback to hardcoded dates if config loading fails
+            return calculate_days_until_regular_season_fallback();
+        }
+    };
+
+    let client = Client::new();
+    let current_year = Local::now().year();
+
+    // Try current year first
+    match fetch_regular_season_start_date(&client, &config, current_year).await {
+        Ok(Some(start_date)) => {
+            // Parse the ISO 8601 date from the API
+            if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
+                let today = Local::now();
+                let days_until = (season_start.naive_utc().date() - today.date_naive()).num_days();
+
+                if days_until > 0 {
+                    return Some(days_until);
+                }
+            }
+        },
+        Ok(None) => {
+            // No games found for current year, try next year
+        },
+        Err(_) => {
+            // API call failed, fallback to hardcoded dates
+            return calculate_days_until_regular_season_fallback();
+        }
+    }
+
+    // Try next year if current year failed or no games found
+    match fetch_regular_season_start_date(&client, &config, current_year + 1).await {
+        Ok(Some(start_date)) => {
+            // Parse the ISO 8601 date from the API
+            if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
+                let today = Local::now();
+                let days_until = (season_start.naive_utc().date() - today.date_naive()).num_days();
+
+                if days_until > 0 {
+                    return Some(days_until);
+                }
+            }
+        },
+        Ok(None) => {
+            // No games found for next year either
+        },
+        Err(_) => {
+            // API call failed, fallback to hardcoded dates
+            return calculate_days_until_regular_season_fallback();
+        }
+    }
+
+    // If all API calls failed, fallback to hardcoded dates
+    calculate_days_until_regular_season_fallback()
+}
+
+/// Fallback function that uses hardcoded dates when API is unavailable.
+/// This maintains the original behavior as a backup.
+fn calculate_days_until_regular_season_fallback() -> Option<i64> {
+    // For now, we'll use a simple approach based on typical Liiga season start dates
+    // The regular season typically starts in early September
+    let current_year = Local::now().year() + 1;
+
+    // Try to find the regular season start date for the current year
+    // Liiga regular season typically starts in early September
+    let season_start_candidates = vec![
+        format!("{}-09-01", current_year), // September 1st
+        format!("{}-09-02", current_year), // September 2nd
+        format!("{}-09-03", current_year), // September 3rd
+        format!("{}-09-04", current_year), // September 4th
+        format!("{}-09-05", current_year), // September 5th
+        format!("{}-09-06", current_year), // September 6th
+        format!("{}-09-07", current_year), // September 7th
+        format!("{}-09-08", current_year), // September 8th
+        format!("{}-09-09", current_year), // September 9th
+        format!("{}-09-10", current_year), // September 10th
+    ];
+
+    let today = Local::now().date_naive();
+
+    for date_str in season_start_candidates {
+        if let Ok(season_start) = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
+            if season_start > today {
+                let days_until = (season_start - today).num_days();
+                return Some(days_until);
+            }
+        }
+    }
+
+    // If we're past September, check next year
+    let next_year = current_year + 1;
+    let next_season_start = format!("{}-09-01", next_year);
+
+    if let Ok(season_start) = NaiveDate::parse_from_str(&next_season_start, "%Y-%m-%d") {
+        let days_until = (season_start - today).num_days();
+        return Some(days_until);
+    }
+
+    None
+}
+
 pub struct TeletextPage {
     page_number: u16,
     title: String,
@@ -57,6 +169,7 @@ pub struct TeletextPage {
     ignore_height_limit: bool,
     debug_mode: bool,
     auto_refresh_disabled: bool,
+    season_countdown: Option<String>,
 }
 
 pub enum TeletextRow {
@@ -179,6 +292,7 @@ impl TeletextPage {
             ignore_height_limit,
             debug_mode,
             auto_refresh_disabled: false,
+            season_countdown: None,
         }
     }
 
@@ -274,6 +388,29 @@ impl TeletextPage {
     /// Useful for pages showing only future/scheduled games that don't need frequent updates.
     pub fn set_auto_refresh_disabled(&mut self, disabled: bool) {
         self.auto_refresh_disabled = disabled;
+    }
+
+            /// Sets whether to show the season countdown in the footer.
+    /// The countdown will be displayed in the footer area if enabled and regular season hasn't started.
+    pub async fn set_show_season_countdown(&mut self, games: &[crate::data_fetcher::GameData]) {
+        // Only show countdown if we have games and they're not from the regular season yet
+        if games.is_empty() {
+            return;
+        }
+
+        // Check if any game is from the regular season (runkosarja)
+        let has_regular_season_games = games.iter().any(|game| game.serie == "RUNKOSARJA");
+
+        if has_regular_season_games {
+            // Regular season has started, don't show countdown
+            return;
+        }
+
+        // Find the earliest regular season game by fetching future regular season games
+        if let Some(days_until_season) = calculate_days_until_regular_season().await {
+            let countdown_text = format!("Liiga kauden alkuun {} päivää", days_until_season);
+            self.season_countdown = Some(countdown_text);
+        }
     }
 
     fn calculate_game_height(game: &TeletextRow) -> u16 {
@@ -709,8 +846,32 @@ impl TeletextPage {
             }
         }
 
-        // Only render footer if show_footer is true
+                // Render footer area if show_footer is true
         if self.show_footer {
+            let mut footer_y = self.screen_height.saturating_sub(1);
+
+            // Show season countdown if available
+            if let Some(ref countdown_text) = self.season_countdown {
+                // Add empty row above countdown
+                execute!(
+                    stdout,
+                    MoveTo(0, footer_y.saturating_sub(3)),
+                    Print(""),
+                    ResetColor
+                )?;
+
+                // Show countdown
+                execute!(
+                    stdout,
+                    MoveTo(0, footer_y.saturating_sub(2)),
+                    SetForegroundColor(subheader_fg()),
+                    Print(countdown_text),
+                    ResetColor
+                )?;
+
+                footer_y = footer_y.saturating_sub(3);
+            }
+
             let mut controls = if total_pages > 1 {
                 "q=Lopeta ←→=Sivut"
             } else {
@@ -728,7 +889,7 @@ impl TeletextPage {
 
             execute!(
                 stdout,
-                MoveTo(0, self.screen_height.saturating_sub(1)),
+                MoveTo(0, footer_y),
                 SetBackgroundColor(header_bg()),
                 SetForegroundColor(Color::Blue),
                 Print(if total_pages > 1 { "<<<" } else { "   " }),
