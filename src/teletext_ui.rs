@@ -848,7 +848,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
-            true,
+            false,
         );
 
         // Test game without goals
@@ -924,7 +924,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
-            true,
+            false,
         );
 
         // Test scheduled game display
