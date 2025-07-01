@@ -59,16 +59,21 @@ cargo run --release
 
 ```
 liiga_teletext/
-
-└── src/               # Source code directory
-    ├── main.rs        # Main application logic and event handling
-    ├── teletext_ui.rs # UI components and rendering
-    ├── data_fetcher/  # Data fetching related modules
-    ├── data_fetcher.rs# API integration and data processing
-    ├── config.rs      # Configuration handling
-    └── schemas/       # JSON schema definitions
+├── src/                    # Source code directory
+    ├── main.rs            # Main application logic and event handling
+    ├── teletext_ui.rs     # UI components and rendering
+    ├── config.rs          # Configuration handling
+    ├── error.rs           # Error handling and custom error types
+    ├── data_fetcher.rs    # Data fetching module entry point
+    ├── data_fetcher/      # Data fetching related modules
+    │   ├── api.rs         # API integration and HTTP requests
+    │   ├── models.rs      # Data models and structures
+    │   ├── processors.rs  # Data processing and transformation
+    │   └── cache.rs       # Caching functionality
+    └── schemas/           # JSON schema definitions
         ├── game_schema.json         # Game data structure schema
         └── game_schedule_schema.json# Game schedule data structure schema
+
 ```
 
 ## Usage
