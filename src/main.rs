@@ -116,6 +116,7 @@ fn get_subheader(games: &[GameData]) -> String {
         "PLAYOUT" => "PLAYOUT-OTTELUT".to_string(),
         "QUALIFICATIONS" => "LIIGAKARSINTA".to_string(),
         "valmistavat_ottelut" => "HARJOITUSOTTELUT".to_string(),
+        "PRACTICE" => "HARJOITUSOTTELUT".to_string(),
         _ => "RUNKOSARJA".to_string(),
     }
 }
@@ -600,10 +601,13 @@ async fn run_interactive_ui(
                         let date_str = start_str.split('T').next().unwrap_or("");
                         let formatted_date = format_date_for_display(date_str);
 
+                        let subheader = get_subheader(&games);
+                        tracing::debug!("First game serie: '{}', subheader: '{}'", games[0].serie, subheader);
+
                         let mut page = TeletextPage::new(
                             221,
                             "JÄÄKIEKKO".to_string(),
-                            get_subheader(&games),
+                            subheader,
                             args.disable_links,
                             true,
                             false,

@@ -322,6 +322,7 @@ pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameDa
                         info!("Successfully processed game #{} in response #{}",
                               game_idx + 1, response_idx + 1);
 
+                        info!("Game serie from API: '{}'", m.serie);
                         Ok::<GameData, AppError>(GameData {
                             home_team: home_team_name.to_string(),
                             away_team: away_team_name.to_string(),
