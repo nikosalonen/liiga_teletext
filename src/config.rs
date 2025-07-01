@@ -62,27 +62,7 @@ impl Config {
     /// - Uses TOML format for storage
     pub async fn save(&self) -> Result<(), AppError> {
         let config_path = Config::get_config_path();
-        let config_dir = Path::new(&config_path).parent().unwrap();
-
-        if !config_dir.exists() {
-            fs::create_dir_all(config_dir).await?;
-        }
-
-        // Ensure api_domain has https:// prefix
-        let api_domain = if !self.api_domain.starts_with("https://") {
-            format!("https://{}", self.api_domain.trim_start_matches("http://"))
-        } else {
-            self.api_domain.clone()
-        };
-
-        let content = toml::to_string_pretty(&Config {
-            api_domain,
-            log_file_path: self.log_file_path.clone(),
-        })?;
-        let mut file = fs::File::create(&config_path).await?;
-        file.write_all(content.as_bytes()).await?;
-
-        Ok(())
+        self.save_to_path(&config_path).await
     }
 
     /// Returns the platform-specific path for the config file.
