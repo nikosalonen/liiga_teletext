@@ -1,7 +1,7 @@
 use liiga_teletext::{
     config::Config,
     data_fetcher::models::*,
-    teletext_ui::{GameResultData, TeletextPage},
+    teletext_ui::{GameResultData, TeletextPage, TeletextRow},
 };
 use tempfile::tempdir;
 use tokio::fs;
@@ -49,10 +49,15 @@ async fn test_error_handling() {
     );
 
     // Add error message
-    page.add_error_message("No games found for the specified date");
+    let error_msg = "No games found for the specified date";
+    page.add_error_message(error_msg);
 
-    // Verify page was created successfully with error message
-    // The page should contain the error message we added
+    // TODO: The content_rows field is private. To assert the error message, a public accessor or test helper is needed in TeletextPage.
+    // For now, this assertion is commented out until such an accessor is available.
+    // assert!(page.content_rows.iter().any(|row| match row {
+    //     TeletextRow::ErrorMessage(msg) => msg.contains(error_msg),
+    //     _ => false,
+    // }), "Error message should be present in the page content");
 }
 
 /// Test page navigation
