@@ -177,6 +177,7 @@ mod tests {
         // Create a temporary config file
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join("config.toml");
+        let config_path_str = config_path.to_string_lossy();
 
         let config_content = r#"
 api_domain = "https://api.example.com"
@@ -184,9 +185,8 @@ log_file_path = "/custom/log/path"
 "#;
         fs::write(&config_path, config_content).unwrap();
 
-        // Test loading from a specific path by reading the file directly
-        let content = fs::read_to_string(&config_path).unwrap();
-        let config: Config = toml::from_str(&content).unwrap();
+        // Test loading from a specific path using the actual load_from_path method
+        let config = Config::load_from_path(&config_path_str).await.unwrap();
 
         assert_eq!(config.api_domain, "https://api.example.com");
         assert_eq!(config.log_file_path, Some("/custom/log/path".to_string()));
@@ -197,15 +197,15 @@ log_file_path = "/custom/log/path"
         // Create a temporary config file without log_file_path
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join("config.toml");
+        let config_path_str = config_path.to_string_lossy();
 
         let config_content = r#"
 api_domain = "https://api.example.com"
 "#;
         fs::write(&config_path, config_content).unwrap();
 
-        // Test loading from a specific path by reading the file directly
-        let content = fs::read_to_string(&config_path).unwrap();
-        let config: Config = toml::from_str(&content).unwrap();
+        // Test loading from a specific path using the actual load_from_path method
+        let config = Config::load_from_path(&config_path_str).await.unwrap();
 
         assert_eq!(config.api_domain, "https://api.example.com");
         assert_eq!(config.log_file_path, None);
