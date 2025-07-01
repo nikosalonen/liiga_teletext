@@ -36,8 +36,9 @@ impl Config {
         } else {
             println!("Please enter your API domain: ");
             let mut input = String::new();
-            let mut stdin = io::BufReader::new(io::stdin());
-            stdin.read_line(&mut input).await?;
+            let stdin = io::stdin();
+            let mut reader = io::BufReader::new(stdin);
+            reader.read_line(&mut input).await?;
 
             let config = Config {
                 api_domain: input.trim().to_string(),
