@@ -167,7 +167,6 @@ pub struct TeletextPage {
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
-    debug_mode: bool,
     auto_refresh_disabled: bool,
     season_countdown: Option<String>,
 }
@@ -208,7 +207,6 @@ pub struct GameResultData {
     pub is_shootout: bool,
     pub goal_events: Vec<GoalEventData>,
     pub played_time: i32,
-    pub start: String,
 }
 
 impl GameResultData {
@@ -236,7 +234,6 @@ impl GameResultData {
             is_shootout: game_data.is_shootout,
             goal_events: game_data.goal_events.clone(),
             played_time: game_data.played_time,
-            start: game_data.start.clone(),
         }
     }
 }
@@ -273,7 +270,6 @@ impl TeletextPage {
         disable_video_links: bool,
         show_footer: bool,
         ignore_height_limit: bool,
-        debug_mode: bool,
     ) -> Self {
         // Get terminal size, fallback to reasonable default if can't get size
         let screen_height = crossterm::terminal::size()
@@ -290,7 +286,6 @@ impl TeletextPage {
             disable_video_links,
             show_footer,
             ignore_height_limit,
-            debug_mode,
             auto_refresh_disabled: false,
             season_countdown: None,
         }
@@ -938,7 +933,6 @@ mod tests {
             false,
             true,
             false,
-            false,
         );
         page.screen_height = 20; // Set fixed screen height for testing
 
@@ -1003,7 +997,6 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
-            false,
             false,
         );
         page.screen_height = 20; // Set fixed screen height for testing
@@ -1077,7 +1070,6 @@ mod tests {
             false,
             true,
             false,
-            false,
         );
 
         // Test game without goals
@@ -1135,7 +1127,6 @@ mod tests {
             false,
             true,
             false,
-            false,
         );
         let error_msg = "Test Error";
         page.add_error_message(error_msg);
@@ -1156,7 +1147,6 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
-            false,
             false,
         );
 
@@ -1291,7 +1281,6 @@ mod tests {
             false, // video links enabled
             true,
             false,
-            false,
         );
 
         let goal_events = vec![GoalEventData {
@@ -1328,7 +1317,6 @@ mod tests {
             true, // video links disabled
             true,
             false,
-            false,
         );
 
         page_no_video.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
@@ -1339,7 +1327,7 @@ mod tests {
             score_type: ScoreType::Final,
             is_overtime: false,
             is_shootout: false,
-            goal_events,
+            goal_events: goal_events,
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),

@@ -410,7 +410,7 @@ pub async fn fetch_tournament_data(
     fetch(client, &url).await
 }
 
-#[instrument(skip(client, config))]
+#[allow(clippy::type_complexity)]
 async fn fetch_day_data(
     client: &Client,
     config: &Config,

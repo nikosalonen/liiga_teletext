@@ -133,7 +133,6 @@ async fn create_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
-    debug_mode: bool,
 ) -> TeletextPage {
     let subheader = get_subheader(games);
     let mut page = TeletextPage::new(
@@ -143,7 +142,6 @@ async fn create_page(
         disable_video_links,
         show_footer,
         ignore_height_limit,
-        debug_mode,
     );
 
     for game in games {
@@ -200,7 +198,6 @@ async fn create_future_games_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
-    debug_mode: bool,
 ) -> Option<TeletextPage> {
     // Check if these are future games by validating both time and start fields
     if !games.is_empty() && is_future_game(&games[0]) {
@@ -223,7 +220,6 @@ async fn create_future_games_page(
             disable_video_links,
             show_footer,
             ignore_height_limit,
-            debug_mode,
         );
 
         // Add the "Seuraavat ottelut" line
@@ -522,7 +518,6 @@ async fn main() -> Result<(), AppError> {
                     args.disable_links,
                     false,
                     true,
-                    args.debug,
                 );
                 error_page.add_error_message(&e.to_string());
                 error_page.render(&mut stdout())?;
@@ -538,7 +533,6 @@ async fn main() -> Result<(), AppError> {
                 args.disable_links,
                 false, // Don't show footer in quick view mode
                 true,  // Ignore height limit in quick view mode
-                args.debug,
             );
             let today = Local::now().format("%Y-%m-%d").to_string();
             if fetched_date == today {
@@ -552,10 +546,10 @@ async fn main() -> Result<(), AppError> {
             error_page
         } else {
             // Try to create a future games page, fall back to regular page if not future games
-            match create_future_games_page(&games, args.disable_links, true, true, args.debug).await
+            match create_future_games_page(&games, args.disable_links, true, true).await
             {
                 Some(page) => page,
-                None => create_page(&games, args.disable_links, true, true, args.debug).await,
+                None => create_page(&games, args.disable_links, true, true).await,
             }
         };
 
@@ -627,7 +621,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         args.disable_links,
                         true,
                         false,
-                        args.debug,
                     );
                     error_page.add_error_message(&e.to_string());
                     current_page = Some(error_page);
@@ -657,7 +650,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         args.disable_links,
                         true,
                         false,
-                        args.debug,
                     );
                     let today = Local::now().format("%Y-%m-%d").to_string();
                     if fetched_date == today {
@@ -676,13 +668,12 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         args.disable_links,
                         true,
                         false,
-                        args.debug,
                     )
                     .await
                     {
                         Some(page) => page,
                         None => {
-                            create_page(&games, args.disable_links, true, false, args.debug).await
+                            create_page(&games, args.disable_links, true, false).await
                         }
                     }
                 };
