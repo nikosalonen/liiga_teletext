@@ -137,9 +137,27 @@ impl Config {
         Ok(())
     }
 
-    /// Saves configuration to a custom file path (for testing).
+    /// Saves configuration to a custom file path.
+    ///
+    /// This method can be used for general configuration saving to any location,
+    /// not just for testing purposes. It creates the parent directory if it doesn't exist
+    /// and ensures the API domain has the proper https:// prefix.
+    ///
+    /// # Arguments
+    /// * `path` - The file path where the configuration should be saved
+    ///
+    /// # Returns
+    /// * `Ok(())` - Successfully saved configuration
+    /// * `Err(AppError)` - Error occurred while saving (e.g., invalid path, I/O error)
+    ///
+    /// # Errors
+    /// * `AppError::Custom` - If the provided path has no parent directory
+    /// * `AppError::Io` - If there's an I/O error creating directories or writing the file
+    /// * `AppError::TomlSerialize` - If there's an error serializing the configuration
     pub async fn save_to_path(&self, path: &str) -> Result<(), AppError> {
-        let config_dir = Path::new(path).parent().unwrap();
+        let config_dir = Path::new(path).parent()
+            .ok_or_else(|| AppError::Custom(format!("Path '{}' has no parent directory", path)))?;
+
         if !config_dir.exists() {
             fs::create_dir_all(config_dir).await?;
         }
