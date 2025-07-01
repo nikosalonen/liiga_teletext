@@ -15,6 +15,14 @@ include = [
     "LICENSE"
 ]
 
+[[bin]]
+name = "liiga_teletext"
+path = "src/main.rs"
+
+[lib]
+name = "liiga_teletext"
+path = "src/lib.rs"
+
 [dependencies]
 chrono = "0.4.40"
 crossterm = "0.29.0"
@@ -32,3 +40,8 @@ thiserror = "2.0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
+
+[dev-dependencies]
+tempfile = "3.10"
+wiremock = "0.6"
+tokio-test = "0.4"

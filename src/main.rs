@@ -168,7 +168,14 @@ async fn create_page(
     show_footer: bool,
     ignore_height_limit: bool,
 ) -> TeletextPage {
-    create_base_page(games, disable_video_links, show_footer, ignore_height_limit, None).await
+    create_base_page(
+        games,
+        disable_video_links,
+        show_footer,
+        ignore_height_limit,
+        None,
+    )
+    .await
 }
 
 /// Validates if a game is in the future by checking both time and start fields.
@@ -235,7 +242,14 @@ async fn create_future_games_page(
         } else {
             None
         };
-        let mut page = create_base_page(games, disable_video_links, show_footer, ignore_height_limit, future_games_header).await;
+        let mut page = create_base_page(
+            games,
+            disable_video_links,
+            show_footer,
+            ignore_height_limit,
+            future_games_header,
+        )
+        .await;
 
         // Set auto-refresh disabled for scheduled games
         page.set_auto_refresh_disabled(true);
@@ -569,7 +583,14 @@ async fn main() -> Result<(), AppError> {
             // Try to create a future games page, fall back to regular page if not future games
             // Only show future games header if no specific date was requested
             let show_future_header = args.date.is_none();
-            match create_future_games_page(&games, args.disable_links, true, true, show_future_header).await
+            match create_future_games_page(
+                &games,
+                args.disable_links,
+                true,
+                true,
+                show_future_header,
+            )
+            .await
             {
                 Some(page) => page,
                 None => create_page(&games, args.disable_links, true, true).await,
@@ -629,7 +650,11 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     loop {
         // Check for auto-refresh first
         // Don't auto-refresh if all games are scheduled (future games)
-        if !needs_refresh && !last_games.is_empty() && !all_games_scheduled && last_auto_refresh.elapsed() >= Duration::from_secs(60) {
+        if !needs_refresh
+            && !last_games.is_empty()
+            && !all_games_scheduled
+            && last_auto_refresh.elapsed() >= Duration::from_secs(60)
+        {
             needs_refresh = true;
         }
 
@@ -656,8 +681,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             last_games = games.clone();
 
             // Check if all games are scheduled (future games)
-            all_games_scheduled =
-                !games.is_empty() && games.iter().all(is_future_game);
+            all_games_scheduled = !games.is_empty() && games.iter().all(is_future_game);
 
             if all_games_scheduled {
                 tracing::info!("All games are scheduled - auto-refresh disabled");
@@ -698,9 +722,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     .await
                     {
                         Some(page) => page,
-                        None => {
-                            create_page(&games, args.disable_links, true, false).await
-                        }
+                        None => create_page(&games, args.disable_links, true, false).await,
                     }
                 };
 

@@ -27,6 +27,7 @@ pub struct GoalEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ScheduleTeam {
     #[serde(rename = "teamId")]
     pub team_id: Option<String>,
@@ -52,6 +53,7 @@ pub struct ScheduleTeam {
     #[serde(rename = "goalEvents", default)]
     pub goal_events: Vec<GoalEvent>,
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleGame {
