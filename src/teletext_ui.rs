@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::api::fetch_regular_season_start_date;
 use crate::error::AppError;
-use chrono::{DateTime, Datelike, Local, NaiveDate};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
 use crossterm::{
     cursor::MoveTo,
     execute,
@@ -69,8 +69,8 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
         Ok(Some(start_date)) => {
             // Parse the ISO 8601 date from the API
             if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
-                let today = Local::now();
-                let days_until = (season_start.naive_utc().date() - today.date_naive()).num_days();
+                let today = Utc::now();
+                let days_until = (season_start.naive_utc().date() - today.naive_utc().date()).num_days();
 
                 if days_until > 0 {
                     return Some(days_until);
@@ -91,8 +91,8 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
         Ok(Some(start_date)) => {
             // Parse the ISO 8601 date from the API
             if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
-                let today = Local::now();
-                let days_until = (season_start.naive_utc().date() - today.date_naive()).num_days();
+                let today = Utc::now();
+                let days_until = (season_start.naive_utc().date() - today.naive_utc().date()).num_days();
 
                 if days_until > 0 {
                     return Some(days_until);
