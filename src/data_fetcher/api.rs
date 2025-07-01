@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{cache_players, get_cached_players};
 use crate::data_fetcher::models::{
-    DetailedGameResponse, GameData, GoalEventData, ScheduleGame, ScheduleResponse, ScheduleTeam,
+    DetailedGameResponse, GameData, GoalEventData, ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
 use crate::data_fetcher::processors::{
     create_basic_goal_events, determine_game_status, format_time, process_goal_events,
@@ -505,4 +505,40 @@ async fn fetch_game_data(
     let events = process_goal_events(&game_response.game, &player_names);
     info!("Processed {} goal events for game ID: {}", events.len(), game_id);
     Ok(events)
+}
+
+/// Fetches the regular season schedule to determine the season start date.
+/// Returns the start date of the first regular season game.
+#[instrument(skip(client, config))]
+pub async fn fetch_regular_season_start_date(
+    client: &Client,
+    config: &Config,
+    season: i32,
+) -> Result<Option<String>, AppError> {
+    info!("Fetching regular season schedule for season: {}", season);
+    let url = format!(
+        "{}/schedule?tournament=runkosarja&season={}",
+        config.api_domain, season
+    );
+
+    match fetch::<Vec<ScheduleApiGame>>(client, &url).await {
+        Ok(games) => {
+            if games.is_empty() {
+                info!("No regular season games found for season: {}", season);
+                Ok(None)
+            } else {
+                // Get the earliest start date from the games
+                let earliest_game = games.iter()
+                    .min_by_key(|game| &game.start)
+                    .expect("We already checked that games is not empty");
+
+                info!("Found regular season start date: {} for season: {}", earliest_game.start, season);
+                Ok(Some(earliest_game.start.clone()))
+            }
+        },
+        Err(e) => {
+            error!("Failed to fetch regular season schedule for season {}: {}", season, e);
+            Err(e)
+        }
+    }
 }

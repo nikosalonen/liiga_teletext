@@ -75,6 +75,25 @@ pub struct ScheduleGame {
     pub serie: String,
 }
 
+/// Model for the schedule API response structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleApiGame {
+    pub id: i32,
+    pub season: i32,
+    pub start: String,
+    #[serde(rename = "homeTeamName")]
+    pub home_team_name: String,
+    #[serde(rename = "awayTeamName")]
+    pub away_team_name: String,
+    pub serie: i32, // This is an integer in the schedule API
+    #[serde(rename = "finishedType")]
+    pub finished_type: Option<String>,
+    pub started: bool,
+    pub ended: bool,
+    #[serde(rename = "gameTime")]
+    pub game_time: Option<i32>, // Can be null in the API response
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ScheduleResponse {
     pub games: Vec<ScheduleGame>,
