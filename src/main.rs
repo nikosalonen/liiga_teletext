@@ -391,28 +391,44 @@ async fn main() -> Result<(), AppError> {
     let is_noninteractive = is_noninteractive_mode(&args);
 
     if is_noninteractive {
-        // Non-interactive: log to both stdout and file
-        registry
-            .with(
-                fmt::Layer::new()
-                    .with_writer(std::io::stdout)
-                    .with_ansi(true)
-                    .with_filter(
-                        EnvFilter::from_default_env()
-                            .add_directive("liiga_teletext=info".parse().unwrap()),
-                    ),
-            )
-            .with(
-                fmt::Layer::new()
-                    .with_writer(non_blocking)
-                    .with_ansi(false)
-                    .with_span_events(FmtSpan::CLOSE)
-                    .with_filter(
-                        EnvFilter::from_default_env()
-                            .add_directive("liiga_teletext=debug".parse().unwrap()),
-                    ),
-            )
-            .init();
+        if args.once && !args.debug {
+            // Once mode without debug: log only to file, not to stdout
+            registry
+                .with(
+                    fmt::Layer::new()
+                        .with_writer(non_blocking)
+                        .with_ansi(false)
+                        .with_span_events(FmtSpan::CLOSE)
+                        .with_filter(
+                            EnvFilter::from_default_env()
+                                .add_directive("liiga_teletext=debug".parse().unwrap()),
+                        ),
+                )
+                .init();
+        } else {
+            // Other non-interactive modes: log to both stdout and file
+            registry
+                .with(
+                    fmt::Layer::new()
+                        .with_writer(std::io::stdout)
+                        .with_ansi(true)
+                        .with_filter(
+                            EnvFilter::from_default_env()
+                                .add_directive("liiga_teletext=info".parse().unwrap()),
+                        ),
+                )
+                .with(
+                    fmt::Layer::new()
+                        .with_writer(non_blocking)
+                        .with_ansi(false)
+                        .with_span_events(FmtSpan::CLOSE)
+                        .with_filter(
+                            EnvFilter::from_default_env()
+                                .add_directive("liiga_teletext=debug".parse().unwrap()),
+                        ),
+                )
+                .init();
+        }
     } else {
         // Interactive: log only to file
         registry
