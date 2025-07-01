@@ -4,6 +4,7 @@ mod data_fetcher;
 mod error;
 mod teletext_ui;
 
+use chrono::{Local, NaiveDate};
 use clap::Parser;
 use config::Config;
 use crossterm::{
@@ -15,16 +16,15 @@ use crossterm::{
 use data_fetcher::{GameData, fetch_liiga_data};
 use error::AppError;
 use semver::Version;
-use chrono::{Local, NaiveDate};
 use std::io::stdout;
 use std::path::Path;
 use std::time::{Duration, Instant};
 use teletext_ui::{GameResultData, TeletextPage};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{
+    EnvFilter,
     fmt::{self, format::FmtSpan},
     prelude::*,
-    EnvFilter,
 };
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -177,8 +177,11 @@ fn is_future_game(game: &GameData) -> bool {
             let is_future = game_start > now;
 
             if !is_future {
-                tracing::debug!("Game start time {} is not in the future (current: {})",
-                    game_start, now);
+                tracing::debug!(
+                    "Game start time {} is not in the future (current: {})",
+                    game_start,
+                    now
+                );
             }
 
             is_future
@@ -207,7 +210,11 @@ async fn create_future_games_page(
         let formatted_date = format_date_for_display(date_str);
 
         let subheader = get_subheader(games);
-        tracing::debug!("First game serie: '{}', subheader: '{}'", games[0].serie, subheader);
+        tracing::debug!(
+            "First game serie: '{}', subheader: '{}'",
+            games[0].serie,
+            subheader
+        );
 
         let mut page = TeletextPage::new(
             221,
@@ -342,7 +349,10 @@ async fn main() -> Result<(), AppError> {
     let args = Args::parse();
 
     // Try to load config to get log file path if specified
-    let config_log_path = Config::load().await.ok().and_then(|config| config.log_file_path);
+    let config_log_path = Config::load()
+        .await
+        .ok()
+        .and_then(|config| config.log_file_path);
 
     // Set up logging to both console and file
     let custom_log_path = args.log_file.as_ref().or(config_log_path.as_ref());
@@ -350,12 +360,13 @@ async fn main() -> Result<(), AppError> {
         Some(custom_path) => {
             let path = Path::new(custom_path);
             let parent = path.parent().unwrap_or(Path::new("."));
-            let file_name = path.file_name()
+            let file_name = path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("liiga_teletext.log");
             (parent.to_string_lossy().to_string(), file_name.to_string())
         }
-        None => (Config::get_log_dir_path(), "liiga_teletext.log".to_string())
+        None => (Config::get_log_dir_path(), "liiga_teletext.log".to_string()),
     };
 
     // Create log directory if it doesn't exist
@@ -367,11 +378,7 @@ async fn main() -> Result<(), AppError> {
     }
 
     // Set up a rolling file appender that creates a new log file each day
-    let file_appender = RollingFileAppender::new(
-        Rotation::DAILY,
-        &log_dir,
-        &log_file_name,
-    );
+    let file_appender = RollingFileAppender::new(Rotation::DAILY, &log_dir, &log_file_name);
 
     // Create a non-blocking writer for the file appender
     // The guard must be kept alive for the duration of the program
@@ -389,14 +396,20 @@ async fn main() -> Result<(), AppError> {
                 fmt::Layer::new()
                     .with_writer(std::io::stdout)
                     .with_ansi(true)
-                    .with_filter(EnvFilter::from_default_env().add_directive("liiga_teletext=info".parse().unwrap()))
+                    .with_filter(
+                        EnvFilter::from_default_env()
+                            .add_directive("liiga_teletext=info".parse().unwrap()),
+                    ),
             )
             .with(
                 fmt::Layer::new()
                     .with_writer(non_blocking)
                     .with_ansi(false)
                     .with_span_events(FmtSpan::CLOSE)
-                    .with_filter(EnvFilter::from_default_env().add_directive("liiga_teletext=debug".parse().unwrap()))
+                    .with_filter(
+                        EnvFilter::from_default_env()
+                            .add_directive("liiga_teletext=debug".parse().unwrap()),
+                    ),
             )
             .init();
     } else {
@@ -407,7 +420,10 @@ async fn main() -> Result<(), AppError> {
                     .with_writer(non_blocking)
                     .with_ansi(false)
                     .with_span_events(FmtSpan::CLOSE)
-                    .with_filter(EnvFilter::from_default_env().add_directive("liiga_teletext=debug".parse().unwrap()))
+                    .with_filter(
+                        EnvFilter::from_default_env()
+                            .add_directive("liiga_teletext=debug".parse().unwrap()),
+                    ),
             )
             .init();
     }
@@ -465,7 +481,8 @@ async fn main() -> Result<(), AppError> {
     }
 
     // Handle configuration updates
-    if args.new_api_domain.is_some() || args.new_log_file_path.is_some() || args.clear_log_file_path {
+    if args.new_api_domain.is_some() || args.new_log_file_path.is_some() || args.clear_log_file_path
+    {
         let mut config = Config::load().await.unwrap_or_else(|_| Config {
             api_domain: String::new(),
             log_file_path: None,
@@ -527,12 +544,16 @@ async fn main() -> Result<(), AppError> {
             if fetched_date == today {
                 error_page.add_error_message("Ei otteluita tänään");
             } else {
-                error_page.add_error_message(&format!("Ei otteluita {} päivälle", format_date_for_display(&fetched_date)));
+                error_page.add_error_message(&format!(
+                    "Ei otteluita {} päivälle",
+                    format_date_for_display(&fetched_date)
+                ));
             }
             error_page
         } else {
             // Try to create a future games page, fall back to regular page if not future games
-            match create_future_games_page(&games, args.disable_links, true, true, args.debug).await {
+            match create_future_games_page(&games, args.disable_links, true, true, args.debug).await
+            {
                 Some(page) => page,
                 None => create_page(&games, args.disable_links, true, true, args.debug).await,
             }
@@ -568,10 +589,7 @@ async fn main() -> Result<(), AppError> {
     result
 }
 
-async fn run_interactive_ui(
-    stdout: &mut std::io::Stdout,
-    args: &Args,
-) -> Result<(), AppError> {
+async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result<(), AppError> {
     let mut last_manual_refresh = Instant::now()
         .checked_sub(Duration::from_secs(15))
         .unwrap_or_else(Instant::now);
@@ -594,10 +612,8 @@ async fn run_interactive_ui(
     loop {
         // Check for auto-refresh first
         // Don't auto-refresh if all games are scheduled (future games)
-        if !needs_refresh && !last_games.is_empty() && !all_games_scheduled {
-            if last_auto_refresh.elapsed() >= Duration::from_secs(60) {
-                needs_refresh = true;
-            }
+        if !needs_refresh && !last_games.is_empty() && !all_games_scheduled && last_auto_refresh.elapsed() >= Duration::from_secs(60) {
+            needs_refresh = true;
         }
 
         if needs_refresh {
@@ -624,7 +640,8 @@ async fn run_interactive_ui(
             last_games = games.clone();
 
             // Check if all games are scheduled (future games)
-            all_games_scheduled = !games.is_empty() && games.iter().all(|game| is_future_game(game));
+            all_games_scheduled =
+                !games.is_empty() && games.iter().all(is_future_game);
 
             if all_games_scheduled {
                 tracing::info!("All games are scheduled - auto-refresh disabled");
@@ -646,14 +663,27 @@ async fn run_interactive_ui(
                     if fetched_date == today {
                         error_page.add_error_message("Ei otteluita tänään");
                     } else {
-                        error_page.add_error_message(&format!("Ei otteluita {} päivälle", format_date_for_display(&fetched_date)));
+                        error_page.add_error_message(&format!(
+                            "Ei otteluita {} päivälle",
+                            format_date_for_display(&fetched_date)
+                        ));
                     }
                     error_page
                 } else {
                     // Try to create a future games page, fall back to regular page if not future games
-                    match create_future_games_page(&games, args.disable_links, true, false, args.debug).await {
+                    match create_future_games_page(
+                        &games,
+                        args.disable_links,
+                        true,
+                        false,
+                        args.debug,
+                    )
+                    .await
+                    {
                         Some(page) => page,
-                        None => create_page(&games, args.disable_links, true, false, args.debug).await,
+                        None => {
+                            create_page(&games, args.disable_links, true, false, args.debug).await
+                        }
                     }
                 };
 
