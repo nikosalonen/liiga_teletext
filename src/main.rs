@@ -30,6 +30,17 @@ use tracing_subscriber::{
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
 
+/// Determines if the application should run in non-interactive mode
+/// based on the provided command line arguments.
+fn is_noninteractive_mode(args: &Args) -> bool {
+    args.once
+        || args.list_config
+        || args.version
+        || args.new_api_domain.is_some()
+        || args.new_log_file_path.is_some()
+        || args.clear_log_file_path
+}
+
 /// Finnish Hockey League (Liiga) Teletext Viewer
 ///
 /// A nostalgic teletext-style viewer for Finnish Hockey League scores and game information.
@@ -284,7 +295,7 @@ async fn main() -> Result<(), AppError> {
 
     // Set up the subscriber with appropriate outputs based on mode
     let registry = tracing_subscriber::registry();
-    let is_noninteractive = args.once || args.list_config || args.version || args.new_api_domain.is_some() || args.new_log_file_path.is_some() || args.clear_log_file_path;
+    let is_noninteractive = is_noninteractive_mode(&args);
 
     if is_noninteractive {
         // Non-interactive: log to both stdout and file
