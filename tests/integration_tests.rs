@@ -1,7 +1,7 @@
 use liiga_teletext::{
     config::Config,
     data_fetcher::models::*,
-    teletext_ui::{GameResultData, TeletextPage, TeletextRow},
+    teletext_ui::{GameResultData, TeletextPage},
 };
 use tempfile::tempdir;
 use tokio::fs;
