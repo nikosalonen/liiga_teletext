@@ -215,6 +215,7 @@ async fn create_future_games_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    show_future_header: bool,
 ) -> Option<TeletextPage> {
     // Check if these are future games by validating both time and start fields
     if !games.is_empty() && is_future_game(&games[0]) {
@@ -229,8 +230,12 @@ async fn create_future_games_page(
             get_subheader(games)
         );
 
-        let future_games_header = format!("Seuraavat ottelut {}", formatted_date);
-        let mut page = create_base_page(games, disable_video_links, show_footer, ignore_height_limit, Some(future_games_header)).await;
+        let future_games_header = if show_future_header {
+            Some(format!("Seuraavat ottelut {}", formatted_date))
+        } else {
+            None
+        };
+        let mut page = create_base_page(games, disable_video_links, show_footer, ignore_height_limit, future_games_header).await;
 
         // Set auto-refresh disabled for scheduled games
         page.set_auto_refresh_disabled(true);
@@ -546,7 +551,9 @@ async fn main() -> Result<(), AppError> {
             error_page
         } else {
             // Try to create a future games page, fall back to regular page if not future games
-            match create_future_games_page(&games, args.disable_links, true, true).await
+            // Only show future games header if no specific date was requested
+            let show_future_header = args.date.is_none();
+            match create_future_games_page(&games, args.disable_links, true, true, show_future_header).await
             {
                 Some(page) => page,
                 None => create_page(&games, args.disable_links, true, true).await,
@@ -663,11 +670,14 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     error_page
                 } else {
                     // Try to create a future games page, fall back to regular page if not future games
+                    // Only show future games header if no specific date was requested
+                    let show_future_header = args.date.is_none();
                     match create_future_games_page(
                         &games,
                         args.disable_links,
                         true,
                         false,
+                        show_future_header,
                     )
                     .await
                     {
