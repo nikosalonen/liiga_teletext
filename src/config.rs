@@ -1,6 +1,6 @@
 // src/config.rs
+use crate::error::AppError;
 use serde::{Deserialize, Serialize};
-use std::error::Error;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -19,12 +19,12 @@ impl Config {
     ///
     /// # Returns
     /// * `Ok(Config)` - Successfully loaded or created configuration
-    /// * `Err(Box<dyn Error>)` - Error occurred during load/create
+    /// * `Err(AppError)` - Error occurred during load/create
     ///
     /// # Notes
     /// - Config file is stored in platform-specific config directory
     /// - Handles first-time setup with user prompts
-    pub fn load() -> Result<Self, Box<dyn Error>> {
+    pub fn load() -> Result<Self, AppError> {
         let config_path = Config::get_config_path();
 
         if Path::new(&config_path).exists() {
@@ -50,13 +50,13 @@ impl Config {
     ///
     /// # Returns
     /// * `Ok(())` - Successfully saved configuration
-    /// * `Err(Box<dyn Error>)` - Error occurred during save
+    /// * `Err(AppError)` - Error occurred during save
     ///
     /// # Notes
     /// - Creates config directory if it doesn't exist
     /// - Ensures api_domain has https:// prefix
     /// - Uses TOML format for storage
-    pub fn save(&self) -> Result<(), Box<dyn Error>> {
+    pub fn save(&self) -> Result<(), AppError> {
         let config_path = Config::get_config_path();
         let config_dir = Path::new(&config_path).parent().unwrap();
 
@@ -99,12 +99,12 @@ impl Config {
     ///
     /// # Returns
     /// * `Ok(())` - Successfully displayed configuration
-    /// * `Err(Box<dyn Error>)` - Error occurred while reading config
+    /// * `Err(AppError)` - Error occurred while reading config
     ///
     /// # Notes
     /// - Shows config file location and current settings
     /// - Handles case when no config file exists
-    pub fn display() -> Result<(), Box<dyn Error>> {
+    pub fn display() -> Result<(), AppError> {
         let config_path = Config::get_config_path();
 
         if Path::new(&config_path).exists() {

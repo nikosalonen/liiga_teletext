@@ -7,10 +7,10 @@ use crate::data_fetcher::processors::{
     create_basic_goal_events, determine_game_status, format_time, process_goal_events,
     should_show_todays_games,
 };
+use crate::error::AppError;
 use chrono::Local;
 use reqwest::Client;
 use std::collections::HashMap;
-use std::error::Error;
 
 /// Fetches game data for a specific tournament and date from the API.
 ///
@@ -22,7 +22,7 @@ use std::error::Error;
 ///
 /// # Returns
 /// * `Ok(Option<ScheduleResponse>)` - Successfully fetched schedule data, None if no data found
-/// * `Err(Box<dyn Error>)` - Error occurred during fetch with detailed error message
+/// * `Err(AppError)` - Error occurred during fetch with detailed error message
 ///
 /// # Notes
 /// - Handles API connection errors with detailed error messages
@@ -34,62 +34,30 @@ pub async fn fetch_tournament_data(
     config: &Config,
     tournament: &str,
     date: &str,
-) -> Result<Option<ScheduleResponse>, Box<dyn Error>> {
+) -> Result<Option<ScheduleResponse>, AppError> {
     let url = format!(
         "{}/games?tournament={}&date={}",
         config.api_domain, tournament, date
     );
 
-    let response = match client.get(&url).send().await {
-        Ok(resp) => resp,
-        Err(e) => {
-            return Err(format!(
-                "Failed to fetch data from API\nError: {}\nAPI domain: {}\nConfig: {}",
-                e,
-                config.api_domain,
-                Config::get_config_path()
-            )
-            .into());
-        }
-    };
+    let response = client.get(&url).send().await?;
 
     // Check status code first
     if !response.status().is_success() {
-        return Err(format!(
-            "Failed to fetch data from API\nError: {}\nAPI domain: {}\nConfig: {}",
+        return Err(AppError::Custom(format!(
+            "Failed to fetch data from API: {}\nAPI domain: {}\nConfig: {}",
             response
                 .status()
                 .canonical_reason()
                 .unwrap_or("Unknown error"),
             config.api_domain,
             Config::get_config_path()
-        )
-        .into());
+        )));
     }
 
-    let response_text = match response.text().await {
-        Ok(text) => text,
-        Err(e) => {
-            return Err(format!(
-                "Failed to read API response\nError: {}\nAPI domain: {}\nConfig: {}",
-                e,
-                config.api_domain,
-                Config::get_config_path()
-            )
-            .into());
-        }
-    };
-
-    match serde_json::from_str::<ScheduleResponse>(&response_text) {
-        Ok(response) => Ok(Some(response)),
-        Err(e) => Err(format!(
-            "Failed to parse API response\nError: {}\nAPI domain: {}\nConfig: {}",
-            e,
-            config.api_domain,
-            Config::get_config_path()
-        )
-        .into()),
-    }
+    let response_text = response.text().await?;
+    let schedule_response = serde_json::from_str::<ScheduleResponse>(&response_text)?;
+    Ok(Some(schedule_response))
 }
 
 async fn fetch_previous_day_data(
@@ -97,7 +65,7 @@ async fn fetch_previous_day_data(
     config: &Config,
     tournaments: &[&str],
     previous_dates: &[String],
-) -> Result<Option<Vec<ScheduleResponse>>, Box<dyn Error>> {
+) -> Result<Option<Vec<ScheduleResponse>>, AppError> {
     if previous_dates.is_empty() {
         return Ok(None);
     }
@@ -128,9 +96,7 @@ async fn fetch_previous_day_data(
     }
 }
 
-pub async fn fetch_liiga_data(
-    custom_date: Option<String>,
-) -> Result<Vec<GameData>, Box<dyn Error>> {
+pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<Vec<GameData>, AppError> {
     let config = Config::load()?;
     let client = Client::new();
     let date = if let Some(date) = custom_date {
@@ -153,7 +119,6 @@ pub async fn fetch_liiga_data(
     let mut response_data: Vec<ScheduleResponse> = Vec::new();
     let mut found_games = false;
     let mut previous_dates = Vec::new();
-    let mut last_error = None;
 
     // Try to get games for the selected date first
     for tournament in &tournaments {
@@ -164,23 +129,14 @@ pub async fn fetch_liiga_data(
                     found_games = true;
                 } else {
                     // Store previous game date if it exists
-                    if !response.previousGameDate.is_empty() {
-                        previous_dates.push(response.previousGameDate.clone());
+                    if !response.previous_game_date.is_empty() {
+                        previous_dates.push(response.previous_game_date.clone());
                     }
                 }
             }
-            Err(e) => {
-                last_error = Some(e);
-                // Break early on API errors to avoid unnecessary retries
-                break;
-            }
+            Err(e) => return Err(e),
             Ok(None) => continue,
         }
-    }
-
-    // If we got any errors, return the last error immediately
-    if let Some(e) = last_error {
-        return Err(e);
     }
 
     // If no games found in any tournament today, try the nearest previous game date
@@ -195,13 +151,13 @@ pub async fn fetch_liiga_data(
     // Process games if we found any
     if !response_data.is_empty() {
         for response in &response_data {
-            let games =
-                futures::future::try_join_all(response.games.clone().into_iter().map(|m| {
+            let games = futures::future::try_join_all(response.games.clone().into_iter().map(
+                |m| {
                     let client = client.clone();
                     let config = config.clone();
                     async move {
                         let time = if !m.started {
-                            format_time(&m.start)?
+                            format_time(&m.start).unwrap_or_default()
                         } else {
                             String::new()
                         };
@@ -228,7 +184,7 @@ pub async fn fetch_liiga_data(
                             Vec::new()
                         };
 
-                        Ok::<GameData, Box<dyn Error>>(GameData {
+                        Ok::<GameData, AppError>(GameData {
                             home_team: m.home_team.team_name,
                             away_team: m.away_team.team_name,
                             time,
@@ -239,12 +195,11 @@ pub async fn fetch_liiga_data(
                             serie: m.serie,
                             goal_events,
                             played_time: m.game_time,
-                            finished_type: m.finished_type.unwrap_or_default(),
-                            log_time: m.start.clone(),
                         })
                     }
-                }))
-                .await?;
+                },
+            ))
+            .await?;
             all_games.extend(games);
         }
     }
@@ -274,29 +229,29 @@ async fn fetch_game_data(
     config: &Config,
     season: i32,
     game_id: i32,
-) -> Result<Vec<GoalEventData>, Box<dyn Error>> {
+) -> Result<Vec<GoalEventData>, AppError> {
     let url = format!("{}/games/{}/{}", config.api_domain, season, game_id);
     let response = client.get(&url).send().await?;
     let response_text = response.text().await?;
     let game_response = serde_json::from_str::<DetailedGameResponse>(&response_text)?;
 
     // Check cache first
-    let mut player_names = HashMap::new();
     if let Some(cached_players) = get_cached_players(game_id).await {
         return Ok(process_goal_events(&game_response.game, &cached_players));
     }
 
     // Build player names map if not in cache
+    let mut player_names = HashMap::new();
     for player in &game_response.home_team_players {
         player_names.insert(
             player.id,
-            format!("{} {}", player.firstName, player.lastName),
+            format!("{} {}", player.first_name, player.last_name),
         );
     }
     for player in &game_response.away_team_players {
         player_names.insert(
             player.id,
-            format!("{} {}", player.firstName, player.lastName),
+            format!("{} {}", player.first_name, player.last_name),
         );
     }
 

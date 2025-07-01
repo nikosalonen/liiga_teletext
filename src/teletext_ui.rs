@@ -1,6 +1,7 @@
 // src/teletext_ui.rs - Updated with better display formatting
 
 use crate::data_fetcher::GoalEventData;
+use crate::error::AppError;
 use crossterm::{
     cursor::MoveTo,
     execute,
@@ -76,27 +77,6 @@ pub enum ScoreType {
     Final,     // Final score
     Ongoing,   // Ongoing game with current score
     Scheduled, // Scheduled game with no score yet
-}
-
-/// Checks if there are any live/ongoing games in the provided game list.
-///
-/// # Arguments
-/// * `games` - A slice of GameData containing game information
-///
-/// # Returns
-/// * `bool` - true if there are any games with ScoreType::Ongoing, false otherwise
-///
-/// # Example
-/// ```
-/// let games = vec![game1, game2];
-/// if has_live_games(&games) {
-///     println!("There are live games in progress!");
-/// }
-/// ```
-pub fn has_live_games(games: &[crate::data_fetcher::GameData]) -> bool {
-    games
-        .iter()
-        .any(|game| matches!(game.score_type, ScoreType::Ongoing))
 }
 
 /// Represents a game result with all relevant information for display.
@@ -419,14 +399,14 @@ impl TeletextPage {
     /// * `stdout` - Mutable reference to stdout for writing
     ///
     /// # Returns
-    /// * `Result<(), Box<dyn std::error::Error>>` - Ok if rendering succeeded, Err otherwise
+    /// * `Result<(), AppError>` - Ok if rendering succeeded, Err otherwise
     ///
     /// # Example
     /// ```
     /// let mut stdout = stdout();
     /// page.render(&mut stdout)?;
     /// ```
-    pub fn render(&self, stdout: &mut Stdout) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn render(&self, stdout: &mut Stdout) -> Result<(), AppError> {
         // Clear the screen
         execute!(stdout, Clear(ClearType::All))?;
 
@@ -775,8 +755,6 @@ mod tests {
                 goal_events: goal_events,
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
-                finished_type: String::new(),
-                log_time: String::new(),
             }));
         }
 
@@ -841,8 +819,6 @@ mod tests {
                 goal_events: goal_events,
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
-                finished_type: String::new(),
-                log_time: String::new(),
             }));
         }
 
@@ -872,7 +848,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
-            false,
+            true,
         );
 
         // Test game without goals
@@ -887,8 +863,6 @@ mod tests {
             goal_events: vec![],
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
         }));
 
         // Test game with goals
@@ -915,8 +889,6 @@ mod tests {
             goal_events: goals,
             played_time: 600,
             serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
         }));
 
         let (content, _) = page.get_page_content();
@@ -952,7 +924,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
-            false,
+            true,
         );
 
         // Test scheduled game display
@@ -967,8 +939,6 @@ mod tests {
             goal_events: vec![],
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
         }));
 
         // Test ongoing game with goals
@@ -1008,8 +978,6 @@ mod tests {
             goal_events: goal_events.clone(),
             played_time: 1500,
             serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
         }));
 
         // Test finished game with overtime
@@ -1024,8 +992,6 @@ mod tests {
             goal_events: vec![],
             played_time: 3900,
             serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
         }));
 
         // Test finished game with shootout
@@ -1040,8 +1006,6 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
         }));
 
         let (content, _) = page.get_page_content();
@@ -1058,8 +1022,8 @@ mod tests {
                 score_type,
                 is_overtime,
                 is_shootout,
-                ..
-            } = row
+                ..}
+             = row
             {
                 match score_type {
                     ScoreType::Scheduled => found_scheduled = true,
@@ -1115,8 +1079,6 @@ mod tests {
             goal_events: goal_events.clone(),
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
         }));
 
         // Create another page with video links disabled
@@ -1140,8 +1102,6 @@ mod tests {
             goal_events: goal_events,
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
-            finished_type: String::new(),
-            log_time: String::new(),
         }));
 
         let (content, _) = page.get_page_content();
