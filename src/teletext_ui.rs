@@ -55,6 +55,8 @@ pub struct TeletextPage {
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    debug_mode: bool,
+    auto_refresh_disabled: bool,
 }
 
 pub enum TeletextRow {
@@ -70,6 +72,7 @@ pub enum TeletextRow {
         played_time: i32,
     },
     ErrorMessage(String),
+    FutureGamesHeader(String), // For "Seuraavat ottelut {date}" line
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +95,7 @@ pub struct GameResultData {
     pub is_shootout: bool,
     pub goal_events: Vec<GoalEventData>,
     pub played_time: i32,
+    pub start: String,
 }
 
 impl GameResultData {
@@ -119,6 +123,7 @@ impl GameResultData {
             is_shootout: game_data.is_shootout,
             goal_events: game_data.goal_events.clone(),
             played_time: game_data.played_time,
+            start: game_data.start.clone(),
         }
     }
 }
@@ -155,6 +160,7 @@ impl TeletextPage {
         disable_video_links: bool,
         show_footer: bool,
         ignore_height_limit: bool,
+        debug_mode: bool,
     ) -> Self {
         // Get terminal size, fallback to reasonable default if can't get size
         let screen_height = crossterm::terminal::size()
@@ -171,6 +177,8 @@ impl TeletextPage {
             disable_video_links,
             show_footer,
             ignore_height_limit,
+            debug_mode,
+            auto_refresh_disabled: false,
         }
     }
 
@@ -255,6 +263,15 @@ impl TeletextPage {
             .push(TeletextRow::ErrorMessage(formatted_message));
     }
 
+    pub fn add_future_games_header(&mut self, header_text: String) {
+        self.content_rows
+            .push(TeletextRow::FutureGamesHeader(header_text));
+    }
+
+    pub fn set_auto_refresh_disabled(&mut self, disabled: bool) {
+        self.auto_refresh_disabled = disabled;
+    }
+
     fn calculate_game_height(game: &TeletextRow) -> u16 {
         match game {
             TeletextRow::GameResult { goal_events, .. } => {
@@ -266,6 +283,7 @@ impl TeletextPage {
                 base_height + scorer_lines as u16 + spacer
             }
             TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
+            TeletextRow::FutureGamesHeader(_) => 1u16, // Single line for future games header
         }
     }
 
@@ -407,7 +425,7 @@ impl TeletextPage {
     /// page.render(&mut stdout)?;
     /// ```
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), AppError> {
-        // Clear the screen
+        // Always clear the screen to ensure proper rendering
         execute!(stdout, Clear(ClearType::All))?;
 
         // Draw header with title having green background and rest blue
@@ -655,31 +673,54 @@ impl TeletextPage {
                     }
                 }
                 TeletextRow::ErrorMessage(message) => {
-                    for (i, line) in message.lines().enumerate() {
+                    execute!(
+                        stdout,
+                        MoveTo(0, current_y),
+                        SetForegroundColor(text_fg()),
+                        Print("Virhe haettaessa otteluita:"),
+                        ResetColor
+                    )?;
+                    current_y += 1;
+                    for line in message.lines() {
                         execute!(
                             stdout,
                             MoveTo(0, current_y),
                             SetForegroundColor(text_fg()),
-                            Print(if i == 0 {
-                                "Virhe haettaessa otteluita:"
-                            } else {
-                                line
-                            }),
+                            Print(line),
                             ResetColor
                         )?;
                         current_y += 1;
                     }
+                }
+                TeletextRow::FutureGamesHeader(header_text) => {
+                    execute!(
+                        stdout,
+                        MoveTo(0, current_y),
+                        SetForegroundColor(subheader_fg()),
+                        Print(header_text),
+                        ResetColor
+                    )?;
+                    current_y += 1;
                 }
             }
         }
 
         // Only render footer if show_footer is true
         if self.show_footer {
-            let controls = if total_pages > 1 {
+            let mut controls = if total_pages > 1 {
                 "q=Lopeta ←→=Sivut"
             } else {
                 "q=Lopeta"
             };
+
+            // Add auto-refresh status if disabled
+            if self.auto_refresh_disabled {
+                controls = if total_pages > 1 {
+                    "q=Lopeta ←→=Sivut (Ei päivity)"
+                } else {
+                    "q=Lopeta (Ei päivity)"
+                };
+            }
 
             execute!(
                 stdout,
@@ -714,6 +755,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
         page.screen_height = 20; // Set fixed screen height for testing
 
@@ -755,6 +797,7 @@ mod tests {
                 goal_events: goal_events,
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
+                start: "2025-01-01T00:00:00Z".to_string(),
             }));
         }
 
@@ -778,6 +821,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
         page.screen_height = 20; // Set fixed screen height for testing
 
@@ -819,6 +863,7 @@ mod tests {
                 goal_events: goal_events,
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
+                start: "2025-01-01T00:00:00Z".to_string(),
             }));
         }
 
@@ -849,6 +894,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
 
         // Test game without goals
@@ -863,6 +909,7 @@ mod tests {
             goal_events: vec![],
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Test game with goals
@@ -889,6 +936,7 @@ mod tests {
             goal_events: goals,
             played_time: 600,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         let (content, _) = page.get_page_content();
@@ -903,6 +951,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
+            false,
             false,
         );
         let error_msg = "Test Error";
@@ -925,6 +974,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
 
         // Test scheduled game display
@@ -939,6 +989,7 @@ mod tests {
             goal_events: vec![],
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Test ongoing game with goals
@@ -978,6 +1029,7 @@ mod tests {
             goal_events: goal_events.clone(),
             played_time: 1500,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Test finished game with overtime
@@ -992,6 +1044,7 @@ mod tests {
             goal_events: vec![],
             played_time: 3900,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Test finished game with shootout
@@ -1006,6 +1059,7 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         let (content, _) = page.get_page_content();
@@ -1054,6 +1108,7 @@ mod tests {
             false, // video links enabled
             true,
             false,
+            false,
         );
 
         let goal_events = vec![GoalEventData {
@@ -1079,6 +1134,7 @@ mod tests {
             goal_events: goal_events.clone(),
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         // Create another page with video links disabled
@@ -1088,6 +1144,7 @@ mod tests {
             "TEST".to_string(),
             true, // video links disabled
             true,
+            false,
             false,
         );
 
@@ -1102,6 +1159,7 @@ mod tests {
             goal_events: goal_events,
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
+            start: "2025-01-01T00:00:00Z".to_string(),
         }));
 
         let (content, _) = page.get_page_content();
