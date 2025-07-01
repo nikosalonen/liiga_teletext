@@ -848,29 +848,34 @@ impl TeletextPage {
 
                 // Render footer area if show_footer is true
         if self.show_footer {
-            let mut footer_y = self.screen_height.saturating_sub(1);
+            let footer_y = self.screen_height.saturating_sub(1);
+            let countdown_y = footer_y.saturating_sub(2);
+            let empty_y = footer_y.saturating_sub(1);
 
-            // Show season countdown if available
+            // Show countdown two lines above the blue bar, if available
             if let Some(ref countdown_text) = self.season_countdown {
-                // Add empty row above countdown
+                // Center the countdown text
+                let countdown_width = countdown_text.chars().count();
+                let left_padding = if width as usize > countdown_width {
+                    (width as usize - countdown_width) / 2
+                } else {
+                    0
+                };
                 execute!(
                     stdout,
-                    MoveTo(0, footer_y.saturating_sub(3)),
-                    Print(""),
-                    ResetColor
-                )?;
-
-                // Show countdown
-                execute!(
-                    stdout,
-                    MoveTo(0, footer_y.saturating_sub(2)),
+                    MoveTo(0, countdown_y),
                     SetForegroundColor(subheader_fg()),
-                    Print(countdown_text),
+                    Print(format!("{space:>pad$}{text}", space="", pad=left_padding, text=countdown_text)),
                     ResetColor
                 )?;
-
-                footer_y = footer_y.saturating_sub(3);
             }
+
+            // Always print an empty line above the blue bar
+            execute!(
+                stdout,
+                MoveTo(0, empty_y),
+                Print("")
+            )?;
 
             let mut controls = if total_pages > 1 {
                 "q=Lopeta ←→=Sivut"
