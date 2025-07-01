@@ -325,10 +325,17 @@ impl TeletextPage {
     ///     false
     /// );
     ///
+    /// // Set a fixed screen height for testing to avoid terminal size issues
+    /// page.set_screen_height(20);
+    ///
     /// // When terminal is resized
     /// page.handle_resize();
-    /// let mut stdout = stdout();
-    /// page.render(&mut stdout)?;
+    ///
+    /// // Only render if we have a proper terminal (skip in CI)
+    /// if std::env::var("CI").is_err() {
+    ///     let mut stdout = stdout();
+    ///     page.render(&mut stdout)?;
+    /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
     pub fn handle_resize(&mut self) {
@@ -450,6 +457,12 @@ impl TeletextPage {
     /// Useful for pages showing only future/scheduled games that don't need frequent updates.
     pub fn set_auto_refresh_disabled(&mut self, disabled: bool) {
         self.auto_refresh_disabled = disabled;
+    }
+
+    /// Sets the screen height for testing purposes.
+    /// This method is primarily used in tests to avoid terminal size detection issues.
+    pub fn set_screen_height(&mut self, height: u16) {
+        self.screen_height = height;
     }
 
     /// Sets whether to show the season countdown in the footer.
@@ -653,7 +666,7 @@ impl TeletextPage {
     /// use liiga_teletext::TeletextPage;
     /// use std::io::stdout;
     ///
-    /// let page = TeletextPage::new(
+    /// let mut page = TeletextPage::new(
     ///     221,
     ///     "JÄÄKIEKKO".to_string(),
     ///     "SM-LIIGA".to_string(),
@@ -662,8 +675,14 @@ impl TeletextPage {
     ///     false
     /// );
     ///
-    /// let mut stdout = stdout();
-    /// page.render(&mut stdout)?;
+    /// // Set a fixed screen height for testing to avoid terminal size issues
+    /// page.set_screen_height(20);
+    ///
+    /// // Only render if we have a proper terminal (skip in CI)
+    /// if std::env::var("CI").is_err() {
+    ///     let mut stdout = stdout();
+    ///     page.render(&mut stdout)?;
+    /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), AppError> {
@@ -1040,7 +1059,7 @@ mod tests {
             true,
             false,
         );
-        page.screen_height = 20; // Set fixed screen height for testing
+        page.set_screen_height(20); // Set fixed screen height for testing
 
         // Add enough games with goal events to create multiple pages
         for i in 0..10 {
@@ -1105,7 +1124,7 @@ mod tests {
             true,
             false,
         );
-        page.screen_height = 20; // Set fixed screen height for testing
+        page.set_screen_height(20); // Set fixed screen height for testing
 
         // Add enough games with goal events to create multiple pages
         for i in 0..10 {
