@@ -128,7 +128,9 @@ fn get_subheader(games: &[GameData]) -> String {
     }
 }
 
-async fn create_page(
+/// Creates a base TeletextPage with common initialization logic.
+/// This helper function reduces code duplication between create_page and create_future_games_page.
+async fn create_base_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
@@ -152,6 +154,15 @@ async fn create_page(
     page.set_show_season_countdown(games).await;
 
     page
+}
+
+async fn create_page(
+    games: &[GameData],
+    disable_video_links: bool,
+    show_footer: bool,
+    ignore_height_limit: bool,
+) -> TeletextPage {
+    create_base_page(games, disable_video_links, show_footer, ignore_height_limit).await
 }
 
 /// Validates if a game is in the future by checking both time and start fields.
@@ -206,34 +217,19 @@ async fn create_future_games_page(
         let date_str = start_str.split('T').next().unwrap_or("");
         let formatted_date = format_date_for_display(date_str);
 
-        let subheader = get_subheader(games);
         tracing::debug!(
             "First game serie: '{}', subheader: '{}'",
             games[0].serie,
-            subheader
+            get_subheader(games)
         );
 
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            subheader,
-            disable_video_links,
-            show_footer,
-            ignore_height_limit,
-        );
+        let mut page = create_base_page(games, disable_video_links, show_footer, ignore_height_limit).await;
 
         // Add the "Seuraavat ottelut" line
         page.add_future_games_header(format!("Seuraavat ottelut {}", formatted_date));
 
         // Set auto-refresh disabled for scheduled games
         page.set_auto_refresh_disabled(true);
-
-        for game in games {
-            page.add_game_result(GameResultData::new(game));
-        }
-
-        // Set season countdown if regular season hasn't started yet
-        page.set_show_season_countdown(games).await;
 
         Some(page)
     } else {
