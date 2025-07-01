@@ -403,7 +403,7 @@ impl TeletextPage {
 
         // Find the earliest regular season game by fetching future regular season games
         if let Some(days_until_season) = calculate_days_until_regular_season().await {
-            let countdown_text = format!("Liiga kauden alkuun {} päivää", days_until_season);
+            let countdown_text = format!("Runkosarjan alkuun {} päivää", days_until_season);
             self.season_countdown = Some(countdown_text);
         }
     }
