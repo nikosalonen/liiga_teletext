@@ -14,6 +14,12 @@ use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use tracing::{debug, error, info, instrument};
 
+// Tournament season constants for month-based logic
+const PRESEASON_START_MONTH: u32 = 5; // May
+const PRESEASON_END_MONTH: u32 = 9;   // September
+const PLAYOFFS_START_MONTH: u32 = 3;  // March
+const PLAYOFFS_END_MONTH: u32 = 6;    // June
+
 /// Helper function to extract team name from a ScheduleTeam, with fallback logic.
 /// Returns the team_name if available, otherwise team_placeholder, or "Unknown" as last resort.
 fn get_team_name(team: &ScheduleTeam) -> &str {
@@ -57,8 +63,8 @@ fn build_tournament_list(date: &str) -> Vec<&'static str> {
 
     let mut tournaments = Vec::new();
 
-    // Only include valmistavat_ottelut during August and September
-    if month >= 5 && month <= 9 {
+    // Only include valmistavat_ottelut during preseason (May-September)
+    if month >= PRESEASON_START_MONTH && month <= PRESEASON_END_MONTH {
         info!("Including valmistavat_ottelut (month is {} - May<->Sep)", month);
         tournaments.push("valmistavat_ottelut");
     }
@@ -66,8 +72,8 @@ fn build_tournament_list(date: &str) -> Vec<&'static str> {
     // Always include runkosarja
     tournaments.push("runkosarja");
 
-    // Only include playoffs, playout, and qualifications if month is March (3) or later
-    if month >= 3 && month <= 6 {
+    // Only include playoffs, playout, and qualifications during playoff season (March-June)
+    if month >= PLAYOFFS_START_MONTH && month <= PLAYOFFS_END_MONTH {
         info!("Including playoffs, playout, and qualifications (month is {} >= 3)", month);
         tournaments.push("playoffs");
         tournaments.push("playout");
