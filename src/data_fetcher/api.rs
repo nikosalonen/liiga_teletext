@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{cache_players, get_cached_players};
 use crate::data_fetcher::models::{
-    DetailedGameResponse, GameData, GoalEventData, ScheduleGame, ScheduleResponse,
+    DetailedGameResponse, GameData, GoalEventData, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
 use crate::data_fetcher::processors::{
     create_basic_goal_events, determine_game_status, format_time, process_goal_events,
@@ -13,6 +13,14 @@ use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use tracing::{debug, error, info, instrument};
+
+/// Helper function to extract team name from a ScheduleTeam, with fallback logic.
+/// Returns the team_name if available, otherwise team_placeholder, or "Unknown" as last resort.
+fn get_team_name(team: &ScheduleTeam) -> &str {
+    team.team_name.as_deref()
+        .or(team.team_placeholder.as_deref())
+        .unwrap_or("Unknown")
+}
 
 #[instrument(skip(client))]
 async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, AppError> {
@@ -268,12 +276,8 @@ pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameDa
                     let config = config.clone();
                     let response_idx = i;
                     async move {
-                        let home_team_name = m.home_team.team_name.as_deref().unwrap_or_else(||
-                            m.home_team.team_placeholder.as_deref().unwrap_or("Unknown")
-                        );
-                        let away_team_name = m.away_team.team_name.as_deref().unwrap_or_else(||
-                            m.away_team.team_placeholder.as_deref().unwrap_or("Unknown")
-                        );
+                        let home_team_name = get_team_name(&m.home_team);
+                        let away_team_name = get_team_name(&m.away_team);
                         info!("Processing game #{} in response #{}: {} vs {}",
                               game_idx + 1, response_idx + 1, home_team_name, away_team_name);
 
