@@ -158,5 +158,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgements
 
-- [YLE Teksti-TV](https://www.yle.fi/tv/teksti-tv) for the design inspiration
+- [YLE Teksti-TV](https://yle.fi/aihe/tekstitv) for the design inspiration
 - [NHL-235](https://github.com/Hamatti/nhl-235) by Juha-Matti Santala for pioneering the concept of bringing teletext hockey scores to the terminal. My original inspiration for this project.
