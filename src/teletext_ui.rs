@@ -70,7 +70,8 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
             // Parse the ISO 8601 date from the API
             if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
                 let today = Utc::now();
-                let days_until = (season_start.naive_utc().date() - today.naive_utc().date()).num_days();
+                let days_until =
+                    (season_start.naive_utc().date() - today.naive_utc().date()).num_days();
 
                 if days_until > 0 {
                     return Some(days_until);
@@ -92,7 +93,8 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
             // Parse the ISO 8601 date from the API
             if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
                 let today = Utc::now();
-                let days_until = (season_start.naive_utc().date() - today.naive_utc().date()).num_days();
+                let days_until =
+                    (season_start.naive_utc().date() - today.naive_utc().date()).num_days();
 
                 if days_until > 0 {
                     return Some(days_until);
@@ -220,7 +222,20 @@ impl GameResultData {
     ///
     /// # Example
     /// ```
-    /// let game_data = fetch_game_data();
+    /// use liiga_teletext::GameResultData;
+    /// let game_data = liiga_teletext::data_fetcher::models::GameData {
+    ///     home_team: "Tappara".to_string(),
+    ///     away_team: "HIFK".to_string(),
+    ///     time: "18:30".to_string(),
+    ///     result: "3-2".to_string(),
+    ///     score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+    ///     is_overtime: false,
+    ///     is_shootout: false,
+    ///     serie: "RUNKOSARJA".to_string(),
+    ///     goal_events: vec![],
+    ///     played_time: 60,
+    ///     start: "2024-01-15T18:30:00Z".to_string(),
+    /// };
     /// let result = GameResultData::new(&game_data);
     /// ```
     pub fn new(game_data: &crate::data_fetcher::GameData) -> Self {
@@ -254,6 +269,8 @@ impl TeletextPage {
     ///
     /// # Example
     /// ```
+    /// use liiga_teletext::TeletextPage;
+    ///
     /// let page = TeletextPage::new(
     ///     221,
     ///     "JÄÄKIEKKO".to_string(),
@@ -296,9 +313,23 @@ impl TeletextPage {
     ///
     /// # Example
     /// ```
+    /// use liiga_teletext::TeletextPage;
+    /// use std::io::stdout;
+    ///
+    /// let mut page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false
+    /// );
+    ///
     /// // When terminal is resized
     /// page.handle_resize();
+    /// let mut stdout = stdout();
     /// page.render(&mut stdout)?;
+    /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
     pub fn handle_resize(&mut self) {
         // Update screen height
@@ -334,7 +365,32 @@ impl TeletextPage {
     ///
     /// # Example
     /// ```
-    /// let game = GameResultData::new(&fetched_game);
+    /// use liiga_teletext::{TeletextPage, GameResultData};
+    ///
+    /// let mut page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false
+    /// );
+    ///
+    /// // Create a sample game result
+    /// let game = GameResultData::new(&liiga_teletext::data_fetcher::models::GameData {
+    ///     home_team: "Tappara".to_string(),
+    ///     away_team: "HIFK".to_string(),
+    ///     time: "18:30".to_string(),
+    ///     result: "3-2".to_string(),
+    ///     score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+    ///     is_overtime: false,
+    ///     is_shootout: false,
+    ///     serie: "RUNKOSARJA".to_string(),
+    ///     goal_events: vec![],
+    ///     played_time: 60,
+    ///     start: "2024-01-15T18:30:00Z".to_string(),
+    /// });
+    ///
     /// page.add_game_result(game);
     /// ```
     pub fn add_game_result(&mut self, game_data: GameResultData) {
@@ -359,6 +415,17 @@ impl TeletextPage {
     ///
     /// # Example
     /// ```
+    /// use liiga_teletext::TeletextPage;
+    ///
+    /// let mut page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false
+    /// );
+    ///
     /// page.add_error_message("Failed to fetch game data");
     /// ```
     pub fn add_error_message(&mut self, message: &str) {
@@ -513,6 +580,19 @@ impl TeletextPage {
     ///
     /// # Example
     /// ```
+    /// use liiga_teletext::TeletextPage;
+    /// use crossterm::event::KeyCode;
+    ///
+    /// let mut page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false
+    /// );
+    ///
+    /// let event = KeyCode::Right;
     /// if event == KeyCode::Right {
     ///     page.next_page();
     /// }
@@ -530,6 +610,19 @@ impl TeletextPage {
     ///
     /// # Example
     /// ```
+    /// use liiga_teletext::TeletextPage;
+    /// use crossterm::event::KeyCode;
+    ///
+    /// let mut page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false
+    /// );
+    ///
+    /// let event = KeyCode::Left;
     /// if event == KeyCode::Left {
     ///     page.previous_page();
     /// }
@@ -557,8 +650,21 @@ impl TeletextPage {
     ///
     /// # Example
     /// ```
+    /// use liiga_teletext::TeletextPage;
+    /// use std::io::stdout;
+    ///
+    /// let page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false
+    /// );
+    ///
     /// let mut stdout = stdout();
     /// page.render(&mut stdout)?;
+    /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), AppError> {
         // Always clear the screen to ensure proper rendering
@@ -1069,7 +1175,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
-            false,
+            true, // ignore_height_limit = true to show all games
         );
 
         // Test game without goals
@@ -1126,7 +1232,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
-            false,
+            true, // ignore_height_limit = true to show all content
         );
         let error_msg = "Test Error";
         page.add_error_message(error_msg);
@@ -1147,7 +1253,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
-            false,
+            true, // ignore_height_limit = true to show all games
         );
 
         // Test scheduled game display
@@ -1327,7 +1433,7 @@ mod tests {
             score_type: ScoreType::Final,
             is_overtime: false,
             is_shootout: false,
-            goal_events: goal_events,
+            goal_events,
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
