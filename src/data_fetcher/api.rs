@@ -227,8 +227,132 @@ async fn process_next_game_dates(
     }
 }
 
-/// Processes game data from API responses and converts them to GameData objects.
-/// Handles team names, game times, results, and detailed goal events.
+/// Determines if a game has actual goals (excluding RL0 goal types).
+fn has_actual_goals(game: &ScheduleGame) -> bool {
+    game.home_team
+        .goal_events
+        .iter()
+        .any(|g| !g.goal_types.contains(&"RL0".to_string()))
+        || game.away_team
+            .goal_events
+            .iter()
+            .any(|g| !g.goal_types.contains(&"RL0".to_string()))
+}
+
+/// Determines if detailed game data should be fetched based on game state.
+fn should_fetch_detailed_data(game: &ScheduleGame) -> bool {
+    if game.started {
+        has_actual_goals(game) || !game.ended
+    } else {
+        false
+    }
+}
+
+/// Processes a single game and returns GameData.
+async fn process_single_game(
+    client: &Client,
+    config: &Config,
+    game: ScheduleGame,
+    game_idx: usize,
+    response_idx: usize,
+) -> Result<GameData, AppError> {
+    let home_team_name = get_team_name(&game.home_team);
+    let away_team_name = get_team_name(&game.away_team);
+
+    info!(
+        "Processing game #{} in response #{}: {} vs {}",
+        game_idx + 1,
+        response_idx + 1,
+        home_team_name,
+        away_team_name
+    );
+
+    let time = if !game.started {
+        let formatted_time = format_time(&game.start).unwrap_or_default();
+        info!("Game not started, formatted time: {}", formatted_time);
+        formatted_time
+    } else {
+        info!("Game already started, no time to display");
+        String::new()
+    };
+
+    let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
+    info!("Game result: {}", result);
+
+    let (score_type, is_overtime, is_shootout) = determine_game_status(&game);
+    info!(
+        "Game status: {:?}, overtime: {}, shootout: {}",
+        score_type, is_overtime, is_shootout
+    );
+
+    let goal_events = if should_fetch_detailed_data(&game) {
+        info!("Fetching detailed game data");
+        fetch_detailed_game_data(client, config, &game).await
+    } else {
+        info!("No detailed data needed for this game");
+        Vec::new()
+    };
+
+    info!(
+        "Successfully processed game #{} in response #{}",
+        game_idx + 1,
+        response_idx + 1
+    );
+
+    info!("Game serie from API: '{}'", game.serie);
+    Ok(GameData {
+        home_team: home_team_name.to_string(),
+        away_team: away_team_name.to_string(),
+        time,
+        result,
+        score_type,
+        is_overtime,
+        is_shootout,
+        serie: game.serie,
+        goal_events,
+        played_time: game.game_time,
+        start: game.start.clone(),
+    })
+}
+
+/// Processes all games in a single response.
+async fn process_response_games(
+    client: &Client,
+    config: &Config,
+    response: &ScheduleResponse,
+    response_idx: usize,
+) -> Result<Vec<GameData>, AppError> {
+    if response.games.is_empty() {
+        info!("Response #{} has empty games array", response_idx + 1);
+        return Ok(Vec::new());
+    }
+
+    info!(
+        "Processing response #{} with {} games",
+        response_idx + 1,
+        response.games.len()
+    );
+
+    let games = futures::future::try_join_all(
+        response.games.clone().into_iter().enumerate().map(|(game_idx, game)| {
+            let client = client.clone();
+            let config = config.clone();
+            async move {
+                process_single_game(&client, &config, game, game_idx, response_idx).await
+            }
+        }),
+    )
+    .await?;
+
+    info!(
+        "Successfully processed all games in response #{}, adding {} games to result",
+        response_idx + 1,
+        games.len()
+    );
+
+    Ok(games)
+}
+
 async fn process_games(
     client: &Client,
     config: &Config,
@@ -236,124 +360,22 @@ async fn process_games(
 ) -> Result<Vec<GameData>, AppError> {
     let mut all_games = Vec::new();
 
-    if !response_data.is_empty() {
-        info!(
-            "Processing {} response(s) with game data",
-            response_data.len()
-        );
-        for (i, response) in response_data.iter().enumerate() {
-            // Check if the games array is actually empty
-            if response.games.is_empty() {
-                info!("Response #{} has empty games array", i + 1);
-                continue;
-            }
-
-            info!(
-                "Processing response #{} with {} games",
-                i + 1,
-                response.games.len()
-            );
-            let games =
-                futures::future::try_join_all(response.games.clone().into_iter().enumerate().map(
-                    |(game_idx, m)| {
-                        let client = client.clone();
-                        let config = config.clone();
-                        let response_idx = i;
-                        async move {
-                            let home_team_name = get_team_name(&m.home_team);
-                            let away_team_name = get_team_name(&m.away_team);
-                            info!(
-                                "Processing game #{} in response #{}: {} vs {}",
-                                game_idx + 1,
-                                response_idx + 1,
-                                home_team_name,
-                                away_team_name
-                            );
-
-                            let time = if !m.started {
-                                let formatted_time = format_time(&m.start).unwrap_or_default();
-                                info!("Game not started, formatted time: {}", formatted_time);
-                                formatted_time
-                            } else {
-                                info!("Game already started, no time to display");
-                                String::new()
-                            };
-
-                            let result = format!("{}-{}", m.home_team.goals, m.away_team.goals);
-                            info!("Game result: {}", result);
-
-                            let (score_type, is_overtime, is_shootout) = determine_game_status(&m);
-                            info!(
-                                "Game status: {:?}, overtime: {}, shootout: {}",
-                                score_type, is_overtime, is_shootout
-                            );
-
-                            let has_goals = m
-                                .home_team
-                                .goal_events
-                                .iter()
-                                .any(|g| !g.goal_types.contains(&"RL0".to_string()))
-                                || m.away_team
-                                    .goal_events
-                                    .iter()
-                                    .any(|g| !g.goal_types.contains(&"RL0".to_string()));
-
-                            info!("Game has goals: {}", has_goals);
-
-                            let goal_events = if !m.started {
-                                info!("Game not started, no goal events to fetch");
-                                Vec::new()
-                            } else if has_goals || !m.ended {
-                                // Fetch detailed data if there are goals or game is ongoing
-                                info!(
-                                    "Fetching detailed game data (has_goals: {}, ended: {})",
-                                    has_goals, m.ended
-                                );
-                                let events = fetch_detailed_game_data(&client, &config, &m).await;
-                                info!("Fetched {} goal events", events.len());
-                                events
-                            } else {
-                                info!("Game ended with no goals, no need to fetch detailed data");
-                                Vec::new()
-                            };
-
-                            info!(
-                                "Successfully processed game #{} in response #{}",
-                                game_idx + 1,
-                                response_idx + 1
-                            );
-
-                            info!("Game serie from API: '{}'", m.serie);
-                            Ok::<GameData, AppError>(GameData {
-                                home_team: home_team_name.to_string(),
-                                away_team: away_team_name.to_string(),
-                                time,
-                                result,
-                                score_type,
-                                is_overtime,
-                                is_shootout,
-                                serie: m.serie,
-                                goal_events,
-                                played_time: m.game_time,
-                                start: m.start.clone(),
-                            })
-                        }
-                    },
-                ))
-                .await?;
-
-            info!(
-                "Successfully processed all games in response #{}, adding {} games to result",
-                i + 1,
-                games.len()
-            );
-            all_games.extend(games);
-        }
-        info!("Total games processed: {}", all_games.len());
-    } else {
+    if response_data.is_empty() {
         info!("No response data to process");
+        return Ok(all_games);
     }
 
+    info!(
+        "Processing {} response(s) with game data",
+        response_data.len()
+    );
+
+    for (i, response) in response_data.iter().enumerate() {
+        let games = process_response_games(client, config, response, i).await?;
+        all_games.extend(games);
+    }
+
+    info!("Total games processed: {}", all_games.len());
     Ok(all_games)
 }
 
@@ -448,6 +470,31 @@ async fn fetch_day_data(
     }
 }
 
+/// Handles the case when no games are found for the current date.
+/// Returns the response data and earliest date for next games.
+async fn handle_no_games_found(
+    client: &Client,
+    config: &Config,
+    tournaments: &[&str],
+    date: &str,
+    tournament_responses: HashMap<String, ScheduleResponse>,
+) -> Result<(Vec<ScheduleResponse>, Option<String>), AppError> {
+    info!("No games found for the current date, checking for next game dates");
+    let (next_date, next_responses) =
+        process_next_game_dates(client, config, tournaments, date, tournament_responses)
+            .await?;
+    Ok((next_responses, next_date))
+}
+
+/// Determines the appropriate date to return based on whether games were found.
+fn determine_return_date(games: &[GameData], earliest_date: Option<String>, original_date: &str) -> String {
+    if games.is_empty() {
+        earliest_date.unwrap_or_else(|| original_date.to_string())
+    } else {
+        original_date.to_string()
+    }
+}
+
 #[instrument(skip(custom_date))]
 pub async fn fetch_liiga_data(
     custom_date: Option<String>,
@@ -478,31 +525,27 @@ pub async fn fetch_liiga_data(
         );
         (responses, None)
     } else {
-        info!("No games found for the current date, checking for next game dates");
-        // Process next game dates when no games are found for the current date
-        let (next_date, next_responses) =
-            process_next_game_dates(&client, &config, &tournaments, &date, tournament_responses)
-                .await?;
-        (next_responses, next_date)
+        handle_no_games_found(&client, &config, &tournaments, &date, tournament_responses).await?
     };
 
     // Process games if we found any
     let all_games = process_games(&client, &config, response_data).await?;
 
-    // Return results with appropriate date
+        // Determine the appropriate date to return
+    let return_date = determine_return_date(&all_games, earliest_date.clone(), &date);
+
     if all_games.is_empty() {
         info!("No games found after processing all data");
-        if let Some(next_date) = earliest_date {
-            info!("Returning empty games list with next date: {}", next_date);
-            Ok((all_games, next_date))
+        if earliest_date.is_some() {
+            info!("Returning empty games list with next date: {}", return_date);
         } else {
-            info!("Returning empty games list with original date: {}", date);
-            Ok((all_games, date))
+            info!("Returning empty games list with original date: {}", return_date);
         }
     } else {
-        info!("Returning {} games with date: {}", all_games.len(), date);
-        Ok((all_games, date))
+        info!("Returning {} games with date: {}", all_games.len(), return_date);
     }
+
+    Ok((all_games, return_date))
 }
 
 #[instrument(skip(client, config))]
