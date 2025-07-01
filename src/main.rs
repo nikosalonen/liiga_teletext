@@ -153,6 +153,52 @@ fn create_page(
     page
 }
 
+/// Creates a TeletextPage for future games if the games are scheduled.
+/// Returns Some(TeletextPage) if the games are future games, None otherwise.
+fn create_future_games_page(
+    games: &[GameData],
+    disable_video_links: bool,
+    show_footer: bool,
+    ignore_height_limit: bool,
+    debug_mode: bool,
+) -> Option<TeletextPage> {
+    // Check if these are future games by looking at the first game's time
+    // If time is not empty, it's a future game
+    if !games.is_empty() && !games[0].time.is_empty() {
+        // Extract date from the first game's start field (assuming format YYYY-MM-DDThh:mm:ssZ)
+        let start_str = &games[0].start;
+        let date_str = start_str.split('T').next().unwrap_or("");
+        let formatted_date = format_date_for_display(date_str);
+
+        let subheader = get_subheader(games);
+        tracing::debug!("First game serie: '{}', subheader: '{}'", games[0].serie, subheader);
+
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            subheader,
+            disable_video_links,
+            show_footer,
+            ignore_height_limit,
+            debug_mode,
+        );
+
+        // Add the "Seuraavat ottelut" line
+        page.add_future_games_header(format!("Seuraavat ottelut {}", formatted_date));
+
+        // Set auto-refresh disabled for scheduled games
+        page.set_auto_refresh_disabled(true);
+
+        for game in games {
+            page.add_game_result(GameResultData::new(game));
+        }
+
+        Some(page)
+    } else {
+        None
+    }
+}
+
 /// Checks for the latest version of this crate on crates.io.
 ///
 /// Returns `Some(version_string)` if a newer version is available,
@@ -446,35 +492,9 @@ async fn main() -> Result<(), AppError> {
             }
             error_page
         } else {
-            // Check if these are future games by looking at the first game's time
-            // If time is not empty, it's a future game
-            if !games[0].time.is_empty() {
-                // Extract date from the first game's start field (assuming format YYYY-MM-DDThh:mm:ssZ)
-                let start_str = &games[0].start;
-                let date_str = start_str.split('T').next().unwrap_or("");
-                let formatted_date = format_date_for_display(date_str);
-
-                let mut page = TeletextPage::new(
-                    221,
-                    "JÄÄKIEKKO".to_string(),
-                    get_subheader(&games),
-                    args.disable_links,
-                    false, // Don't show footer in quick view mode
-                    true,  // Ignore height limit in quick view mode
-                    args.debug,
-                );
-
-                // Add the "Seuraavat ottelut" line
-                page.add_future_games_header(format!("Seuraavat ottelut {}", formatted_date));
-
-                for game in &games {
-                    page.add_game_result(GameResultData::new(game));
-                }
-
-                page
-            } else {
-                create_page(&games, args.disable_links, false, true, args.debug) // Ignore height limit in quick view mode
-            }
+            // Try to create a future games page, fall back to regular page if not future games
+            create_future_games_page(&games, args.disable_links, false, true, args.debug)
+                .unwrap_or_else(|| create_page(&games, args.disable_links, false, true, args.debug))
         };
 
         page.render(&mut stdout())?;
@@ -589,41 +609,9 @@ async fn run_interactive_ui(
                     }
                     error_page
                 } else {
-                    // Check if these are future games by looking at the first game's time
-                    // If time is not empty, it's a future game
-                    if !games[0].time.is_empty() {
-                        // Extract date from the first game's start field (assuming format YYYY-MM-DDThh:mm:ssZ)
-                        let start_str = &games[0].start;
-                        let date_str = start_str.split('T').next().unwrap_or("");
-                        let formatted_date = format_date_for_display(date_str);
-
-                        let subheader = get_subheader(&games);
-                        tracing::debug!("First game serie: '{}', subheader: '{}'", games[0].serie, subheader);
-
-                        let mut page = TeletextPage::new(
-                            221,
-                            "JÄÄKIEKKO".to_string(),
-                            subheader,
-                            args.disable_links,
-                            true,
-                            false,
-                            args.debug,
-                        );
-
-                        // Add the "Seuraavat ottelut" line
-                        page.add_future_games_header(format!("Seuraavat ottelut {}", formatted_date));
-
-                        // Set auto-refresh disabled for scheduled games
-                        page.set_auto_refresh_disabled(true);
-
-                        for game in &games {
-                            page.add_game_result(GameResultData::new(game));
-                        }
-
-                        page
-                    } else {
-                        create_page(&games, args.disable_links, true, false, args.debug)
-                    }
+                    // Try to create a future games page, fall back to regular page if not future games
+                    create_future_games_page(&games, args.disable_links, true, false, args.debug)
+                        .unwrap_or_else(|| create_page(&games, args.disable_links, true, false, args.debug))
                 };
 
                 // Store the current page state
