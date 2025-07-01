@@ -135,6 +135,7 @@ async fn create_base_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    future_games_header: Option<String>,
 ) -> TeletextPage {
     let subheader = get_subheader(games);
     let mut page = TeletextPage::new(
@@ -145,6 +146,11 @@ async fn create_base_page(
         show_footer,
         ignore_height_limit,
     );
+
+    // Add future games header first if provided
+    if let Some(header) = future_games_header {
+        page.add_future_games_header(header);
+    }
 
     for game in games {
         page.add_game_result(GameResultData::new(game));
@@ -162,7 +168,7 @@ async fn create_page(
     show_footer: bool,
     ignore_height_limit: bool,
 ) -> TeletextPage {
-    create_base_page(games, disable_video_links, show_footer, ignore_height_limit).await
+    create_base_page(games, disable_video_links, show_footer, ignore_height_limit, None).await
 }
 
 /// Validates if a game is in the future by checking both time and start fields.
@@ -223,10 +229,8 @@ async fn create_future_games_page(
             get_subheader(games)
         );
 
-        let mut page = create_base_page(games, disable_video_links, show_footer, ignore_height_limit).await;
-
-        // Add the "Seuraavat ottelut" line
-        page.add_future_games_header(format!("Seuraavat ottelut {}", formatted_date));
+        let future_games_header = format!("Seuraavat ottelut {}", formatted_date);
+        let mut page = create_base_page(games, disable_video_links, show_footer, ignore_height_limit, Some(future_games_header)).await;
 
         // Set auto-refresh disabled for scheduled games
         page.set_auto_refresh_disabled(true);
