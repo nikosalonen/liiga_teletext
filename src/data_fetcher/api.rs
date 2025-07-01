@@ -30,7 +30,7 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
             status.canonical_reason().unwrap_or("Unknown error"),
             url
         );
-        error!(error_message);
+        error!("{}", error_message);
         return Err(AppError::Custom(error_message));
     }
 
@@ -132,7 +132,7 @@ pub async fn fetch_liiga_data(custom_date: Option<String>) -> Result<(Vec<GameDa
     let mut tournaments = Vec::new();
 
     // Only include valmistavat_ottelut during August and September
-    if month >= 5 || month <= 9 {
+    if month >= 5 && month <= 9 {
         info!("Including valmistavat_ottelut (month is {} - May<->Sep)", month);
         tournaments.push("valmistavat_ottelut");
     }
