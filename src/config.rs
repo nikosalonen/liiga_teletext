@@ -165,7 +165,7 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::tempdir;
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_config_load_existing_file() {
         // Create a temporary config file
         let temp_dir = tempdir().unwrap();
@@ -185,7 +185,7 @@ log_file_path = "/custom/log/path"
         assert_eq!(config.log_file_path, Some("/custom/log/path".to_string()));
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_config_load_without_log_file_path() {
         // Create a temporary config file without log_file_path
         let temp_dir = tempdir().unwrap();
@@ -204,7 +204,7 @@ api_domain = "https://api.example.com"
         assert_eq!(config.log_file_path, None);
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_config_save_new_file() {
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join("config.toml");
@@ -222,7 +222,10 @@ api_domain = "https://api.example.com"
 
         // Ensure api_domain has https:// prefix
         let api_domain = if !config.api_domain.starts_with("https://") {
-            format!("https://{}", config.api_domain.trim_start_matches("http://"))
+            format!(
+                "https://{}",
+                config.api_domain.trim_start_matches("http://")
+            )
         } else {
             config.api_domain.clone()
         };
@@ -230,7 +233,8 @@ api_domain = "https://api.example.com"
         let content = toml::to_string_pretty(&Config {
             api_domain,
             log_file_path: config.log_file_path.clone(),
-        }).unwrap();
+        })
+        .unwrap();
         let mut file = fs::File::create(&config_path).unwrap();
         std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
 
@@ -241,7 +245,7 @@ api_domain = "https://api.example.com"
         assert!(content.contains("log_file_path = \"/custom/log/path\""));
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_config_save_without_https_prefix() {
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join("config.toml");
@@ -259,7 +263,10 @@ api_domain = "https://api.example.com"
 
         // Ensure api_domain has https:// prefix
         let api_domain = if !config.api_domain.starts_with("https://") {
-            format!("https://{}", config.api_domain.trim_start_matches("http://"))
+            format!(
+                "https://{}",
+                config.api_domain.trim_start_matches("http://")
+            )
         } else {
             config.api_domain.clone()
         };
@@ -267,7 +274,8 @@ api_domain = "https://api.example.com"
         let content = toml::to_string_pretty(&Config {
             api_domain,
             log_file_path: config.log_file_path.clone(),
-        }).unwrap();
+        })
+        .unwrap();
         let mut file = fs::File::create(&config_path).unwrap();
         std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
 
@@ -276,7 +284,7 @@ api_domain = "https://api.example.com"
         assert!(content.contains("api_domain = \"https://api.example.com\""));
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_config_save_with_http_prefix() {
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join("config.toml");
@@ -294,7 +302,10 @@ api_domain = "https://api.example.com"
 
         // Ensure api_domain has https:// prefix
         let api_domain = if !config.api_domain.starts_with("https://") {
-            format!("https://{}", config.api_domain.trim_start_matches("http://"))
+            format!(
+                "https://{}",
+                config.api_domain.trim_start_matches("http://")
+            )
         } else {
             config.api_domain.clone()
         };
@@ -302,7 +313,8 @@ api_domain = "https://api.example.com"
         let content = toml::to_string_pretty(&Config {
             api_domain,
             log_file_path: config.log_file_path.clone(),
-        }).unwrap();
+        })
+        .unwrap();
         let mut file = fs::File::create(&config_path).unwrap();
         std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
 
@@ -311,7 +323,7 @@ api_domain = "https://api.example.com"
         assert!(content.contains("api_domain = \"https://api.example.com\""));
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_config_save_creates_directory() {
         let temp_dir = tempdir().unwrap();
         let config_dir = temp_dir.path().join("liiga_teletext");
@@ -329,7 +341,10 @@ api_domain = "https://api.example.com"
 
         // Ensure api_domain has https:// prefix
         let api_domain = if !config.api_domain.starts_with("https://") {
-            format!("https://{}", config.api_domain.trim_start_matches("http://"))
+            format!(
+                "https://{}",
+                config.api_domain.trim_start_matches("http://")
+            )
         } else {
             config.api_domain.clone()
         };
@@ -337,7 +352,8 @@ api_domain = "https://api.example.com"
         let content = toml::to_string_pretty(&Config {
             api_domain,
             log_file_path: config.log_file_path.clone(),
-        }).unwrap();
+        })
+        .unwrap();
         let mut file = fs::File::create(&config_path).unwrap();
         std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
 
@@ -372,7 +388,7 @@ api_domain = "https://api.example.com"
         assert!(path.is_absolute() || path.starts_with("."));
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_config_display_with_existing_config() {
         // This test verifies that display() doesn't panic when config exists
         // We can't easily mock the path, so we just test that the function runs
@@ -390,7 +406,7 @@ api_domain = "https://api.example.com"
         assert!(result.is_ok());
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_config_load_invalid_toml() {
         // Create invalid TOML content
         let invalid_content = r#"
@@ -403,7 +419,7 @@ invalid_field = [1, 2, 3, "unclosed_string
         assert!(result.is_err());
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_config_save_and_load_roundtrip() {
         let temp_dir = tempdir().unwrap();
         let config_path = temp_dir.path().join("config.toml");
@@ -421,7 +437,10 @@ invalid_field = [1, 2, 3, "unclosed_string
 
         // Ensure api_domain has https:// prefix
         let api_domain = if !original_config.api_domain.starts_with("https://") {
-            format!("https://{}", original_config.api_domain.trim_start_matches("http://"))
+            format!(
+                "https://{}",
+                original_config.api_domain.trim_start_matches("http://")
+            )
         } else {
             original_config.api_domain.clone()
         };
@@ -429,7 +448,8 @@ invalid_field = [1, 2, 3, "unclosed_string
         let content = toml::to_string_pretty(&Config {
             api_domain,
             log_file_path: original_config.log_file_path.clone(),
-        }).unwrap();
+        })
+        .unwrap();
         let mut file = fs::File::create(&config_path).unwrap();
         std::io::Write::write_all(&mut file, content.as_bytes()).unwrap();
 

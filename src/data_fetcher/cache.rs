@@ -18,8 +18,13 @@ lazy_static! {
 ///
 /// # Example
 /// ```
-/// if let Some(players) = get_cached_players(12345).await {
-///     println!("Found {} cached players", players.len());
+/// use liiga_teletext::data_fetcher::cache::get_cached_players;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     if let Some(players) = get_cached_players(12345).await {
+///         println!("Found {} cached players", players.len());
+///     }
 /// }
 /// ```
 pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
@@ -35,9 +40,15 @@ pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
 ///
 /// # Example
 /// ```
-/// let mut players = HashMap::new();
-/// players.insert(123, "Player Name".to_string());
-/// cache_players(12345, players).await;
+/// use std::collections::HashMap;
+/// use liiga_teletext::data_fetcher::cache::cache_players;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut players = HashMap::new();
+///     players.insert(123, "Player Name".to_string());
+///     cache_players(12345, players).await;
+/// }
 /// ```
 pub async fn cache_players(game_id: i32, players: HashMap<i64, String>) {
     PLAYER_CACHE.write().await.insert(game_id, players);

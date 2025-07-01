@@ -1,8 +1,7 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{cache_players, get_cached_players};
 use crate::data_fetcher::models::{
-    DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Period, Player, ScheduleApiGame, ScheduleGame, ScheduleResponse,
-    ScheduleTeam,
+    DetailedGameResponse, GameData, GoalEventData, ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
 use crate::data_fetcher::processors::{
     create_basic_goal_events, determine_game_status, format_time, process_goal_events,
@@ -233,7 +232,8 @@ fn has_actual_goals(game: &ScheduleGame) -> bool {
         .goal_events
         .iter()
         .any(|g| !g.goal_types.contains(&"RL0".to_string()))
-        || game.away_team
+        || game
+            .away_team
             .goal_events
             .iter()
             .any(|g| !g.goal_types.contains(&"RL0".to_string()))
@@ -333,15 +333,13 @@ async fn process_response_games(
         response.games.len()
     );
 
-    let games = futures::future::try_join_all(
-        response.games.clone().into_iter().enumerate().map(|(game_idx, game)| {
+    let games = futures::future::try_join_all(response.games.clone().into_iter().enumerate().map(
+        |(game_idx, game)| {
             let client = client.clone();
             let config = config.clone();
-            async move {
-                process_single_game(&client, &config, game, game_idx, response_idx).await
-            }
-        }),
-    )
+            async move { process_single_game(&client, &config, game, game_idx, response_idx).await }
+        },
+    ))
     .await?;
 
     info!(
@@ -481,13 +479,16 @@ async fn handle_no_games_found(
 ) -> Result<(Vec<ScheduleResponse>, Option<String>), AppError> {
     info!("No games found for the current date, checking for next game dates");
     let (next_date, next_responses) =
-        process_next_game_dates(client, config, tournaments, date, tournament_responses)
-            .await?;
+        process_next_game_dates(client, config, tournaments, date, tournament_responses).await?;
     Ok((next_responses, next_date))
 }
 
 /// Determines the appropriate date to return based on whether games were found.
-fn determine_return_date(games: &[GameData], earliest_date: Option<String>, original_date: &str) -> String {
+fn determine_return_date(
+    games: &[GameData],
+    earliest_date: Option<String>,
+    original_date: &str,
+) -> String {
     if games.is_empty() {
         earliest_date.unwrap_or_else(|| original_date.to_string())
     } else {
@@ -531,7 +532,7 @@ pub async fn fetch_liiga_data(
     // Process games if we found any
     let all_games = process_games(&client, &config, response_data).await?;
 
-        // Determine the appropriate date to return
+    // Determine the appropriate date to return
     let return_date = determine_return_date(&all_games, earliest_date.clone(), &date);
 
     if all_games.is_empty() {
@@ -539,10 +540,17 @@ pub async fn fetch_liiga_data(
         if earliest_date.is_some() {
             info!("Returning empty games list with next date: {}", return_date);
         } else {
-            info!("Returning empty games list with original date: {}", return_date);
+            info!(
+                "Returning empty games list with original date: {}",
+                return_date
+            );
         }
     } else {
-        info!("Returning {} games with date: {}", all_games.len(), return_date);
+        info!(
+            "Returning {} games with date: {}",
+            all_games.len(),
+            return_date
+        );
     }
 
     Ok((all_games, return_date))
@@ -715,10 +723,10 @@ pub async fn fetch_regular_season_start_date(
 mod tests {
     use super::*;
     use wiremock::{
-        matchers::{method, path},
         Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
     };
-
+    use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Period, Player};
 
     fn create_mock_config() -> Config {
         Config {
@@ -729,47 +737,45 @@ mod tests {
 
     fn create_mock_schedule_response() -> ScheduleResponse {
         ScheduleResponse {
-            games: vec![
-                ScheduleGame {
-                    id: 1,
-                    season: 2024,
-                    start: "2024-01-15T18:30:00Z".to_string(),
-                    end: Some("2024-01-15T20:30:00Z".to_string()),
-                    home_team: ScheduleTeam {
-                        team_id: Some("team1".to_string()),
-                        team_placeholder: None,
-                        team_name: Some("HIFK".to_string()),
-                        goals: 3,
-                        time_out: None,
-                        powerplay_instances: 2,
-                        powerplay_goals: 1,
-                        short_handed_instances: 0,
-                        short_handed_goals: 0,
-                        ranking: Some(1),
-                        game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
-                        goal_events: vec![],
-                    },
-                    away_team: ScheduleTeam {
-                        team_id: Some("team2".to_string()),
-                        team_placeholder: None,
-                        team_name: Some("Tappara".to_string()),
-                        goals: 2,
-                        time_out: None,
-                        powerplay_instances: 1,
-                        powerplay_goals: 0,
-                        short_handed_instances: 0,
-                        short_handed_goals: 0,
-                        ranking: Some(2),
-                        game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
-                        goal_events: vec![],
-                    },
-                    finished_type: Some("normal".to_string()),
-                    started: true,
-                    ended: true,
-                    game_time: 3600,
-                    serie: "runkosarja".to_string(),
-                }
-            ],
+            games: vec![ScheduleGame {
+                id: 1,
+                season: 2024,
+                start: "2024-01-15T18:30:00Z".to_string(),
+                end: Some("2024-01-15T20:30:00Z".to_string()),
+                home_team: ScheduleTeam {
+                    team_id: Some("team1".to_string()),
+                    team_placeholder: None,
+                    team_name: Some("HIFK".to_string()),
+                    goals: 3,
+                    time_out: None,
+                    powerplay_instances: 2,
+                    powerplay_goals: 1,
+                    short_handed_instances: 0,
+                    short_handed_goals: 0,
+                    ranking: Some(1),
+                    game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+                    goal_events: vec![],
+                },
+                away_team: ScheduleTeam {
+                    team_id: Some("team2".to_string()),
+                    team_placeholder: None,
+                    team_name: Some("Tappara".to_string()),
+                    goals: 2,
+                    time_out: None,
+                    powerplay_instances: 1,
+                    powerplay_goals: 0,
+                    short_handed_instances: 0,
+                    short_handed_goals: 0,
+                    ranking: Some(2),
+                    game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+                    goal_events: vec![],
+                },
+                finished_type: Some("normal".to_string()),
+                started: true,
+                ended: true,
+                game_time: 3600,
+                serie: "runkosarja".to_string(),
+            }],
             previous_game_date: Some("2024-01-14".to_string()),
             next_game_date: Some("2024-01-16".to_string()),
         }
@@ -794,21 +800,19 @@ mod tests {
                     team_id: "team1".to_string(),
                     team_name: "HIFK".to_string(),
                     goals: 3,
-                    goal_events: vec![
-                        GoalEvent {
-                            scorer_player_id: 123,
-                            log_time: "2024-01-15T19:15:00Z".to_string(),
-                            game_time: 2700,
-                            period: 2,
-                            event_id: 1,
-                            home_team_score: 1,
-                            away_team_score: 0,
-                            winning_goal: false,
-                            goal_types: vec!["even_strength".to_string()],
-                            assistant_player_ids: vec![456, 789],
-                            video_clip_url: Some("https://example.com/video1.mp4".to_string()),
-                        }
-                    ],
+                    goal_events: vec![GoalEvent {
+                        scorer_player_id: 123,
+                        log_time: "2024-01-15T19:15:00Z".to_string(),
+                        game_time: 2700,
+                        period: 2,
+                        event_id: 1,
+                        home_team_score: 1,
+                        away_team_score: 0,
+                        winning_goal: false,
+                        goal_types: vec!["even_strength".to_string()],
+                        assistant_player_ids: vec![456, 789],
+                        video_clip_url: Some("https://example.com/video1.mp4".to_string()),
+                    }],
                     penalty_events: vec![],
                 },
                 away_team: DetailedTeam {
@@ -842,7 +846,7 @@ mod tests {
                         category: "regular".to_string(),
                         start_time: 2400,
                         end_time: 3600,
-                    }
+                    },
                 ],
                 finished_type: Some("normal".to_string()),
                 started: true,
@@ -851,24 +855,20 @@ mod tests {
                 serie: "runkosarja".to_string(),
             },
             awards: vec![],
-            home_team_players: vec![
-                Player {
-                    id: 123,
-                    last_name: "Smith".to_string(),
-                    first_name: "John".to_string(),
-                }
-            ],
-            away_team_players: vec![
-                Player {
-                    id: 456,
-                    last_name: "Johnson".to_string(),
-                    first_name: "Mike".to_string(),
-                }
-            ],
+            home_team_players: vec![Player {
+                id: 123,
+                last_name: "Smith".to_string(),
+                first_name: "John".to_string(),
+            }],
+            away_team_players: vec![Player {
+                id: 456,
+                last_name: "Johnson".to_string(),
+                first_name: "Mike".to_string(),
+            }],
         }
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_tournament_data_success() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -891,11 +891,17 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         assert_eq!(response.games.len(), 1);
-        assert_eq!(response.games[0].home_team.team_name.as_deref(), Some("HIFK"));
-        assert_eq!(response.games[0].away_team.team_name.as_deref(), Some("Tappara"));
+        assert_eq!(
+            response.games[0].home_team.team_name.as_deref(),
+            Some("HIFK")
+        );
+        assert_eq!(
+            response.games[0].away_team.team_name.as_deref(),
+            Some("Tappara")
+        );
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_tournament_data_no_games() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -920,7 +926,7 @@ mod tests {
         assert_eq!(response.next_game_date, Some("2024-01-16".to_string()));
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_tournament_data_server_error() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -940,7 +946,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_tournament_data_not_found() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -960,7 +966,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_day_data_success() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -988,7 +994,7 @@ mod tests {
         assert_eq!(responses[0].games.len(), 1);
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_day_data_no_games() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -1013,7 +1019,7 @@ mod tests {
         assert!(responses.is_none());
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_game_data_success() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -1040,7 +1046,7 @@ mod tests {
         assert_eq!(goal_events[0].away_team_score, 0);
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_game_data_no_goals() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -1066,7 +1072,7 @@ mod tests {
         assert_eq!(goal_events.len(), 0);
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_game_data_server_error() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -1086,26 +1092,24 @@ mod tests {
         assert!(result.is_err());
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_regular_season_start_date_success() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
 
-        let mock_response = vec![
-            ScheduleApiGame {
-                id: 1,
-                season: 2024,
-                start: "2024-09-15T18:30:00Z".to_string(),
-                home_team_name: "HIFK".to_string(),
-                away_team_name: "Tappara".to_string(),
-                serie: 1,
-                finished_type: None,
-                started: false,
-                ended: false,
-                game_time: None,
-            }
-        ];
+        let mock_response = vec![ScheduleApiGame {
+            id: 1,
+            season: 2024,
+            start: "2024-09-15T18:30:00Z".to_string(),
+            home_team_name: "HIFK".to_string(),
+            away_team_name: "Tappara".to_string(),
+            serie: 1,
+            finished_type: None,
+            started: false,
+            ended: false,
+            game_time: None,
+        }];
 
         Mock::given(method("GET"))
             .and(path("/schedule"))
@@ -1123,7 +1127,7 @@ mod tests {
         assert_eq!(start_date, Some("2024-09-15T18:30:00Z".to_string()));
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_fetch_regular_season_start_date_not_found() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -1249,21 +1253,19 @@ mod tests {
                 short_handed_goals: 0,
                 ranking: None,
                 game_start_date_time: None,
-                goal_events: vec![
-                    GoalEvent {
-                        scorer_player_id: 123,
-                        log_time: "2024-01-15T19:15:00Z".to_string(),
-                        game_time: 2700,
-                        period: 2,
-                        event_id: 1,
-                        home_team_score: 1,
-                        away_team_score: 0,
-                        winning_goal: false,
-                        goal_types: vec!["even_strength".to_string()],
-                        assistant_player_ids: vec![],
-                        video_clip_url: None,
-                    }
-                ],
+                goal_events: vec![GoalEvent {
+                    scorer_player_id: 123,
+                    log_time: "2024-01-15T19:15:00Z".to_string(),
+                    game_time: 2700,
+                    period: 2,
+                    event_id: 1,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    winning_goal: false,
+                    goal_types: vec!["even_strength".to_string()],
+                    assistant_player_ids: vec![],
+                    video_clip_url: None,
+                }],
             },
             away_team: ScheduleTeam {
                 team_id: Some("team2".to_string()),
@@ -1351,21 +1353,19 @@ mod tests {
                 short_handed_goals: 0,
                 ranking: None,
                 game_start_date_time: None,
-                goal_events: vec![
-                    GoalEvent {
-                        scorer_player_id: 123,
-                        log_time: "2024-01-15T19:15:00Z".to_string(),
-                        game_time: 2700,
-                        period: 2,
-                        event_id: 1,
-                        home_team_score: 1,
-                        away_team_score: 0,
-                        winning_goal: false,
-                        goal_types: vec!["even_strength".to_string()],
-                        assistant_player_ids: vec![],
-                        video_clip_url: None,
-                    }
-                ],
+                goal_events: vec![GoalEvent {
+                    scorer_player_id: 123,
+                    log_time: "2024-01-15T19:15:00Z".to_string(),
+                    game_time: 2700,
+                    period: 2,
+                    event_id: 1,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    winning_goal: false,
+                    goal_types: vec!["even_strength".to_string()],
+                    assistant_player_ids: vec![],
+                    video_clip_url: None,
+                }],
             },
             away_team: ScheduleTeam {
                 team_id: Some("team2".to_string()),

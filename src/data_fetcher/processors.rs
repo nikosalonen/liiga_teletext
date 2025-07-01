@@ -24,11 +24,26 @@ use std::collections::HashMap;
 /// # Example
 /// ```rust
 /// use std::collections::HashMap;
-/// use data_fetcher::{GameData, GoalEventData, HasTeams, HasGoalEvents};
+/// use liiga_teletext::data_fetcher::{GoalEventData, models::{HasTeams, HasGoalEvents, ScheduleGame, ScheduleTeam}};
+/// use liiga_teletext::data_fetcher::processors::process_goal_events;
 ///
 /// let mut player_names = HashMap::new();
 /// player_names.insert(123, "Mikko Koivu".to_string());
 /// player_names.insert(456, "Teemu Selänne".to_string());
+///
+/// let game = ScheduleGame {
+///     id: 1,
+///     season: 2024,
+///     start: "2024-01-15T18:30:00Z".to_string(),
+///     end: None,
+///     home_team: ScheduleTeam::default(),
+///     away_team: ScheduleTeam::default(),
+///     finished_type: None,
+///     started: true,
+///     ended: true,
+///     game_time: 60,
+///     serie: "RUNKOSARJA".to_string(),
+/// };
 ///
 /// let events = process_goal_events(&game, &player_names);
 /// // Events will contain formatted goal data with:
@@ -68,11 +83,14 @@ where
 ///
 /// ```rust
 /// use std::collections::HashMap;
-/// use data_fetcher::{GoalEventData, HasGoalEvents};
+/// use liiga_teletext::data_fetcher::{GoalEventData, models::{HasGoalEvents, ScheduleTeam}};
+/// use liiga_teletext::data_fetcher::processors::process_team_goals;
 ///
 /// let mut events = Vec::new();
 /// let mut player_names = HashMap::new();
 /// player_names.insert(123, "Mikko Koivu".to_string());
+///
+/// let home_team = ScheduleTeam::default();
 ///
 /// // Process goals for home team
 /// process_team_goals(&home_team, &player_names, true, &mut events);
@@ -136,6 +154,7 @@ pub fn process_team_goals(
 ///
 /// ```rust
 /// use chrono::Local;
+/// use liiga_teletext::data_fetcher::processors::should_show_todays_games;
 ///
 /// // At 13:59, returns false (show yesterday's games)
 /// // At 14:00, returns true (show today's games)
