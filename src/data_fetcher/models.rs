@@ -5,11 +5,13 @@ use serde::{Deserialize, Serialize};
 pub struct GoalEvent {
     #[serde(rename = "scorerPlayerId")]
     pub scorer_player_id: i64,
-    pub logTime: String,
+    #[serde(rename = "logTime")]
+    pub log_time: String,
     #[serde(rename = "gameTime")]
     pub game_time: i32,
     pub period: i32,
-    pub eventId: i32,
+    #[serde(rename = "eventId")]
+    pub event_id: i32,
     #[serde(rename = "homeTeamScore")]
     pub home_team_score: i32,
     #[serde(rename = "awayTeamScore")]
@@ -60,8 +62,10 @@ pub struct ScheduleGame {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ScheduleResponse {
     pub games: Vec<ScheduleGame>,
-    pub previousGameDate: String,
-    pub nextGameDate: String,
+    #[serde(rename = "previousGameDate")]
+    pub previous_game_date: String,
+    #[serde(rename = "nextGameDate")]
+    pub next_game_date: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,7 +88,8 @@ pub struct PenaltyEvent {
     pub player_id: i32,
     #[serde(rename = "suffererPlayerId")]
     pub sufferer_player_id: i32,
-    pub logTime: String,
+    #[serde(rename = "logTime")]
+    pub log_time: String,
     #[serde(rename = "gameTime")]
     pub game_time: i32,
     pub period: i32,
@@ -102,7 +107,8 @@ pub struct PenaltyEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailedTeam {
-    pub teamId: String,
+    #[serde(rename = "teamId")]
+    pub team_id: String,
     #[serde(rename = "teamName")]
     pub team_name: String,
     pub goals: i32,
@@ -136,8 +142,10 @@ pub struct DetailedGame {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Player {
     pub id: i64,
-    pub lastName: String,
-    pub firstName: String,
+    #[serde(rename = "lastName")]
+    pub last_name: String,
+    #[serde(rename = "firstName")]
+    pub first_name: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -162,8 +170,6 @@ pub struct GameData {
     pub serie: String,
     pub goal_events: Vec<GoalEventData>,
     pub played_time: i32,
-    pub finished_type: String,
-    pub log_time: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

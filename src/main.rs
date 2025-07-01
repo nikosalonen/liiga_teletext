@@ -1,23 +1,23 @@
 // src/main.rs
 mod config;
 mod data_fetcher;
+mod error;
 mod teletext_ui;
 
 use clap::Parser;
 use config::Config;
 use crossterm::{
-    cursor::MoveTo,
     event::{self, Event, KeyCode},
     execute,
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use data_fetcher::{GameData, fetch_liiga_data};
+use error::AppError;
 use semver::Version;
-use std::io::{Write, stdout};
-use std::path::Path;
+use std::io::stdout;
 use std::time::{Duration, Instant};
-use teletext_ui::{GameResultData, TeletextPage, has_live_games};
+use teletext_ui::{GameResultData, TeletextPage};
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
@@ -191,7 +191,7 @@ fn print_logo() {
             "\n{}",
             r#"
  _     _ _               _____    _      _            _
-| |   (_|_) __ _  __ _  |_   _|__| | ___| |_ _____  _| |_
+| |   (_|_) __ _  __ _  |_   _|__| | ___| |_ _____  _| |_ 
 | |   | | |/ _` |/ _` |   | |/ _ \ |/ _ \ __/ _ \ \/ / __|
 | |___| | | (_| | (_| |   | |  __/ |  __/ ||  __/>  <| |_
 |_____|_|_|\__, |\__,_|   |_|\___|_|\___|\__\___/_/\_\\__|
@@ -204,7 +204,7 @@ fn print_logo() {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), AppError> {
     let args = Args::parse();
 
     // Handle version flag first
@@ -255,26 +255,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if args.new_api_domain.is_some() {
-        let config_path = Config::get_config_path();
-        let mut config = if Path::new(&config_path).exists() {
-            Config::load()?
-        } else {
-            Config {
-                api_domain: String::new(),
-            }
-        };
-
-        let new_domain = if let Some(domain) = args.new_api_domain {
-            domain
-        } else {
-            print!("Please enter new API domain: ");
-            std::io::stdout().flush()?;
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
-            input.trim().to_string()
-        };
-
+    if let Some(new_domain) = args.new_api_domain {
+        let mut config = Config::load().unwrap_or_else(|_| Config {
+            api_domain: String::new(),
+        });
         config.api_domain = new_domain;
         config.save()?;
         println!("Config updated successfully!");
@@ -360,7 +344,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run_interactive_ui(
     stdout: &mut std::io::Stdout,
     args: &Args,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), AppError> {
     let mut last_manual_refresh = Instant::now()
         .checked_sub(Duration::from_secs(15))
         .unwrap_or_else(Instant::now);
@@ -404,8 +388,6 @@ async fn run_interactive_ui(
                     if let Some(page) = &current_page {
                         page.render(stdout)?;
                     }
-                    needs_refresh = false;
-                    last_auto_refresh = Instant::now();
                     (Vec::new(), true)
                 }
             };

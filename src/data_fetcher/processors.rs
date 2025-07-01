@@ -1,4 +1,5 @@
-use crate::data_fetcher::models::{GameData, GoalEventData, HasGoalEvents, HasTeams, ScheduleGame};
+use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, ScheduleGame};
+use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{DateTime, Local, NaiveTime, Utc};
 use std::collections::HashMap;
@@ -175,8 +176,10 @@ pub fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
     (score_type, is_overtime, is_shootout)
 }
 
-pub fn format_time(timestamp: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let utc_time = timestamp.parse::<DateTime<Utc>>()?;
+pub fn format_time(timestamp: &str) -> Result<String, AppError> {
+    let utc_time = timestamp
+        .parse::<DateTime<Utc>>()
+        .map_err(|e| AppError::Custom(format!("Failed to parse timestamp: {}", e)))?;
     let local_time = utc_time.with_timezone(&Local);
     Ok(local_time.format("%H.%M").to_string())
 }
