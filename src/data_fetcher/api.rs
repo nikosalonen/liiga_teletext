@@ -1,7 +1,8 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{cache_players_with_formatting, get_cached_players};
 use crate::data_fetcher::models::{
-    DetailedGameResponse, GameData, GoalEventData, ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
+    DetailedGameResponse, GameData, GoalEventData, ScheduleApiGame, ScheduleGame, ScheduleResponse,
+    ScheduleTeam,
 };
 use crate::data_fetcher::player_names::{build_full_name, format_for_display};
 use crate::data_fetcher::processors::{
@@ -20,8 +21,6 @@ const PRESEASON_START_MONTH: u32 = 5; // May
 const PRESEASON_END_MONTH: u32 = 9; // September
 const PLAYOFFS_START_MONTH: u32 = 3; // March
 const PLAYOFFS_END_MONTH: u32 = 6; // June
-
-
 
 /// Builds a tournament URL for fetching game data.
 /// This constructs the API endpoint for a specific tournament and date.
@@ -42,7 +41,7 @@ const PLAYOFFS_END_MONTH: u32 = 6; // June
 /// assert_eq!(url, "https://api.example.com/games?tournament=runkosarja&date=2024-01-15");
 /// ```
 pub fn build_tournament_url(api_domain: &str, tournament: &str, date: &str) -> String {
-    format!("{}/games?tournament={}&date={}", api_domain, tournament, date)
+    format!("{api_domain}/games?tournament={tournament}&date={date}")
 }
 
 /// Builds a game URL for fetching detailed game data.
@@ -64,7 +63,7 @@ pub fn build_tournament_url(api_domain: &str, tournament: &str, date: &str) -> S
 /// assert_eq!(url, "https://api.example.com/games/2024/12345");
 /// ```
 pub fn build_game_url(api_domain: &str, season: i32, game_id: i32) -> String {
-    format!("{}/games/{}/{}", api_domain, season, game_id)
+    format!("{api_domain}/games/{season}/{game_id}")
 }
 
 /// Builds a schedule URL for fetching season schedule data.
@@ -85,7 +84,7 @@ pub fn build_game_url(api_domain: &str, season: i32, game_id: i32) -> String {
 /// assert_eq!(url, "https://api.example.com/schedule?tournament=runkosarja&week=1&season=2024");
 /// ```
 pub fn build_schedule_url(api_domain: &str, season: i32) -> String {
-    format!("{}/schedule?tournament=runkosarja&week=1&season={}", api_domain, season)
+    format!("{api_domain}/schedule?tournament=runkosarja&week=1&season={season}")
 }
 
 /// Creates a tournament key for caching and identification purposes.
@@ -106,7 +105,7 @@ pub fn build_schedule_url(api_domain: &str, season: i32) -> String {
 /// assert_eq!(key, "runkosarja-2024-01-15");
 /// ```
 pub fn create_tournament_key(tournament: &str, date: &str) -> String {
-    format!("{}-{}", tournament, date)
+    format!("{tournament}-{date}")
 }
 
 /// Helper function to extract team name from a ScheduleTeam, with fallback logic.
@@ -475,7 +474,25 @@ async fn process_games(
 #[instrument(skip(client))]
 async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, AppError> {
     info!("Fetching data from URL: {}", url);
-    let response = client.get(url).send().await?;
+
+    // Handle reqwest errors with specific error types
+    let response = match client.get(url).send().await {
+        Ok(response) => response,
+        Err(e) => {
+            error!("Request failed for URL {}: {}", url, e);
+
+            // Categorize reqwest errors into specific types
+            if e.is_timeout() {
+                return Err(AppError::network_timeout(url));
+            } else if e.is_connect() {
+                return Err(AppError::network_connection(url, e.to_string()));
+            } else {
+                // For other reqwest errors, keep the original behavior
+                return Err(AppError::ApiFetch(e));
+            }
+        }
+    };
+
     let status = response.status();
     let headers = response.headers().clone();
 
@@ -483,21 +500,39 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
     debug!("Response headers: {:?}", headers);
 
     if !status.is_success() {
-        let error_message = format!(
-            "HTTP {} - {} (URL: {})",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown error"),
-            url
-        );
-        error!("{}", error_message);
-        // Create an artificial reqwest error for consistency with other API fetch errors
-        return Err(AppError::Custom(format!("API request failed: {}", error_message)));
+        let status_code = status.as_u16();
+        let reason = status.canonical_reason().unwrap_or("Unknown error");
+
+        error!("HTTP {} - {} (URL: {})", status_code, reason, url);
+
+        // Return specific error types based on HTTP status code
+        return Err(match status_code {
+            404 => AppError::api_not_found(url),
+            429 => AppError::api_rate_limit(reason, url),
+            400..=499 => AppError::api_client_error(status_code, reason, url),
+            500..=599 => {
+                if status_code == 502 || status_code == 503 {
+                    AppError::api_service_unavailable(status_code, reason, url)
+                } else {
+                    AppError::api_server_error(status_code, reason, url)
+                }
+            }
+            _ => AppError::api_server_error(status_code, reason, url),
+        });
     }
 
-    let response_text = response.text().await?;
+    let response_text = match response.text().await {
+        Ok(text) => text,
+        Err(e) => {
+            error!("Failed to read response text from URL {}: {}", url, e);
+            return Err(AppError::ApiFetch(e));
+        }
+    };
+
     info!("Response length: {} bytes", response_text.len());
     debug!("Response text: {}", response_text);
 
+    // Enhanced JSON parsing with more specific error handling
     match serde_json::from_str::<T>(&response_text) {
         Ok(parsed) => Ok(parsed),
         Err(e) => {
@@ -506,7 +541,21 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
                 "Response text (first 200 chars): {}",
                 &response_text.chars().take(200).collect::<String>()
             );
-            Err(AppError::ApiParse(e))
+
+            // Check if it's malformed JSON vs unexpected structure
+            if response_text.trim().is_empty() {
+                Err(AppError::api_no_data("Response body is empty", url))
+            } else if !response_text.trim_start().starts_with('{')
+                && !response_text.trim_start().starts_with('[')
+            {
+                Err(AppError::api_malformed_json(
+                    "Response is not valid JSON",
+                    url,
+                ))
+            } else {
+                // Valid JSON but unexpected structure
+                Err(AppError::api_unexpected_structure(e.to_string(), url))
+            }
         }
     }
 }
@@ -519,9 +568,32 @@ pub async fn fetch_tournament_data(
     tournament: &str,
     date: &str,
 ) -> Result<ScheduleResponse, AppError> {
-    info!("Fetching tournament data");
+    info!("Fetching tournament data for {} on {}", tournament, date);
     let url = build_tournament_url(&config.api_domain, tournament, date);
-    fetch(client, &url).await
+
+    match fetch(client, &url).await {
+        Ok(response) => {
+            info!(
+                "Successfully fetched tournament data for {} on {}",
+                tournament, date
+            );
+            Ok(response)
+        }
+        Err(e) => {
+            error!(
+                "Failed to fetch tournament data for {} on {}: {}",
+                tournament, date, e
+            );
+
+            // Transform API not found errors to tournament-specific errors
+            match &e {
+                AppError::ApiNotFound { .. } => {
+                    Err(AppError::api_tournament_not_found(tournament, date))
+                }
+                _ => Err(e),
+            }
+        }
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -711,7 +783,14 @@ async fn fetch_game_data(
                 "Failed to fetch detailed game response for game ID {}: {}",
                 game_id, e
             );
-            return Err(e);
+
+            // Transform API not found errors to game-specific errors
+            match &e {
+                AppError::ApiNotFound { .. } => {
+                    return Err(AppError::api_game_not_found(game_id, season));
+                }
+                _ => return Err(e),
+            }
         }
     };
 
@@ -821,7 +900,16 @@ pub async fn fetch_regular_season_start_date(
                 "Failed to fetch regular season schedule for season {}: {}",
                 season, e
             );
-            Err(e)
+
+            // Transform API not found errors to season-specific errors
+            match &e {
+                AppError::ApiNotFound { .. } => Err(AppError::api_season_not_found(season)),
+                AppError::ApiNoData { .. } => {
+                    info!("Season {} schedule exists but contains no games", season);
+                    Ok(None)
+                }
+                _ => Err(e),
+            }
         }
     }
 }
@@ -829,11 +917,11 @@ pub async fn fetch_regular_season_start_date(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Period, Player};
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{method, path},
     };
-    use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Period, Player};
 
     fn create_mock_config() -> Config {
         Config {

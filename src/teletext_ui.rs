@@ -49,8 +49,6 @@ fn title_bg() -> Color {
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 
-
-
 /// Calculates the number of days until the regular season starts.
 /// Returns None if the regular season has already started or if we can't determine the start date.
 /// Uses UTC internally for consistent calculations across timezone changes.
@@ -117,8 +115,6 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
     // If all API calls failed or no valid dates found, return None
     None
 }
-
-
 
 pub struct TeletextPage {
     page_number: u16,
@@ -445,7 +441,7 @@ impl TeletextPage {
 
         // Find the earliest regular season game by fetching future regular season games
         if let Some(days_until_season) = calculate_days_until_regular_season().await {
-            let countdown_text = format!("Runkosarjan alkuun {} päivää", days_until_season);
+            let countdown_text = format!("Runkosarjan alkuun {days_until_season} päivää");
             self.season_countdown = Some(countdown_text);
         }
     }
@@ -711,16 +707,16 @@ impl TeletextPage {
                 } => {
                     // Format result with overtime/shootout indicator
                     let result_text = if *is_shootout {
-                        format!("{} rl", result)
+                        format!("{result} rl")
                     } else if *is_overtime {
-                        format!("{} ja", result)
+                        format!("{result} ja")
                     } else {
                         result.clone()
                     };
 
                     // Format played time for ongoing games
                     let formatted_time = format!("{:02}:{:02}", played_time / 60, played_time % 60);
-                    let ongoing_display = format!("{} {}", formatted_time, result_text);
+                    let ongoing_display = format!("{formatted_time} {result_text}");
                     let time_display = match score_type {
                         ScoreType::Scheduled => time.as_str(),
                         ScoreType::Ongoing => ongoing_display.as_str(),
