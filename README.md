@@ -1,8 +1,9 @@
-# Finnish Liiga Teletext Terminal App
+# Liiga 221 Teletext Terminal App
 
 A Rust terminal application that displays Finnish Liiga hockey results in a YLE Teksti-TV style interface.
 
-![image](https://github.com/user-attachments/assets/f0e4003a-98e6-4ab8-8bb9-4adac18f5a46)
+![image](https://github.com/user-attachments/assets/edc71086-c07b-4bae-98ba-4c79353ee89a)
+
 
 ## Features
 
