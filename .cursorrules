@@ -174,6 +174,28 @@ The application follows a modular architecture with clear separation of concerns
    }
    ```
 
+4. **CI Testing Best Practices**:
+   ```rust
+   // Always test with all features enabled
+   // Run: cargo test --all-features
+
+   // Use platform-agnostic date/time handling
+   let utc_time = chrono::Utc::now();
+   let local_time = utc_time.with_timezone(&chrono::Local);
+
+   // Handle file operations gracefully
+   let config_dir = dirs::config_dir()
+       .ok_or_else(|| AppError::config_error("Could not determine config directory"))?;
+
+   // Test error scenarios explicitly
+   #[tokio::test]
+   async fn test_error_handling() {
+       let result = function_that_might_fail().await;
+       assert!(result.is_err());
+       assert!(matches!(result.unwrap_err(), AppError::SomeErrorType));
+   }
+   ```
+
 ### Testing Guidelines
 
 1. **Integration Tests** (`tests/integration_tests.rs`):
@@ -205,6 +227,30 @@ The application follows a modular architecture with clear separation of concerns
        start: "2024-01-15T18:30:00Z".to_string(),
    };
    ```
+
+4. **CI Test Requirements**:
+   - **ALWAYS ensure CI tests pass**: Before making any changes, verify that all tests pass locally
+   - **Run full test suite**: Execute `cargo test --all-features` to test with all features enabled
+   - **Test on different platforms**: Be aware that CI runs on Ubuntu, while local development might be on macOS
+   - **Handle platform differences**: Date/time handling, file paths, and network behavior may differ between platforms
+   - **Add tests for new functionality**: Every new function or feature must have corresponding tests
+   - **Test error scenarios**: Include tests for edge cases, invalid inputs, and error conditions
+   - **Mock external dependencies**: Use wiremock for HTTP calls and tempfile for file operations
+   - **Avoid timing-dependent tests**: Tests should not depend on specific times or dates
+   - **Test async functions properly**: Use `#[tokio::test]` for async test functions
+   - **Verify test coverage**: Ensure new code paths are covered by tests
+
+5. **Common CI Failure Patterns and Solutions**:
+   - **Platform-specific date/time issues**: Use UTC internally, avoid local time assumptions
+   - **File path differences**: Use `dirs` crate for platform-agnostic paths
+   - **Network timeouts**: Implement proper timeout handling and retry logic
+   - **Missing test dependencies**: Ensure all test dependencies are in `[dev-dependencies]`
+   - **Async test failures**: Use `#[tokio::test]` and proper async/await patterns
+   - **Timing-dependent tests**: Mock time or use deterministic test data
+   - **HTTP client issues**: Use wiremock for HTTP testing, avoid real network calls
+   - **Permission errors**: Use tempfile for test file operations
+   - **Memory leaks**: Ensure proper resource cleanup in tests
+   - **Race conditions**: Use proper synchronization in concurrent tests
 
 ### API Integration Patterns
 
@@ -380,15 +426,34 @@ log_file_path = "/custom/log/path.log"  # Optional
    - Write comprehensive tests for new features
    - Update documentation for public APIs
 
-2. **Commit Messages**:
+2. **Testing Requirements**:
+   - **MANDATORY**: Run `cargo test --all-features` before any commit
+   - **MANDATORY**: Ensure all tests pass locally before pushing changes
+   - **MANDATORY**: Add tests for any new functionality or bug fixes
+   - Test both success and failure scenarios
+   - Mock external dependencies (HTTP calls, file operations)
+   - Avoid timing-dependent or platform-specific test assumptions
+   - Use `#[tokio::test]` for async test functions
+   - Test error handling and edge cases thoroughly
+
+3. **CI/CD Requirements**:
+   - **ALWAYS verify CI will pass**: The CI pipeline runs on Ubuntu with `cargo test --all-features`
+   - **Platform compatibility**: Ensure code works on both macOS (local) and Ubuntu (CI)
+   - **Dependency management**: Be careful with platform-specific dependencies
+   - **Error handling**: Implement robust error handling that works across platforms
+   - **Date/time handling**: Use UTC internally, convert to local time only for display
+   - **File operations**: Use platform-agnostic paths and handle permissions gracefully
+
+4. **Commit Messages**:
    - Follow Conventional Commits specification
    - Use clear, descriptive commit messages
    - Include issue references when applicable
 
-3. **Pull Requests**:
+5. **Pull Requests**:
    - Provide detailed description of changes
    - Include test coverage for new functionality
    - Update relevant documentation
-   - Ensure CI passes all checks
+   - **MANDATORY**: Ensure CI passes all checks before requesting review
+   - Include any platform-specific considerations in PR description
 
 This guide provides the foundation for understanding and effectively working with the liiga_teletext codebase. Always refer to the actual source code for the most up-to-date implementation details.
