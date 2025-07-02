@@ -3,6 +3,7 @@ use crate::data_fetcher::cache::{cache_players_with_formatting, get_cached_playe
 use crate::data_fetcher::models::{
     DetailedGameResponse, GameData, GoalEventData, ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
+use crate::data_fetcher::player_names::{build_full_name, format_for_display};
 use crate::data_fetcher::processors::{
     create_basic_goal_events, determine_game_status, format_time, process_goal_events,
     should_show_todays_games,
@@ -20,26 +21,7 @@ const PRESEASON_END_MONTH: u32 = 9; // September
 const PLAYOFFS_START_MONTH: u32 = 3; // March
 const PLAYOFFS_END_MONTH: u32 = 6; // June
 
-/// Formats a player's first and last name into a full name string.
-/// This is used when building player name mappings from API responses.
-///
-/// # Arguments
-/// * `first_name` - The player's first name
-/// * `last_name` - The player's last name
-///
-/// # Returns
-/// * `String` - The formatted full name (e.g., "Mikko Koivu")
-///
-/// # Example
-/// ```
-/// use liiga_teletext::data_fetcher::api::format_player_full_name;
-///
-/// let full_name = format_player_full_name("Mikko", "Koivu");
-/// assert_eq!(full_name, "Mikko Koivu");
-/// ```
-pub fn format_player_full_name(first_name: &str, last_name: &str) -> String {
-    format!("{} {}", first_name, last_name)
-}
+
 
 /// Builds a tournament URL for fetching game data.
 /// This constructs the API endpoint for a specific tournament and date.
@@ -100,10 +82,10 @@ pub fn build_game_url(api_domain: &str, season: i32, game_id: i32) -> String {
 /// use liiga_teletext::data_fetcher::api::build_schedule_url;
 ///
 /// let url = build_schedule_url("https://api.example.com", 2024);
-/// assert_eq!(url, "https://api.example.com/schedule?tournament=runkosarja&season=2024");
+/// assert_eq!(url, "https://api.example.com/schedule?tournament=runkosarja&week=1&season=2024");
 /// ```
 pub fn build_schedule_url(api_domain: &str, season: i32) -> String {
-    format!("{}/schedule?tournament=runkosarja&season={}", api_domain, season)
+    format!("{}/schedule?tournament=runkosarja&week=1&season={}", api_domain, season)
 }
 
 /// Creates a tournament key for caching and identification purposes.
@@ -753,7 +735,7 @@ async fn fetch_game_data(
     for player in &game_response.home_team_players {
         player_names.insert(
             player.id,
-            format_player_full_name(&player.first_name, &player.last_name),
+            build_full_name(&player.first_name, &player.last_name),
         );
     }
 
@@ -764,7 +746,7 @@ async fn fetch_game_data(
     for player in &game_response.away_team_players {
         player_names.insert(
             player.id,
-            format_player_full_name(&player.first_name, &player.last_name),
+            build_full_name(&player.first_name, &player.last_name),
         );
     }
     info!("Built player names map with {} players", player_names.len());
@@ -784,7 +766,7 @@ async fn fetch_game_data(
             // Fallback: use the raw player names and format them on-the-fly
             let fallback_players: HashMap<i64, String> = player_names
                 .into_iter()
-                .map(|(id, full_name)| (id, crate::data_fetcher::cache::format_player_name(&full_name)))
+                .map(|(id, full_name)| (id, format_for_display(&full_name)))
                 .collect();
             fallback_players
         }
