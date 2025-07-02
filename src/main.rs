@@ -117,16 +117,28 @@ fn get_subheader(games: &[GameData]) -> String {
         return "SM-LIIGA".to_string();
     }
     // Priority: PLAYOFFS > PLAYOUT-OTTELUT > LIIGAKARSINTA > HARJOITUSOTTELUT > RUNKOSARJA
-    if games.iter().any(|g| g.serie.eq_ignore_ascii_case("playoffs")) {
-        "PLAYOFFS".to_string()
-    } else if games.iter().any(|g| g.serie.eq_ignore_ascii_case("playout")) {
-        "PLAYOUT-OTTELUT".to_string()
-    } else if games.iter().any(|g| g.serie.eq_ignore_ascii_case("qualifications")) {
-        "LIIGAKARSINTA".to_string()
-    } else if games.iter().any(|g| g.serie.eq_ignore_ascii_case("valmistavat_ottelut") || g.serie.eq_ignore_ascii_case("practice")) {
-        "HARJOITUSOTTELUT".to_string()
-    } else {
-        "RUNKOSARJA".to_string()
+    let mut priority = 4; // Default to RUNKOSARJA
+    for game in games {
+        let serie_lower = game.serie.to_ascii_lowercase();
+        let current_priority = match serie_lower.as_str() {
+            "playoffs" => 0,
+            "playout" => 1,
+            "qualifications" => 2,
+            "valmistavat_ottelut" | "practice" => 3,
+            _ => 4,
+        };
+        if current_priority < priority {
+            priority = current_priority;
+            if priority == 0 { break; } // Found highest priority
+        }
+    }
+
+    match priority {
+        0 => "PLAYOFFS".to_string(),
+        1 => "PLAYOUT-OTTELUT".to_string(),
+        2 => "LIIGAKARSINTA".to_string(),
+        3 => "HARJOITUSOTTELUT".to_string(),
+        _ => "RUNKOSARJA".to_string(),
     }
 }
 
