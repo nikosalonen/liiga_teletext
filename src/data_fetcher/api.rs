@@ -1183,7 +1183,52 @@ fn find_period_and_event_id_for_goal(
     (period, event_id)
 }
 
-/// Converts ScheduleApiGame to ScheduleGame with detailed data
+// Helper to fetch and convert detailed game data
+async fn fetch_and_convert_detailed_game_data(
+    client: &Client,
+    config: &Config,
+    season: i32,
+    game_id: i32,
+) -> DetailedGameData {
+    fetch_detailed_game_data_for_historical_game(client, config, season, game_id).await
+}
+
+// Helper to convert goal events for a team
+fn convert_goal_events_for_team(
+    goal_events: &[GoalEventData],
+    is_home_team: bool,
+    detailed_game: &DetailedGame,
+) -> Vec<GoalEvent> {
+    goal_events
+        .iter()
+        .filter(|event| event.is_home_team == is_home_team)
+        .map(|event| convert_goal_event_data_to_goal_event(event, detailed_game))
+        .collect()
+}
+
+// Helper to build a ScheduleTeam from API and detailed data
+fn build_schedule_team_from_api_and_detailed(
+    team_name: String,
+    goals: i32,
+    start_time: String,
+    goal_events: Vec<GoalEvent>,
+) -> ScheduleTeam {
+    ScheduleTeam {
+        team_id: None,
+        team_placeholder: None,
+        team_name: Some(team_name),
+        goals,
+        time_out: None,
+        powerplay_instances: 0,
+        powerplay_goals: 0,
+        short_handed_instances: 0,
+        short_handed_goals: 0,
+        ranking: None,
+        game_start_date_time: Some(start_time),
+        goal_events,
+    }
+}
+
 async fn convert_api_game_to_schedule_game(
     client: &Client,
     config: &Config,
@@ -1192,24 +1237,35 @@ async fn convert_api_game_to_schedule_game(
 ) -> Result<ScheduleGame, AppError> {
     let start_time = api_game.start.clone();
 
-    // Fetch detailed game data to get actual scores and goal information
+    // 1. Fetch detailed game data
     let detailed_game_data =
-        fetch_detailed_game_data_for_historical_game(client, config, season, api_game.id).await;
+        fetch_and_convert_detailed_game_data(client, config, season, api_game.id).await;
 
-    // Convert goal events to the format expected by ScheduleTeam
-    let home_goal_events: Vec<GoalEvent> = detailed_game_data
-        .goal_events
-        .iter()
-        .filter(|event| event.is_home_team)
-        .map(|event| convert_goal_event_data_to_goal_event(event, &detailed_game_data.detailed_game))
-        .collect();
+    // 2. Convert goal events for home and away teams
+    let home_goal_events = convert_goal_events_for_team(
+        &detailed_game_data.goal_events,
+        true,
+        &detailed_game_data.detailed_game,
+    );
+    let away_goal_events = convert_goal_events_for_team(
+        &detailed_game_data.goal_events,
+        false,
+        &detailed_game_data.detailed_game,
+    );
 
-    let away_goal_events: Vec<GoalEvent> = detailed_game_data
-        .goal_events
-        .iter()
-        .filter(|event| !event.is_home_team)
-        .map(|event| convert_goal_event_data_to_goal_event(event, &detailed_game_data.detailed_game))
-        .collect();
+    // 3. Build ScheduleTeam structs
+    let home_team = build_schedule_team_from_api_and_detailed(
+        api_game.home_team_name.clone(),
+        detailed_game_data.home_goals,
+        start_time.clone(),
+        home_goal_events,
+    );
+    let away_team = build_schedule_team_from_api_and_detailed(
+        api_game.away_team_name.clone(),
+        detailed_game_data.away_goals,
+        start_time.clone(),
+        away_goal_events,
+    );
 
     let tournament = TournamentType::from_serie(api_game.serie);
 
@@ -1218,34 +1274,8 @@ async fn convert_api_game_to_schedule_game(
         season: api_game.season,
         start: start_time.clone(),
         end: None, // Not available in schedule API
-        home_team: ScheduleTeam {
-            team_id: None,
-            team_placeholder: None,
-            team_name: Some(api_game.home_team_name.clone()),
-            goals: detailed_game_data.home_goals,
-            time_out: None,
-            powerplay_instances: 0,
-            powerplay_goals: 0,
-            short_handed_instances: 0,
-            short_handed_goals: 0,
-            ranking: None,
-            game_start_date_time: Some(start_time.clone()),
-            goal_events: home_goal_events,
-        },
-        away_team: ScheduleTeam {
-            team_id: None,
-            team_placeholder: None,
-            team_name: Some(api_game.away_team_name.clone()),
-            goals: detailed_game_data.away_goals,
-            time_out: None,
-            powerplay_instances: 0,
-            powerplay_goals: 0,
-            short_handed_instances: 0,
-            short_handed_goals: 0,
-            ranking: None,
-            game_start_date_time: Some(start_time),
-            goal_events: away_goal_events,
-        },
+        home_team,
+        away_team,
         finished_type: api_game.finished_type,
         started: api_game.started,
         ended: api_game.ended,
