@@ -116,14 +116,30 @@ fn get_subheader(games: &[GameData]) -> String {
     if games.is_empty() {
         return "SM-LIIGA".to_string();
     }
+    // Priority: PLAYOFFS > PLAYOUT-OTTELUT > LIIGAKARSINTA > HARJOITUSOTTELUT > RUNKOSARJA
+    let mut priority = 4; // Default to RUNKOSARJA
+    for game in games {
+        let serie_lower = game.serie.to_ascii_lowercase();
+        let current_priority = match serie_lower.as_str() {
+            "playoffs" => 0,
+            "playout" => 1,
+            "qualifications" => 2,
+            "valmistavat_ottelut" | "practice" => 3,
+            _ => 4,
+        };
+        if current_priority < priority {
+            priority = current_priority;
+            if priority == 0 {
+                break;
+            } // Found highest priority
+        }
+    }
 
-    // Use the tournament type from the first game as they should all be from same tournament
-    match games[0].serie.as_str() {
-        "PLAYOFFS" => "PLAYOFFS".to_string(),
-        "PLAYOUT" => "PLAYOUT-OTTELUT".to_string(),
-        "QUALIFICATIONS" => "LIIGAKARSINTA".to_string(),
-        "valmistavat_ottelut" => "HARJOITUSOTTELUT".to_string(),
-        "PRACTICE" => "HARJOITUSOTTELUT".to_string(),
+    match priority {
+        0 => "PLAYOFFS".to_string(),
+        1 => "PLAYOUT-OTTELUT".to_string(),
+        2 => "LIIGAKARSINTA".to_string(),
+        3 => "HARJOITUSOTTELUT".to_string(),
         _ => "RUNKOSARJA".to_string(),
     }
 }
@@ -136,6 +152,7 @@ async fn create_base_page(
     show_footer: bool,
     ignore_height_limit: bool,
     future_games_header: Option<String>,
+    fetched_date: Option<String>,
 ) -> TeletextPage {
     let subheader = get_subheader(games);
     let mut page = TeletextPage::new(
@@ -146,6 +163,11 @@ async fn create_base_page(
         show_footer,
         ignore_height_limit,
     );
+
+    // Set the fetched date if provided
+    if let Some(date) = fetched_date {
+        page.set_fetched_date(date);
+    }
 
     // Add future games header first if provided
     if let Some(header) = future_games_header {
@@ -167,6 +189,7 @@ async fn create_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    fetched_date: Option<String>,
 ) -> TeletextPage {
     create_base_page(
         games,
@@ -174,6 +197,7 @@ async fn create_page(
         show_footer,
         ignore_height_limit,
         None,
+        fetched_date,
     )
     .await
 }
@@ -248,6 +272,7 @@ async fn create_future_games_page(
             show_footer,
             ignore_height_limit,
             future_games_header,
+            None, // No fetched date for future games
         )
         .await;
 
@@ -267,7 +292,12 @@ async fn create_future_games_page(
 async fn check_latest_version() -> Option<String> {
     let crates_io_url = format!("https://crates.io/api/v1/crates/{CRATE_NAME}");
 
-    let client = reqwest::Client::new();
+    // Create a properly configured HTTP client with timeout handling
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10)) // Shorter timeout for update checks
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new()); // Fallback to default client if builder fails
+
     let user_agent = format!("{CRATE_NAME}/{CURRENT_VERSION}");
     let response = match client
         .get(&crates_io_url)
@@ -606,7 +636,16 @@ async fn main() -> Result<(), AppError> {
             .await
             {
                 Some(page) => page,
-                None => create_page(&games, args.disable_links, true, true).await,
+                None => {
+                    create_page(
+                        &games,
+                        args.disable_links,
+                        true,
+                        true,
+                        Some(fetched_date.clone()),
+                    )
+                    .await
+                }
             }
         };
 
@@ -746,7 +785,16 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     .await
                     {
                         Some(page) => page,
-                        None => create_page(&games, args.disable_links, true, false).await,
+                        None => {
+                            create_page(
+                                &games,
+                                args.disable_links,
+                                true,
+                                false,
+                                Some(fetched_date.clone()),
+                            )
+                            .await
+                        }
                     }
                 };
 

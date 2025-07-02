@@ -348,7 +348,10 @@ mod tests {
         assert_eq!(deserialized.game_time, 900);
         assert_eq!(deserialized.goal_types, vec!["EV"]);
         assert_eq!(deserialized.assistant_player_ids, vec![67890, 11111]);
-        assert_eq!(deserialized.video_clip_url, Some("https://example.com/video.mp4".to_string()));
+        assert_eq!(
+            deserialized.video_clip_url,
+            Some("https://example.com/video.mp4".to_string())
+        );
     }
 
     #[test]
@@ -499,7 +502,10 @@ mod tests {
         // Test deserialization
         let deserialized: ScheduleResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.games.len(), 1);
-        assert_eq!(deserialized.previous_game_date, Some("2024-01-14".to_string()));
+        assert_eq!(
+            deserialized.previous_game_date,
+            Some("2024-01-14".to_string())
+        );
         assert_eq!(deserialized.next_game_date, Some("2024-01-16".to_string()));
     }
 
@@ -681,20 +687,16 @@ mod tests {
                 serie: "runkosarja".to_string(),
             },
             awards: vec![],
-            home_team_players: vec![
-                Player {
-                    id: 123,
-                    last_name: "Koivu".to_string(),
-                    first_name: "Mikko".to_string(),
-                }
-            ],
-            away_team_players: vec![
-                Player {
-                    id: 456,
-                    last_name: "Selänne".to_string(),
-                    first_name: "Teemu".to_string(),
-                }
-            ],
+            home_team_players: vec![Player {
+                id: 123,
+                last_name: "Koivu".to_string(),
+                first_name: "Mikko".to_string(),
+            }],
+            away_team_players: vec![Player {
+                id: 456,
+                last_name: "Selänne".to_string(),
+                first_name: "Teemu".to_string(),
+            }],
         };
 
         // Test serialization
@@ -762,7 +764,10 @@ mod tests {
         assert!(goal_event_data.is_winning_goal);
         assert_eq!(goal_event_data.goal_types, vec!["YV", "MV"]);
         assert!(goal_event_data.is_home_team);
-        assert_eq!(goal_event_data.video_clip_url, Some("https://example.com/video.mp4".to_string()));
+        assert_eq!(
+            goal_event_data.video_clip_url,
+            Some("https://example.com/video.mp4".to_string())
+        );
     }
 
     #[test]
@@ -907,7 +912,10 @@ mod tests {
         assert!(goal_event.winning_goal);
         assert_eq!(goal_event.goal_types, vec!["YV", "MV", "RV"]);
         assert_eq!(goal_event.assistant_player_ids, vec![11111, 22222, 33333]);
-        assert_eq!(goal_event.video_clip_url, Some("https://video.example.com/goal/54321.mp4".to_string()));
+        assert_eq!(
+            goal_event.video_clip_url,
+            Some("https://video.example.com/goal/54321.mp4".to_string())
+        );
     }
 
     #[test]
