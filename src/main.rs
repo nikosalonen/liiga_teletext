@@ -129,7 +129,9 @@ fn get_subheader(games: &[GameData]) -> String {
         };
         if current_priority < priority {
             priority = current_priority;
-            if priority == 0 { break; } // Found highest priority
+            if priority == 0 {
+                break;
+            } // Found highest priority
         }
     }
 
