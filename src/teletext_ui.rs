@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::api::fetch_regular_season_start_date;
 use crate::error::AppError;
-use chrono::{DateTime, Datelike, Local, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Local, Utc};
 use crossterm::{
     cursor::MoveTo,
     execute,
@@ -77,8 +77,8 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
     let config = match Config::load().await {
         Ok(config) => config,
         Err(_) => {
-            // Fallback to hardcoded dates if config loading fails
-            return calculate_days_until_regular_season_fallback();
+            // If config loading fails, we can't determine the start date
+            return None;
         }
     };
 
@@ -103,8 +103,8 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
             // No games found for current year, try next year
         }
         Err(_) => {
-            // API call failed, fallback to hardcoded dates
-            return calculate_days_until_regular_season_fallback();
+            // API call failed, we can't determine the start date
+            return None;
         }
     }
 
@@ -126,59 +126,16 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
             // No games found for next year either
         }
         Err(_) => {
-            // API call failed, fallback to hardcoded dates
-            return calculate_days_until_regular_season_fallback();
+            // API call failed, we can't determine the start date
+            return None;
         }
     }
 
-    // If all API calls failed, fallback to hardcoded dates
-    calculate_days_until_regular_season_fallback()
-}
-
-/// Fallback function that uses hardcoded dates when API is unavailable.
-/// This maintains the original behavior as a backup.
-fn calculate_days_until_regular_season_fallback() -> Option<i64> {
-    // For now, we'll use a simple approach based on typical Liiga season start dates
-    // The regular season typically starts in early September
-    let current_year = Local::now().year() + 1;
-
-    // Try to find the regular season start date for the current year
-    // Liiga regular season typically starts in early September
-    let season_start_candidates = vec![
-        create_september_date(current_year, 1),  // September 1st
-        create_september_date(current_year, 2),  // September 2nd
-        create_september_date(current_year, 3),  // September 3rd
-        create_september_date(current_year, 4),  // September 4th
-        create_september_date(current_year, 5),  // September 5th
-        create_september_date(current_year, 6),  // September 6th
-        create_september_date(current_year, 7),  // September 7th
-        create_september_date(current_year, 8),  // September 8th
-        create_september_date(current_year, 9),  // September 9th
-        create_september_date(current_year, 10), // September 10th
-    ];
-
-    let today = Local::now().date_naive();
-
-    for date_str in season_start_candidates {
-        if let Ok(season_start) = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
-            if season_start > today {
-                let days_until = (season_start - today).num_days();
-                return Some(days_until);
-            }
-        }
-    }
-
-    // If we're past September, check next year
-    let next_year = current_year + 1;
-    let next_season_start = create_september_date(next_year, 1);
-
-    if let Ok(season_start) = NaiveDate::parse_from_str(&next_season_start, "%Y-%m-%d") {
-        let days_until = (season_start - today).num_days();
-        return Some(days_until);
-    }
-
+    // If all API calls failed or no valid dates found, return None
     None
 }
+
+
 
 pub struct TeletextPage {
     page_number: u16,
