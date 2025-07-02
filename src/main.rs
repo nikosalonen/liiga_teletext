@@ -4,7 +4,7 @@ mod data_fetcher;
 mod error;
 mod teletext_ui;
 
-use chrono::{Local, NaiveDate};
+use chrono::{Local, NaiveDate, Utc};
 use clap::Parser;
 use config::Config;
 use crossterm::{
@@ -591,7 +591,8 @@ async fn main() -> Result<(), AppError> {
                 false, // Don't show footer in quick view mode
                 true,  // Ignore height limit in quick view mode
             );
-            let today = Local::now().format("%Y-%m-%d").to_string();
+            // Use UTC internally, convert to local time for date formatting
+            let today = Utc::now().with_timezone(&Local).format("%Y-%m-%d").to_string();
             if fetched_date == today {
                 error_page.add_error_message("Ei otteluita tänään");
             } else {
@@ -733,7 +734,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         true,
                         false,
                     );
-                    let today = Local::now().format("%Y-%m-%d").to_string();
+                    // Use UTC internally, convert to local time for date formatting
+                    let today = Utc::now().with_timezone(&Local).format("%Y-%m-%d").to_string();
                     if fetched_date == today {
                         error_page.add_error_message("Ei otteluita tänään");
                     } else {
