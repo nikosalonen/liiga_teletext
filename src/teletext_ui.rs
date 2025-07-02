@@ -128,6 +128,7 @@ pub struct TeletextPage {
     ignore_height_limit: bool,
     auto_refresh_disabled: bool,
     season_countdown: Option<String>,
+    fetched_date: Option<String>, // Date for which data was fetched
 }
 
 pub enum TeletextRow {
@@ -262,6 +263,7 @@ impl TeletextPage {
             ignore_height_limit,
             auto_refresh_disabled: false,
             season_countdown: None,
+            fetched_date: None,
         }
     }
 
@@ -421,6 +423,18 @@ impl TeletextPage {
     #[allow(dead_code)]
     pub fn set_screen_height(&mut self, height: u16) {
         self.screen_height = height;
+    }
+
+    /// Sets the fetched date to display in the header.
+    /// This helps users understand which date's data they're viewing.
+    pub fn set_fetched_date(&mut self, date: String) {
+        self.fetched_date = Some(date);
+    }
+
+    /// Gets the fetched date that is displayed in the header.
+    /// Returns None if no date is set (current date view).
+    pub fn get_fetched_date(&self) -> Option<&String> {
+        self.fetched_date.as_ref()
     }
 
     /// Sets whether to show the season countdown in the footer.
@@ -649,6 +663,19 @@ impl TeletextPage {
 
         // Draw header with title having green background and rest blue
         let (width, _) = crossterm::terminal::size()?;
+
+        // Format the header text with date if available
+        let header_text = if let Some(ref date) = self.fetched_date {
+            // Format date for display (convert YYYY-MM-DD to DD.MM.YYYY)
+            let formatted_date = match chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+                Ok(date) => date.format("%d.%m.%Y").to_string(),
+                Err(_) => date.clone(), // Fallback if parsing fails
+            };
+            format!("SM-LIIGA {} {}", self.page_number, formatted_date)
+        } else {
+            format!("SM-LIIGA {}", self.page_number)
+        };
+
         execute!(
             stdout,
             MoveTo(0, 0),
@@ -659,7 +686,7 @@ impl TeletextPage {
             SetForegroundColor(Color::AnsiValue(231)), // Pure white
             Print(format!(
                 "{:>width$}",
-                format!("SM-LIIGA {}", self.page_number),
+                header_text,
                 width = (width as usize).saturating_sub(20)
             )),
             ResetColor
@@ -1423,6 +1450,44 @@ mod tests {
             content.len(),
             content_no_video.len(),
             "Should have same number of games"
+        );
+    }
+
+    #[test]
+    fn test_header_with_fetched_date() {
+        // Test header without fetched date (current date view)
+        let page_current = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            false,
+            true,
+            false,
+        );
+
+        // Test header with fetched date (historical view)
+        let mut page_historical = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            false,
+            true,
+            false,
+        );
+        page_historical.set_fetched_date("15.01.2024".to_string());
+
+        // Verify fetched date is set correctly
+        assert!(page_current.get_fetched_date().is_none());
+        assert_eq!(
+            page_historical.get_fetched_date(),
+            Some(&"15.01.2024".to_string())
+        );
+
+        // Test updating fetched date
+        page_historical.set_fetched_date("23.12.2023".to_string());
+        assert_eq!(
+            page_historical.get_fetched_date(),
+            Some(&"23.12.2023".to_string())
         );
     }
 }

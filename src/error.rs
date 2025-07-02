@@ -250,91 +250,137 @@ mod tests {
     fn test_config_error_helper() {
         let error = AppError::config_error("Invalid configuration");
         assert!(matches!(error, AppError::Config(_)));
-        assert_eq!(error.to_string(), "Configuration error: Invalid configuration");
+        assert_eq!(
+            error.to_string(),
+            "Configuration error: Invalid configuration"
+        );
     }
 
     #[test]
     fn test_datetime_parse_error_helper() {
         let error = AppError::datetime_parse_error("Invalid date format");
         assert!(matches!(error, AppError::DateTimeParse(_)));
-        assert_eq!(error.to_string(), "Date/time parsing error: Invalid date format");
+        assert_eq!(
+            error.to_string(),
+            "Date/time parsing error: Invalid date format"
+        );
     }
 
     #[test]
     fn test_log_setup_error_helper() {
         let error = AppError::log_setup_error("Failed to initialize logger");
         assert!(matches!(error, AppError::LogSetup(_)));
-        assert_eq!(error.to_string(), "Log setup error: Failed to initialize logger");
+        assert_eq!(
+            error.to_string(),
+            "Log setup error: Failed to initialize logger"
+        );
     }
 
     #[test]
     fn test_api_not_found_helper() {
         let error = AppError::api_not_found("https://api.example.com/games/123");
         assert!(matches!(error, AppError::ApiNotFound { .. }));
-        assert_eq!(error.to_string(), "API request not found (404): https://api.example.com/games/123");
+        assert_eq!(
+            error.to_string(),
+            "API request not found (404): https://api.example.com/games/123"
+        );
     }
 
     #[test]
     fn test_api_server_error_helper() {
-        let error = AppError::api_server_error(500, "Internal server error", "https://api.example.com");
+        let error =
+            AppError::api_server_error(500, "Internal server error", "https://api.example.com");
         assert!(matches!(error, AppError::ApiServerError { .. }));
-        assert_eq!(error.to_string(), "API server error (500): Internal server error (URL: https://api.example.com)");
+        assert_eq!(
+            error.to_string(),
+            "API server error (500): Internal server error (URL: https://api.example.com)"
+        );
     }
 
     #[test]
     fn test_api_client_error_helper() {
         let error = AppError::api_client_error(400, "Bad request", "https://api.example.com");
         assert!(matches!(error, AppError::ApiClientError { .. }));
-        assert_eq!(error.to_string(), "API client error (400): Bad request (URL: https://api.example.com)");
+        assert_eq!(
+            error.to_string(),
+            "API client error (400): Bad request (URL: https://api.example.com)"
+        );
     }
 
     #[test]
     fn test_api_rate_limit_helper() {
         let error = AppError::api_rate_limit("Too many requests", "https://api.example.com");
         assert!(matches!(error, AppError::ApiRateLimit { .. }));
-        assert_eq!(error.to_string(), "API rate limit exceeded (429): Too many requests (URL: https://api.example.com)");
+        assert_eq!(
+            error.to_string(),
+            "API rate limit exceeded (429): Too many requests (URL: https://api.example.com)"
+        );
     }
 
     #[test]
     fn test_api_service_unavailable_helper() {
-        let error = AppError::api_service_unavailable(503, "Service unavailable", "https://api.example.com");
+        let error = AppError::api_service_unavailable(
+            503,
+            "Service unavailable",
+            "https://api.example.com",
+        );
         assert!(matches!(error, AppError::ApiServiceUnavailable { .. }));
-        assert_eq!(error.to_string(), "API service unavailable (503): Service unavailable (URL: https://api.example.com)");
+        assert_eq!(
+            error.to_string(),
+            "API service unavailable (503): Service unavailable (URL: https://api.example.com)"
+        );
     }
 
     #[test]
     fn test_network_timeout_helper() {
         let error = AppError::network_timeout("https://api.example.com");
         assert!(matches!(error, AppError::NetworkTimeout { .. }));
-        assert_eq!(error.to_string(), "Network timeout while fetching data from: https://api.example.com");
+        assert_eq!(
+            error.to_string(),
+            "Network timeout while fetching data from: https://api.example.com"
+        );
     }
 
     #[test]
     fn test_network_connection_helper() {
         let error = AppError::network_connection("https://api.example.com", "Connection refused");
         assert!(matches!(error, AppError::NetworkConnection { .. }));
-        assert_eq!(error.to_string(), "Connection failed to: https://api.example.com - Connection refused");
+        assert_eq!(
+            error.to_string(),
+            "Connection failed to: https://api.example.com - Connection refused"
+        );
     }
 
     #[test]
     fn test_api_malformed_json_helper() {
-        let error = AppError::api_malformed_json("Invalid JSON structure", "https://api.example.com");
+        let error =
+            AppError::api_malformed_json("Invalid JSON structure", "https://api.example.com");
         assert!(matches!(error, AppError::ApiMalformedJson { .. }));
-        assert_eq!(error.to_string(), "API returned malformed JSON: Invalid JSON structure (URL: https://api.example.com)");
+        assert_eq!(
+            error.to_string(),
+            "API returned malformed JSON: Invalid JSON structure (URL: https://api.example.com)"
+        );
     }
 
     #[test]
     fn test_api_unexpected_structure_helper() {
-        let error = AppError::api_unexpected_structure("Missing required field", "https://api.example.com");
+        let error =
+            AppError::api_unexpected_structure("Missing required field", "https://api.example.com");
         assert!(matches!(error, AppError::ApiUnexpectedStructure { .. }));
-        assert_eq!(error.to_string(), "API returned unexpected data structure: Missing required field (URL: https://api.example.com)");
+        assert_eq!(
+            error.to_string(),
+            "API returned unexpected data structure: Missing required field (URL: https://api.example.com)"
+        );
     }
 
     #[test]
     fn test_api_no_data_helper() {
         let error = AppError::api_no_data("Empty response", "https://api.example.com");
         assert!(matches!(error, AppError::ApiNoData { .. }));
-        assert_eq!(error.to_string(), "API returned empty or missing data: Empty response (URL: https://api.example.com)");
+        assert_eq!(
+            error.to_string(),
+            "API returned empty or missing data: Empty response (URL: https://api.example.com)"
+        );
     }
 
     #[test]
@@ -348,14 +394,20 @@ mod tests {
     fn test_api_game_not_found_helper() {
         let error = AppError::api_game_not_found(123, 2024);
         assert!(matches!(error, AppError::ApiGameNotFound { .. }));
-        assert_eq!(error.to_string(), "Game not found: game_id=123, season=2024");
+        assert_eq!(
+            error.to_string(),
+            "Game not found: game_id=123, season=2024"
+        );
     }
 
     #[test]
     fn test_api_tournament_not_found_helper() {
         let error = AppError::api_tournament_not_found("runkosarja", "2024-01-15");
         assert!(matches!(error, AppError::ApiTournamentNotFound { .. }));
-        assert_eq!(error.to_string(), "Tournament not found: runkosarja for date 2024-01-15");
+        assert_eq!(
+            error.to_string(),
+            "Tournament not found: runkosarja for date 2024-01-15"
+        );
     }
 
     #[test]
@@ -390,7 +442,7 @@ mod tests {
         assert!(!AppError::api_malformed_json("message", "url").is_not_found());
     }
 
-        #[test]
+    #[test]
     fn test_error_from_reqwest() {
         // Test that reqwest errors are properly converted
         // Create a reqwest error by using an invalid URL in a request
@@ -422,7 +474,7 @@ mod tests {
         assert!(matches!(app_error, AppError::Io(_)));
     }
 
-        #[test]
+    #[test]
     fn test_error_from_toml_serialize() {
         // Test that TOML serialization errors are properly converted
         // Create a struct that will fail to serialize
@@ -439,7 +491,9 @@ mod tests {
             Err(serde::ser::Error::custom("Serialization failed"))
         }
 
-        let bad_struct = BadStruct { field: "test".to_string() };
+        let bad_struct = BadStruct {
+            field: "test".to_string(),
+        };
         let toml_error = toml::to_string(&bad_struct).unwrap_err();
         let app_error: AppError = toml_error.into();
         assert!(matches!(app_error, AppError::TomlSerialize(_)));
@@ -494,9 +548,17 @@ mod tests {
 
         for error in errors {
             let display_string = error.to_string();
-            assert!(!display_string.is_empty(), "Error display should not be empty: {:?}", error);
+            assert!(
+                !display_string.is_empty(),
+                "Error display should not be empty: {:?}",
+                error
+            );
             // Ensure the display string contains some meaningful content
-            assert!(display_string.len() > 5, "Error display should be descriptive: {:?}", error);
+            assert!(
+                display_string.len() > 5,
+                "Error display should be descriptive: {:?}",
+                error
+            );
         }
     }
 }

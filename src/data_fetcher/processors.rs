@@ -198,10 +198,16 @@ pub fn format_time(timestamp: &str) -> Result<String, AppError> {
 pub fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
     let mut basic_names = HashMap::new();
     for goal in &game.home_team.goal_events {
-        basic_names.insert(goal.scorer_player_id, create_fallback_name(goal.scorer_player_id));
+        basic_names.insert(
+            goal.scorer_player_id,
+            create_fallback_name(goal.scorer_player_id),
+        );
     }
     for goal in &game.away_team.goal_events {
-        basic_names.insert(goal.scorer_player_id, create_fallback_name(goal.scorer_player_id));
+        basic_names.insert(
+            goal.scorer_player_id,
+            create_fallback_name(goal.scorer_player_id),
+        );
     }
     process_goal_events(game, &basic_names)
 }
@@ -209,8 +215,7 @@ pub fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::models::{GoalEvent, ScheduleTeam, ScheduleGame};
-
+    use crate::data_fetcher::models::{GoalEvent, ScheduleGame, ScheduleTeam};
 
     fn create_test_goal_event(
         scorer_player_id: i64,
@@ -324,7 +329,8 @@ mod tests {
         let cancelled_goal_rl0 = create_test_goal_event(456, 900, 1, 0, vec!["RL0".to_string()]);
         let cancelled_goal_vt0 = create_test_goal_event(789, 1200, 1, 0, vec!["VT0".to_string()]);
 
-        let team = create_test_team_with_goals(vec![valid_goal, cancelled_goal_rl0, cancelled_goal_vt0]);
+        let team =
+            create_test_team_with_goals(vec![valid_goal, cancelled_goal_rl0, cancelled_goal_vt0]);
         let mut player_names = HashMap::new();
         player_names.insert(123, "Koivu".to_string());
         player_names.insert(456, "Cancelled1".to_string());
@@ -497,7 +503,7 @@ mod tests {
         assert!(events.is_empty());
     }
 
-        #[test]
+    #[test]
     fn test_goal_event_data_fields() {
         let goal = create_test_goal_event(123, 900, 2, 1, vec!["YV".to_string(), "MV".to_string()]);
         let game = create_test_game(vec![], vec![goal]);
@@ -517,7 +523,10 @@ mod tests {
         assert!(!event.is_winning_goal);
         assert_eq!(event.goal_types, vec!["YV", "MV"]);
         assert!(!event.is_home_team); // Away team goal
-        assert_eq!(event.video_clip_url, Some("https://example.com/video.mp4".to_string()));
+        assert_eq!(
+            event.video_clip_url,
+            Some("https://example.com/video.mp4".to_string())
+        );
     }
 
     #[test]
@@ -542,7 +551,7 @@ mod tests {
             600,
             1,
             0,
-            vec!["YV".to_string(), "RV".to_string(), "MV".to_string()]
+            vec!["YV".to_string(), "RV".to_string(), "MV".to_string()],
         );
 
         let game = create_test_game(vec![complex_goal], vec![]);

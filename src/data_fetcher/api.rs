@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{cache_players_with_formatting, get_cached_players};
 use crate::data_fetcher::models::{
-    DetailedGameResponse, GameData, GoalEventData, ScheduleApiGame, ScheduleGame, ScheduleResponse,
-    ScheduleTeam,
+    DetailedGame, DetailedGameResponse, GameData, GoalEvent, GoalEventData, ScheduleApiGame,
+    ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
 use crate::data_fetcher::player_names::{build_full_name, format_for_display};
 use crate::data_fetcher::processors::{
@@ -14,7 +14,7 @@ use chrono::{Datelike, Local, Utc};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 // Tournament season constants for month-based logic
 const PRESEASON_START_MONTH: u32 = 5; // May
@@ -674,6 +674,18 @@ pub async fn fetch_liiga_data(
     // Determine the date to fetch data for
     let date = determine_fetch_date(custom_date);
 
+    // Check if this is a historical date (previous season)
+    let is_historical = is_historical_date(&date);
+    info!("Date: {}, is_historical: {}", date, is_historical);
+    if is_historical {
+        info!(
+            "Detected historical date: {}, using schedule endpoint",
+            date
+        );
+        let historical_games = fetch_historical_games(&client, &config, &date).await?;
+        return Ok((historical_games, date));
+    }
+
     // Build the list of tournaments to fetch based on the month
     let tournaments = build_tournament_list(&date);
 
@@ -912,6 +924,301 @@ pub async fn fetch_regular_season_start_date(
             }
         }
     }
+}
+
+/// Fetches games for a specific date from a historical season using the schedule endpoint.
+/// This is used when the date-based games endpoint doesn't support historical data.
+#[instrument(skip(client, config))]
+async fn fetch_historical_games(
+    client: &Client,
+    config: &Config,
+    date: &str,
+) -> Result<Vec<GameData>, AppError> {
+    info!("Fetching historical games for date: {}", date);
+
+    // Parse the date to extract the year and month
+    let date_parts: Vec<&str> = date.split('-').collect();
+    let (year, month) = if date_parts.len() >= 2 {
+        let y = date_parts[0]
+            .parse::<i32>()
+            .unwrap_or_else(|_| Utc::now().with_timezone(&Local).year());
+        let m = date_parts[1].parse::<u32>().unwrap_or(1);
+        (y, m)
+    } else {
+        (Utc::now().with_timezone(&Local).year(), 1)
+    };
+    // Ice hockey season: if month >= 9, season = year+1, else season = year
+    let season = if month >= 9 { year + 1 } else { year };
+    info!("Detected season: {} for date: {}", season, date);
+
+    // Fetch the entire season schedule
+    let url = build_schedule_url(&config.api_domain, season);
+    info!("Fetching season schedule from: {}", url);
+
+    let schedule_games: Vec<ScheduleApiGame> =
+        match fetch::<Vec<ScheduleApiGame>>(client, &url).await {
+            Ok(games) => {
+                info!(
+                    "Successfully fetched {} games for season {}",
+                    games.len(),
+                    season
+                );
+                games
+            }
+            Err(e) => {
+                error!(
+                    "Failed to fetch season schedule for season {}: {}",
+                    season, e
+                );
+                return Err(e);
+            }
+        };
+
+    // Filter games to match the requested date
+    let target_date = date.to_string();
+    info!("Filtering games for target date: {}", target_date);
+
+    let matching_games: Vec<ScheduleApiGame> = schedule_games
+        .into_iter()
+        .filter(|game| {
+            // Extract date part from the game start time (format: YYYY-MM-DDThh:mm:ssZ)
+            if let Some(date_part) = game.start.split('T').next() {
+                let matches = date_part == target_date;
+                if matches {
+                    info!(
+                        "Found matching game: {} vs {} on {}",
+                        game.home_team_name, game.away_team_name, date_part
+                    );
+                }
+                matches
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    info!(
+        "Found {} games matching date {} in season {}",
+        matching_games.len(),
+        date,
+        season
+    );
+
+    if matching_games.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Convert ScheduleApiGame to ScheduleGame format and fetch detailed data
+    let mut schedule_games = Vec::new();
+    for api_game in matching_games {
+        let start_time = api_game.start.clone();
+
+        // Fetch detailed game data to get actual scores
+        let detailed_game_data =
+            fetch_detailed_game_data_for_historical_game(client, config, season, api_game.id).await;
+
+        // Convert goal events to the format expected by ScheduleTeam
+        let home_goal_events: Vec<GoalEvent> = detailed_game_data
+            .goal_events
+            .iter()
+            .filter(|event| event.is_home_team)
+            .map(|event| GoalEvent {
+                scorer_player_id: event.scorer_player_id,
+                log_time: format!("{:02}:{:02}:00", event.minute / 60, event.minute % 60),
+                game_time: event.minute * 60, // Convert back to seconds
+                period: 1,                    // Default period
+                event_id: 0,                  // Default event ID
+                home_team_score: event.home_team_score,
+                away_team_score: event.away_team_score,
+                winning_goal: event.is_winning_goal,
+                goal_types: event.goal_types.clone(),
+                assistant_player_ids: vec![],
+                video_clip_url: event.video_clip_url.clone(),
+            })
+            .collect();
+
+        let away_goal_events: Vec<GoalEvent> = detailed_game_data
+            .goal_events
+            .iter()
+            .filter(|event| !event.is_home_team)
+            .map(|event| GoalEvent {
+                scorer_player_id: event.scorer_player_id,
+                log_time: format!("{:02}:{:02}:00", event.minute / 60, event.minute % 60),
+                game_time: event.minute * 60, // Convert back to seconds
+                period: 1,                    // Default period
+                event_id: 0,                  // Default event ID
+                home_team_score: event.home_team_score,
+                away_team_score: event.away_team_score,
+                winning_goal: event.is_winning_goal,
+                goal_types: event.goal_types.clone(),
+                assistant_player_ids: vec![],
+                video_clip_url: event.video_clip_url.clone(),
+            })
+            .collect();
+
+        let schedule_game = ScheduleGame {
+            id: api_game.id,
+            season: api_game.season,
+            start: start_time.clone(),
+            end: None, // Not available in schedule API
+            home_team: ScheduleTeam {
+                team_id: None,
+                team_placeholder: None,
+                team_name: Some(api_game.home_team_name.clone()),
+                goals: detailed_game_data.home_goals,
+                time_out: None,
+                powerplay_instances: 0,
+                powerplay_goals: 0,
+                short_handed_instances: 0,
+                short_handed_goals: 0,
+                ranking: None,
+                game_start_date_time: Some(start_time.clone()),
+                goal_events: home_goal_events,
+            },
+            away_team: ScheduleTeam {
+                team_id: None,
+                team_placeholder: None,
+                team_name: Some(api_game.away_team_name.clone()),
+                goals: detailed_game_data.away_goals,
+                time_out: None,
+                powerplay_instances: 0,
+                powerplay_goals: 0,
+                short_handed_instances: 0,
+                short_handed_goals: 0,
+                ranking: None,
+                game_start_date_time: Some(start_time),
+                goal_events: away_goal_events,
+            },
+            finished_type: api_game.finished_type,
+            started: api_game.started,
+            ended: api_game.ended,
+            game_time: api_game.game_time.unwrap_or(0),
+            serie: match api_game.serie {
+                1 => "runkosarja".to_string(),
+                2 => "playoffs".to_string(),
+                3 => "playout".to_string(),
+                4 => "qualifications".to_string(),
+                5 => "valmistavat_ottelut".to_string(),
+                _ => "unknown".to_string(),
+            },
+        };
+        schedule_games.push(schedule_game);
+    }
+
+    // Create a ScheduleResponse with the filtered games
+    let schedule_response = ScheduleResponse {
+        games: schedule_games,
+        previous_game_date: None,
+        next_game_date: None,
+    };
+
+    // Process the games using the existing logic
+    let response_data = vec![schedule_response];
+    process_games(client, config, response_data).await
+}
+
+/// Determines if a date is from a previous season (not the current season).
+fn is_historical_date(date: &str) -> bool {
+    let date_parts: Vec<&str> = date.split('-').collect();
+    let date_year = if !date_parts.is_empty() {
+        date_parts[0]
+            .parse::<i32>()
+            .unwrap_or_else(|_| Utc::now().with_timezone(&Local).year())
+    } else {
+        Utc::now().with_timezone(&Local).year()
+    };
+
+    let current_year = Utc::now().with_timezone(&Local).year();
+    date_year < current_year
+}
+
+/// Fetches detailed game data for a historical game to get actual scores and goal events.
+/// Returns a struct with home and away team goals and goal events.
+async fn fetch_detailed_game_data_for_historical_game(
+    client: &Client,
+    config: &Config,
+    season: i32,
+    game_id: i32,
+) -> DetailedGameData {
+    let url = build_game_url(&config.api_domain, season, game_id);
+
+    match fetch::<DetailedGameResponse>(client, &url).await {
+        Ok(response) => {
+            info!(
+                "Successfully fetched detailed game data for game ID: {}",
+                game_id
+            );
+
+            // Process goal events to get scorer information
+            let goal_events = process_goal_events_for_historical_game(&response.game).await;
+
+            DetailedGameData {
+                home_goals: response.game.home_team.goals,
+                away_goals: response.game.away_team.goals,
+                goal_events,
+            }
+        }
+        Err(e) => {
+            warn!(
+                "Failed to fetch detailed game data for game ID {}: {}. Using default scores.",
+                game_id, e
+            );
+            // Return default data if detailed data fetch fails
+            DetailedGameData {
+                home_goals: 0,
+                away_goals: 0,
+                goal_events: vec![],
+            }
+        }
+    }
+}
+
+/// Process goal events for historical games to extract scorer information
+async fn process_goal_events_for_historical_game(game: &DetailedGame) -> Vec<GoalEventData> {
+    let mut all_goal_events = Vec::new();
+
+    // Process home team goal events
+    for event in &game.home_team.goal_events {
+        let goal_event = GoalEventData {
+            scorer_player_id: event.scorer_player_id,
+            scorer_name: format!("Player {}", event.scorer_player_id), // Placeholder - would need player lookup
+            minute: event.game_time / 60,                              // Convert seconds to minutes
+            home_team_score: event.home_team_score,
+            away_team_score: event.away_team_score,
+            is_winning_goal: event.winning_goal,
+            goal_types: event.goal_types.clone(),
+            is_home_team: true,
+            video_clip_url: event.video_clip_url.clone(),
+        };
+        all_goal_events.push(goal_event);
+    }
+
+    // Process away team goal events
+    for event in &game.away_team.goal_events {
+        let goal_event = GoalEventData {
+            scorer_player_id: event.scorer_player_id,
+            scorer_name: format!("Player {}", event.scorer_player_id), // Placeholder - would need player lookup
+            minute: event.game_time / 60,                              // Convert seconds to minutes
+            home_team_score: event.home_team_score,
+            away_team_score: event.away_team_score,
+            is_winning_goal: event.winning_goal,
+            goal_types: event.goal_types.clone(),
+            is_home_team: false,
+            video_clip_url: event.video_clip_url.clone(),
+        };
+        all_goal_events.push(goal_event);
+    }
+
+    // Sort by game time
+    all_goal_events.sort_by_key(|event| event.minute);
+    all_goal_events
+}
+
+/// Enhanced struct to hold game data including goal events
+struct DetailedGameData {
+    home_goals: i32,
+    away_goals: i32,
+    goal_events: Vec<GoalEventData>,
 }
 
 #[cfg(test)]
