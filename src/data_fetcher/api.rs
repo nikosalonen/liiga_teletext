@@ -496,12 +496,14 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
 
     if !status.is_success() {
         let error_message = format!(
-            "Failed to fetch data from API: {} (URL: {})",
+            "HTTP {} - {} (URL: {})",
+            status.as_u16(),
             status.canonical_reason().unwrap_or("Unknown error"),
             url
         );
         error!("{}", error_message);
-        return Err(AppError::Custom(error_message));
+        // Create an artificial reqwest error for consistency with other API fetch errors
+        return Err(AppError::Custom(format!("API request failed: {}", error_message)));
     }
 
     let response_text = response.text().await?;
