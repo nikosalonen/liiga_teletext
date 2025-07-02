@@ -11,7 +11,7 @@ pub struct Config {
     /// API domain for fetching game data. Should include https:// prefix.
     pub api_domain: String,
     /// Path to the log file. If not specified, logs will be written to a default location.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log_file_path: Option<String>,
 }
 
