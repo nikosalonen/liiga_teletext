@@ -1,0 +1,394 @@
+# Gemini Project Guide
+
+This document provides a comprehensive guide for the Gemini agent to understand and work with this project effectively.
+
+## Project Overview
+
+This project is a Rust terminal application that displays Finnish ice hockey league (Liiga) results in an authentic YLE Teksti-TV (teletext) style interface. The application fetches real-time game data from the Liiga API and presents it with nostalgic teletext aesthetics, including proper color schemes, pagination, and interactive navigation.
+
+### Key Features
+- **Authentic teletext UI**: Mimics YLE Teksti-TV channel 221 appearance with proper colors and layout
+- **Real-time data**: Fetches live game data with automatic refresh (every minute for ongoing games, hourly for completed games)
+- **Multiple tournament support**: Regular season, playoffs, playout, qualifications, and practice games
+- **Interactive navigation**: Arrow key navigation between pages, manual refresh with 'r' key
+- **Comprehensive CLI**: Rich command-line interface with clap, supporting various display and configuration options
+- **Robust configuration**: TOML-based config with platform-specific storage locations
+- **Advanced logging**: Structured logging with file rotation and configurable locations
+- **Version management**: Automatic update checking and semantic versioning
+- **Error handling**: Comprehensive error types with proper context and user-friendly messages
+
+## Architecture Overview
+
+The application follows a modular architecture with clear separation of concerns:
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   CLI/Main      │───▶│   Data Fetcher   │───▶│  Teletext UI    │
+│  (main.rs)      │    │ (data_fetcher/)  │    │(teletext_ui.rs) │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         │                        │                       │
+         ▼                        ▼                       ▼
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Config        │    │     Models       │    │   Rendering     │
+│  (config.rs)    │    │   (models.rs)    │    │   & Events      │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Error Handling │
+│   (error.rs)    │
+└─────────────────┘
+```
+
+## Project Structure Details
+
+### Core Modules
+
+#### `src/main.rs` (832 lines)
+- **Purpose**: Application entry point and interactive UI event loop
+- **Key Components**:
+  - CLI argument parsing with clap
+  - Interactive mode with crossterm for terminal manipulation
+  - Non-interactive mode for scripting
+  - Version checking and update notifications
+  - Automatic refresh logic based on game states
+- **Important Functions**:
+  - `main()`: Entry point with comprehensive error handling
+  - `run_interactive_ui()`: Main event loop for interactive mode
+  - `is_noninteractive_mode()`: Determines execution mode based on CLI args
+  - `create_page()` & `create_future_games_page()`: Page factory functions
+
+#### `src/lib.rs` (58 lines)
+- **Purpose**: Library interface and public API exports
+- **Key Exports**: Common types, constants, and convenience re-exports
+- **Usage**: Provides clean API for both binary and library usage
+
+#### `src/config.rs` (405 lines)
+- **Purpose**: Configuration management with TOML serialization
+- **Key Features**:
+  - Platform-specific config directories using `dirs` crate
+  - Automatic https:// prefix handling for API domains
+  - Custom log file path management
+  - Comprehensive error handling for file operations
+- **Best Practices**:
+  - Always use `Config::load()` for initialization
+  - Validate API domains have proper protocol prefixes
+  - Handle missing config files gracefully with user prompts
+
+#### `src/error.rs` (52 lines)
+- **Purpose**: Centralized error handling with thiserror
+- **Error Types**:
+  - `ApiFetch`: Network and HTTP errors
+  - `ApiParse`: JSON deserialization errors
+  - `Config`: Configuration-related errors
+  - `DateTimeParse`: Time parsing errors
+  - `LogSetup`: Logging initialization errors
+- **Best Practice**: Always use context-specific error constructors
+
+#### `src/teletext_ui.rs` (1431 lines)
+- **Purpose**: Teletext-style UI rendering and page management
+- **Key Components**:
+  - `TeletextPage`: Main page container with pagination
+  - `TeletextRow`: Individual content row types
+  - `GameResultData`: Game information display object
+  - Color constants matching authentic teletext appearance
+- **Rendering Features**:
+  - Automatic pagination based on terminal height
+  - Goal scorer information with timestamps
+  - Video link support (toggleable)
+  - Season countdown for off-season periods
+  - Responsive layout adjustments
+
+### Data Fetcher Module (`src/data_fetcher/`)
+
+#### `api.rs` (1588 lines)
+- **Purpose**: HTTP client and API integration
+- **Key Functions**:
+  - `fetch_liiga_data()`: Main data fetching entry point
+  - `fetch_schedule_games()`: Schedule API calls
+  - `fetch_game_details()`: Detailed game information
+  - `fetch_regular_season_start_date()`: Season timing
+- **Error Handling**: Comprehensive retry logic and timeout handling
+- **Caching**: Built-in response caching with time-based invalidation
+
+#### `models.rs` (280 lines)
+- **Purpose**: Data structures and API response models
+- **Key Structures**:
+  - `GameData`: Processed game information
+  - `ScheduleGame` & `DetailedGame`: Raw API response models
+  - `GoalEvent` & `GoalEventData`: Goal information
+  - `Player`: Player information
+- **Traits**: `HasTeams` and `HasGoalEvents` for polymorphic game handling
+
+#### `processors.rs` (228 lines)
+- **Purpose**: Data transformation and business logic
+- **Key Functions**:
+  - Game state determination (ongoing, finished, scheduled)
+  - Score formatting with overtime/shootout indicators
+  - Goal event processing and player name resolution
+  - Tournament type classification
+
+#### `cache.rs` (177 lines)
+- **Purpose**: HTTP response caching with time-based expiration
+- **Features**:
+  - In-memory caching with LRU eviction
+  - Configurable TTL per cache entry
+  - Thread-safe access with Arc<Mutex<>>
+
+## Development Best Practices
+
+### Code Style and Patterns
+
+1. **Error Handling**:
+   ```rust
+   // Always use ? operator for propagating errors
+   let config = Config::load().await?;
+
+   // Use context-specific error types
+   return Err(AppError::config_error("Invalid API domain"));
+   ```
+
+2. **Async/Await Usage**:
+   ```rust
+   // Use tokio::main for async main functions
+   #[tokio::main]
+   async fn main() -> Result<(), AppError> {
+       // Implementation
+   }
+
+   // Always handle async errors properly
+   match fetch_data().await {
+       Ok(data) => process_data(data),
+       Err(e) => log_error_and_continue(e),
+   }
+   ```
+
+3. **Configuration Management**:
+   ```rust
+   // Always load config at application start
+   let config = Config::load().await?;
+
+   // Use config validation
+   if !config.api_domain.starts_with("https://") {
+       return Err(AppError::config_error("API domain must use HTTPS"));
+   }
+   ```
+
+### Testing Guidelines
+
+1. **Integration Tests** (`tests/integration_tests.rs`):
+   - Test complete workflows from CLI to UI rendering
+   - Use temporary directories for config testing
+   - Mock external API calls with wiremock
+   - Test error scenarios and edge cases
+
+2. **Unit Tests**:
+   - Each module should have comprehensive unit tests
+   - Test both success and failure scenarios
+   - Use `tokio::test` for async test functions
+   - Mock external dependencies
+
+3. **Test Data**:
+   ```rust
+   // Create realistic test data
+   let mock_game = GameData {
+       home_team: "HIFK".to_string(),
+       away_team: "Tappara".to_string(),
+       time: "18:30".to_string(),
+       result: "3-2".to_string(),
+       score_type: ScoreType::Final,
+       is_overtime: true,
+       is_shootout: false,
+       serie: "runkosarja".to_string(),
+       goal_events: vec![],
+       played_time: 3900,
+       start: "2024-01-15T18:30:00Z".to_string(),
+   };
+   ```
+
+### API Integration Patterns
+
+1. **HTTP Client Usage**:
+   - Always use reqwest with JSON features enabled
+   - Implement proper timeout handling (default: 30 seconds)
+   - Use connection pooling for performance
+   - Handle rate limiting gracefully
+
+2. **Data Processing**:
+   - Transform API responses into internal models immediately
+   - Validate data integrity before processing
+   - Handle missing or null fields gracefully
+   - Cache processed results when appropriate
+
+3. **Error Recovery**:
+   - Implement exponential backoff for retries
+   - Provide fallback data when API is unavailable
+   - Log detailed error information for debugging
+
+### UI/UX Considerations
+
+1. **Teletext Authenticity**:
+   - Use exact YLE Teksti-TV color scheme (defined in constants)
+   - Maintain proper character spacing and alignment
+   - Implement authentic pagination behavior
+   - Support both interactive and non-interactive modes
+
+2. **Terminal Compatibility**:
+   - Handle various terminal sizes gracefully
+   - Support terminals without link capability
+   - Provide plain text output options
+   - Maintain consistent rendering across platforms
+
+3. **User Experience**:
+   - Provide immediate feedback for user actions
+   - Show loading states during data fetching
+   - Handle keyboard input responsively
+   - Display meaningful error messages
+
+## Common Development Tasks
+
+### Adding New API Endpoints
+
+1. **Define Models** (`models.rs`):
+   ```rust
+   #[derive(Debug, Serialize, Deserialize)]
+   pub struct NewApiResponse {
+       pub field1: String,
+       pub field2: Option<i32>,
+   }
+   ```
+
+2. **Implement API Call** (`api.rs`):
+   ```rust
+   pub async fn fetch_new_data(
+       client: &Client,
+       config: &Config,
+   ) -> Result<NewApiResponse, AppError> {
+       let url = format!("{}/new-endpoint", config.api_domain);
+       let response = client.get(&url).send().await?;
+       let data: NewApiResponse = response.json().await?;
+       Ok(data)
+   }
+   ```
+
+3. **Add Processing Logic** (`processors.rs`):
+   ```rust
+   pub fn process_new_data(raw_data: NewApiResponse) -> ProcessedData {
+       // Transform and validate data
+   }
+   ```
+
+### Adding New CLI Options
+
+1. **Update Args Struct** (`main.rs`):
+   ```rust
+   #[derive(Parser, Debug)]
+   struct Args {
+       /// New option description
+       #[arg(long = "new-option", help_heading = "Display Options")]
+       new_option: bool,
+   }
+   ```
+
+2. **Handle Option Logic**:
+   ```rust
+   if args.new_option {
+       // Implement new functionality
+   }
+   ```
+
+### Adding New UI Elements
+
+1. **Define Row Type** (`teletext_ui.rs`):
+   ```rust
+   pub enum TeletextRow {
+       NewRowType {
+           content: String,
+           style: DisplayStyle,
+       },
+   }
+   ```
+
+2. **Implement Rendering**:
+   ```rust
+   fn render_new_row_type(&self, stdout: &mut Stdout) -> Result<(), AppError> {
+       // Implement rendering logic
+   }
+   ```
+
+## Performance Considerations
+
+1. **Memory Management**:
+   - Use `Vec::with_capacity()` when size is known
+   - Implement proper resource cleanup
+   - Monitor memory usage during development
+
+2. **Network Optimization**:
+   - Implement request caching with appropriate TTL
+   - Use HTTP/2 multiplexing when available
+   - Batch API requests when possible
+
+3. **Terminal Rendering**:
+   - Minimize screen clears and redraws
+   - Buffer output before writing to terminal
+   - Use incremental updates when possible
+
+## Dependencies Management
+
+### Core Dependencies
+- **tokio**: Async runtime with full features
+- **reqwest**: HTTP client with JSON support
+- **serde**: Serialization with derive features
+- **crossterm**: Cross-platform terminal manipulation
+- **clap**: CLI parsing with derive features
+- **chrono**: Date/time handling
+- **thiserror**: Error handling
+- **tracing**: Structured logging
+
+### Development Dependencies
+- **tempfile**: Temporary files for testing
+- **wiremock**: HTTP mocking for tests
+- **tokio-test**: Async testing utilities
+
+## Version Management
+
+- **Current Version**: 0.8.3
+- **Edition**: 2024 (Rust 2024 edition)
+- **Versioning**: Follow semantic versioning
+- **Release Process**: Update version in Cargo.toml, tag release, publish to crates.io
+
+## Configuration Schema
+
+```toml
+# ~/.config/liiga_teletext/config.toml
+api_domain = "https://api.example.com"
+log_file_path = "/custom/log/path.log"  # Optional
+```
+
+## Logging Configuration
+
+- **Default Location**: `~/.config/liiga_teletext/logs/liiga_teletext.log`
+- **Rotation**: Daily rotation with automatic cleanup
+- **Levels**: Configurable via RUST_LOG environment variable
+- **Format**: Structured JSON logging with timestamps
+
+## Contributing Guidelines
+
+1. **Code Quality**:
+   - Run `cargo fmt` before committing
+   - Ensure `cargo clippy` passes without warnings
+   - Write comprehensive tests for new features
+   - Update documentation for public APIs
+
+2. **Commit Messages**:
+   - Follow Conventional Commits specification
+   - Use clear, descriptive commit messages
+   - Include issue references when applicable
+
+3. **Pull Requests**:
+   - Provide detailed description of changes
+   - Include test coverage for new functionality
+   - Update relevant documentation
+   - Ensure CI passes all checks
+
+This guide provides the foundation for understanding and effectively working with the liiga_teletext codebase. Always refer to the actual source code for the most up-to-date implementation details.

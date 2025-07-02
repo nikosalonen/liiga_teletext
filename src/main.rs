@@ -393,7 +393,7 @@ async fn main() -> Result<(), AppError> {
 
     // Create log directory if it doesn't exist
     if !Path::new(&log_dir).exists() {
-        std::fs::create_dir_all(&log_dir).map_err(|e| {
+        tokio::fs::create_dir_all(&log_dir).await.map_err(|e| {
             AppError::log_setup_error(format!("Failed to create log directory: {}", e))
         })?;
     }

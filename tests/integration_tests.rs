@@ -4,7 +4,6 @@ use liiga_teletext::{
     teletext_ui::{GameResultData, TeletextPage},
 };
 use tempfile::tempdir;
-use tokio::fs;
 
 /// Test goal event data processing
 #[tokio::test]
@@ -209,10 +208,10 @@ async fn test_config_integration() {
 
     // Save config
     let config_content = toml::to_string_pretty(&test_config).unwrap();
-    fs::write(&config_path, config_content).await.unwrap();
+    tokio::fs::write(&config_path, config_content).await.unwrap();
 
     // Load config
-    let content = fs::read_to_string(&config_path).await.unwrap();
+    let content = tokio::fs::read_to_string(&config_path).await.unwrap();
     let loaded_config: Config = toml::from_str(&content).unwrap();
 
     // Verify config
