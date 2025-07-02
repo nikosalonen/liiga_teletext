@@ -8,9 +8,10 @@
 //! ```rust,no_run
 //! use liiga_teletext::data_fetcher::api::fetch_liiga_data;
 //! use liiga_teletext::teletext_ui::{TeletextPage, GameResultData};
+//! use liiga_teletext::error::AppError;
 //!
 //! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! async fn main() -> Result<(), AppError> {
 //!     // Fetch game data
 //!     let (games, date) = fetch_liiga_data(Some("2024-01-15".to_string())).await?;
 //!
