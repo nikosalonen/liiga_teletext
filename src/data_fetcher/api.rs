@@ -668,7 +668,21 @@ async fn fetch_game_data(
     cache_players_with_formatting(game_id, player_names.clone()).await;
 
     // Get the formatted names from cache for processing
-    let formatted_players = get_cached_players(game_id).await.unwrap();
+    let formatted_players = match get_cached_players(game_id).await {
+        Some(players) => players,
+        None => {
+            error!(
+                "Failed to retrieve cached player data for game ID {} after caching. This should not happen.",
+                game_id
+            );
+            // Fallback: use the raw player names and format them on-the-fly
+            let fallback_players: HashMap<i64, String> = player_names
+                .into_iter()
+                .map(|(id, full_name)| (id, crate::data_fetcher::cache::format_player_name(&full_name)))
+                .collect();
+            fallback_players
+        }
+    };
     let events = process_goal_events(&game_response.game, &formatted_players);
     info!(
         "Processed {} goal events for game ID: {}",
@@ -1072,6 +1086,38 @@ mod tests {
         assert!(result.is_ok());
         let goal_events = result.unwrap();
         assert_eq!(goal_events.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_game_data_cache_fallback() {
+        let mock_server = MockServer::start().await;
+        let config = create_mock_config();
+        let client = Client::new();
+
+        let mock_response = create_mock_detailed_game_response();
+
+        Mock::given(method("GET"))
+            .and(path("/games/2024/1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&mock_response))
+            .mount(&mock_server)
+            .await;
+
+        let mut test_config = config;
+        test_config.api_domain = mock_server.uri();
+
+        // Clear the cache to simulate a cache miss after caching
+        use crate::data_fetcher::cache::PLAYER_CACHE;
+        PLAYER_CACHE.write().await.clear();
+
+        let result = fetch_game_data(&client, &test_config, 2024, 1).await;
+
+        // Should still succeed due to fallback logic
+        assert!(result.is_ok());
+        let goal_events = result.unwrap();
+        assert_eq!(goal_events.len(), 1);
+        assert_eq!(goal_events[0].scorer_name, "Smith");
+        assert_eq!(goal_events[0].home_team_score, 1);
+        assert_eq!(goal_events[0].away_team_score, 0);
     }
 
     #[tokio::test]
