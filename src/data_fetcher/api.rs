@@ -721,12 +721,22 @@ async fn find_future_games_fallback(
     info!("Starting fallback search for future games from date: {}", current_date);
 
     // Try the next 7 days to find games
-    let mut check_date = chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d")
-        .map_err(|e| AppError::datetime_parse_error(format!("Failed to parse date '{}': {}", current_date, e)))?;
+    let mut check_date = match chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d") {
+        Ok(date) => date,
+        Err(e) => {
+            error!("Failed to parse date '{}': {}", current_date, e);
+            return Err(AppError::datetime_parse_error(format!("Failed to parse date '{}': {}", current_date, e)));
+        }
+    };
 
     for _day_offset in 1..=7 {
-        check_date = check_date.succ_opt()
-            .ok_or_else(|| AppError::datetime_parse_error("Date overflow when calculating next day".to_string()))?;
+        check_date = match check_date.succ_opt() {
+            Some(date) => date,
+            None => {
+                error!("Date overflow when calculating next day from {}", current_date);
+                return Err(AppError::datetime_parse_error("Date overflow when calculating next day".to_string()));
+            }
+        };
 
         let date_str = check_date.format("%Y-%m-%d").to_string();
         info!("Checking for games on date: {}", date_str);
@@ -2949,5 +2959,86 @@ mod tests {
             "2024-10-15",
             current_time_september
         )); // October 2024 in September 2024
+    }
+
+    #[tokio::test]
+    async fn test_find_future_games_fallback() {
+        let mock_server = MockServer::start().await;
+        let config = create_mock_config();
+        let client = Client::new();
+
+        // Mock response for a future date
+        let mock_response = create_mock_schedule_response();
+
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&mock_response))
+            .mount(&mock_server)
+            .await;
+
+        // Update config to use mock server
+        let mut test_config = config;
+        test_config.api_domain = mock_server.uri();
+
+        let result = find_future_games_fallback(
+            &client,
+            &test_config,
+            &["runkosarja"],
+            "2024-01-14"
+        ).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.is_some());
+        let (responses, date) = response.unwrap();
+        assert_eq!(responses.len(), 1);
+        assert_eq!(date, "2024-01-15");
+    }
+
+    #[tokio::test]
+    async fn test_find_future_games_fallback_no_games() {
+        let mock_server = MockServer::start().await;
+        let config = create_mock_config();
+        let client = Client::new();
+
+        // Mock empty response for all dates
+        let mock_response = create_mock_empty_schedule_response();
+
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&mock_response))
+            .mount(&mock_server)
+            .await;
+
+        // Update config to use mock server
+        let mut test_config = config;
+        test_config.api_domain = mock_server.uri();
+
+        let result = find_future_games_fallback(
+            &client,
+            &test_config,
+            &["runkosarja"],
+            "2024-01-14"
+        ).await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_find_future_games_fallback_invalid_date() {
+        let config = create_mock_config();
+        let client = Client::new();
+
+        let result = find_future_games_fallback(
+            &client,
+            &config,
+            &["runkosarja"],
+            "invalid-date"
+        ).await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AppError::DateTimeParse(_)));
     }
 }
