@@ -201,7 +201,7 @@ mod tests {
 api_domain = "https://api.example.com"
 log_file_path = "/custom/log/path"
 "#;
-        fs::write(&config_path, config_content).unwrap();
+        tokio::fs::write(&config_path, config_content).await.unwrap();
 
         // Test loading from a specific path using the actual load_from_path method
         let config = Config::load_from_path(&config_path_str).await.unwrap();
@@ -220,7 +220,7 @@ log_file_path = "/custom/log/path"
         let config_content = r#"
 api_domain = "https://api.example.com"
 "#;
-        fs::write(&config_path, config_content).unwrap();
+        tokio::fs::write(&config_path, config_content).await.unwrap();
 
         // Test loading from a specific path using the actual load_from_path method
         let config = Config::load_from_path(&config_path_str).await.unwrap();
