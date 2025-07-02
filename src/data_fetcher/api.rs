@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::data_fetcher::cache::{cache_players, get_cached_players};
+use crate::data_fetcher::cache::{cache_players_with_formatting, get_cached_players};
 use crate::data_fetcher::models::{
     DetailedGameResponse, GameData, GoalEventData, ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
@@ -663,11 +663,13 @@ async fn fetch_game_data(
     }
     info!("Built player names map with {} players", player_names.len());
 
-    // Update cache
+    // Update cache with formatted names
     info!("Updating player cache for game ID: {}", game_id);
-    cache_players(game_id, player_names.clone()).await;
+    cache_players_with_formatting(game_id, player_names.clone()).await;
 
-    let events = process_goal_events(&game_response.game, &player_names);
+    // Get the formatted names from cache for processing
+    let formatted_players = get_cached_players(game_id).await.unwrap();
+    let events = process_goal_events(&game_response.game, &formatted_players);
     info!(
         "Processed {} goal events for game ID: {}",
         events.len(),
