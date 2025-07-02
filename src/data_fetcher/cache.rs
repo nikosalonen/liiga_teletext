@@ -10,8 +10,6 @@ lazy_static! {
         RwLock::new(HashMap::new());
 }
 
-
-
 /// Retrieves cached formatted player information for a specific game.
 ///
 /// # Arguments
@@ -90,8 +88,6 @@ pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i6
 #[cfg(test)]
 mod tests {
     use super::*;
-
-
 
     #[tokio::test]
     async fn test_cache_players_with_formatting() {

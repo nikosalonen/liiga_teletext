@@ -208,7 +208,9 @@ async fn test_config_integration() {
 
     // Save config
     let config_content = toml::to_string_pretty(&test_config).unwrap();
-    tokio::fs::write(&config_path, config_content).await.unwrap();
+    tokio::fs::write(&config_path, config_content)
+        .await
+        .unwrap();
 
     // Load config
     let content = tokio::fs::read_to_string(&config_path).await.unwrap();
