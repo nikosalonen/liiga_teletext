@@ -49,6 +49,27 @@ fn title_bg() -> Color {
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 
+/// Creates a September date string for the given year and day.
+/// This is used for generating season start date candidates.
+///
+/// # Arguments
+/// * `year` - The year (e.g., 2024)
+/// * `day` - The day of September (1-30)
+///
+/// # Returns
+/// * `String` - The formatted date string (e.g., "2024-09-01")
+///
+/// # Example
+/// ```
+/// use liiga_teletext::teletext_ui::create_september_date;
+///
+/// let date = create_september_date(2024, 1);
+/// assert_eq!(date, "2024-09-01");
+/// ```
+pub fn create_september_date(year: i32, day: u32) -> String {
+    format!("{}-09-{:02}", year, day)
+}
+
 /// Calculates the number of days until the regular season starts.
 /// Returns None if the regular season has already started or if we can't determine the start date.
 async fn calculate_days_until_regular_season() -> Option<i64> {
@@ -124,16 +145,16 @@ fn calculate_days_until_regular_season_fallback() -> Option<i64> {
     // Try to find the regular season start date for the current year
     // Liiga regular season typically starts in early September
     let season_start_candidates = vec![
-        format!("{}-09-01", current_year), // September 1st
-        format!("{}-09-02", current_year), // September 2nd
-        format!("{}-09-03", current_year), // September 3rd
-        format!("{}-09-04", current_year), // September 4th
-        format!("{}-09-05", current_year), // September 5th
-        format!("{}-09-06", current_year), // September 6th
-        format!("{}-09-07", current_year), // September 7th
-        format!("{}-09-08", current_year), // September 8th
-        format!("{}-09-09", current_year), // September 9th
-        format!("{}-09-10", current_year), // September 10th
+        create_september_date(current_year, 1),  // September 1st
+        create_september_date(current_year, 2),  // September 2nd
+        create_september_date(current_year, 3),  // September 3rd
+        create_september_date(current_year, 4),  // September 4th
+        create_september_date(current_year, 5),  // September 5th
+        create_september_date(current_year, 6),  // September 6th
+        create_september_date(current_year, 7),  // September 7th
+        create_september_date(current_year, 8),  // September 8th
+        create_september_date(current_year, 9),  // September 9th
+        create_september_date(current_year, 10), // September 10th
     ];
 
     let today = Local::now().date_naive();
@@ -149,7 +170,7 @@ fn calculate_days_until_regular_season_fallback() -> Option<i64> {
 
     // If we're past September, check next year
     let next_year = current_year + 1;
-    let next_season_start = format!("{}-09-01", next_year);
+    let next_season_start = create_september_date(next_year, 1);
 
     if let Ok(season_start) = NaiveDate::parse_from_str(&next_season_start, "%Y-%m-%d") {
         let days_until = (season_start - today).num_days();
