@@ -49,26 +49,7 @@ fn title_bg() -> Color {
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 
-/// Creates a September date string for the given year and day.
-/// This is used for generating season start date candidates.
-///
-/// # Arguments
-/// * `year` - The year (e.g., 2024)
-/// * `day` - The day of September (1-30)
-///
-/// # Returns
-/// * `String` - The formatted date string (e.g., "2024-09-01")
-///
-/// # Example
-/// ```
-/// use liiga_teletext::teletext_ui::create_september_date;
-///
-/// let date = create_september_date(2024, 1);
-/// assert_eq!(date, "2024-09-01");
-/// ```
-pub fn create_september_date(year: i32, day: u32) -> String {
-    format!("{}-09-{:02}", year, day)
-}
+
 
 /// Calculates the number of days until the regular season starts.
 /// Returns None if the regular season has already started or if we can't determine the start date.
