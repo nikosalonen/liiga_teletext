@@ -20,6 +20,113 @@ const PRESEASON_END_MONTH: u32 = 9; // September
 const PLAYOFFS_START_MONTH: u32 = 3; // March
 const PLAYOFFS_END_MONTH: u32 = 6; // June
 
+/// Formats a player's first and last name into a full name string.
+/// This is used when building player name mappings from API responses.
+///
+/// # Arguments
+/// * `first_name` - The player's first name
+/// * `last_name` - The player's last name
+///
+/// # Returns
+/// * `String` - The formatted full name (e.g., "Mikko Koivu")
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::api::format_player_full_name;
+///
+/// let full_name = format_player_full_name("Mikko", "Koivu");
+/// assert_eq!(full_name, "Mikko Koivu");
+/// ```
+pub fn format_player_full_name(first_name: &str, last_name: &str) -> String {
+    format!("{} {}", first_name, last_name)
+}
+
+/// Builds a tournament URL for fetching game data.
+/// This constructs the API endpoint for a specific tournament and date.
+///
+/// # Arguments
+/// * `api_domain` - The base API domain
+/// * `tournament` - The tournament identifier
+/// * `date` - The date in YYYY-MM-DD format
+///
+/// # Returns
+/// * `String` - The complete tournament URL
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::api::build_tournament_url;
+///
+/// let url = build_tournament_url("https://api.example.com", "runkosarja", "2024-01-15");
+/// assert_eq!(url, "https://api.example.com/games?tournament=runkosarja&date=2024-01-15");
+/// ```
+pub fn build_tournament_url(api_domain: &str, tournament: &str, date: &str) -> String {
+    format!("{}/games?tournament={}&date={}", api_domain, tournament, date)
+}
+
+/// Builds a game URL for fetching detailed game data.
+/// This constructs the API endpoint for a specific game by season and game ID.
+///
+/// # Arguments
+/// * `api_domain` - The base API domain
+/// * `season` - The season year
+/// * `game_id` - The unique game identifier
+///
+/// # Returns
+/// * `String` - The complete game URL
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::api::build_game_url;
+///
+/// let url = build_game_url("https://api.example.com", 2024, 12345);
+/// assert_eq!(url, "https://api.example.com/games/2024/12345");
+/// ```
+pub fn build_game_url(api_domain: &str, season: i32, game_id: i32) -> String {
+    format!("{}/games/{}/{}", api_domain, season, game_id)
+}
+
+/// Builds a schedule URL for fetching season schedule data.
+/// This constructs the API endpoint for a specific tournament and season.
+///
+/// # Arguments
+/// * `api_domain` - The base API domain
+/// * `season` - The season year
+///
+/// # Returns
+/// * `String` - The complete schedule URL
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::api::build_schedule_url;
+///
+/// let url = build_schedule_url("https://api.example.com", 2024);
+/// assert_eq!(url, "https://api.example.com/schedule?tournament=runkosarja&season=2024");
+/// ```
+pub fn build_schedule_url(api_domain: &str, season: i32) -> String {
+    format!("{}/schedule?tournament=runkosarja&season={}", api_domain, season)
+}
+
+/// Creates a tournament key for caching and identification purposes.
+/// This combines tournament name and date into a unique identifier.
+///
+/// # Arguments
+/// * `tournament` - The tournament identifier
+/// * `date` - The date in YYYY-MM-DD format
+///
+/// # Returns
+/// * `String` - The tournament key (e.g., "runkosarja-2024-01-15")
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::api::create_tournament_key;
+///
+/// let key = create_tournament_key("runkosarja", "2024-01-15");
+/// assert_eq!(key, "runkosarja-2024-01-15");
+/// ```
+pub fn create_tournament_key(tournament: &str, date: &str) -> String {
+    format!("{}-{}", tournament, date)
+}
+
 /// Helper function to extract team name from a ScheduleTeam, with fallback logic.
 /// Returns the team_name if available, otherwise team_placeholder, or "Unknown" as last resort.
 fn get_team_name(team: &ScheduleTeam) -> &str {
@@ -109,7 +216,7 @@ async fn process_next_game_dates(
 
     // Check for next game dates using the tournament responses we already have
     for tournament in tournaments {
-        let tournament_key = format!("{}-{}", tournament, date);
+        let tournament_key = create_tournament_key(tournament, date);
 
         if let Some(response) = tournament_responses.get(&tournament_key) {
             if let Some(next_date) = &response.next_game_date {
@@ -423,10 +530,7 @@ pub async fn fetch_tournament_data(
     date: &str,
 ) -> Result<ScheduleResponse, AppError> {
     info!("Fetching tournament data");
-    let url = format!(
-        "{}/games?tournament={}&date={}",
-        config.api_domain, tournament, date
-    );
+    let url = build_tournament_url(&config.api_domain, tournament, date);
     fetch(client, &url).await
 }
 
@@ -451,7 +555,7 @@ async fn fetch_day_data(
     for tournament in tournaments {
         if let Ok(response) = fetch_tournament_data(client, config, tournament, date).await {
             // Store all responses in the HashMap for potential reuse
-            let tournament_key = format!("{}-{}", tournament, date);
+            let tournament_key = create_tournament_key(tournament, date);
             tournament_responses.insert(tournament_key, response.clone());
 
             if !response.games.is_empty() {
@@ -600,7 +704,7 @@ async fn fetch_game_data(
         "Fetching game data for game ID: {} (season: {})",
         game_id, season
     );
-    let url = format!("{}/games/{}/{}", config.api_domain, season, game_id);
+    let url = build_game_url(&config.api_domain, season, game_id);
 
     // Try to get detailed game response
     info!("Making API request to: {}", url);
@@ -647,7 +751,7 @@ async fn fetch_game_data(
     for player in &game_response.home_team_players {
         player_names.insert(
             player.id,
-            format!("{} {}", player.first_name, player.last_name),
+            format_player_full_name(&player.first_name, &player.last_name),
         );
     }
 
@@ -658,7 +762,7 @@ async fn fetch_game_data(
     for player in &game_response.away_team_players {
         player_names.insert(
             player.id,
-            format!("{} {}", player.first_name, player.last_name),
+            format_player_full_name(&player.first_name, &player.last_name),
         );
     }
     info!("Built player names map with {} players", player_names.len());
@@ -701,10 +805,7 @@ pub async fn fetch_regular_season_start_date(
     season: i32,
 ) -> Result<Option<String>, AppError> {
     info!("Fetching regular season schedule for season: {}", season);
-    let url = format!(
-        "{}/schedule?tournament=runkosarja&season={}",
-        config.api_domain, season
-    );
+    let url = build_schedule_url(&config.api_domain, season);
 
     match fetch::<Vec<ScheduleApiGame>>(client, &url).await {
         Ok(games) => {

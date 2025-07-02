@@ -4,6 +4,26 @@ use crate::teletext_ui::ScoreType;
 use chrono::{DateTime, Local, NaiveTime, Utc};
 use std::collections::HashMap;
 
+/// Creates a fallback player name when the actual player name is not available.
+/// This is used when player data is missing or cannot be retrieved.
+///
+/// # Arguments
+/// * `player_id` - The player's unique identifier
+///
+/// # Returns
+/// * `String` - A formatted fallback name (e.g., "Pelaaja 123")
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::processors::create_fallback_player_name;
+///
+/// let fallback_name = create_fallback_player_name(123);
+/// assert_eq!(fallback_name, "Pelaaja 123");
+/// ```
+pub fn create_fallback_player_name(player_id: i64) -> String {
+    format!("Pelaaja {}", player_id)
+}
+
 /// Processes goal events for both teams in a game, converting them into a standardized format
 /// with player names and additional metadata.
 ///
@@ -114,7 +134,7 @@ pub fn process_team_goals(
             scorer_name: player_names
                 .get(&goal.scorer_player_id)
                 .cloned()
-                .unwrap_or_else(|| format!("Pelaaja {}", goal.scorer_player_id)),
+                .unwrap_or_else(|| create_fallback_player_name(goal.scorer_player_id)),
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
             away_team_score: goal.away_team_score,
@@ -194,13 +214,13 @@ pub fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
     for goal in &game.home_team.goal_events {
         basic_names.insert(
             goal.scorer_player_id,
-            format!("Pelaaja {}", goal.scorer_player_id),
+            create_fallback_player_name(goal.scorer_player_id),
         );
     }
     for goal in &game.away_team.goal_events {
         basic_names.insert(
             goal.scorer_player_id,
-            format!("Pelaaja {}", goal.scorer_player_id),
+            create_fallback_player_name(goal.scorer_player_id),
         );
     }
     process_goal_events(game, &basic_names)
