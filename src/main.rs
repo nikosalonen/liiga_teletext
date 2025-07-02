@@ -298,14 +298,21 @@ async fn check_latest_version() -> Option<String> {
 }
 
 fn print_version_info(latest_version: &str) {
-    let current = Version::parse(CURRENT_VERSION).unwrap_or_else(|e| {
-        eprintln!("Failed to parse current version: {}", e);
-        Version::new(0, 0, 0)
-    });
-    let latest = Version::parse(latest_version).unwrap_or_else(|e| {
-        eprintln!("Failed to parse latest version: {}", e);
-        Version::new(0, 0, 0)
-    });
+    let current = match Version::parse(CURRENT_VERSION) {
+        Ok(v) => v,
+        Err(_) => {
+            // If we can't parse the current version, just show a generic message
+            println!("Update available! Latest version: {}", latest_version);
+            return;
+        }
+    };
+    let latest = match Version::parse(latest_version) {
+        Ok(v) => v,
+        Err(_) => {
+            // If we can't parse the latest version, don't show anything
+            return;
+        }
+    };
 
     if latest > current {
         println!();
@@ -387,8 +394,7 @@ async fn main() -> Result<(), AppError> {
     // Create log directory if it doesn't exist
     if !Path::new(&log_dir).exists() {
         std::fs::create_dir_all(&log_dir).map_err(|e| {
-            eprintln!("Failed to create log directory: {}", e);
-            e
+            AppError::log_setup_error(format!("Failed to create log directory: {}", e))
         })?;
     }
 
@@ -475,14 +481,12 @@ async fn main() -> Result<(), AppError> {
 
         // Check for updates and show version info
         if let Some(latest_version) = check_latest_version().await {
-            let current = Version::parse(CURRENT_VERSION).unwrap_or_else(|e| {
-                eprintln!("Failed to parse current version: {}", e);
-                Version::new(0, 0, 0)
-            });
-            let latest = Version::parse(&latest_version).unwrap_or_else(|e| {
-                eprintln!("Failed to parse latest version: {}", e);
-                Version::new(0, 0, 0)
-            });
+            let current = Version::parse(CURRENT_VERSION).map_err(|e| {
+                AppError::VersionParse(e)
+            })?;
+            let latest = Version::parse(&latest_version).map_err(|e| {
+                AppError::VersionParse(e)
+            })?;
 
             if latest > current {
                 print_version_info(&latest_version);

@@ -204,7 +204,7 @@ pub fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
 pub fn format_time(timestamp: &str) -> Result<String, AppError> {
     let utc_time = timestamp
         .parse::<DateTime<Utc>>()
-        .map_err(|e| AppError::Custom(format!("Failed to parse timestamp: {}", e)))?;
+        .map_err(|e| AppError::datetime_parse_error(format!("Failed to parse timestamp '{}': {}", timestamp, e)))?;
     let local_time = utc_time.with_timezone(&Local);
     Ok(local_time.format("%H.%M").to_string())
 }
