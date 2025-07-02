@@ -461,6 +461,7 @@ impl TeletextPage {
 
     /// Sets the screen height for testing purposes.
     /// This method is primarily used in tests to avoid terminal size detection issues.
+    #[allow(dead_code)]
     pub fn set_screen_height(&mut self, height: u16) {
         self.screen_height = height;
     }
