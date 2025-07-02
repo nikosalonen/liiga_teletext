@@ -238,7 +238,7 @@ async fn create_future_games_page(
         );
 
         let future_games_header = if show_future_header {
-            Some(format!("Seuraavat ottelut {}", formatted_date))
+            Some(format!("Seuraavat ottelut {formatted_date}"))
         } else {
             None
         };
@@ -265,10 +265,10 @@ async fn create_future_games_page(
 /// Returns `Some(version_string)` if a newer version is available,
 /// or `None` if there was an error checking or if the current version is up to date.
 async fn check_latest_version() -> Option<String> {
-    let crates_io_url = format!("https://crates.io/api/v1/crates/{}", CRATE_NAME);
+    let crates_io_url = format!("https://crates.io/api/v1/crates/{CRATE_NAME}");
 
     let client = reqwest::Client::new();
-    let user_agent = format!("{}/{}", CRATE_NAME, CURRENT_VERSION);
+    let user_agent = format!("{CRATE_NAME}/{CURRENT_VERSION}");
     let response = match client
         .get(&crates_io_url)
         .header("User-Agent", user_agent)
@@ -277,7 +277,7 @@ async fn check_latest_version() -> Option<String> {
     {
         Ok(resp) => resp,
         Err(e) => {
-            eprintln!("Failed to check for updates: {}", e);
+            eprintln!("Failed to check for updates: {e}");
             return None;
         }
     };
@@ -285,7 +285,7 @@ async fn check_latest_version() -> Option<String> {
     let json: serde_json::Value = match response.json::<serde_json::Value>().await {
         Ok(json) => json,
         Err(e) => {
-            eprintln!("Failed to parse update response: {}", e);
+            eprintln!("Failed to parse update response: {e}");
             return None;
         }
     };
@@ -302,7 +302,7 @@ fn print_version_info(latest_version: &str) {
         Ok(v) => v,
         Err(_) => {
             // If we can't parse the current version, just show a generic message
-            println!("Update available! Latest version: {}", latest_version);
+            println!("Update available! Latest version: {latest_version}");
             return;
         }
     };
@@ -394,7 +394,7 @@ async fn main() -> Result<(), AppError> {
     // Create log directory if it doesn't exist
     if !Path::new(&log_dir).exists() {
         tokio::fs::create_dir_all(&log_dir).await.map_err(|e| {
-            AppError::log_setup_error(format!("Failed to create log directory: {}", e))
+            AppError::log_setup_error(format!("Failed to create log directory: {e}"))
         })?;
     }
 
@@ -466,27 +466,20 @@ async fn main() -> Result<(), AppError> {
     }
 
     // Log the location of the log file
-    let log_file_path = format!("{}/{}", log_dir, log_file_name);
-    tracing::info!("Logs are being written to: {}", log_file_path);
+    let log_file_path = format!("{log_dir}/{log_file_name}");
+    tracing::info!("Logs are being written to: {log_file_path}");
 
     // Handle version flag first
     if args.version {
         // Set terminal title for version display
-        execute!(
-            stdout(),
-            crossterm::terminal::SetTitle("SM-LIIGA 221")
-        )?;
+        execute!(stdout(), crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
 
         print_logo();
 
         // Check for updates and show version info
         if let Some(latest_version) = check_latest_version().await {
-            let current = Version::parse(CURRENT_VERSION).map_err(|e| {
-                AppError::VersionParse(e)
-            })?;
-            let latest = Version::parse(&latest_version).map_err(|e| {
-                AppError::VersionParse(e)
-            })?;
+            let current = Version::parse(CURRENT_VERSION).map_err(AppError::VersionParse)?;
+            let latest = Version::parse(&latest_version).map_err(AppError::VersionParse)?;
 
             if latest > current {
                 print_version_info(&latest_version);
@@ -517,10 +510,7 @@ async fn main() -> Result<(), AppError> {
     // Handle configuration operations without version check
     if args.list_config {
         // Set terminal title for config display
-        execute!(
-            stdout(),
-            crossterm::terminal::SetTitle("SM-LIIGA 221")
-        )?;
+        execute!(stdout(), crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
 
         print_logo();
         Config::display().await?;
@@ -572,10 +562,7 @@ async fn main() -> Result<(), AppError> {
                 );
                 error_page.add_error_message(&e.to_string());
                 // Set terminal title for non-interactive mode (error case)
-                execute!(
-                    stdout(),
-                    crossterm::terminal::SetTitle("SM-LIIGA 221")
-                )?;
+                execute!(stdout(), crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
 
                 error_page.render(&mut stdout())?;
                 println!();
@@ -592,7 +579,10 @@ async fn main() -> Result<(), AppError> {
                 true,  // Ignore height limit in quick view mode
             );
             // Use UTC internally, convert to local time for date formatting
-            let today = Utc::now().with_timezone(&Local).format("%Y-%m-%d").to_string();
+            let today = Utc::now()
+                .with_timezone(&Local)
+                .format("%Y-%m-%d")
+                .to_string();
             if fetched_date == today {
                 error_page.add_error_message("Ei otteluita tänään");
             } else {
@@ -621,10 +611,7 @@ async fn main() -> Result<(), AppError> {
         };
 
         // Set terminal title for non-interactive mode
-        execute!(
-            stdout(),
-            crossterm::terminal::SetTitle("SM-LIIGA 221")
-        )?;
+        execute!(stdout(), crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
 
         page.render(&mut stdout())?;
         println!(); // Add a newline at the end
@@ -641,10 +628,7 @@ async fn main() -> Result<(), AppError> {
     let mut stdout = stdout();
 
     // Set terminal title/header to show app name
-    execute!(
-        stdout,
-        crossterm::terminal::SetTitle("SM-LIIGA 221")
-    )?;
+    execute!(stdout, crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
 
     execute!(stdout, EnterAlternateScreen)?;
 
@@ -735,7 +719,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         false,
                     );
                     // Use UTC internally, convert to local time for date formatting
-                    let today = Utc::now().with_timezone(&Local).format("%Y-%m-%d").to_string();
+                    let today = Utc::now()
+                        .with_timezone(&Local)
+                        .format("%Y-%m-%d")
+                        .to_string();
                     if fetched_date == today {
                         error_page.add_error_message("Ei otteluita tänään");
                     } else {

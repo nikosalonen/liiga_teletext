@@ -65,17 +65,22 @@
 
 **Action Completed:** ✅ Standardized file I/O approach: async `tokio::fs` for application code, sync `std::fs` for build scripts
 
-### 5. **Inconsistent API Response Handling**
+### 5. **~~Inconsistent API Response Handling~~ ✅ COMPLETED**
 **Location:** `src/data_fetcher/api.rs`
-**Issue:** Generic error handling that could be more specific
-- The `fetch` function has basic error handling
-- Some API calls lack specific error types for different failure modes
+**Issue:** ~~Generic error handling that could be more specific~~ **RESOLVED**
+- ~~The `fetch` function has basic error handling~~ **Fixed:** Enhanced `fetch` function with specific error handling for different HTTP status codes and network issues
+- ~~Some API calls lack specific error types for different failure modes~~ **Fixed:** Added comprehensive error types for various API failure scenarios
 
-**Files to fix:**
-- `src/data_fetcher/api.rs`
-- `src/error.rs` - May need additional error variants
+**Files fixed:**
+- ✅ `src/error.rs` - Added specific error variants for HTTP status codes (404, 4xx, 5xx, 429, 502/503), network issues (timeout, connection), data parsing issues (malformed JSON, unexpected structure, empty data), and business logic errors (season/game/tournament not found)
+- ✅ `src/data_fetcher/api.rs` - Enhanced `fetch` function with specific error categorization, updated `fetch_game_data`, `fetch_regular_season_start_date`, and `fetch_tournament_data` to use context-specific error types
 
-**Action:** Add specific error types for different API failure scenarios
+**Action Completed:** ✅ Added comprehensive specific error types for different API failure scenarios including:
+- **HTTP Status Errors:** 404 (Not Found), 4xx (Client Error), 5xx (Server Error), 429 (Rate Limited), 502/503 (Service Unavailable)
+- **Network Errors:** Timeouts, connection failures
+- **Data Parsing Errors:** Malformed JSON, unexpected structure, empty responses
+- **Business Logic Errors:** Game not found, season not found, tournament not found
+- **Utility Methods:** `is_retryable()` and `is_not_found()` for error categorization
 
 ### 6. **Inconsistent Test Coverage**
 **Location:** Throughout codebase
@@ -151,8 +156,8 @@
 3. Consolidate player name formatting
 
 ### Phase 2 (Medium Priority)
-4. Review async/sync operations
-5. Improve API response handling
+4. ✅ **COMPLETED** - Review async/sync operations
+5. ✅ **COMPLETED** - Improve API response handling
 6. Add comprehensive test coverage
 
 ### Phase 3 (Low Priority)

@@ -117,21 +117,21 @@ impl Config {
             println!("\nCurrent Configuration");
             println!("────────────────────────────────────");
             println!("Config Location:");
-            println!("{}", config_path);
+            println!("{config_path}");
             println!("────────────────────────────────────");
             println!("API Domain:");
             println!("{}", config.api_domain);
             println!("────────────────────────────────────");
             println!("Log File Location:");
             if let Some(custom_path) = &config.log_file_path {
-                println!("{}", custom_path);
+                println!("{custom_path}");
             } else {
-                println!("{}/liiga_teletext.log", log_dir);
+                println!("{log_dir}/liiga_teletext.log");
                 println!("(Default location)");
             }
         } else {
             println!("\nNo configuration file found at:");
-            println!("{}", config_path);
+            println!("{config_path}");
         }
 
         Ok(())
@@ -155,8 +155,9 @@ impl Config {
     /// * `AppError::Io` - If there's an I/O error creating directories or writing the file
     /// * `AppError::TomlSerialize` - If there's an error serializing the configuration
     pub async fn save_to_path(&self, path: &str) -> Result<(), AppError> {
-        let config_dir = Path::new(path).parent()
-            .ok_or_else(|| AppError::config_error(format!("Path '{}' has no parent directory", path)))?;
+        let config_dir = Path::new(path).parent().ok_or_else(|| {
+            AppError::config_error(format!("Path '{path}' has no parent directory"))
+        })?;
 
         if !config_dir.exists() {
             fs::create_dir_all(config_dir).await?;
@@ -200,7 +201,9 @@ mod tests {
 api_domain = "https://api.example.com"
 log_file_path = "/custom/log/path"
 "#;
-        tokio::fs::write(&config_path, config_content).await.unwrap();
+        tokio::fs::write(&config_path, config_content)
+            .await
+            .unwrap();
 
         // Test loading from a specific path using the actual load_from_path method
         let config = Config::load_from_path(&config_path_str).await.unwrap();
@@ -219,7 +222,9 @@ log_file_path = "/custom/log/path"
         let config_content = r#"
 api_domain = "https://api.example.com"
 "#;
-        tokio::fs::write(&config_path, config_content).await.unwrap();
+        tokio::fs::write(&config_path, config_content)
+            .await
+            .unwrap();
 
         // Test loading from a specific path using the actual load_from_path method
         let config = Config::load_from_path(&config_path_str).await.unwrap();
@@ -296,7 +301,10 @@ api_domain = "https://api.example.com"
             api_domain: "https://api.example.com".to_string(),
             log_file_path: Some("/custom/log/path".to_string()),
         };
-        original_config.save_to_path(&config_path_str).await.unwrap();
+        original_config
+            .save_to_path(&config_path_str)
+            .await
+            .unwrap();
         let loaded_config = Config::load_from_path(&config_path_str).await.unwrap();
         assert_eq!(original_config.api_domain, loaded_config.api_domain);
         assert_eq!(original_config.log_file_path, loaded_config.log_file_path);
@@ -320,7 +328,7 @@ api_domain = "https://api.example.com"
         assert!(log_dir_path.ends_with("logs"));
     }
 
-            #[tokio::test]
+    #[tokio::test]
     async fn test_config_display_with_existing_config() {
         // Test the core functionality that display() uses by testing the load() method
         // This avoids modifying the real config file while still testing the same logic
@@ -335,12 +343,18 @@ api_domain = "https://api.example.com"
             api_domain: "https://api.example.com".to_string(),
             log_file_path: Some("/custom/log/path".to_string()),
         };
-        test_config.save_to_path(&temp_config_path_str).await.unwrap();
+        test_config
+            .save_to_path(&temp_config_path_str)
+            .await
+            .unwrap();
 
         // Test that we can load the config (this is what display() does internally)
         let loaded_config = Config::load_from_path(&temp_config_path_str).await.unwrap();
         assert_eq!(loaded_config.api_domain, "https://api.example.com");
-        assert_eq!(loaded_config.log_file_path, Some("/custom/log/path".to_string()));
+        assert_eq!(
+            loaded_config.log_file_path,
+            Some("/custom/log/path".to_string())
+        );
 
         // The temporary directory and file will be automatically cleaned up
         // when temp_dir goes out of scope

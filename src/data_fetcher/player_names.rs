@@ -1,10 +1,12 @@
-/// Player name formatting utilities for consistent handling across the application.
-///
-/// This module provides functions for:
-/// - Building full names from first/last name components
-/// - Formatting full names for teletext display (last name only with proper capitalization)
-/// - Creating fallback names for missing player data
+//! Player name formatting utilities for consistent handling across the application.
+//!
+//! This module provides functions for:
+//! - Building full names from first/last name components
+//! - Formatting full names for teletext display (last name only with proper capitalization)
+//! - Creating fallback names for missing player data
+
 /// Builds a full name from first and last name components.
+///
 /// This is used when processing API responses that provide separate name fields.
 ///
 /// # Arguments
