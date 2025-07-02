@@ -465,6 +465,12 @@ async fn main() -> Result<(), AppError> {
 
     // Handle version flag first
     if args.version {
+        // Set terminal title for version display
+        execute!(
+            stdout(),
+            crossterm::terminal::SetTitle("SM-LIIGA 221")
+        )?;
+
         print_logo();
 
         // Check for updates and show version info
@@ -506,6 +512,12 @@ async fn main() -> Result<(), AppError> {
 
     // Handle configuration operations without version check
     if args.list_config {
+        // Set terminal title for config display
+        execute!(
+            stdout(),
+            crossterm::terminal::SetTitle("SM-LIIGA 221")
+        )?;
+
         print_logo();
         Config::display().await?;
         return Ok(());
@@ -555,6 +567,12 @@ async fn main() -> Result<(), AppError> {
                     true,
                 );
                 error_page.add_error_message(&e.to_string());
+                // Set terminal title for non-interactive mode (error case)
+                execute!(
+                    stdout(),
+                    crossterm::terminal::SetTitle("SM-LIIGA 221")
+                )?;
+
                 error_page.render(&mut stdout())?;
                 println!();
                 return Ok(());
@@ -597,6 +615,12 @@ async fn main() -> Result<(), AppError> {
             }
         };
 
+        // Set terminal title for non-interactive mode
+        execute!(
+            stdout(),
+            crossterm::terminal::SetTitle("SM-LIIGA 221")
+        )?;
+
         page.render(&mut stdout())?;
         println!(); // Add a newline at the end
 
@@ -610,6 +634,13 @@ async fn main() -> Result<(), AppError> {
     // Interactive mode
     enable_raw_mode()?;
     let mut stdout = stdout();
+
+    // Set terminal title/header to show app name
+    execute!(
+        stdout,
+        crossterm::terminal::SetTitle("SM-LIIGA 221")
+    )?;
+
     execute!(stdout, EnterAlternateScreen)?;
 
     // Run the interactive UI
