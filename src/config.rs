@@ -528,8 +528,12 @@ another_extra = 123
 
             // Read back the saved config to verify the domain was processed correctly
             let content = tokio::fs::read_to_string(&config_path).await.unwrap();
-            assert!(content.contains(&format!("api_domain = \"{}\"", expected)),
-                    "Expected '{}' but content was: {}", expected, content);
+            assert!(
+                content.contains(&format!("api_domain = \"{}\"", expected)),
+                "Expected '{}' but content was: {}",
+                expected,
+                content
+            );
         }
     }
 
@@ -538,8 +542,14 @@ another_extra = 123
         let config_path = Config::get_config_path();
 
         // Verify the path structure
-        assert!(config_path.contains("liiga_teletext"), "Config path should contain app name");
-        assert!(config_path.ends_with("config.toml"), "Config path should end with config.toml");
+        assert!(
+            config_path.contains("liiga_teletext"),
+            "Config path should contain app name"
+        );
+        assert!(
+            config_path.ends_with("config.toml"),
+            "Config path should end with config.toml"
+        );
 
         // Verify it's a valid path (doesn't test if it exists, just that it's a valid path format)
         let path = std::path::Path::new(&config_path);
@@ -551,8 +561,14 @@ another_extra = 123
         let log_dir_path = Config::get_log_dir_path();
 
         // Verify the path structure
-        assert!(log_dir_path.contains("liiga_teletext"), "Log dir path should contain app name");
-        assert!(log_dir_path.ends_with("logs"), "Log dir path should end with logs");
+        assert!(
+            log_dir_path.contains("liiga_teletext"),
+            "Log dir path should contain app name"
+        );
+        assert!(
+            log_dir_path.ends_with("logs"),
+            "Log dir path should end with logs"
+        );
 
         // Verify it's a valid path
         let path = std::path::Path::new(&log_dir_path);
@@ -563,7 +579,8 @@ another_extra = 123
     async fn test_config_save_creates_nested_directories() {
         // Test that save_to_path creates nested directories
         let temp_dir = tempdir().unwrap();
-        let nested_path = temp_dir.path()
+        let nested_path = temp_dir
+            .path()
             .join("level1")
             .join("level2")
             .join("level3")

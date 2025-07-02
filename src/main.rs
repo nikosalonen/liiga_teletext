@@ -136,6 +136,7 @@ async fn create_base_page(
     show_footer: bool,
     ignore_height_limit: bool,
     future_games_header: Option<String>,
+    fetched_date: Option<String>,
 ) -> TeletextPage {
     let subheader = get_subheader(games);
     let mut page = TeletextPage::new(
@@ -146,6 +147,11 @@ async fn create_base_page(
         show_footer,
         ignore_height_limit,
     );
+
+    // Set the fetched date if provided
+    if let Some(date) = fetched_date {
+        page.set_fetched_date(date);
+    }
 
     // Add future games header first if provided
     if let Some(header) = future_games_header {
@@ -167,6 +173,7 @@ async fn create_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    fetched_date: Option<String>,
 ) -> TeletextPage {
     create_base_page(
         games,
@@ -174,6 +181,7 @@ async fn create_page(
         show_footer,
         ignore_height_limit,
         None,
+        fetched_date,
     )
     .await
 }
@@ -248,6 +256,7 @@ async fn create_future_games_page(
             show_footer,
             ignore_height_limit,
             future_games_header,
+            None, // No fetched date for future games
         )
         .await;
 
@@ -606,7 +615,16 @@ async fn main() -> Result<(), AppError> {
             .await
             {
                 Some(page) => page,
-                None => create_page(&games, args.disable_links, true, true).await,
+                None => {
+                    create_page(
+                        &games,
+                        args.disable_links,
+                        true,
+                        true,
+                        Some(fetched_date.clone()),
+                    )
+                    .await
+                }
             }
         };
 
@@ -746,7 +764,16 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     .await
                     {
                         Some(page) => page,
-                        None => create_page(&games, args.disable_links, true, false).await,
+                        None => {
+                            create_page(
+                                &games,
+                                args.disable_links,
+                                true,
+                                false,
+                                Some(fetched_date.clone()),
+                            )
+                            .await
+                        }
                     }
                 };
 
