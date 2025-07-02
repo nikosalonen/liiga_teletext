@@ -173,6 +173,7 @@ impl Config {
         })?;
         let mut file = fs::File::create(path).await?;
         file.write_all(content.as_bytes()).await?;
+        file.flush().await?;
         Ok(())
     }
 
@@ -553,14 +554,38 @@ another_extra = 123
                 log_file_path: None,
             };
 
+            // Save the config
             config.save_to_path(&config_path_str).await.unwrap();
+
+            // Verify the file exists and has content
+            assert!(config_path.exists(), "Config file should exist");
+            let metadata = tokio::fs::metadata(&config_path).await.unwrap();
+            assert!(metadata.len() > 0, "Config file should not be empty");
 
             // Read back the saved config to verify the domain was processed correctly
             let content = tokio::fs::read_to_string(&config_path).await.unwrap();
+
+            // Debug: Print the actual content to see what's being written
+            println!("Input: '{}', Expected: '{}', Actual content: '{}'", input, expected, content);
+
             assert!(
-                content.contains("api_domain") && content.contains(expected),
-                "Expected content to contain 'api_domain' and '{}' but content was: {}",
+                !content.is_empty(),
+                "File content should not be empty for input '{}'",
+                input
+            );
+
+            assert!(
+                content.contains("api_domain"),
+                "Content should contain 'api_domain' for input '{}'. Content: '{}'",
+                input,
+                content
+            );
+
+            assert!(
+                content.contains(expected),
+                "Content should contain '{}' for input '{}'. Content: '{}'",
                 expected,
+                input,
                 content
             );
 
@@ -575,14 +600,8 @@ another_extra = 123
         let config_path = Config::get_config_path();
 
         // Verify the path structure
-        assert!(
-            config_path.contains("liiga_teletext"),
-            "Config path should contain app name"
-        );
-        assert!(
-            config_path.ends_with("config.toml"),
-            "Config path should end with config.toml"
-        );
+        assert!(config_path.contains("liiga_teletext"));
+        assert!(config_path.ends_with("config.toml"));
 
         // Verify it's a valid path (doesn't test if it exists, just that it's a valid path format)
         let path = std::path::Path::new(&config_path);
@@ -594,14 +613,8 @@ another_extra = 123
         let log_dir_path = Config::get_log_dir_path();
 
         // Verify the path structure
-        assert!(
-            log_dir_path.contains("liiga_teletext"),
-            "Log dir path should contain app name"
-        );
-        assert!(
-            log_dir_path.ends_with("logs"),
-            "Log dir path should end with logs"
-        );
+        assert!(log_dir_path.contains("liiga_teletext"));
+        assert!(log_dir_path.ends_with("logs"));
 
         // Verify it's a valid path
         let path = std::path::Path::new(&log_dir_path);
