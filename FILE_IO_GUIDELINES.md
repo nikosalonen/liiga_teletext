@@ -80,6 +80,11 @@ async fn bad_example() {
     // This blocks the async runtime
     std::fs::create_dir_all(&dir).unwrap();
 
+    // ✅ If you *must* call a sync API, wrap it:
+    //tokio::task::spawn_blocking(move || std::fs::create_dir_all(&dir))
+    //    .await
+    //    .expect("dir creation failed");
+
     // This is async but inconsistent with above
     let content = tokio::fs::read_to_string(&file).await?;
 }
