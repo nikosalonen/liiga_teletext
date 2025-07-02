@@ -116,15 +116,17 @@ fn get_subheader(games: &[GameData]) -> String {
     if games.is_empty() {
         return "SM-LIIGA".to_string();
     }
-
-    // Use the tournament type from the first game as they should all be from same tournament
-    match games[0].serie.as_str() {
-        "PLAYOFFS" => "PLAYOFFS".to_string(),
-        "PLAYOUT" => "PLAYOUT-OTTELUT".to_string(),
-        "QUALIFICATIONS" => "LIIGAKARSINTA".to_string(),
-        "valmistavat_ottelut" => "HARJOITUSOTTELUT".to_string(),
-        "PRACTICE" => "HARJOITUSOTTELUT".to_string(),
-        _ => "RUNKOSARJA".to_string(),
+    // Priority: PLAYOFFS > PLAYOUT-OTTELUT > LIIGAKARSINTA > HARJOITUSOTTELUT > RUNKOSARJA
+    if games.iter().any(|g| g.serie.eq_ignore_ascii_case("playoffs")) {
+        "PLAYOFFS".to_string()
+    } else if games.iter().any(|g| g.serie.eq_ignore_ascii_case("playout")) {
+        "PLAYOUT-OTTELUT".to_string()
+    } else if games.iter().any(|g| g.serie.eq_ignore_ascii_case("qualifications")) {
+        "LIIGAKARSINTA".to_string()
+    } else if games.iter().any(|g| g.serie.eq_ignore_ascii_case("valmistavat_ottelut") || g.serie.eq_ignore_ascii_case("practice")) {
+        "HARJOITUSOTTELUT".to_string()
+    } else {
+        "RUNKOSARJA".to_string()
     }
 }
 
