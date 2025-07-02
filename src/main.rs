@@ -290,7 +290,12 @@ async fn create_future_games_page(
 async fn check_latest_version() -> Option<String> {
     let crates_io_url = format!("https://crates.io/api/v1/crates/{CRATE_NAME}");
 
-    let client = reqwest::Client::new();
+    // Create a properly configured HTTP client with timeout handling
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10)) // Shorter timeout for update checks
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new()); // Fallback to default client if builder fails
+
     let user_agent = format!("{CRATE_NAME}/{CURRENT_VERSION}");
     let response = match client
         .get(&crates_io_url)

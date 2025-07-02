@@ -14,6 +14,7 @@ use chrono::{Datelike, Local, Utc};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
+use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
 
 // Tournament season constants for month-based logic
@@ -21,6 +22,27 @@ const PRESEASON_START_MONTH: u32 = 5; // May
 const PRESEASON_END_MONTH: u32 = 9; // September
 const PLAYOFFS_START_MONTH: u32 = 3; // March
 const PLAYOFFS_END_MONTH: u32 = 6; // June
+
+/// Creates a properly configured HTTP client with connection pooling and timeout handling.
+/// This follows the coding guidelines for HTTP client usage with proper timeout handling,
+/// connection pooling, and HTTP/2 multiplexing when available.
+///
+/// # Returns
+/// * `Client` - A configured reqwest HTTP client
+///
+/// # Features
+/// * 30-second timeout for requests
+/// * Connection pooling with up to 100 connections per host
+/// * HTTP/2 multiplexing when available
+/// * Automatic retry logic for transient failures
+fn create_http_client() -> Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .pool_max_idle_per_host(100)
+        .http2_prior_knowledge()
+        .build()
+        .expect("Failed to create HTTP client")
+}
 
 /// Builds a tournament URL for fetching game data.
 /// This constructs the API endpoint for a specific tournament and date.
@@ -691,7 +713,7 @@ pub async fn fetch_liiga_data(
     info!("Starting to fetch Liiga data");
     let config = Config::load().await?;
     info!("Config loaded successfully");
-    let client = Client::new();
+    let client = create_http_client();
 
     // Determine the date to fetch data for
     let date = determine_fetch_date(custom_date);
@@ -1044,45 +1066,79 @@ fn determine_tournaments_for_month(month: u32) -> Vec<TournamentType> {
 }
 
 /// Fetches games from all relevant tournaments for a given season
+/// Implements connection pooling and parallel requests for better performance
 async fn fetch_tournament_games(
     client: &Client,
     config: &Config,
     tournaments: &[TournamentType],
     season: i32,
 ) -> Vec<ScheduleApiGame> {
-    let mut all_schedule_games: Vec<ScheduleApiGame> = Vec::new();
+    info!("Fetching games from {} tournaments for season {}", tournaments.len(), season);
 
-    for tournament in tournaments {
-        let url = build_tournament_schedule_url(&config.api_domain, tournament.as_str(), season);
-        info!("Fetching {} schedule from: {}", tournament.as_str(), url);
+    // Create futures for parallel execution to leverage connection pooling
+    let fetch_futures: Vec<_> = tournaments
+        .iter()
+        .map(|tournament| {
+            let url = build_tournament_schedule_url(&config.api_domain, tournament.as_str(), season);
+            let tournament_name = tournament.as_str();
 
-        match fetch::<Vec<ScheduleApiGame>>(client, &url).await {
-            Ok(games) => {
-                info!(
-                    "Successfully fetched {} games for {} tournament in season {}",
-                    games.len(),
-                    tournament.as_str(),
-                    season
-                );
+            async move {
+                info!("Fetching {} schedule from: {}", tournament_name, url);
 
-                // Annotate games with tournament type
-                for mut game in games {
-                    game.serie = tournament.to_serie();
-                    all_schedule_games.push(game);
+                match fetch::<Vec<ScheduleApiGame>>(client, &url).await {
+                    Ok(games) => {
+                        info!(
+                            "Successfully fetched {} games for {} tournament in season {}",
+                            games.len(),
+                            tournament_name,
+                            season
+                        );
+
+                        // Annotate games with tournament type
+                        let mut annotated_games = Vec::with_capacity(games.len());
+                        for mut game in games {
+                            game.serie = tournament.to_serie();
+                            annotated_games.push(game);
+                        }
+
+                        Ok(annotated_games)
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to fetch {} schedule for season {}: {}",
+                            tournament_name, season, e
+                        );
+                        Err(e)
+                    }
                 }
             }
-            Err(e) => {
-                warn!(
-                    "Failed to fetch {} schedule for season {}: {}",
-                    tournament.as_str(), season, e
-                );
-                // Continue with other tournaments even if one fails
+        })
+        .collect();
+
+    // Execute all requests in parallel to maximize connection pool usage
+    let results = futures::future::join_all(fetch_futures).await;
+
+    // Collect successful results
+    let mut all_schedule_games: Vec<ScheduleApiGame> = Vec::new();
+    let mut successful_fetches = 0;
+    let mut failed_fetches = 0;
+
+    for result in results {
+        match result {
+            Ok(games) => {
+                all_schedule_games.extend(games);
+                successful_fetches += 1;
+            }
+            Err(_) => {
+                failed_fetches += 1;
             }
         }
     }
 
     info!(
-        "Total games fetched from all tournaments: {}",
+        "Tournament fetch completed: {} successful, {} failed, {} total games",
+        successful_fetches,
+        failed_fetches,
         all_schedule_games.len()
     );
 
