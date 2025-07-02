@@ -39,7 +39,6 @@ fn create_http_client() -> Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .pool_max_idle_per_host(100)
-        .http2_prior_knowledge()
         .build()
         .expect("Failed to create HTTP client")
 }
@@ -690,7 +689,68 @@ async fn handle_no_games_found(
     info!("No games found for the current date, checking for next game dates");
     let (next_date, next_responses) =
         process_next_game_dates(client, config, tournaments, date, tournament_responses).await?;
-    Ok((next_responses, next_date))
+
+    // If we found games with next_game_date, return them
+    if !next_responses.is_empty() {
+        info!("Found {} responses with next_game_date", next_responses.len());
+        return Ok((next_responses, next_date));
+    }
+
+    // Fallback: try to find future games by checking upcoming dates
+    info!("No next_game_date found, trying fallback mechanism to find future games");
+    let fallback_result = find_future_games_fallback(client, config, tournaments, date).await?;
+
+    if let Some((fallback_responses, fallback_date)) = fallback_result {
+        info!("Found {} responses with fallback mechanism for date {}",
+              fallback_responses.len(), fallback_date);
+        return Ok((fallback_responses, Some(fallback_date)));
+    }
+
+    info!("No future games found with any mechanism");
+    Ok((Vec::new(), next_date))
+}
+
+/// Fallback mechanism to find future games by checking upcoming dates.
+/// This is used when the API doesn't provide next_game_date information.
+async fn find_future_games_fallback(
+    client: &Client,
+    config: &Config,
+    tournaments: &[&str],
+    current_date: &str,
+) -> Result<Option<(Vec<ScheduleResponse>, String)>, AppError> {
+    info!("Starting fallback search for future games from date: {}", current_date);
+
+    // Try the next 7 days to find games
+    let mut check_date = chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d")
+        .map_err(|e| AppError::datetime_parse_error(format!("Failed to parse date '{}': {}", current_date, e)))?;
+
+    for _day_offset in 1..=7 {
+        check_date = check_date.succ_opt()
+            .ok_or_else(|| AppError::datetime_parse_error("Date overflow when calculating next day".to_string()))?;
+
+        let date_str = check_date.format("%Y-%m-%d").to_string();
+        info!("Checking for games on date: {}", date_str);
+
+        // Try to fetch games for this date
+        match fetch_day_data(client, config, tournaments, &date_str).await {
+            Ok((Some(responses), _)) => {
+                if !responses.is_empty() {
+                    info!("Found {} responses with games on date {}", responses.len(), date_str);
+                    return Ok(Some((responses, date_str)));
+                }
+            }
+            Ok((None, _)) => {
+                info!("No games found on date {}", date_str);
+            }
+            Err(e) => {
+                warn!("Error fetching games for date {}: {}", date_str, e);
+                // Continue to next date even if this one fails
+            }
+        }
+    }
+
+    info!("No future games found in the next 7 days");
+    Ok(None)
 }
 
 /// Determines the appropriate date to return based on whether games were found.
