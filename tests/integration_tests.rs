@@ -4,7 +4,6 @@ use liiga_teletext::{
     teletext_ui::{GameResultData, TeletextPage},
 };
 use tempfile::tempdir;
-use tokio::fs;
 
 /// Test goal event data processing
 #[tokio::test]
