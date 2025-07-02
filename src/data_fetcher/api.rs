@@ -9,7 +9,7 @@ use crate::data_fetcher::processors::{
     should_show_todays_games,
 };
 use crate::error::AppError;
-use chrono::{Datelike, Local};
+use chrono::{Datelike, Local, Utc};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
@@ -120,18 +120,23 @@ fn get_team_name(team: &ScheduleTeam) -> &str {
 
 /// Determines the date to fetch data for based on custom date or current time.
 /// Returns today's date if games should be shown today, otherwise yesterday's date.
+/// Uses UTC internally for consistent calculations, formats as local date for display.
 fn determine_fetch_date(custom_date: Option<String>) -> String {
     custom_date.unwrap_or_else(|| {
-        let now = Local::now();
+        // Use UTC for internal calculations to avoid DST issues
+        let now_utc = Utc::now();
+        // Convert to local time for the date decision logic
+        let now_local = now_utc.with_timezone(&Local);
+
         if should_show_todays_games() {
-            let date_str = now.format("%Y-%m-%d").to_string();
+            let date_str = now_local.format("%Y-%m-%d").to_string();
             info!("Using today's date: {}", date_str);
             date_str
         } else {
-            let yesterday = now
+            let yesterday = now_local
                 .date_naive()
                 .pred_opt()
-                .expect("Date underflow cannot happen with Local::now()");
+                .expect("Date underflow cannot happen with valid date");
             let date_str = yesterday.format("%Y-%m-%d").to_string();
             info!("Using yesterday's date: {}", date_str);
             date_str
@@ -148,7 +153,8 @@ fn build_tournament_list(date: &str) -> Vec<&'static str> {
         date_parts[1].parse::<u32>().unwrap_or(0)
     } else {
         // Default to current month if date parsing fails
-        Local::now().month()
+        // Use UTC for consistency, convert to local time for month extraction
+        Utc::now().with_timezone(&Local).month()
     };
 
     let mut tournaments = Vec::new();
