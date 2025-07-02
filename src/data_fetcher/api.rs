@@ -1309,6 +1309,13 @@ async fn fetch_historical_games(
 /// Hockey seasons typically start in September and end in April/May.
 /// So a date in May-July is from the previous season.
 fn is_historical_date(date: &str) -> bool {
+    let now = Utc::now().with_timezone(&Local);
+    is_historical_date_with_current_time(date, now)
+}
+
+/// Internal function that determines if a date is historical given a specific current time.
+/// This allows for testing with mocked current times.
+fn is_historical_date_with_current_time(date: &str, current_time: chrono::DateTime<Local>) -> bool {
     let date_parts: Vec<&str> = date.split('-').collect();
     if date_parts.len() < 2 {
         return false;
@@ -1316,14 +1323,13 @@ fn is_historical_date(date: &str) -> bool {
 
     let date_year = date_parts[0]
         .parse::<i32>()
-        .unwrap_or_else(|_| Utc::now().with_timezone(&Local).year());
+        .unwrap_or_else(|_| current_time.year());
     let date_month = date_parts[1]
         .parse::<u32>()
-        .unwrap_or_else(|_| Utc::now().with_timezone(&Local).month());
+        .unwrap_or_else(|_| current_time.month());
 
-    let now = Utc::now().with_timezone(&Local);
-    let current_year = now.year();
-    let current_month = now.month();
+    let current_year = current_time.year();
+    let current_month = current_time.month();
 
     // Hockey season logic:
     // - Season starts in September (month 9)
@@ -2451,5 +2457,171 @@ mod tests {
         assert_eq!(goal_event.scorer_player_id, 999);
         assert_eq!(goal_event.scorer_name, "Player 999"); // Fallback name
         assert_eq!(goal_event.is_home_team, true);
+    }
+
+        // Tests for is_historical_date function
+    #[test]
+    fn test_is_historical_date_august_transition() {
+        // Mock current date as August 2024
+        let current_time = chrono::DateTime::parse_from_rfc3339("2024-08-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Local);
+
+        // Test August transition scenario: current_month is 8, date_month is between 5-7
+        // These should be historical (from previous season)
+        assert!(is_historical_date_with_current_time("2024-05-15", current_time)); // May 2024 in August 2024
+        assert!(is_historical_date_with_current_time("2024-06-20", current_time)); // June 2024 in August 2024
+        assert!(is_historical_date_with_current_time("2024-07-10", current_time)); // July 2024 in August 2024
+
+        // These should NOT be historical (same season)
+        assert!(!is_historical_date_with_current_time("2024-08-15", current_time)); // August 2024 in August 2024
+        assert!(!is_historical_date_with_current_time("2024-09-01", current_time)); // September 2024 in August 2024
+        assert!(!is_historical_date_with_current_time("2024-12-25", current_time)); // December 2024 in August 2024
+        assert!(!is_historical_date_with_current_time("2024-03-15", current_time)); // March 2024 in August 2024
+    }
+
+            #[test]
+    fn test_is_historical_date_year_boundary() {
+        // Test year boundary cases
+        // Mock current date as January 2023
+        let current_time = chrono::DateTime::parse_from_rfc3339("2023-01-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Local);
+
+        // Date in September 2022 compared to current date in January 2023
+        // This should be historical (previous year)
+        assert!(is_historical_date_with_current_time("2022-09-15", current_time)); // September 2022
+
+        // Date in April 2022 compared to current date in January 2023
+        // This should be historical (previous year)
+        assert!(is_historical_date_with_current_time("2022-04-15", current_time)); // April 2022
+
+        // Date in January 2023 compared to current date in January 2023
+        // This should NOT be historical (current year, same month)
+        assert!(!is_historical_date_with_current_time("2023-01-15", current_time)); // January 2023
+
+        // Date in December 2022 compared to current date in January 2023
+        // This should be historical (previous year)
+        assert!(is_historical_date_with_current_time("2022-12-15", current_time)); // December 2022
+    }
+
+        #[test]
+    fn test_is_historical_date_off_season_months() {
+        // Test off-season months where current_month is between 5-7
+        // and date_month is between 9-4 (regular season months)
+
+        // Mock current date as June 2024 (off-season)
+        let current_time = chrono::DateTime::parse_from_rfc3339("2024-06-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Local);
+
+        // These should be historical (from previous season)
+        assert!(is_historical_date_with_current_time("2023-09-15", current_time)); // September 2023 in June 2024
+        assert!(is_historical_date_with_current_time("2023-10-20", current_time)); // October 2023 in June 2024
+        assert!(is_historical_date_with_current_time("2023-11-10", current_time)); // November 2023 in June 2024
+        assert!(is_historical_date_with_current_time("2023-12-25", current_time)); // December 2023 in June 2024
+        assert!(is_historical_date_with_current_time("2024-01-15", current_time)); // January 2024 in June 2024
+        assert!(is_historical_date_with_current_time("2024-02-20", current_time)); // February 2024 in June 2024
+        assert!(is_historical_date_with_current_time("2024-03-10", current_time)); // March 2024 in June 2024
+        assert!(is_historical_date_with_current_time("2024-04-15", current_time)); // April 2024 in June 2024
+
+        // These should NOT be historical (same off-season)
+        assert!(!is_historical_date_with_current_time("2024-05-15", current_time)); // May 2024 in June 2024
+        assert!(!is_historical_date_with_current_time("2024-06-20", current_time)); // June 2024 in June 2024
+        assert!(!is_historical_date_with_current_time("2024-07-10", current_time)); // July 2024 in June 2024
+    }
+
+            #[test]
+    fn test_is_historical_date_regular_season_months() {
+        // Test regular season months that should return false
+        // during both in-season and off-season periods
+
+        // Mock current date as December 2024 (in-season)
+        let current_time = chrono::DateTime::parse_from_rfc3339("2024-12-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Local);
+
+        // These should NOT be historical (current year)
+        assert!(!is_historical_date_with_current_time("2024-09-15", current_time)); // September 2024 in December 2024
+        assert!(!is_historical_date_with_current_time("2024-10-20", current_time)); // October 2024 in December 2024
+        assert!(!is_historical_date_with_current_time("2024-11-10", current_time)); // November 2024 in December 2024
+        assert!(!is_historical_date_with_current_time("2024-12-25", current_time)); // December 2024 in December 2024
+        assert!(!is_historical_date_with_current_time("2025-01-15", current_time)); // January 2025 in December 2024
+        assert!(!is_historical_date_with_current_time("2025-02-20", current_time)); // February 2025 in December 2024
+        assert!(!is_historical_date_with_current_time("2025-03-10", current_time)); // March 2025 in December 2024
+        assert!(!is_historical_date_with_current_time("2025-04-15", current_time)); // April 2025 in December 2024
+
+        // These should be historical (previous year)
+        assert!(is_historical_date_with_current_time("2023-09-15", current_time)); // September 2023 in December 2024
+        assert!(is_historical_date_with_current_time("2023-12-25", current_time)); // December 2023 in December 2024
+        // Note: January 2024 and April 2024 are NOT historical when current time is December 2024
+        // because they are in the same year and the off-season condition doesn't apply
+        assert!(!is_historical_date_with_current_time("2024-01-15", current_time)); // January 2024 in December 2024
+        assert!(!is_historical_date_with_current_time("2024-04-15", current_time)); // April 2024 in December 2024
+    }
+
+            #[test]
+    fn test_is_historical_date_edge_cases() {
+        // Test edge cases and invalid inputs
+        // Use current time for edge case tests
+        let current_time = Utc::now().with_timezone(&Local);
+
+        // Invalid date format should return false
+        assert!(!is_historical_date_with_current_time("invalid-date", current_time));
+        assert!(!is_historical_date_with_current_time("2024", current_time));
+        assert!(!is_historical_date_with_current_time("", current_time));
+
+        // Same year, different months - these depend on current month
+        // Let's test with a specific current time to avoid flaky tests
+        let specific_current_time = chrono::DateTime::parse_from_rfc3339("2024-08-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Local);
+
+        assert!(!is_historical_date_with_current_time("2024-08-15", specific_current_time)); // August in August (same month)
+        assert!(!is_historical_date_with_current_time("2024-09-01", specific_current_time)); // September in August (next month)
+
+        // Future dates should not be historical
+        assert!(!is_historical_date_with_current_time("2025-01-15", specific_current_time)); // Future year
+        assert!(!is_historical_date_with_current_time("2024-12-31", specific_current_time)); // Future month in same year
+    }
+
+            #[test]
+    fn test_is_historical_date_complex_scenarios() {
+        // Test complex scenarios that might occur in real usage
+
+        // Scenario 1: During playoffs (April 2024), looking at regular season games
+        // Mock current date as April 2024
+        let current_time_april = chrono::DateTime::parse_from_rfc3339("2024-04-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Local);
+
+        // Regular season games from current year should NOT be historical
+        assert!(!is_historical_date_with_current_time("2024-10-15", current_time_april)); // October 2024 in April 2024
+        assert!(!is_historical_date_with_current_time("2024-12-25", current_time_april)); // December 2024 in April 2024
+        assert!(!is_historical_date_with_current_time("2024-02-20", current_time_april)); // February 2024 in April 2024
+
+        // Regular season games from previous year should be historical
+        assert!(is_historical_date_with_current_time("2023-10-15", current_time_april)); // October 2023 in April 2024
+        assert!(is_historical_date_with_current_time("2023-12-25", current_time_april)); // December 2023 in April 2024
+        // Note: January 2024 is NOT historical when current time is April 2024
+        // because they are in the same year and the off-season condition doesn't apply
+        assert!(!is_historical_date_with_current_time("2024-01-20", current_time_april)); // January 2024 in April 2024
+
+        // Scenario 2: During preseason (September 2024), looking at previous season
+        // Mock current date as September 2024
+        let current_time_september = chrono::DateTime::parse_from_rfc3339("2024-09-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Local);
+
+        // Previous year games should be historical
+        assert!(is_historical_date_with_current_time("2023-10-15", current_time_september)); // October 2023 in September 2024
+        // April 2024 is NOT historical in September 2024
+        assert!(!is_historical_date_with_current_time("2024-04-15", current_time_september)); // April 2024 in September 2024
+        // May 2024 is NOT historical in September 2024
+        assert!(!is_historical_date_with_current_time("2024-05-20", current_time_september)); // May 2024 in September 2024
+
+        // Current year games should NOT be historical
+        assert!(!is_historical_date_with_current_time("2024-09-20", current_time_september)); // September 2024 in September 2024
+        assert!(!is_historical_date_with_current_time("2024-10-15", current_time_september)); // October 2024 in September 2024
     }
 }
