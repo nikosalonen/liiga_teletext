@@ -87,6 +87,28 @@ pub fn build_schedule_url(api_domain: &str, season: i32) -> String {
     format!("{api_domain}/schedule?tournament=runkosarja&week=1&season={season}")
 }
 
+/// Builds a schedule URL for a specific tournament type.
+/// This constructs the API endpoint for a specific tournament and season.
+///
+/// # Arguments
+/// * `api_domain` - The base API domain
+/// * `tournament` - The tournament type (runkosarja, playoffs, playout, qualifications, valmistavat_ottelut)
+/// * `season` - The season year
+///
+/// # Returns
+/// * `String` - The complete schedule URL
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::api::build_tournament_schedule_url;
+///
+/// let url = build_tournament_schedule_url("https://api.example.com", "playoffs", 2024);
+/// assert_eq!(url, "https://api.example.com/schedule?tournament=playoffs&week=1&season=2024");
+/// ```
+pub fn build_tournament_schedule_url(api_domain: &str, tournament: &str, season: i32) -> String {
+    format!("{api_domain}/schedule?tournament={tournament}&week=1&season={season}")
+}
+
 /// Creates a tournament key for caching and identification purposes.
 /// This combines tournament name and date into a unique identifier.
 ///
@@ -951,34 +973,77 @@ async fn fetch_historical_games(
     let season = if month >= 9 { year + 1 } else { year };
     info!("Detected season: {} for date: {}", season, date);
 
-    // Fetch the entire season schedule
-    let url = build_schedule_url(&config.api_domain, season);
-    info!("Fetching season schedule from: {}", url);
+    // Determine which tournaments to check based on the month
+    let tournaments_to_check = if (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month) {
+        // Spring months (March-June): check playoffs, playout, qualifications, and runkosarja
+        info!("Spring month {} detected, checking all tournament types", month);
+        vec!["runkosarja", "playoffs", "playout", "qualifications"]
+    } else if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&month) {
+        // Preseason months (May-September): check valmistavat_ottelut and runkosarja
+        info!("Preseason month {} detected, checking valmistavat_ottelut and runkosarja", month);
+        vec!["runkosarja", "valmistavat_ottelut"]
+    } else {
+        // Regular season months: only check runkosarja
+        info!("Regular season month {} detected, checking only runkosarja", month);
+        vec!["runkosarja"]
+    };
 
-    let schedule_games: Vec<ScheduleApiGame> =
+    // Fetch games from all relevant tournaments
+    let mut all_schedule_games: Vec<ScheduleApiGame> = Vec::new();
+
+    for tournament in tournaments_to_check {
+        let url = build_tournament_schedule_url(&config.api_domain, tournament, season);
+        info!("Fetching {} schedule from: {}", tournament, url);
+
         match fetch::<Vec<ScheduleApiGame>>(client, &url).await {
             Ok(games) => {
                 info!(
-                    "Successfully fetched {} games for season {}",
+                    "Successfully fetched {} games for {} tournament in season {}",
                     games.len(),
+                    tournament,
                     season
                 );
-                games
+                // Attach tournament type to each game for correct header logic
+                for mut game in games {
+                    // Overwrite the serie field with the tournament string
+                    game.serie = match tournament {
+                        "playoffs" => 2,
+                        "playout" => 3,
+                        "qualifications" => 4,
+                        "valmistavat_ottelut" => 5,
+                        _ => 1, // runkosarja
+                    };
+                    // Store the tournament type as a string for later mapping
+                    // We'll use this in the ScheduleGame conversion below
+                    // (add a new field if needed, or just use the integer mapping as before)
+                    all_schedule_games.push(game);
+                }
             }
             Err(e) => {
-                error!(
-                    "Failed to fetch season schedule for season {}: {}",
-                    season, e
+                warn!(
+                    "Failed to fetch {} schedule for season {}: {}",
+                    tournament, season, e
                 );
-                return Err(e);
+                // Continue with other tournaments even if one fails
             }
-        };
+        }
+    }
+
+    if all_schedule_games.is_empty() {
+        info!("No games found in any tournament for season {}", season);
+        return Ok(Vec::new());
+    }
+
+    info!(
+        "Total games fetched from all tournaments: {}",
+        all_schedule_games.len()
+    );
 
     // Filter games to match the requested date
     let target_date = date.to_string();
     info!("Filtering games for target date: {}", target_date);
 
-    let matching_games: Vec<ScheduleApiGame> = schedule_games
+    let matching_games: Vec<ScheduleApiGame> = all_schedule_games
         .into_iter()
         .filter(|game| {
             // Extract date part from the game start time (format: YYYY-MM-DDThh:mm:ssZ)
@@ -986,8 +1051,8 @@ async fn fetch_historical_games(
                 let matches = date_part == target_date;
                 if matches {
                     info!(
-                        "Found matching game: {} vs {} on {}",
-                        game.home_team_name, game.away_team_name, date_part
+                        "Found matching game: {} vs {} on {} (tournament: {})",
+                        game.home_team_name, game.away_team_name, date_part, game.serie
                     );
                 }
                 matches
@@ -1012,7 +1077,6 @@ async fn fetch_historical_games(
     let mut schedule_games = Vec::new();
     for api_game in matching_games {
         let start_time = api_game.start.clone();
-
         // Fetch detailed game data to get actual scores
         let detailed_game_data =
             fetch_detailed_game_data_for_historical_game(client, config, season, api_game.id).await;
@@ -1094,12 +1158,11 @@ async fn fetch_historical_games(
             ended: api_game.ended,
             game_time: api_game.game_time.unwrap_or(0),
             serie: match api_game.serie {
-                1 => "runkosarja".to_string(),
                 2 => "playoffs".to_string(),
                 3 => "playout".to_string(),
                 4 => "qualifications".to_string(),
                 5 => "valmistavat_ottelut".to_string(),
-                _ => "unknown".to_string(),
+                _ => "runkosarja".to_string(),
             },
         };
         schedule_games.push(schedule_game);
@@ -1118,18 +1181,51 @@ async fn fetch_historical_games(
 }
 
 /// Determines if a date is from a previous season (not the current season).
+/// Hockey seasons typically start in September and end in April/May.
+/// So a date in May-July is from the previous season.
 fn is_historical_date(date: &str) -> bool {
     let date_parts: Vec<&str> = date.split('-').collect();
-    let date_year = if !date_parts.is_empty() {
-        date_parts[0]
-            .parse::<i32>()
-            .unwrap_or_else(|_| Utc::now().with_timezone(&Local).year())
-    } else {
-        Utc::now().with_timezone(&Local).year()
-    };
+    if date_parts.len() < 2 {
+        return false;
+    }
 
-    let current_year = Utc::now().with_timezone(&Local).year();
-    date_year < current_year
+    let date_year = date_parts[0]
+        .parse::<i32>()
+        .unwrap_or_else(|_| Utc::now().with_timezone(&Local).year());
+    let date_month = date_parts[1]
+        .parse::<u32>()
+        .unwrap_or_else(|_| Utc::now().with_timezone(&Local).month());
+
+    let now = Utc::now().with_timezone(&Local);
+    let current_year = now.year();
+    let current_month = now.month();
+
+    // Hockey season logic:
+    // - Season starts in September (month 9)
+    // - Season ends in April/May (months 4-5)
+    // - So dates in May-July are from the previous season
+
+    if date_year < current_year {
+        // Definitely historical
+        return true;
+    } else if date_year == current_year {
+        // Same year, check if it's in the off-season
+        // If current month is May-July (5-7) and date is also May-July, it's from previous season
+        if current_month >= 5 && current_month <= 7 && date_month >= 5 && date_month <= 7 {
+            return true;
+        }
+        // If current month is August (8) and date is May-July, it's from previous season
+        if current_month == 8 && date_month >= 5 && date_month <= 7 {
+            return true;
+        }
+        // If we're in the off-season (May-July) and the date is from the regular season (September-April),
+        // it's from the previous season
+        if current_month >= 5 && current_month <= 7 && (date_month >= 9 || date_month <= 4) {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Fetches detailed game data for a historical game to get actual scores and goal events.
