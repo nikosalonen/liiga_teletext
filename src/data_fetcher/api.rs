@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{cache_players_with_formatting, get_cached_players};
 use crate::data_fetcher::models::{
-    DetailedGame, DetailedGameResponse, GameData, GoalEvent, GoalEventData, ScheduleApiGame,
+    DetailedGame, DetailedGameResponse, GameData, GoalEvent, GoalEventData, Player, ScheduleApiGame,
     ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
 use crate::data_fetcher::player_names::{build_full_name, format_for_display};
@@ -1241,8 +1241,12 @@ async fn fetch_detailed_game_data_for_historical_game(
                 game_id
             );
 
-            // Process goal events to get scorer information
-            let goal_events = process_goal_events_for_historical_game(&response.game).await;
+            // Process goal events to get scorer information with player lookup
+            let goal_events = process_goal_events_for_historical_game_with_players(
+                &response.game,
+                &response.home_team_players,
+                &response.away_team_players,
+            ).await;
 
             DetailedGameData {
                 home_goals: response.game.home_team.goals,
@@ -1265,7 +1269,74 @@ async fn fetch_detailed_game_data_for_historical_game(
     }
 }
 
+/// Process goal events for historical games to extract scorer information with player lookup
+/// Uses the player data from the detailed game response to resolve actual player names
+async fn process_goal_events_for_historical_game_with_players(
+    game: &DetailedGame,
+    home_team_players: &[Player],
+    away_team_players: &[Player],
+) -> Vec<GoalEventData> {
+    let mut all_goal_events = Vec::new();
+
+    // Create player lookup maps for efficient name resolution
+    let home_player_map: std::collections::HashMap<i64, &Player> = home_team_players
+        .iter()
+        .map(|player| (player.id, player))
+        .collect();
+    let away_player_map: std::collections::HashMap<i64, &Player> = away_team_players
+        .iter()
+        .map(|player| (player.id, player))
+        .collect();
+
+    // Helper function to get player name with fallback
+    let get_player_name = |player_id: i64, player_map: &std::collections::HashMap<i64, &Player>| {
+        player_map
+            .get(&player_id)
+            .map(|player| format!("{} {}", player.first_name, player.last_name))
+            .unwrap_or_else(|| format!("Player {}", player_id))
+    };
+
+    // Process home team goal events
+    for event in &game.home_team.goal_events {
+        let scorer_name = get_player_name(event.scorer_player_id, &home_player_map);
+        let goal_event = GoalEventData {
+            scorer_player_id: event.scorer_player_id,
+            scorer_name,
+            minute: event.game_time / 60, // Convert seconds to minutes
+            home_team_score: event.home_team_score,
+            away_team_score: event.away_team_score,
+            is_winning_goal: event.winning_goal,
+            goal_types: event.goal_types.clone(),
+            is_home_team: true,
+            video_clip_url: event.video_clip_url.clone(),
+        };
+        all_goal_events.push(goal_event);
+    }
+
+    // Process away team goal events
+    for event in &game.away_team.goal_events {
+        let scorer_name = get_player_name(event.scorer_player_id, &away_player_map);
+        let goal_event = GoalEventData {
+            scorer_player_id: event.scorer_player_id,
+            scorer_name,
+            minute: event.game_time / 60, // Convert seconds to minutes
+            home_team_score: event.home_team_score,
+            away_team_score: event.away_team_score,
+            is_winning_goal: event.winning_goal,
+            goal_types: event.goal_types.clone(),
+            is_home_team: false,
+            video_clip_url: event.video_clip_url.clone(),
+        };
+        all_goal_events.push(goal_event);
+    }
+
+    // Sort by game time
+    all_goal_events.sort_by_key(|event| event.minute);
+    all_goal_events
+}
+
 /// Process goal events for historical games to extract scorer information
+/// @deprecated: Use process_goal_events_for_historical_game_with_players instead for better player name resolution
 async fn process_goal_events_for_historical_game(game: &DetailedGame) -> Vec<GoalEventData> {
     let mut all_goal_events = Vec::new();
 
@@ -1273,7 +1344,7 @@ async fn process_goal_events_for_historical_game(game: &DetailedGame) -> Vec<Goa
     for event in &game.home_team.goal_events {
         let goal_event = GoalEventData {
             scorer_player_id: event.scorer_player_id,
-            scorer_name: format!("Player {}", event.scorer_player_id), // Placeholder - would need player lookup
+            scorer_name: format!("Player {}", event.scorer_player_id), // TODO: Replace with proper player lookup
             minute: event.game_time / 60,                              // Convert seconds to minutes
             home_team_score: event.home_team_score,
             away_team_score: event.away_team_score,
@@ -1289,7 +1360,7 @@ async fn process_goal_events_for_historical_game(game: &DetailedGame) -> Vec<Goa
     for event in &game.away_team.goal_events {
         let goal_event = GoalEventData {
             scorer_player_id: event.scorer_player_id,
-            scorer_name: format!("Player {}", event.scorer_player_id), // Placeholder - would need player lookup
+            scorer_name: format!("Player {}", event.scorer_player_id), // TODO: Replace with proper player lookup
             minute: event.game_time / 60,                              // Convert seconds to minutes
             home_team_score: event.home_team_score,
             away_team_score: event.away_team_score,
@@ -2058,5 +2129,211 @@ mod tests {
             serie: "runkosarja".to_string(),
         };
         assert!(!should_fetch_detailed_data(&game));
+    }
+
+    #[tokio::test]
+    async fn test_process_goal_events_for_historical_game_with_players() {
+        use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Player};
+
+        // Create test players
+        let home_players = vec![
+            Player {
+                id: 123,
+                first_name: "John".to_string(),
+                last_name: "Smith".to_string(),
+            },
+            Player {
+                id: 456,
+                first_name: "Mike".to_string(),
+                last_name: "Johnson".to_string(),
+            },
+        ];
+
+        let away_players = vec![
+            Player {
+                id: 789,
+                first_name: "David".to_string(),
+                last_name: "Brown".to_string(),
+            },
+        ];
+
+        // Create test game with goal events
+        let game = DetailedGame {
+            id: 1,
+            season: 2024,
+            start: "2024-01-15T18:30:00Z".to_string(),
+            end: Some("2024-01-15T20:30:00Z".to_string()),
+            home_team: DetailedTeam {
+                team_id: "team1".to_string(),
+                team_name: "HIFK".to_string(),
+                goals: 2,
+                goal_events: vec![
+                    GoalEvent {
+                        scorer_player_id: 123,
+                        log_time: "2024-01-15T19:15:00Z".to_string(),
+                        game_time: 2700,
+                        period: 2,
+                        event_id: 1,
+                        home_team_score: 1,
+                        away_team_score: 0,
+                        winning_goal: false,
+                        goal_types: vec!["even_strength".to_string()],
+                        assistant_player_ids: vec![456],
+                        video_clip_url: Some("https://example.com/video1.mp4".to_string()),
+                    },
+                    GoalEvent {
+                        scorer_player_id: 456,
+                        log_time: "2024-01-15T19:45:00Z".to_string(),
+                        game_time: 3300,
+                        period: 3,
+                        event_id: 2,
+                        home_team_score: 2,
+                        away_team_score: 1,
+                        winning_goal: true,
+                        goal_types: vec!["powerplay".to_string()],
+                        assistant_player_ids: vec![],
+                        video_clip_url: None,
+                    },
+                ],
+                penalty_events: vec![],
+            },
+            away_team: DetailedTeam {
+                team_id: "team2".to_string(),
+                team_name: "Tappara".to_string(),
+                goals: 1,
+                goal_events: vec![
+                    GoalEvent {
+                        scorer_player_id: 789,
+                        log_time: "2024-01-15T19:30:00Z".to_string(),
+                        game_time: 3000,
+                        period: 2,
+                        event_id: 3,
+                        home_team_score: 1,
+                        away_team_score: 1,
+                        winning_goal: false,
+                        goal_types: vec!["even_strength".to_string()],
+                        assistant_player_ids: vec![],
+                        video_clip_url: None,
+                    },
+                ],
+                penalty_events: vec![],
+            },
+            periods: vec![],
+            finished_type: Some("normal".to_string()),
+            started: true,
+            ended: true,
+            game_time: 3600,
+            serie: "runkosarja".to_string(),
+        };
+
+        // Process goal events with player lookup
+        let goal_events = process_goal_events_for_historical_game_with_players(
+            &game,
+            &home_players,
+            &away_players,
+        ).await;
+
+        // Verify results
+        assert_eq!(goal_events.len(), 3);
+
+        // Check home team goals
+        let home_goal_1 = &goal_events[0]; // First goal (earliest time)
+        assert_eq!(home_goal_1.scorer_player_id, 123);
+        assert_eq!(home_goal_1.scorer_name, "John Smith");
+        assert_eq!(home_goal_1.minute, 45); // 2700 seconds / 60
+        assert_eq!(home_goal_1.is_home_team, true);
+        assert_eq!(home_goal_1.is_winning_goal, false);
+
+        let home_goal_2 = &goal_events[2]; // Third goal (latest time)
+        assert_eq!(home_goal_2.scorer_player_id, 456);
+        assert_eq!(home_goal_2.scorer_name, "Mike Johnson");
+        assert_eq!(home_goal_2.minute, 55); // 3300 seconds / 60
+        assert_eq!(home_goal_2.is_home_team, true);
+        assert_eq!(home_goal_2.is_winning_goal, true);
+
+        // Check away team goal
+        let away_goal = &goal_events[1]; // Second goal (middle time)
+        assert_eq!(away_goal.scorer_player_id, 789);
+        assert_eq!(away_goal.scorer_name, "David Brown");
+        assert_eq!(away_goal.minute, 50); // 3000 seconds / 60
+        assert_eq!(away_goal.is_home_team, false);
+        assert_eq!(away_goal.is_winning_goal, false);
+
+        // Verify sorting by game time
+        assert!(goal_events[0].minute <= goal_events[1].minute);
+        assert!(goal_events[1].minute <= goal_events[2].minute);
+    }
+
+    #[tokio::test]
+    async fn test_process_goal_events_with_missing_player() {
+        use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Player};
+
+        // Create test players (missing player ID 999)
+        let home_players = vec![
+            Player {
+                id: 123,
+                first_name: "John".to_string(),
+                last_name: "Smith".to_string(),
+            },
+        ];
+
+        let away_players = vec![];
+
+        // Create test game with goal event for missing player
+        let game = DetailedGame {
+            id: 1,
+            season: 2024,
+            start: "2024-01-15T18:30:00Z".to_string(),
+            end: Some("2024-01-15T20:30:00Z".to_string()),
+            home_team: DetailedTeam {
+                team_id: "team1".to_string(),
+                team_name: "HIFK".to_string(),
+                goals: 1,
+                goal_events: vec![
+                    GoalEvent {
+                        scorer_player_id: 999, // Missing player
+                        log_time: "2024-01-15T19:15:00Z".to_string(),
+                        game_time: 2700,
+                        period: 2,
+                        event_id: 1,
+                        home_team_score: 1,
+                        away_team_score: 0,
+                        winning_goal: false,
+                        goal_types: vec!["even_strength".to_string()],
+                        assistant_player_ids: vec![],
+                        video_clip_url: None,
+                    },
+                ],
+                penalty_events: vec![],
+            },
+            away_team: DetailedTeam {
+                team_id: "team2".to_string(),
+                team_name: "Tappara".to_string(),
+                goals: 0,
+                goal_events: vec![],
+                penalty_events: vec![],
+            },
+            periods: vec![],
+            finished_type: Some("normal".to_string()),
+            started: true,
+            ended: true,
+            game_time: 3600,
+            serie: "runkosarja".to_string(),
+        };
+
+        // Process goal events with player lookup
+        let goal_events = process_goal_events_for_historical_game_with_players(
+            &game,
+            &home_players,
+            &away_players,
+        ).await;
+
+        // Verify results
+        assert_eq!(goal_events.len(), 1);
+
+        let goal_event = &goal_events[0];
+        assert_eq!(goal_event.scorer_player_id, 999);
+        assert_eq!(goal_event.scorer_name, "Player 999"); // Fallback name
+        assert_eq!(goal_event.is_home_team, true);
     }
 }
