@@ -1210,10 +1210,6 @@ fn is_historical_date(date: &str) -> bool {
         return true;
     } else if date_year == current_year {
         // Same year, check if it's in the off-season
-        // If current month is May-July (5-7) and date is also May-July, it's from previous season
-        if current_month >= 5 && current_month <= 7 && date_month >= 5 && date_month <= 7 {
-            return true;
-        }
         // If current month is August (8) and date is May-July, it's from previous season
         if current_month == 8 && date_month >= 5 && date_month <= 7 {
             return true;
