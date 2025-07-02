@@ -9,7 +9,7 @@ use std::collections::HashMap;
 ///
 /// # Arguments
 /// * `game` - A type implementing HasTeams trait containing both home and away team data
-/// * `player_names` - HashMap mapping player IDs to their full names
+/// * `player_names` - HashMap mapping player IDs to their formatted names (e.g., "Koivu" instead of "Mikko Koivu")
 ///
 /// # Returns
 /// * `Vec<GoalEventData>` - A vector of processed goal events in chronological order
@@ -28,8 +28,8 @@ use std::collections::HashMap;
 /// use liiga_teletext::data_fetcher::processors::process_goal_events;
 ///
 /// let mut player_names = HashMap::new();
-/// player_names.insert(123, "Mikko Koivu".to_string());
-/// player_names.insert(456, "Teemu Selänne".to_string());
+/// player_names.insert(123, "Koivu".to_string());
+/// player_names.insert(456, "Selänne".to_string());
 ///
 /// let game = ScheduleGame {
 ///     id: 1,
@@ -69,13 +69,13 @@ where
 ///
 /// This function handles:
 /// - Filtering out cancelled and removed goals
-/// - Formatting player names to show only capitalized last names
+/// - Using pre-formatted player names (cached formatted names)
 /// - Handling missing player names gracefully
 /// - Preserving goal metadata like timing and special types
 ///
 /// # Arguments
 /// * `team` - Team data implementing HasGoalEvents trait
-/// * `player_names` - HashMap mapping player IDs to their full names
+/// * `player_names` - HashMap mapping player IDs to their formatted names (e.g., "Koivu" instead of "Mikko Koivu")
 /// * `is_home_team` - Boolean indicating if this is the home team
 /// * `events` - Mutable vector to append processed goal events to
 ///
@@ -88,7 +88,7 @@ where
 ///
 /// let mut events = Vec::new();
 /// let mut player_names = HashMap::new();
-/// player_names.insert(123, "Mikko Koivu".to_string());
+/// player_names.insert(123, "Koivu".to_string());
 ///
 /// let home_team = ScheduleTeam::default();
 ///
@@ -96,7 +96,7 @@ where
 /// process_team_goals(&home_team, &player_names, true, &mut events);
 ///
 /// // Events will now contain home team goals with:
-/// // - "Koivu" instead of "Mikko Koivu"
+/// // - Pre-formatted player names (e.g., "Koivu")
 /// // - No cancelled goals (RL0, VT0)
 /// // - Proper home/away team attribution
 /// ```
@@ -113,21 +113,7 @@ pub fn process_team_goals(
             scorer_player_id: goal.scorer_player_id,
             scorer_name: player_names
                 .get(&goal.scorer_player_id)
-                .map(|name| {
-                    name.split_whitespace()
-                        .last()
-                        .unwrap_or("")
-                        .chars()
-                        .enumerate()
-                        .map(|(i, c)| {
-                            if i == 0 {
-                                c.to_uppercase().next().unwrap_or(c)
-                            } else {
-                                c.to_lowercase().next().unwrap_or(c)
-                            }
-                        })
-                        .collect::<String>()
-                })
+                .cloned()
                 .unwrap_or_else(|| format!("Pelaaja {}", goal.scorer_player_id)),
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
