@@ -1372,12 +1372,26 @@ async fn fetch_historical_games(
     }
 
     // Convert ScheduleApiGame to ScheduleGame format with detailed data
-    let schedule_games = futures::future::try_join_all(
-        matching_games
-            .into_iter()
-            .map(|api_game| convert_api_game_to_schedule_game(client, config, api_game, season)),
-    )
-    .await?;
+    use futures::future::join_all;
+    let conversion_futures = matching_games
+        .into_iter()
+        .map(|api_game| convert_api_game_to_schedule_game(client, config, api_game, season));
+    let results = join_all(conversion_futures).await;
+
+    let mut schedule_games = Vec::new();
+    let mut failed_games = 0;
+    for result in results {
+        match result {
+            Ok(game) => schedule_games.push(game),
+            Err(e) => {
+                failed_games += 1;
+                warn!("Failed to convert historical game: {}", e);
+            }
+        }
+    }
+    if failed_games > 0 {
+        warn!("{} games failed to convert and were skipped", failed_games);
+    }
 
     // Create a ScheduleResponse with the filtered games
     let schedule_response = ScheduleResponse {
