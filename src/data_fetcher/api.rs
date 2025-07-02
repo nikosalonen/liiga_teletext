@@ -1,8 +1,8 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{cache_players_with_formatting, get_cached_players};
 use crate::data_fetcher::models::{
-    DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player, ScheduleApiGame,
-    ScheduleGame, ScheduleResponse, ScheduleTeam,
+    DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
+    ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
 use crate::data_fetcher::player_names::{build_full_name, format_for_display};
 use crate::data_fetcher::processors::{
@@ -1033,7 +1033,10 @@ fn parse_date_and_season(date: &str) -> (i32, u32, i32) {
     // Ice hockey season: if month >= 9, season = year+1, else season = year
     let season = if month >= 9 { year + 1 } else { year };
 
-    info!("Parsed date: year={}, month={}, season={}", year, month, season);
+    info!(
+        "Parsed date: year={}, month={}, season={}",
+        year, month, season
+    );
     (year, month, season)
 }
 
@@ -1041,7 +1044,10 @@ fn parse_date_and_season(date: &str) -> (i32, u32, i32) {
 fn determine_tournaments_for_month(month: u32) -> Vec<TournamentType> {
     let tournaments = if (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month) {
         // Spring months (March-June): check playoffs, playout, qualifications, and runkosarja
-        info!("Spring month {} detected, checking all tournament types", month);
+        info!(
+            "Spring month {} detected, checking all tournament types",
+            month
+        );
         vec![
             TournamentType::Runkosarja,
             TournamentType::Playoffs,
@@ -1050,18 +1056,27 @@ fn determine_tournaments_for_month(month: u32) -> Vec<TournamentType> {
         ]
     } else if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&month) {
         // Preseason months (May-September): check valmistavat_ottelut and runkosarja
-        info!("Preseason month {} detected, checking valmistavat_ottelut and runkosarja", month);
+        info!(
+            "Preseason month {} detected, checking valmistavat_ottelut and runkosarja",
+            month
+        );
         vec![
             TournamentType::Runkosarja,
             TournamentType::ValmistavatOttelut,
         ]
     } else {
         // Regular season months: only check runkosarja
-        info!("Regular season month {} detected, checking only runkosarja", month);
+        info!(
+            "Regular season month {} detected, checking only runkosarja",
+            month
+        );
         vec![TournamentType::Runkosarja]
     };
 
-    info!("Tournaments to check: {:?}", tournaments.iter().map(|t| t.as_str()).collect::<Vec<_>>());
+    info!(
+        "Tournaments to check: {:?}",
+        tournaments.iter().map(|t| t.as_str()).collect::<Vec<_>>()
+    );
     tournaments
 }
 
@@ -1073,13 +1088,18 @@ async fn fetch_tournament_games(
     tournaments: &[TournamentType],
     season: i32,
 ) -> Vec<ScheduleApiGame> {
-    info!("Fetching games from {} tournaments for season {}", tournaments.len(), season);
+    info!(
+        "Fetching games from {} tournaments for season {}",
+        tournaments.len(),
+        season
+    );
 
     // Create futures for parallel execution to leverage connection pooling
     let fetch_futures: Vec<_> = tournaments
         .iter()
         .map(|tournament| {
-            let url = build_tournament_schedule_url(&config.api_domain, tournament.as_str(), season);
+            let url =
+                build_tournament_schedule_url(&config.api_domain, tournament.as_str(), season);
             let tournament_name = tournament.as_str();
 
             async move {
@@ -1159,7 +1179,10 @@ fn filter_games_by_date(games: Vec<ScheduleApiGame>, target_date: &str) -> Vec<S
                     let tournament = TournamentType::from_serie(game.serie);
                     info!(
                         "Found matching game: {} vs {} on {} (tournament: {})",
-                        game.home_team_name, game.away_team_name, date_part, tournament.as_str()
+                        game.home_team_name,
+                        game.away_team_name,
+                        date_part,
+                        tournament.as_str()
                     );
                 }
                 matches
@@ -1477,7 +1500,8 @@ async fn fetch_detailed_game_data_for_historical_game(
                 &response.game,
                 &response.home_team_players,
                 &response.away_team_players,
-            ).await;
+            )
+            .await;
 
             DetailedGameData {
                 home_goals: response.game.home_team.goals,
@@ -1595,8 +1619,6 @@ async fn process_goal_events_for_historical_game_with_players(
     all_goal_events.sort_by_key(|event| event.minute);
     all_goal_events
 }
-
-
 
 /// Enhanced struct to hold game data including goal events and detailed game information
 struct DetailedGameData {
@@ -2371,13 +2393,11 @@ mod tests {
             },
         ];
 
-        let away_players = vec![
-            Player {
-                id: 789,
-                first_name: "David".to_string(),
-                last_name: "Brown".to_string(),
-            },
-        ];
+        let away_players = vec![Player {
+            id: 789,
+            first_name: "David".to_string(),
+            last_name: "Brown".to_string(),
+        }];
 
         // Create test game with goal events
         let game = DetailedGame {
@@ -2423,21 +2443,19 @@ mod tests {
                 team_id: "team2".to_string(),
                 team_name: "Tappara".to_string(),
                 goals: 1,
-                goal_events: vec![
-                    GoalEvent {
-                        scorer_player_id: 789,
-                        log_time: "2024-01-15T19:30:00Z".to_string(),
-                        game_time: 3000,
-                        period: 2,
-                        event_id: 3,
-                        home_team_score: 1,
-                        away_team_score: 1,
-                        winning_goal: false,
-                        goal_types: vec!["even_strength".to_string()],
-                        assistant_player_ids: vec![],
-                        video_clip_url: None,
-                    },
-                ],
+                goal_events: vec![GoalEvent {
+                    scorer_player_id: 789,
+                    log_time: "2024-01-15T19:30:00Z".to_string(),
+                    game_time: 3000,
+                    period: 2,
+                    event_id: 3,
+                    home_team_score: 1,
+                    away_team_score: 1,
+                    winning_goal: false,
+                    goal_types: vec!["even_strength".to_string()],
+                    assistant_player_ids: vec![],
+                    video_clip_url: None,
+                }],
                 penalty_events: vec![],
             },
             periods: vec![],
@@ -2453,7 +2471,8 @@ mod tests {
             &game,
             &home_players,
             &away_players,
-        ).await;
+        )
+        .await;
 
         // Verify results
         assert_eq!(goal_events.len(), 3);
@@ -2491,13 +2510,11 @@ mod tests {
         use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Player};
 
         // Create test players (missing player ID 999)
-        let home_players = vec![
-            Player {
-                id: 123,
-                first_name: "John".to_string(),
-                last_name: "Smith".to_string(),
-            },
-        ];
+        let home_players = vec![Player {
+            id: 123,
+            first_name: "John".to_string(),
+            last_name: "Smith".to_string(),
+        }];
 
         let away_players = vec![];
 
@@ -2511,21 +2528,19 @@ mod tests {
                 team_id: "team1".to_string(),
                 team_name: "HIFK".to_string(),
                 goals: 1,
-                goal_events: vec![
-                    GoalEvent {
-                        scorer_player_id: 999, // Missing player
-                        log_time: "2024-01-15T19:15:00Z".to_string(),
-                        game_time: 2700,
-                        period: 2,
-                        event_id: 1,
-                        home_team_score: 1,
-                        away_team_score: 0,
-                        winning_goal: false,
-                        goal_types: vec!["even_strength".to_string()],
-                        assistant_player_ids: vec![],
-                        video_clip_url: None,
-                    },
-                ],
+                goal_events: vec![GoalEvent {
+                    scorer_player_id: 999, // Missing player
+                    log_time: "2024-01-15T19:15:00Z".to_string(),
+                    game_time: 2700,
+                    period: 2,
+                    event_id: 1,
+                    home_team_score: 1,
+                    away_team_score: 0,
+                    winning_goal: false,
+                    goal_types: vec!["even_strength".to_string()],
+                    assistant_player_ids: vec![],
+                    video_clip_url: None,
+                }],
                 penalty_events: vec![],
             },
             away_team: DetailedTeam {
@@ -2548,7 +2563,8 @@ mod tests {
             &game,
             &home_players,
             &away_players,
-        ).await;
+        )
+        .await;
 
         // Verify results
         assert_eq!(goal_events.len(), 1);
@@ -2559,7 +2575,7 @@ mod tests {
         assert_eq!(goal_event.is_home_team, true);
     }
 
-        // Tests for is_historical_date function
+    // Tests for is_historical_date function
     #[test]
     fn test_is_historical_date_august_transition() {
         // Mock current date as August 2024
@@ -2569,18 +2585,39 @@ mod tests {
 
         // Test August transition scenario: current_month is 8, date_month is between 5-7
         // These should be historical (from previous season)
-        assert!(is_historical_date_with_current_time("2024-05-15", current_time)); // May 2024 in August 2024
-        assert!(is_historical_date_with_current_time("2024-06-20", current_time)); // June 2024 in August 2024
-        assert!(is_historical_date_with_current_time("2024-07-10", current_time)); // July 2024 in August 2024
+        assert!(is_historical_date_with_current_time(
+            "2024-05-15",
+            current_time
+        )); // May 2024 in August 2024
+        assert!(is_historical_date_with_current_time(
+            "2024-06-20",
+            current_time
+        )); // June 2024 in August 2024
+        assert!(is_historical_date_with_current_time(
+            "2024-07-10",
+            current_time
+        )); // July 2024 in August 2024
 
         // These should NOT be historical (same season)
-        assert!(!is_historical_date_with_current_time("2024-08-15", current_time)); // August 2024 in August 2024
-        assert!(!is_historical_date_with_current_time("2024-09-01", current_time)); // September 2024 in August 2024
-        assert!(!is_historical_date_with_current_time("2024-12-25", current_time)); // December 2024 in August 2024
-        assert!(!is_historical_date_with_current_time("2024-03-15", current_time)); // March 2024 in August 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-08-15",
+            current_time
+        )); // August 2024 in August 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-09-01",
+            current_time
+        )); // September 2024 in August 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-12-25",
+            current_time
+        )); // December 2024 in August 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-03-15",
+            current_time
+        )); // March 2024 in August 2024
     }
 
-            #[test]
+    #[test]
     fn test_is_historical_date_year_boundary() {
         // Test year boundary cases
         // Mock current date as January 2023
@@ -2590,22 +2627,34 @@ mod tests {
 
         // Date in September 2022 compared to current date in January 2023
         // This should be historical (previous year)
-        assert!(is_historical_date_with_current_time("2022-09-15", current_time)); // September 2022
+        assert!(is_historical_date_with_current_time(
+            "2022-09-15",
+            current_time
+        )); // September 2022
 
         // Date in April 2022 compared to current date in January 2023
         // This should be historical (previous year)
-        assert!(is_historical_date_with_current_time("2022-04-15", current_time)); // April 2022
+        assert!(is_historical_date_with_current_time(
+            "2022-04-15",
+            current_time
+        )); // April 2022
 
         // Date in January 2023 compared to current date in January 2023
         // This should NOT be historical (current year, same month)
-        assert!(!is_historical_date_with_current_time("2023-01-15", current_time)); // January 2023
+        assert!(!is_historical_date_with_current_time(
+            "2023-01-15",
+            current_time
+        )); // January 2023
 
         // Date in December 2022 compared to current date in January 2023
         // This should be historical (previous year)
-        assert!(is_historical_date_with_current_time("2022-12-15", current_time)); // December 2022
+        assert!(is_historical_date_with_current_time(
+            "2022-12-15",
+            current_time
+        )); // December 2022
     }
 
-        #[test]
+    #[test]
     fn test_is_historical_date_off_season_months() {
         // Test off-season months where current_month is between 5-7
         // and date_month is between 9-4 (regular season months)
@@ -2616,22 +2665,55 @@ mod tests {
             .with_timezone(&Local);
 
         // These should be historical (from previous season)
-        assert!(is_historical_date_with_current_time("2023-09-15", current_time)); // September 2023 in June 2024
-        assert!(is_historical_date_with_current_time("2023-10-20", current_time)); // October 2023 in June 2024
-        assert!(is_historical_date_with_current_time("2023-11-10", current_time)); // November 2023 in June 2024
-        assert!(is_historical_date_with_current_time("2023-12-25", current_time)); // December 2023 in June 2024
-        assert!(is_historical_date_with_current_time("2024-01-15", current_time)); // January 2024 in June 2024
-        assert!(is_historical_date_with_current_time("2024-02-20", current_time)); // February 2024 in June 2024
-        assert!(is_historical_date_with_current_time("2024-03-10", current_time)); // March 2024 in June 2024
-        assert!(is_historical_date_with_current_time("2024-04-15", current_time)); // April 2024 in June 2024
+        assert!(is_historical_date_with_current_time(
+            "2023-09-15",
+            current_time
+        )); // September 2023 in June 2024
+        assert!(is_historical_date_with_current_time(
+            "2023-10-20",
+            current_time
+        )); // October 2023 in June 2024
+        assert!(is_historical_date_with_current_time(
+            "2023-11-10",
+            current_time
+        )); // November 2023 in June 2024
+        assert!(is_historical_date_with_current_time(
+            "2023-12-25",
+            current_time
+        )); // December 2023 in June 2024
+        assert!(is_historical_date_with_current_time(
+            "2024-01-15",
+            current_time
+        )); // January 2024 in June 2024
+        assert!(is_historical_date_with_current_time(
+            "2024-02-20",
+            current_time
+        )); // February 2024 in June 2024
+        assert!(is_historical_date_with_current_time(
+            "2024-03-10",
+            current_time
+        )); // March 2024 in June 2024
+        assert!(is_historical_date_with_current_time(
+            "2024-04-15",
+            current_time
+        )); // April 2024 in June 2024
 
         // These should NOT be historical (same off-season)
-        assert!(!is_historical_date_with_current_time("2024-05-15", current_time)); // May 2024 in June 2024
-        assert!(!is_historical_date_with_current_time("2024-06-20", current_time)); // June 2024 in June 2024
-        assert!(!is_historical_date_with_current_time("2024-07-10", current_time)); // July 2024 in June 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-05-15",
+            current_time
+        )); // May 2024 in June 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-06-20",
+            current_time
+        )); // June 2024 in June 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-07-10",
+            current_time
+        )); // July 2024 in June 2024
     }
 
-            #[test]
+    #[test]
     fn test_is_historical_date_regular_season_months() {
         // Test regular season months that should return false
         // during both in-season and off-season periods
@@ -2642,32 +2724,71 @@ mod tests {
             .with_timezone(&Local);
 
         // These should NOT be historical (current year)
-        assert!(!is_historical_date_with_current_time("2024-09-15", current_time)); // September 2024 in December 2024
-        assert!(!is_historical_date_with_current_time("2024-10-20", current_time)); // October 2024 in December 2024
-        assert!(!is_historical_date_with_current_time("2024-11-10", current_time)); // November 2024 in December 2024
-        assert!(!is_historical_date_with_current_time("2024-12-25", current_time)); // December 2024 in December 2024
-        assert!(!is_historical_date_with_current_time("2025-01-15", current_time)); // January 2025 in December 2024
-        assert!(!is_historical_date_with_current_time("2025-02-20", current_time)); // February 2025 in December 2024
-        assert!(!is_historical_date_with_current_time("2025-03-10", current_time)); // March 2025 in December 2024
-        assert!(!is_historical_date_with_current_time("2025-04-15", current_time)); // April 2025 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-09-15",
+            current_time
+        )); // September 2024 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-10-20",
+            current_time
+        )); // October 2024 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-11-10",
+            current_time
+        )); // November 2024 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-12-25",
+            current_time
+        )); // December 2024 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2025-01-15",
+            current_time
+        )); // January 2025 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2025-02-20",
+            current_time
+        )); // February 2025 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2025-03-10",
+            current_time
+        )); // March 2025 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2025-04-15",
+            current_time
+        )); // April 2025 in December 2024
 
         // These should be historical (previous year)
-        assert!(is_historical_date_with_current_time("2023-09-15", current_time)); // September 2023 in December 2024
-        assert!(is_historical_date_with_current_time("2023-12-25", current_time)); // December 2023 in December 2024
+        assert!(is_historical_date_with_current_time(
+            "2023-09-15",
+            current_time
+        )); // September 2023 in December 2024
+        assert!(is_historical_date_with_current_time(
+            "2023-12-25",
+            current_time
+        )); // December 2023 in December 2024
         // Note: January 2024 and April 2024 are NOT historical when current time is December 2024
         // because they are in the same year and the off-season condition doesn't apply
-        assert!(!is_historical_date_with_current_time("2024-01-15", current_time)); // January 2024 in December 2024
-        assert!(!is_historical_date_with_current_time("2024-04-15", current_time)); // April 2024 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-01-15",
+            current_time
+        )); // January 2024 in December 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-04-15",
+            current_time
+        )); // April 2024 in December 2024
     }
 
-            #[test]
+    #[test]
     fn test_is_historical_date_edge_cases() {
         // Test edge cases and invalid inputs
         // Use current time for edge case tests
         let current_time = Utc::now().with_timezone(&Local);
 
         // Invalid date format should return false
-        assert!(!is_historical_date_with_current_time("invalid-date", current_time));
+        assert!(!is_historical_date_with_current_time(
+            "invalid-date",
+            current_time
+        ));
         assert!(!is_historical_date_with_current_time("2024", current_time));
         assert!(!is_historical_date_with_current_time("", current_time));
 
@@ -2677,15 +2798,27 @@ mod tests {
             .unwrap()
             .with_timezone(&Local);
 
-        assert!(!is_historical_date_with_current_time("2024-08-15", specific_current_time)); // August in August (same month)
-        assert!(!is_historical_date_with_current_time("2024-09-01", specific_current_time)); // September in August (next month)
+        assert!(!is_historical_date_with_current_time(
+            "2024-08-15",
+            specific_current_time
+        )); // August in August (same month)
+        assert!(!is_historical_date_with_current_time(
+            "2024-09-01",
+            specific_current_time
+        )); // September in August (next month)
 
         // Future dates should not be historical
-        assert!(!is_historical_date_with_current_time("2025-01-15", specific_current_time)); // Future year
-        assert!(!is_historical_date_with_current_time("2024-12-31", specific_current_time)); // Future month in same year
+        assert!(!is_historical_date_with_current_time(
+            "2025-01-15",
+            specific_current_time
+        )); // Future year
+        assert!(!is_historical_date_with_current_time(
+            "2024-12-31",
+            specific_current_time
+        )); // Future month in same year
     }
 
-            #[test]
+    #[test]
     fn test_is_historical_date_complex_scenarios() {
         // Test complex scenarios that might occur in real usage
 
@@ -2696,16 +2829,34 @@ mod tests {
             .with_timezone(&Local);
 
         // Regular season games from current year should NOT be historical
-        assert!(!is_historical_date_with_current_time("2024-10-15", current_time_april)); // October 2024 in April 2024
-        assert!(!is_historical_date_with_current_time("2024-12-25", current_time_april)); // December 2024 in April 2024
-        assert!(!is_historical_date_with_current_time("2024-02-20", current_time_april)); // February 2024 in April 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-10-15",
+            current_time_april
+        )); // October 2024 in April 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-12-25",
+            current_time_april
+        )); // December 2024 in April 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-02-20",
+            current_time_april
+        )); // February 2024 in April 2024
 
         // Regular season games from previous year should be historical
-        assert!(is_historical_date_with_current_time("2023-10-15", current_time_april)); // October 2023 in April 2024
-        assert!(is_historical_date_with_current_time("2023-12-25", current_time_april)); // December 2023 in April 2024
+        assert!(is_historical_date_with_current_time(
+            "2023-10-15",
+            current_time_april
+        )); // October 2023 in April 2024
+        assert!(is_historical_date_with_current_time(
+            "2023-12-25",
+            current_time_april
+        )); // December 2023 in April 2024
         // Note: January 2024 is NOT historical when current time is April 2024
         // because they are in the same year and the off-season condition doesn't apply
-        assert!(!is_historical_date_with_current_time("2024-01-20", current_time_april)); // January 2024 in April 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-01-20",
+            current_time_april
+        )); // January 2024 in April 2024
 
         // Scenario 2: During preseason (September 2024), looking at previous season
         // Mock current date as September 2024
@@ -2714,14 +2865,29 @@ mod tests {
             .with_timezone(&Local);
 
         // Previous year games should be historical
-        assert!(is_historical_date_with_current_time("2023-10-15", current_time_september)); // October 2023 in September 2024
+        assert!(is_historical_date_with_current_time(
+            "2023-10-15",
+            current_time_september
+        )); // October 2023 in September 2024
         // April 2024 is NOT historical in September 2024
-        assert!(!is_historical_date_with_current_time("2024-04-15", current_time_september)); // April 2024 in September 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-04-15",
+            current_time_september
+        )); // April 2024 in September 2024
         // May 2024 is NOT historical in September 2024
-        assert!(!is_historical_date_with_current_time("2024-05-20", current_time_september)); // May 2024 in September 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-05-20",
+            current_time_september
+        )); // May 2024 in September 2024
 
         // Current year games should NOT be historical
-        assert!(!is_historical_date_with_current_time("2024-09-20", current_time_september)); // September 2024 in September 2024
-        assert!(!is_historical_date_with_current_time("2024-10-15", current_time_september)); // October 2024 in September 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-09-20",
+            current_time_september
+        )); // September 2024 in September 2024
+        assert!(!is_historical_date_with_current_time(
+            "2024-10-15",
+            current_time_september
+        )); // October 2024 in September 2024
     }
 }
