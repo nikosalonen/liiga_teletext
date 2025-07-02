@@ -781,7 +781,7 @@ mod tests {
         };
         assert_eq!(single_type.get_goal_type_display(), "YV");
 
-        // Test multiple goal types
+        // Test multiple goal types (only YV, IM, VT are displayed)
         let multiple_types = GoalEventData {
             scorer_player_id: 123,
             scorer_name: "Player".to_string(),
@@ -789,11 +789,11 @@ mod tests {
             home_team_score: 1,
             away_team_score: 0,
             is_winning_goal: false,
-            goal_types: vec!["YV".to_string(), "MV".to_string(), "RV".to_string()],
+            goal_types: vec!["YV".to_string(), "IM".to_string(), "VT".to_string()],
             is_home_team: true,
             video_clip_url: None,
         };
-        assert_eq!(multiple_types.get_goal_type_display(), "YV");
+        assert_eq!(multiple_types.get_goal_type_display(), "YV IM VT");
 
         // Test empty goal types
         let no_types = GoalEventData {
