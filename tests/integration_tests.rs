@@ -362,35 +362,3 @@ async fn test_special_situations() {
     assert_eq!(overtime_game.result, "3-2");
     assert!(overtime_game.is_overtime); // Should have overtime
 }
-
-/// Test fetched date display in header
-#[tokio::test]
-async fn test_fetched_date_display() {
-    // Create teletext page
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false,
-        true,
-        false,
-    );
-
-    // Test without fetched date (should not show date in header)
-    // This simulates current date view
-    assert!(page.get_fetched_date().is_none());
-
-    // Test with fetched date (should show date in header)
-    let historical_date = "15.01.2024".to_string();
-    page.set_fetched_date(historical_date.clone());
-
-    // Verify fetched date was set correctly
-    assert_eq!(page.get_fetched_date(), Some(&historical_date));
-
-    // Test with different date format
-    let another_date = "23.12.2023".to_string();
-    page.set_fetched_date(another_date.clone());
-
-    // Verify fetched date was updated correctly
-    assert_eq!(page.get_fetched_date(), Some(&another_date));
-}

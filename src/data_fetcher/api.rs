@@ -692,7 +692,10 @@ async fn handle_no_games_found(
 
     // If we found games with next_game_date, return them
     if !next_responses.is_empty() {
-        info!("Found {} responses with next_game_date", next_responses.len());
+        info!(
+            "Found {} responses with next_game_date",
+            next_responses.len()
+        );
         return Ok((next_responses, next_date));
     }
 
@@ -701,8 +704,11 @@ async fn handle_no_games_found(
     let fallback_result = find_future_games_fallback(client, config, tournaments, date).await?;
 
     if let Some((fallback_responses, fallback_date)) = fallback_result {
-        info!("Found {} responses with fallback mechanism for date {}",
-              fallback_responses.len(), fallback_date);
+        info!(
+            "Found {} responses with fallback mechanism for date {}",
+            fallback_responses.len(),
+            fallback_date
+        );
         return Ok((fallback_responses, Some(fallback_date)));
     }
 
@@ -718,14 +724,19 @@ async fn find_future_games_fallback(
     tournaments: &[&str],
     current_date: &str,
 ) -> Result<Option<(Vec<ScheduleResponse>, String)>, AppError> {
-    info!("Starting fallback search for future games from date: {}", current_date);
+    info!(
+        "Starting fallback search for future games from date: {}",
+        current_date
+    );
 
     // Try the next 7 days to find games
     let mut check_date = match chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d") {
         Ok(date) => date,
         Err(e) => {
             error!("Failed to parse date '{}': {}", current_date, e);
-            return Err(AppError::datetime_parse_error(format!("Failed to parse date '{}': {}", current_date, e)));
+            return Err(AppError::datetime_parse_error(format!(
+                "Failed to parse date '{current_date}': {e}"
+            )));
         }
     };
 
@@ -733,8 +744,13 @@ async fn find_future_games_fallback(
         check_date = match check_date.succ_opt() {
             Some(date) => date,
             None => {
-                error!("Date overflow when calculating next day from {}", current_date);
-                return Err(AppError::datetime_parse_error("Date overflow when calculating next day".to_string()));
+                error!(
+                    "Date overflow when calculating next day from {}",
+                    current_date
+                );
+                return Err(AppError::datetime_parse_error(
+                    "Date overflow when calculating next day".to_string(),
+                ));
             }
         };
 
@@ -745,7 +761,11 @@ async fn find_future_games_fallback(
         match fetch_day_data(client, config, tournaments, &date_str).await {
             Ok((Some(responses), _)) => {
                 if !responses.is_empty() {
-                    info!("Found {} responses with games on date {}", responses.len(), date_str);
+                    info!(
+                        "Found {} responses with games on date {}",
+                        responses.len(),
+                        date_str
+                    );
                     return Ok(Some((responses, date_str)));
                 }
             }
@@ -1535,12 +1555,12 @@ fn is_historical_date_with_current_time(date: &str, current_time: chrono::DateTi
     } else if date_year == current_year {
         // Same year, check if it's in the off-season
         // If current month is August (8) and date is May-July, it's from previous season
-        if current_month == 8 && date_month >= 5 && date_month <= 7 {
+        if current_month == 8 && (5..=7).contains(&date_month) {
             return true;
         }
         // If we're in the off-season (May-July) and the date is from the regular season (September-April),
         // it's from the previous season
-        if current_month >= 5 && current_month <= 7 && (date_month >= 9 || date_month <= 4) {
+        if (5..=7).contains(&current_month) && (date_month >= 9 || date_month <= 4) {
             return true;
         }
     }
@@ -1648,7 +1668,7 @@ async fn process_goal_events_for_historical_game_with_players(
         player_map
             .get(&player_id)
             .map(|player| format!("{} {}", player.first_name, player.last_name))
-            .unwrap_or_else(|| format!("Player {}", player_id))
+            .unwrap_or_else(|| format!("Player {player_id}"))
     };
 
     // Process home team goal events
@@ -2552,23 +2572,23 @@ mod tests {
         assert_eq!(home_goal_1.scorer_player_id, 123);
         assert_eq!(home_goal_1.scorer_name, "John Smith");
         assert_eq!(home_goal_1.minute, 45); // 2700 seconds / 60
-        assert_eq!(home_goal_1.is_home_team, true);
-        assert_eq!(home_goal_1.is_winning_goal, false);
+        assert!(home_goal_1.is_home_team);
+        assert!(!home_goal_1.is_winning_goal);
 
         let home_goal_2 = &goal_events[2]; // Third goal (latest time)
         assert_eq!(home_goal_2.scorer_player_id, 456);
         assert_eq!(home_goal_2.scorer_name, "Mike Johnson");
         assert_eq!(home_goal_2.minute, 55); // 3300 seconds / 60
-        assert_eq!(home_goal_2.is_home_team, true);
-        assert_eq!(home_goal_2.is_winning_goal, true);
+        assert!(home_goal_2.is_home_team);
+        assert!(home_goal_2.is_winning_goal);
 
         // Check away team goal
         let away_goal = &goal_events[1]; // Second goal (middle time)
         assert_eq!(away_goal.scorer_player_id, 789);
         assert_eq!(away_goal.scorer_name, "David Brown");
         assert_eq!(away_goal.minute, 50); // 3000 seconds / 60
-        assert_eq!(away_goal.is_home_team, false);
-        assert_eq!(away_goal.is_winning_goal, false);
+        assert!(!away_goal.is_home_team);
+        assert!(!away_goal.is_winning_goal);
 
         // Verify sorting by game time
         assert!(goal_events[0].minute <= goal_events[1].minute);
@@ -2642,7 +2662,7 @@ mod tests {
         let goal_event = &goal_events[0];
         assert_eq!(goal_event.scorer_player_id, 999);
         assert_eq!(goal_event.scorer_name, "Player 999"); // Fallback name
-        assert_eq!(goal_event.is_home_team, true);
+        assert!(goal_event.is_home_team);
     }
 
     // Tests for is_historical_date function
@@ -2980,12 +3000,8 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        let result = find_future_games_fallback(
-            &client,
-            &test_config,
-            &["runkosarja"],
-            "2024-01-14"
-        ).await;
+        let result =
+            find_future_games_fallback(&client, &test_config, &["runkosarja"], "2024-01-14").await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -3014,12 +3030,8 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        let result = find_future_games_fallback(
-            &client,
-            &test_config,
-            &["runkosarja"],
-            "2024-01-14"
-        ).await;
+        let result =
+            find_future_games_fallback(&client, &test_config, &["runkosarja"], "2024-01-14").await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -3031,12 +3043,8 @@ mod tests {
         let config = create_mock_config();
         let client = Client::new();
 
-        let result = find_future_games_fallback(
-            &client,
-            &config,
-            &["runkosarja"],
-            "invalid-date"
-        ).await;
+        let result =
+            find_future_games_fallback(&client, &config, &["runkosarja"], "invalid-date").await;
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), AppError::DateTimeParse(_)));

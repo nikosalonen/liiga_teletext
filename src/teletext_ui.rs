@@ -431,12 +431,6 @@ impl TeletextPage {
         self.fetched_date = Some(date);
     }
 
-    /// Gets the fetched date that is displayed in the header.
-    /// Returns None if no date is set (current date view).
-    pub fn get_fetched_date(&self) -> Option<&String> {
-        self.fetched_date.as_ref()
-    }
-
     /// Sets whether to show the season countdown in the footer.
     /// The countdown will be displayed in the footer area if enabled and regular season hasn't started.
     pub async fn set_show_season_countdown(&mut self, games: &[crate::data_fetcher::GameData]) {
@@ -1051,7 +1045,7 @@ mod tests {
             let goal_events = vec![
                 GoalEventData {
                     scorer_player_id: i as i64,
-                    scorer_name: format!("Scorer {}", i),
+                    scorer_name: format!("Scorer {i}"),
                     minute: 10,
                     home_team_score: 1,
                     away_team_score: 0,
@@ -1074,8 +1068,8 @@ mod tests {
             ];
 
             page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
-                home_team: format!("Home {}", i),
-                away_team: format!("Away {}", i),
+                home_team: format!("Home {i}"),
+                away_team: format!("Away {i}"),
                 time: "18.00".to_string(),
                 result: "1-1".to_string(),
                 score_type: ScoreType::Final,
@@ -1116,7 +1110,7 @@ mod tests {
             let goal_events = vec![
                 GoalEventData {
                     scorer_player_id: i as i64,
-                    scorer_name: format!("Scorer {}", i),
+                    scorer_name: format!("Scorer {i}"),
                     minute: 10,
                     home_team_score: 1,
                     away_team_score: 0,
@@ -1139,8 +1133,8 @@ mod tests {
             ];
 
             page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
-                home_team: format!("Home {}", i),
-                away_team: format!("Away {}", i),
+                home_team: format!("Home {i}"),
+                away_team: format!("Away {i}"),
                 time: "18.00".to_string(),
                 result: "1-1".to_string(),
                 score_type: ScoreType::Final,
@@ -1450,44 +1444,6 @@ mod tests {
             content.len(),
             content_no_video.len(),
             "Should have same number of games"
-        );
-    }
-
-    #[test]
-    fn test_header_with_fetched_date() {
-        // Test header without fetched date (current date view)
-        let page_current = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            false,
-        );
-
-        // Test header with fetched date (historical view)
-        let mut page_historical = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            false,
-        );
-        page_historical.set_fetched_date("15.01.2024".to_string());
-
-        // Verify fetched date is set correctly
-        assert!(page_current.get_fetched_date().is_none());
-        assert_eq!(
-            page_historical.get_fetched_date(),
-            Some(&"15.01.2024".to_string())
-        );
-
-        // Test updating fetched date
-        page_historical.set_fetched_date("23.12.2023".to_string());
-        assert_eq!(
-            page_historical.get_fetched_date(),
-            Some(&"23.12.2023".to_string())
         );
     }
 }

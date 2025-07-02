@@ -249,18 +249,19 @@ api_domain = "https://api.example.com"
         // More robust assertions that handle potential formatting differences
         assert!(
             content.contains("api_domain") && content.contains("https://api.example.com"),
-            "Content should contain api_domain and https://api.example.com. Content: {}",
-            content
+            "Content should contain api_domain and https://api.example.com. Content: {content}"
         );
         assert!(
             content.contains("log_file_path") && content.contains("/custom/log/path"),
-            "Content should contain log_file_path and /custom/log/path. Content: {}",
-            content
+            "Content should contain log_file_path and /custom/log/path. Content: {content}"
         );
         // Also test that the loaded config has the correct values
         let loaded_config = Config::load_from_path(&config_path_str).await.unwrap();
         assert_eq!(loaded_config.api_domain, "https://api.example.com");
-        assert_eq!(loaded_config.log_file_path, Some("/custom/log/path".to_string()));
+        assert_eq!(
+            loaded_config.log_file_path,
+            Some("/custom/log/path".to_string())
+        );
     }
 
     #[tokio::test]
@@ -277,8 +278,7 @@ api_domain = "https://api.example.com"
         // More robust assertion that handles potential formatting differences
         assert!(
             content.contains("api_domain") && content.contains("https://api.example.com"),
-            "Content should contain api_domain and https://api.example.com. Content: {}",
-            content
+            "Content should contain api_domain and https://api.example.com. Content: {content}"
         );
         // Also test that the loaded config has the correct domain
         let loaded_config = Config::load_from_path(&config_path_str).await.unwrap();
@@ -299,8 +299,7 @@ api_domain = "https://api.example.com"
         // More robust assertion that handles potential formatting differences
         assert!(
             content.contains("api_domain") && content.contains("https://api.example.com"),
-            "Content should contain api_domain and https://api.example.com. Content: {}",
-            content
+            "Content should contain api_domain and https://api.example.com. Content: {content}"
         );
         // Also test that the loaded config has the correct domain
         let loaded_config = Config::load_from_path(&config_path_str).await.unwrap();
@@ -566,27 +565,21 @@ another_extra = 123
             let content = tokio::fs::read_to_string(&config_path).await.unwrap();
 
             // Debug: Print the actual content to see what's being written
-            println!("Input: '{}', Expected: '{}', Actual content: '{}'", input, expected, content);
+            println!("Input: '{input}', Expected: '{expected}', Actual content: '{content}'");
 
             assert!(
                 !content.is_empty(),
-                "File content should not be empty for input '{}'",
-                input
+                "File content should not be empty for input '{input}'"
             );
 
             assert!(
                 content.contains("api_domain"),
-                "Content should contain 'api_domain' for input '{}'. Content: '{}'",
-                input,
-                content
+                "Content should contain 'api_domain' for input '{input}'. Content: '{content}'"
             );
 
             assert!(
                 content.contains(expected),
-                "Content should contain '{}' for input '{}'. Content: '{}'",
-                expected,
-                input,
-                content
+                "Content should contain '{expected}' for input '{input}'. Content: '{content}'"
             );
 
             // Also test that the loaded config has the correct domain
@@ -648,8 +641,7 @@ another_extra = 123
         let content = tokio::fs::read_to_string(&nested_path).await.unwrap();
         assert!(
             content.contains("api_domain") && content.contains("https://api.example.com"),
-            "Content should contain api_domain and https://api.example.com. Content: {}",
-            content
+            "Content should contain api_domain and https://api.example.com. Content: {content}"
         );
 
         // Also test that the loaded config has the correct domain
@@ -716,6 +708,4 @@ another_extra = 123
         assert!(!toml_none.contains("log_file_path"));
         assert!(toml_some.contains("log_file_path"));
     }
-
-
 }
