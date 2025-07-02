@@ -245,8 +245,21 @@ api_domain = "https://api.example.com"
         config.save_to_path(&config_path_str).await.unwrap();
         assert!(config_path.exists());
         let content = tokio::fs::read_to_string(&config_path).await.unwrap();
-        assert!(content.contains("api_domain = \"https://api.example.com\""));
-        assert!(content.contains("log_file_path = \"/custom/log/path\""));
+        // More robust assertions that handle potential formatting differences
+        assert!(
+            content.contains("api_domain") && content.contains("https://api.example.com"),
+            "Content should contain api_domain and https://api.example.com. Content: {}",
+            content
+        );
+        assert!(
+            content.contains("log_file_path") && content.contains("/custom/log/path"),
+            "Content should contain log_file_path and /custom/log/path. Content: {}",
+            content
+        );
+        // Also test that the loaded config has the correct values
+        let loaded_config = Config::load_from_path(&config_path_str).await.unwrap();
+        assert_eq!(loaded_config.api_domain, "https://api.example.com");
+        assert_eq!(loaded_config.log_file_path, Some("/custom/log/path".to_string()));
     }
 
     #[tokio::test]
@@ -260,7 +273,15 @@ api_domain = "https://api.example.com"
         };
         config.save_to_path(&config_path_str).await.unwrap();
         let content = tokio::fs::read_to_string(&config_path).await.unwrap();
-        assert!(content.contains("api_domain = \"https://api.example.com\""));
+        // More robust assertion that handles potential formatting differences
+        assert!(
+            content.contains("api_domain") && content.contains("https://api.example.com"),
+            "Content should contain api_domain and https://api.example.com. Content: {}",
+            content
+        );
+        // Also test that the loaded config has the correct domain
+        let loaded_config = Config::load_from_path(&config_path_str).await.unwrap();
+        assert_eq!(loaded_config.api_domain, "https://api.example.com");
     }
 
     #[tokio::test]
@@ -274,7 +295,15 @@ api_domain = "https://api.example.com"
         };
         config.save_to_path(&config_path_str).await.unwrap();
         let content = tokio::fs::read_to_string(&config_path).await.unwrap();
-        assert!(content.contains("api_domain = \"https://api.example.com\""));
+        // More robust assertion that handles potential formatting differences
+        assert!(
+            content.contains("api_domain") && content.contains("https://api.example.com"),
+            "Content should contain api_domain and https://api.example.com. Content: {}",
+            content
+        );
+        // Also test that the loaded config has the correct domain
+        let loaded_config = Config::load_from_path(&config_path_str).await.unwrap();
+        assert_eq!(loaded_config.api_domain, "https://api.example.com");
     }
 
     #[tokio::test]
@@ -529,11 +558,15 @@ another_extra = 123
             // Read back the saved config to verify the domain was processed correctly
             let content = tokio::fs::read_to_string(&config_path).await.unwrap();
             assert!(
-                content.contains(&format!("api_domain = \"{}\"", expected)),
-                "Expected '{}' but content was: {}",
+                content.contains("api_domain") && content.contains(expected),
+                "Expected content to contain 'api_domain' and '{}' but content was: {}",
                 expected,
                 content
             );
+
+            // Also test that the loaded config has the correct domain
+            let loaded_config = Config::load_from_path(&config_path_str).await.unwrap();
+            assert_eq!(loaded_config.api_domain, expected);
         }
     }
 
@@ -598,9 +631,17 @@ another_extra = 123
         // Verify the file was created
         assert!(nested_path.exists());
 
-        // Verify the content is correct
+        // Verify the content is correct with more robust assertion
         let content = tokio::fs::read_to_string(&nested_path).await.unwrap();
-        assert!(content.contains("api_domain = \"https://api.example.com\""));
+        assert!(
+            content.contains("api_domain") && content.contains("https://api.example.com"),
+            "Content should contain api_domain and https://api.example.com. Content: {}",
+            content
+        );
+
+        // Also test that the loaded config has the correct domain
+        let loaded_config = Config::load_from_path(&nested_path_str).await.unwrap();
+        assert_eq!(loaded_config.api_domain, "https://api.example.com");
     }
 
     #[tokio::test]
@@ -662,4 +703,6 @@ another_extra = 123
         assert!(!toml_none.contains("log_file_path"));
         assert!(toml_some.contains("log_file_path"));
     }
+
+
 }
