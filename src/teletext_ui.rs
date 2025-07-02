@@ -53,6 +53,7 @@ const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 
 /// Calculates the number of days until the regular season starts.
 /// Returns None if the regular season has already started or if we can't determine the start date.
+/// Uses UTC internally for consistent calculations across timezone changes.
 async fn calculate_days_until_regular_season() -> Option<i64> {
     // Try to fetch the actual season start date from the API
     let config = match Config::load().await {
@@ -64,7 +65,8 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
     };
 
     let client = Client::new();
-    let current_year = Local::now().year();
+    // Use UTC for consistent year calculation, convert to local for display logic
+    let current_year = Utc::now().with_timezone(&Local).year();
 
     // Try current year first
     match fetch_regular_season_start_date(&client, &config, current_year).await {

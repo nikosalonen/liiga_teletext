@@ -134,6 +134,7 @@ pub fn process_team_goals(
 /// Games are shown for "today" if the current time is after 14:00 (2 PM).
 /// Before 14:00, yesterday's games are shown instead. This helps ensure that
 /// late-night games are still visible the next morning.
+/// Uses UTC internally for consistent calculations, converts to local time for comparison.
 ///
 /// # Returns
 /// * `true` - Show today's games (current time is after 14:00)
@@ -156,10 +157,14 @@ pub fn process_team_goals(
 /// }
 /// ```
 pub fn should_show_todays_games() -> bool {
-    let now = Local::now();
+    // Use UTC for internal calculations to avoid DST issues
+    let now_utc = Utc::now();
+    // Convert to local time for the 14:00 cutoff comparison
+    let now_local = now_utc.with_timezone(&Local);
+
     let cutoff_time = NaiveTime::from_hms_opt(14, 0, 0).unwrap();
-    let today_cutoff = now.date_naive().and_time(cutoff_time);
-    now.naive_local() >= today_cutoff
+    let today_cutoff = now_local.date_naive().and_time(cutoff_time);
+    now_local.naive_local() >= today_cutoff
 }
 
 pub fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
