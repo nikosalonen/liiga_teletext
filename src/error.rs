@@ -550,14 +550,12 @@ mod tests {
             let display_string = error.to_string();
             assert!(
                 !display_string.is_empty(),
-                "Error display should not be empty: {:?}",
-                error
+                "Error display should not be empty: {error:?}"
             );
             // Ensure the display string contains some meaningful content
             assert!(
                 display_string.len() > 5,
-                "Error display should be descriptive: {:?}",
-                error
+                "Error display should be descriptive: {error:?}"
             );
         }
     }

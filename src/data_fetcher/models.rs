@@ -369,7 +369,7 @@ mod tests {
         let goal_event: GoalEvent = serde_json::from_str(json).unwrap();
 
         // Test default values
-        assert_eq!(goal_event.winning_goal, false);
+        assert!(!goal_event.winning_goal);
         assert!(goal_event.goal_types.is_empty());
         assert!(goal_event.assistant_player_ids.is_empty());
         assert_eq!(goal_event.video_clip_url, None);
@@ -450,8 +450,8 @@ mod tests {
         // Test default values
         assert_eq!(game.end, None);
         assert_eq!(game.finished_type, None);
-        assert_eq!(game.started, false);
-        assert_eq!(game.ended, false);
+        assert!(!game.started);
+        assert!(!game.ended);
         assert_eq!(game.game_time, 0);
     }
 
@@ -939,16 +939,16 @@ mod tests {
     #[test]
     fn test_debug_implementations() {
         let goal_event = create_test_goal_event();
-        let debug_string = format!("{:?}", goal_event);
+        let debug_string = format!("{goal_event:?}");
         assert!(debug_string.contains("GoalEvent"));
         assert!(debug_string.contains("12345"));
 
         let team = create_test_schedule_team();
-        let debug_string = format!("{:?}", team);
+        let debug_string = format!("{team:?}");
         assert!(debug_string.contains("ScheduleTeam"));
 
         let game = create_test_schedule_game();
-        let debug_string = format!("{:?}", game);
+        let debug_string = format!("{game:?}");
         assert!(debug_string.contains("ScheduleGame"));
         assert!(debug_string.contains("12345"));
     }
