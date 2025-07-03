@@ -7,22 +7,28 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 
 ## Features
 
-- Teletext-style interface with colored headers and content
-- Live game updates with automatic refresh
-- Support for multiple tournaments (regular season, playoffs, playout, qualifications, practice games)
-- Command-line argument support using clap
-- Comprehensive logging system with configurable log file locations
-- Version checking and update notifications
-- Detailed game information including:
+- **Authentic teletext interface** with YLE Teksti-TV channel 221 appearance
+- **Real-time game updates** with automatic refresh (every minute for live games, hourly for completed games)
+- **Comprehensive tournament support** including:
+  - Regular season (`runkosarja`)
+  - Playoffs (`playoffs`)
+  - Playout (`playout`)
+  - Qualifications (`qualifications`)
+  - Practice games (`valmistavat_ottelut`) - May-September
+- **Season countdown** - Shows days until regular season starts during off-season
+- **Interactive navigation** with arrow key page navigation
+- **Detailed game information** including:
   - Game status (scheduled, ongoing, finished)
   - Score with overtime/shootout indicators
   - Goal scorers with timestamps
-  - Video links for goals (can be disabled)
+  - Video links for goals (toggleable)
   - Pagination for multiple games
   - Future games display with date headers
-- Keyboard navigation
-- Authentic YLE Teksti-TV appearance
-- Debug mode for development and troubleshooting
+- **Robust configuration system** with platform-specific storage
+- **Comprehensive logging** with file rotation and configurable locations
+- **Version checking** and update notifications
+- **Debug mode** for development and troubleshooting
+- **Non-interactive mode** for scripting and automation
 
 ## Installation
 
@@ -61,20 +67,22 @@ cargo run --release
 ```
 liiga_teletext/
 ├── src/                    # Source code directory
-    ├── main.rs            # Main application logic and event handling
-    ├── teletext_ui.rs     # UI components and rendering
-    ├── config.rs          # Configuration handling
-    ├── error.rs           # Error handling and custom error types
-    ├── data_fetcher.rs    # Data fetching module entry point
-    ├── data_fetcher/      # Data fetching related modules
-    │   ├── api.rs         # API integration and HTTP requests
-    │   ├── models.rs      # Data models and structures
-    │   ├── processors.rs  # Data processing and transformation
-    │   └── cache.rs       # Caching functionality
-    └── schemas/           # JSON schema definitions
-        ├── game_schema.json         # Game data structure schema
-        └── game_schedule_schema.json# Game schedule data structure schema
-
+│   ├── main.rs            # Main application logic and event handling
+│   ├── teletext_ui.rs     # UI components and rendering
+│   ├── config.rs          # Configuration handling
+│   ├── error.rs           # Error handling and custom error types
+│   ├── data_fetcher.rs    # Data fetching module entry point
+│   ├── data_fetcher/      # Data fetching related modules
+│   │   ├── api.rs         # API integration and HTTP requests
+│   │   ├── models.rs      # Data models and structures
+│   │   ├── processors.rs  # Data processing and transformation
+│   │   ├── cache.rs       # Caching functionality
+│   │   └── player_names.rs # Player name resolution
+│   └── schemas/           # JSON schema definitions
+│       ├── game_schema.json         # Game data structure schema
+│       └── game_schedule_schema.json# Game schedule data structure schema
+├── tests/                 # Integration tests
+└── scripts/              # Build and utility scripts
 ```
 
 ## Usage
@@ -82,6 +90,7 @@ liiga_teletext/
 ### Interactive Mode (Default)
 - Press `q` to quit the application
 - Use left/right arrow keys to navigate between pages
+- Press `r` to manually refresh data
 - Data refreshes automatically:
   - Every minute for live games
   - Every hour for non-live games
@@ -130,33 +139,75 @@ The application includes comprehensive logging that can be configured:
 
 ## Tournament Support
 
-The application supports all major Liiga tournaments:
+The application intelligently handles different tournament types based on the season:
 
-- **Regular Season** (`runkosarja`) - Main league games
-- **Playoffs** (`playoffs`) - Championship playoffs
-- **Playout** (`playout`) - Relegation playoffs
-- **Qualifications** (`qualifications`) - Qualification games
+- **Regular Season** (`runkosarja`) - Main league games (September-April)
+- **Playoffs** (`playoffs`) - Championship playoffs (March-June)
+- **Playout** (`playout`) - Relegation playoffs (March-June)
+- **Qualifications** (`qualifications`) - Qualification games (March-June)
 - **Practice Games** (`valmistavat_ottelut`) - Preseason practice games (May-September)
+
+During off-season periods, the app shows a countdown to the next regular season start.
 
 ## Features Status
 
-- [x] Real API integration
-- [x] Multiple pages of content with pagination
-- [x] Live game updates
-- [x] Goal scorer information
-- [x] Support for multiple tournaments including practice games
+- [x] Real API integration with comprehensive error handling
+- [x] Multiple pages of content with intelligent pagination
+- [x] Live game updates with automatic refresh
+- [x] Goal scorer information with player name resolution
+- [x] Support for all tournament types including practice games
 - [x] Automatic refresh based on game state
 - [x] Configurable video link display
-- [x] Command-line argument support
-- [x] Comprehensive logging system
+- [x] Command-line argument support with clap
+- [x] Comprehensive logging system with rotation
 - [x] Version checking and update notifications
 - [x] Debug mode for development
 - [x] Future games display with date headers
-- [x] Configuration management
+- [x] Configuration management with platform-specific paths
+- [x] Season countdown during off-season
+- [x] Historical game data support
+- [x] HTTP response caching for performance
+- [x] Robust error handling with user-friendly messages
+- [x] Comprehensive test coverage
+
+## Development
+
+### Building and Testing
+
+```bash
+# Build with all features
+cargo build --all-features
+
+# Run tests with all features
+cargo test --all-features
+
+# Run integration tests
+cargo test --test integration_tests
+
+# Check code quality
+cargo fmt
+cargo clippy
+```
+
+### Architecture
+
+The application follows a modular architecture with clear separation of concerns:
+
+- **CLI/Main** (`main.rs`) - Application entry point and interactive UI event loop
+- **Data Fetcher** (`data_fetcher/`) - API integration, caching, and data processing
+- **Teletext UI** (`teletext_ui.rs`) - Authentic YLE Teksti-TV style rendering
+- **Configuration** (`config.rs`) - Platform-specific config management
+- **Error Handling** (`error.rs`) - Centralized error types with context
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+
+**Important**: Before submitting any changes, please ensure:
+- All tests pass: `cargo test --all-features`
+- Code is formatted: `cargo fmt`
+- No clippy warnings: `cargo clippy`
+- New functionality includes appropriate tests
 
 ## License
 
