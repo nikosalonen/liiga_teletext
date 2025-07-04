@@ -720,7 +720,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     let mut all_games_scheduled = false;
 
     // Adaptive polling configuration
-    let mut poll_interval = Duration::from_millis(100); // Start with 100ms
     let mut last_activity = Instant::now();
 
     // Memory cleanup tracking
@@ -730,8 +729,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     loop {
         // Adaptive polling interval based on activity
         let time_since_activity = last_activity.elapsed();
-        poll_interval = if time_since_activity < Duration::from_secs(5) {
-            Duration::from_millis(50)  // Active: 50ms (smooth interaction)
+        let poll_interval = if time_since_activity < Duration::from_secs(5) {
+            Duration::from_millis(50) // Active: 50ms (smooth interaction)
         } else if time_since_activity < Duration::from_secs(30) {
             Duration::from_millis(200) // Semi-active: 200ms (good responsiveness)
         } else {
@@ -820,7 +819,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                             true,
                             false,
                             show_future_header,
-                        ).await {
+                        )
+                        .await
+                        {
                             Some(page) => page,
                             None => {
                                 create_page(
@@ -829,7 +830,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                     true,
                                     false,
                                     Some(fetched_date.clone()),
-                                ).await
+                                )
+                                .await
                             }
                         }
                     };
@@ -980,6 +982,9 @@ async fn perform_memory_cleanup() {
         for key in keys_to_remove {
             cache.remove(&key);
         }
-        tracing::debug!("Cleaned up player cache, removed {} entries", cache.len().saturating_sub(50));
+        tracing::debug!(
+            "Cleaned up player cache, removed {} entries",
+            cache.len().saturating_sub(50)
+        );
     }
 }
