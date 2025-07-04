@@ -2213,12 +2213,18 @@ mod tests {
 
         // Verify cache is actually empty
         let initial_cache_size = get_cache_size().await;
-        assert_eq!(initial_cache_size, 0, "Player cache should be empty before test");
+        assert_eq!(
+            initial_cache_size, 0,
+            "Player cache should be empty before test"
+        );
 
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
         // Should still succeed due to fallback logic
-        assert!(result.is_ok(), "fetch_game_data should succeed with mock data");
+        assert!(
+            result.is_ok(),
+            "fetch_game_data should succeed with mock data"
+        );
         let goal_events = result.unwrap();
 
         // Debug information for CI troubleshooting
@@ -2227,32 +2233,44 @@ mod tests {
             let mock_data = create_mock_detailed_game_response();
             let home_goals = mock_data.game.home_team.goal_events.len();
             let away_goals = mock_data.game.away_team.goal_events.len();
-            let total_players = mock_data.home_team_players.len() + mock_data.away_team_players.len();
+            let total_players =
+                mock_data.home_team_players.len() + mock_data.away_team_players.len();
 
-                         panic!(
-                 "Expected 1 goal event but got {}. Mock data has {} home goals, {} away goals, {} total players. \
+            panic!(
+                "Expected 1 goal event but got {}. Mock data has {} home goals, {} away goals, {} total players. \
                  Goal scorer ID: {}. First player ID: {}",
-                 goal_events.len(),
-                 home_goals,
-                 away_goals,
-                 total_players,
-                 if !mock_data.game.home_team.goal_events.is_empty() {
-                     mock_data.game.home_team.goal_events[0].scorer_player_id.to_string()
-                 } else {
-                     "none".to_string()
-                 },
-                 if !mock_data.home_team_players.is_empty() {
-                     mock_data.home_team_players[0].id.to_string()
-                 } else {
-                     "none".to_string()
-                 }
-             );
+                goal_events.len(),
+                home_goals,
+                away_goals,
+                total_players,
+                if !mock_data.game.home_team.goal_events.is_empty() {
+                    mock_data.game.home_team.goal_events[0]
+                        .scorer_player_id
+                        .to_string()
+                } else {
+                    "none".to_string()
+                },
+                if !mock_data.home_team_players.is_empty() {
+                    mock_data.home_team_players[0].id.to_string()
+                } else {
+                    "none".to_string()
+                }
+            );
         }
 
         assert_eq!(goal_events.len(), 1, "Should have exactly 1 goal event");
-        assert_eq!(goal_events[0].scorer_name, "Smith", "Scorer name should be 'Smith'");
-        assert_eq!(goal_events[0].home_team_score, 1, "Home team score should be 1");
-        assert_eq!(goal_events[0].away_team_score, 0, "Away team score should be 0");
+        assert_eq!(
+            goal_events[0].scorer_name, "Smith",
+            "Scorer name should be 'Smith'"
+        );
+        assert_eq!(
+            goal_events[0].home_team_score, 1,
+            "Home team score should be 1"
+        );
+        assert_eq!(
+            goal_events[0].away_team_score, 0,
+            "Away team score should be 0"
+        );
 
         // Clear the cache after the test to avoid interference
         clear_all_caches().await;
