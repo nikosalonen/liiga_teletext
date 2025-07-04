@@ -921,14 +921,6 @@ impl TeletextPage {
                     }
                 }
                 TeletextRow::ErrorMessage(message) => {
-                    execute!(
-                        stdout,
-                        MoveTo(0, current_y),
-                        SetForegroundColor(text_fg()),
-                        Print("Virhe haettaessa otteluita:"),
-                        ResetColor
-                    )?;
-                    current_y += 1;
                     for line in message.lines() {
                         execute!(
                             stdout,
