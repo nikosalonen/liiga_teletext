@@ -1,7 +1,8 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_players_with_formatting, cache_tournament_data, get_cached_players,
-    get_cached_tournament_data,
+    get_cached_tournament_data, cache_detailed_game_data, get_cached_detailed_game_data,
+    cache_goal_events_data, get_cached_goal_events_data, cache_http_response, get_cached_http_response,
 };
 use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
@@ -521,6 +522,18 @@ async fn process_games(
 async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, AppError> {
     info!("Fetching data from URL: {}", url);
 
+    // Check HTTP response cache first
+    if let Some(cached_response) = get_cached_http_response(url).await {
+        info!("Using cached HTTP response for URL: {}", url);
+        match serde_json::from_str::<T>(&cached_response) {
+            Ok(parsed) => return Ok(parsed),
+            Err(e) => {
+                warn!("Failed to parse cached response for URL {}: {}", url, e);
+                // Continue with fresh request if cached response is invalid
+            }
+        }
+    }
+
     // Handle reqwest errors with specific error types
     let response = match client.get(url).send().await {
         Ok(response) => response,
@@ -577,6 +590,16 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
 
     info!("Response length: {} bytes", response_text.len());
     debug!("Response text: {}", response_text);
+
+    // Cache successful HTTP responses with appropriate TTL
+    let ttl_seconds = if url.contains("/games/") {
+        300 // 5 minutes for game data
+    } else if url.contains("/schedule") {
+        1800 // 30 minutes for schedule data
+    } else {
+        600 // 10 minutes for other data
+    };
+    cache_http_response(url.to_string(), response_text.clone(), ttl_seconds).await;
 
     // Enhanced JSON parsing with more specific error handling
     match serde_json::from_str::<T>(&response_text) {
@@ -937,6 +960,27 @@ async fn fetch_game_data(
         "Fetching game data for game ID: {} (season: {})",
         game_id, season
     );
+
+    // Check goal events cache first
+    if let Some(cached_events) = get_cached_goal_events_data(season, game_id).await {
+        info!(
+            "Using cached goal events for game ID: {} ({} events)",
+            game_id,
+            cached_events.len()
+        );
+        return Ok(cached_events);
+    }
+
+    // Check detailed game cache
+    if let Some(cached_response) = get_cached_detailed_game_data(season, game_id).await {
+        info!(
+            "Using cached detailed game response for game ID: {}",
+            game_id
+        );
+        let events = process_game_response_with_cache(cached_response, game_id).await;
+        return Ok(events);
+    }
+
     let url = build_game_url(&config.api_domain, season, game_id);
 
     // Try to get detailed game response
@@ -965,8 +1009,23 @@ async fn fetch_game_data(
         }
     };
 
-    // Check cache first
-    info!("Checking player cache for game ID: {}", game_id);
+    // Cache the detailed game response
+    let is_live_game = game_response.game.started && !game_response.game.ended;
+    cache_detailed_game_data(season, game_id, game_response.clone(), is_live_game).await;
+
+    // Process the response and cache the goal events
+    let events = process_game_response_with_cache(game_response, game_id).await;
+    cache_goal_events_data(season, game_id, events.clone()).await;
+
+    Ok(events)
+}
+
+/// Helper function to process game response with player caching
+async fn process_game_response_with_cache(
+    game_response: DetailedGameResponse,
+    game_id: i32,
+) -> Vec<GoalEventData> {
+    // Check player cache first
     if let Some(cached_players) = get_cached_players(game_id).await {
         info!(
             "Using cached player data for game ID: {} ({} players)",
@@ -978,7 +1037,7 @@ async fn fetch_game_data(
             "Processed {} goal events using cached player data",
             events.len()
         );
-        return Ok(events);
+        return events;
     }
 
     // Build player names map if not in cache
@@ -1033,7 +1092,7 @@ async fn fetch_game_data(
         events.len(),
         game_id
     );
-    Ok(events)
+    events
 }
 
 /// Fetches the regular season schedule to determine the season start date.

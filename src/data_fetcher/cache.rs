@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
-use crate::data_fetcher::models::{GameData, ScheduleResponse};
+use crate::data_fetcher::models::{GameData, ScheduleResponse, DetailedGameResponse, GoalEventData};
 use crate::data_fetcher::player_names::format_for_display;
 use crate::teletext_ui::ScoreType;
 
@@ -22,12 +22,57 @@ lazy_static! {
         RwLock::new(LruCache::new(NonZeroUsize::new(50).unwrap()));
 }
 
+// LRU cache structure for detailed game responses to avoid repeated API calls
+lazy_static! {
+    pub static ref DETAILED_GAME_CACHE: RwLock<LruCache<String, CachedDetailedGameData>> =
+        RwLock::new(LruCache::new(NonZeroUsize::new(200).unwrap()));
+}
+
+// LRU cache structure for processed goal events to avoid reprocessing
+lazy_static! {
+    pub static ref GOAL_EVENTS_CACHE: RwLock<LruCache<String, CachedGoalEventsData>> =
+        RwLock::new(LruCache::new(NonZeroUsize::new(300).unwrap()));
+}
+
+// LRU cache structure for HTTP responses with TTL support
+lazy_static! {
+    pub static ref HTTP_RESPONSE_CACHE: RwLock<LruCache<String, CachedHttpResponse>> =
+        RwLock::new(LruCache::new(NonZeroUsize::new(100).unwrap()));
+}
+
 /// Cached tournament data with TTL support
 #[derive(Debug, Clone)]
 pub struct CachedTournamentData {
     pub data: ScheduleResponse,
     pub cached_at: Instant,
     pub has_live_games: bool,
+}
+
+/// Cached detailed game data with TTL support
+#[derive(Debug, Clone)]
+pub struct CachedDetailedGameData {
+    pub data: DetailedGameResponse,
+    pub cached_at: Instant,
+    pub is_live_game: bool,
+}
+
+/// Cached goal events data with TTL support
+#[derive(Debug, Clone)]
+pub struct CachedGoalEventsData {
+    pub data: Vec<GoalEventData>,
+    pub cached_at: Instant,
+    #[allow(dead_code)]
+    pub game_id: i32,
+    #[allow(dead_code)]
+    pub season: i32,
+}
+
+/// Cached HTTP response with TTL support
+#[derive(Debug, Clone)]
+pub struct CachedHttpResponse {
+    pub data: String,
+    pub cached_at: Instant,
+    pub ttl_seconds: u64,
 }
 
 impl CachedTournamentData {
@@ -74,6 +119,73 @@ impl CachedTournamentData {
     }
 }
 
+impl CachedDetailedGameData {
+    /// Creates a new cached detailed game data entry
+    pub fn new(data: DetailedGameResponse, is_live_game: bool) -> Self {
+        Self {
+            data,
+            cached_at: Instant::now(),
+            is_live_game,
+        }
+    }
+
+    /// Checks if the cached data is expired based on game state
+    pub fn is_expired(&self) -> bool {
+        let ttl = if self.is_live_game {
+            Duration::from_secs(15) // 15 seconds for live games
+        } else {
+            Duration::from_secs(1800) // 30 minutes for completed games
+        };
+
+        self.cached_at.elapsed() > ttl
+    }
+
+    /// Gets the TTL duration for this cache entry
+    #[allow(dead_code)]
+    pub fn get_ttl(&self) -> Duration {
+        if self.is_live_game {
+            Duration::from_secs(15)
+        } else {
+            Duration::from_secs(1800)
+        }
+    }
+}
+
+impl CachedGoalEventsData {
+    /// Creates a new cached goal events data entry
+    pub fn new(data: Vec<GoalEventData>, game_id: i32, season: i32) -> Self {
+        Self {
+            data,
+            cached_at: Instant::now(),
+            game_id,
+            season,
+        }
+    }
+
+    /// Checks if the cached data is expired
+    pub fn is_expired(&self) -> bool {
+        let ttl = Duration::from_secs(3600); // 1 hour for goal events
+        self.cached_at.elapsed() > ttl
+    }
+}
+
+impl CachedHttpResponse {
+    /// Creates a new cached HTTP response entry
+    pub fn new(data: String, ttl_seconds: u64) -> Self {
+        Self {
+            data,
+            cached_at: Instant::now(),
+            ttl_seconds,
+        }
+    }
+
+    /// Checks if the cached data is expired
+    pub fn is_expired(&self) -> bool {
+        let ttl = Duration::from_secs(self.ttl_seconds);
+        self.cached_at.elapsed() > ttl
+    }
+}
+
 /// Determines if a ScheduleResponse contains live games
 pub fn has_live_games(response: &ScheduleResponse) -> bool {
     response.games.iter().any(|game| {
@@ -83,7 +195,6 @@ pub fn has_live_games(response: &ScheduleResponse) -> bool {
 }
 
 /// Determines if a list of GameData contains live games
-#[allow(dead_code)]
 pub fn has_live_games_from_game_data(games: &[GameData]) -> bool {
     games
         .iter()
@@ -257,11 +368,13 @@ pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i6
 }
 
 /// Gets the current cache size for monitoring purposes
+#[allow(dead_code)]
 pub async fn get_cache_size() -> usize {
     PLAYER_CACHE.read().await.len()
 }
 
 /// Gets the cache capacity for monitoring purposes
+#[allow(dead_code)]
 pub async fn get_cache_capacity() -> usize {
     PLAYER_CACHE.read().await.cap().get()
 }
@@ -273,10 +386,232 @@ pub async fn clear_cache() {
     PLAYER_CACHE.write().await.clear();
 }
 
+// Detailed Game Cache Functions
+
+/// Creates a cache key for detailed game data
+pub fn create_detailed_game_key(season: i32, game_id: i32) -> String {
+    format!("detailed_game_{season}_{game_id}")
+}
+
+/// Caches detailed game data with automatic live game detection
+pub async fn cache_detailed_game_data(
+    season: i32,
+    game_id: i32,
+    data: DetailedGameResponse,
+    is_live_game: bool,
+) {
+    let key = create_detailed_game_key(season, game_id);
+    let cached_data = CachedDetailedGameData::new(data, is_live_game);
+    DETAILED_GAME_CACHE.write().await.put(key, cached_data);
+}
+
+/// Retrieves cached detailed game data if it's not expired
+pub async fn get_cached_detailed_game_data(
+    season: i32,
+    game_id: i32,
+) -> Option<DetailedGameResponse> {
+    let key = create_detailed_game_key(season, game_id);
+    let mut cache = DETAILED_GAME_CACHE.write().await;
+
+    if let Some(cached_entry) = cache.get(&key) {
+        if !cached_entry.is_expired() {
+            return Some(cached_entry.data.clone());
+        } else {
+            // Remove expired entry
+            cache.pop(&key);
+        }
+    }
+
+    None
+}
+
+/// Gets the current detailed game cache size for monitoring purposes
+#[allow(dead_code)]
+pub async fn get_detailed_game_cache_size() -> usize {
+    DETAILED_GAME_CACHE.read().await.len()
+}
+
+/// Gets the detailed game cache capacity for monitoring purposes
+#[allow(dead_code)]
+pub async fn get_detailed_game_cache_capacity() -> usize {
+    DETAILED_GAME_CACHE.read().await.cap().get()
+}
+
+/// Clears all detailed game cache entries
+#[allow(dead_code)]
+pub async fn clear_detailed_game_cache() {
+    DETAILED_GAME_CACHE.write().await.clear();
+}
+
+// Goal Events Cache Functions
+
+/// Creates a cache key for goal events data
+pub fn create_goal_events_key(season: i32, game_id: i32) -> String {
+    format!("goal_events_{season}_{game_id}")
+}
+
+/// Caches processed goal events data
+pub async fn cache_goal_events_data(
+    season: i32,
+    game_id: i32,
+    data: Vec<GoalEventData>,
+) {
+    let key = create_goal_events_key(season, game_id);
+    let cached_data = CachedGoalEventsData::new(data, game_id, season);
+    GOAL_EVENTS_CACHE.write().await.put(key, cached_data);
+}
+
+/// Retrieves cached goal events data if it's not expired
+pub async fn get_cached_goal_events_data(
+    season: i32,
+    game_id: i32,
+) -> Option<Vec<GoalEventData>> {
+    let key = create_goal_events_key(season, game_id);
+    let mut cache = GOAL_EVENTS_CACHE.write().await;
+
+    if let Some(cached_entry) = cache.get(&key) {
+        if !cached_entry.is_expired() {
+            return Some(cached_entry.data.clone());
+        } else {
+            // Remove expired entry
+            cache.pop(&key);
+        }
+    }
+
+    None
+}
+
+/// Gets the current goal events cache size for monitoring purposes
+#[allow(dead_code)]
+pub async fn get_goal_events_cache_size() -> usize {
+    GOAL_EVENTS_CACHE.read().await.len()
+}
+
+/// Gets the goal events cache capacity for monitoring purposes
+#[allow(dead_code)]
+pub async fn get_goal_events_cache_capacity() -> usize {
+    GOAL_EVENTS_CACHE.read().await.cap().get()
+}
+
+/// Clears all goal events cache entries
+#[allow(dead_code)]
+pub async fn clear_goal_events_cache() {
+    GOAL_EVENTS_CACHE.write().await.clear();
+}
+
+// HTTP Response Cache Functions
+
+/// Caches HTTP response data with TTL
+pub async fn cache_http_response(url: String, data: String, ttl_seconds: u64) {
+    let cached_data = CachedHttpResponse::new(data, ttl_seconds);
+    HTTP_RESPONSE_CACHE.write().await.put(url, cached_data);
+}
+
+/// Retrieves cached HTTP response if it's not expired
+pub async fn get_cached_http_response(url: &str) -> Option<String> {
+    let mut cache = HTTP_RESPONSE_CACHE.write().await;
+
+    if let Some(cached_entry) = cache.get(url) {
+        if !cached_entry.is_expired() {
+            return Some(cached_entry.data.clone());
+        } else {
+            // Remove expired entry
+            cache.pop(url);
+        }
+    }
+
+    None
+}
+
+/// Gets the current HTTP response cache size for monitoring purposes
+#[allow(dead_code)]
+pub async fn get_http_response_cache_size() -> usize {
+    HTTP_RESPONSE_CACHE.read().await.len()
+}
+
+/// Gets the HTTP response cache capacity for monitoring purposes
+#[allow(dead_code)]
+pub async fn get_http_response_cache_capacity() -> usize {
+    HTTP_RESPONSE_CACHE.read().await.cap().get()
+}
+
+/// Clears all HTTP response cache entries
+#[allow(dead_code)]
+pub async fn clear_http_response_cache() {
+    HTTP_RESPONSE_CACHE.write().await.clear();
+}
+
+// Combined Cache Management Functions
+
+/// Gets combined cache statistics for monitoring purposes
+#[allow(dead_code)]
+pub async fn get_all_cache_stats() -> CacheStats {
+    let player_size = PLAYER_CACHE.read().await.len();
+    let player_capacity = PLAYER_CACHE.read().await.cap().get();
+    let tournament_size = TOURNAMENT_CACHE.read().await.len();
+    let tournament_capacity = TOURNAMENT_CACHE.read().await.cap().get();
+    let detailed_game_size = DETAILED_GAME_CACHE.read().await.len();
+    let detailed_game_capacity = DETAILED_GAME_CACHE.read().await.cap().get();
+    let goal_events_size = GOAL_EVENTS_CACHE.read().await.len();
+    let goal_events_capacity = GOAL_EVENTS_CACHE.read().await.cap().get();
+    let http_response_size = HTTP_RESPONSE_CACHE.read().await.len();
+    let http_response_capacity = HTTP_RESPONSE_CACHE.read().await.cap().get();
+
+    CacheStats {
+        player_cache: CacheInfo {
+            size: player_size,
+            capacity: player_capacity,
+        },
+        tournament_cache: CacheInfo {
+            size: tournament_size,
+            capacity: tournament_capacity,
+        },
+        detailed_game_cache: CacheInfo {
+            size: detailed_game_size,
+            capacity: detailed_game_capacity,
+        },
+        goal_events_cache: CacheInfo {
+            size: goal_events_size,
+            capacity: goal_events_capacity,
+        },
+        http_response_cache: CacheInfo {
+            size: http_response_size,
+            capacity: http_response_capacity,
+        },
+    }
+}
+
+/// Cache information structure
+#[derive(Debug, Clone)]
+pub struct CacheInfo {
+    pub size: usize,
+    pub capacity: usize,
+}
+
+/// Combined cache statistics
+#[derive(Debug, Clone)]
+pub struct CacheStats {
+    pub player_cache: CacheInfo,
+    pub tournament_cache: CacheInfo,
+    pub detailed_game_cache: CacheInfo,
+    pub goal_events_cache: CacheInfo,
+    pub http_response_cache: CacheInfo,
+}
+
+/// Clears all caches (useful for testing and debugging)
+#[allow(dead_code)]
+pub async fn clear_all_caches() {
+    clear_cache().await;
+    clear_tournament_cache().await;
+    clear_detailed_game_cache().await;
+    clear_goal_events_cache().await;
+    clear_http_response_cache().await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::models::{ScheduleGame, ScheduleTeam};
+    use crate::data_fetcher::models::{ScheduleGame, ScheduleTeam, DetailedGame, DetailedTeam, DetailedGameResponse, GoalEventData};
     use serial_test::serial;
     use tokio::sync::Mutex;
 
@@ -635,5 +970,279 @@ mod tests {
         };
 
         assert!(!has_live_games(&completed_response));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data() {
+        // Test with live games
+        let live_games = vec![GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "".to_string(),
+            result: "2-1".to_string(),
+            score_type: ScoreType::Ongoing,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 1800,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        }];
+
+        assert!(has_live_games_from_game_data(&live_games));
+
+        // Test with completed games
+        let completed_games = vec![GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "".to_string(),
+            result: "2-1".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        }];
+
+        assert!(!has_live_games_from_game_data(&completed_games));
+    }
+
+    // New LRU Cache Tests
+
+    #[tokio::test]
+    #[serial]
+    async fn test_detailed_game_cache_basic() {
+        let _guard = TEST_MUTEX.lock().await;
+
+        // Clear cache to ensure clean state
+        clear_detailed_game_cache().await;
+
+        // Create a mock DetailedGameResponse
+        let mock_response = DetailedGameResponse {
+            game: DetailedGame {
+                id: 12345,
+                season: 2024,
+                start: "2024-01-15T18:30:00Z".to_string(),
+                end: None,
+                home_team: DetailedTeam {
+                    team_id: "team1".to_string(),
+                    team_name: "HIFK".to_string(),
+                    goals: 2,
+                    goal_events: vec![],
+                    penalty_events: vec![],
+                },
+                away_team: DetailedTeam {
+                    team_id: "team2".to_string(),
+                    team_name: "Tappara".to_string(),
+                    goals: 1,
+                    goal_events: vec![],
+                    penalty_events: vec![],
+                },
+                periods: vec![],
+                finished_type: None,
+                started: true,
+                ended: false,
+                game_time: 1800,
+                serie: "runkosarja".to_string(),
+            },
+            awards: vec![],
+            home_team_players: vec![],
+            away_team_players: vec![],
+        };
+
+        cache_detailed_game_data(2024, 12345, mock_response.clone(), false).await;
+
+        // Should be able to retrieve it
+        let cached = get_cached_detailed_game_data(2024, 12345).await;
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap().game.id, 12345);
+
+        // Clear cache after test
+        clear_detailed_game_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_goal_events_cache_basic() {
+        let _guard = TEST_MUTEX.lock().await;
+
+        // Clear cache to ensure clean state
+        clear_goal_events_cache().await;
+
+        // Create mock goal events
+        let mock_events = vec![GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Koivu".to_string(),
+            minute: 15,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["EV".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        }];
+
+        cache_goal_events_data(2024, 12345, mock_events.clone()).await;
+
+        // Should be able to retrieve it
+        let cached = get_cached_goal_events_data(2024, 12345).await;
+        assert!(cached.is_some());
+        let cached_events = cached.unwrap();
+        assert_eq!(cached_events.len(), 1);
+        assert_eq!(cached_events[0].scorer_name, "Koivu");
+
+        // Clear cache after test
+        clear_goal_events_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_http_response_cache_basic() {
+        let _guard = TEST_MUTEX.lock().await;
+
+        // Clear cache to ensure clean state
+        clear_http_response_cache().await;
+
+        let url = "https://api.example.com/test".to_string();
+        let response_data = r#"{"test": "data"}"#.to_string();
+
+        cache_http_response(url.clone(), response_data.clone(), 60).await;
+
+        // Should be able to retrieve it
+        let cached = get_cached_http_response(&url).await;
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap(), response_data);
+
+        // Clear cache after test
+        clear_http_response_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_stats() {
+        let _guard = TEST_MUTEX.lock().await;
+
+        // Clear all caches to ensure clean state
+        clear_all_caches().await;
+
+        // Add some test data to each cache
+        let mut players = HashMap::new();
+        players.insert(1, "Player 1".to_string());
+        cache_players(10001, players).await;
+
+        let mock_response = ScheduleResponse {
+            games: vec![],
+            previous_game_date: None,
+            next_game_date: None,
+        };
+        cache_tournament_data("test-tournament".to_string(), mock_response).await;
+
+        let mock_detailed_response = DetailedGameResponse {
+            game: DetailedGame {
+                id: 12345,
+                season: 2024,
+                start: "2024-01-15T18:30:00Z".to_string(),
+                end: None,
+                home_team: DetailedTeam {
+                    team_id: "team1".to_string(),
+                    team_name: "HIFK".to_string(),
+                    goals: 0,
+                    goal_events: vec![],
+                    penalty_events: vec![],
+                },
+                away_team: DetailedTeam {
+                    team_id: "team2".to_string(),
+                    team_name: "Tappara".to_string(),
+                    goals: 0,
+                    goal_events: vec![],
+                    penalty_events: vec![],
+                },
+                periods: vec![],
+                finished_type: None,
+                started: false,
+                ended: false,
+                game_time: 0,
+                serie: "runkosarja".to_string(),
+            },
+            awards: vec![],
+            home_team_players: vec![],
+            away_team_players: vec![],
+        };
+        cache_detailed_game_data(2024, 12345, mock_detailed_response, false).await;
+
+        let mock_events = vec![GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Koivu".to_string(),
+            minute: 15,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["EV".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        }];
+        cache_goal_events_data(2024, 12345, mock_events).await;
+
+        cache_http_response("https://api.example.com/test".to_string(), "test data".to_string(), 60).await;
+
+        // Get stats
+        let stats = get_all_cache_stats().await;
+
+        // Verify stats
+        assert_eq!(stats.player_cache.size, 1);
+        assert_eq!(stats.tournament_cache.size, 1);
+        assert_eq!(stats.detailed_game_cache.size, 1);
+        assert_eq!(stats.goal_events_cache.size, 1);
+        assert_eq!(stats.http_response_cache.size, 1);
+
+        // Clear all caches after test
+        clear_all_caches().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_key_generation() {
+        let detailed_key = create_detailed_game_key(2024, 12345);
+        assert_eq!(detailed_key, "detailed_game_2024_12345");
+
+        let goal_events_key = create_goal_events_key(2024, 12345);
+        assert_eq!(goal_events_key, "goal_events_2024_12345");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_expiration() {
+        let _guard = TEST_MUTEX.lock().await;
+
+        // Clear cache to ensure clean state
+        clear_goal_events_cache().await;
+
+        // Create a cached entry
+        let mock_events = vec![GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Koivu".to_string(),
+            minute: 15,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["EV".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        }];
+
+        cache_goal_events_data(2024, 12345, mock_events).await;
+
+        // Should be able to retrieve it immediately
+        let cached = get_cached_goal_events_data(2024, 12345).await;
+        assert!(cached.is_some());
+
+        // Note: We can't easily test actual expiration without time manipulation,
+        // but we can verify the cache structure is working correctly
+
+        // Clear cache after test
+        clear_goal_events_cache().await;
     }
 }
