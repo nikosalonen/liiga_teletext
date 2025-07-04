@@ -13,7 +13,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use data_fetcher::{GameData, fetch_liiga_data};
+use data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
 use error::AppError;
 use semver::Version;
 use std::io::stdout;
@@ -579,9 +579,38 @@ async fn main() -> Result<(), AppError> {
 
     if args.once {
         // Quick view mode - just show the data once and exit
+
+        // Show loading indicator for historical dates or when specific date is requested
+        let showed_loading = if let Some(ref date) = args.date {
+            // Check if this is a historical date that might take longer to fetch
+            if is_historical_date(date) {
+                println!(
+                    "Haetaan historiallista dataa päivälle {}...",
+                    format_date_for_display(date)
+                );
+                println!("Tämä voi kestää hetken, odotathan...");
+                println!();
+                true
+            } else {
+                println!(
+                    "Haetaan otteluita päivälle {}...",
+                    format_date_for_display(date)
+                );
+                true
+            }
+        } else {
+            println!("Haetaan tämän päivän otteluita...");
+            true
+        };
+
         let (games, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
             Ok((games, fetched_date)) => (games, fetched_date),
             Err(e) => {
+                // Clear loading message if it was shown
+                if showed_loading {
+                    println!(); // Add space after loading message
+                }
+
                 let mut error_page = TeletextPage::new(
                     221,
                     "JÄÄKIEKKO".to_string(),
@@ -590,7 +619,7 @@ async fn main() -> Result<(), AppError> {
                     false,
                     true,
                 );
-                error_page.add_error_message(&e.to_string());
+                error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
                 // Set terminal title for non-interactive mode (error case)
                 execute!(stdout(), crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
 
@@ -599,8 +628,13 @@ async fn main() -> Result<(), AppError> {
                 return Ok(());
             }
         };
+        // Clear loading message if it was shown
+        if showed_loading {
+            println!(); // Add space after loading message
+        }
+
         let page = if games.is_empty() {
-            let mut error_page = TeletextPage::new(
+            let mut no_games_page = TeletextPage::new(
                 221,
                 "JÄÄKIEKKO".to_string(),
                 "SM-LIIGA".to_string(),
@@ -614,14 +648,14 @@ async fn main() -> Result<(), AppError> {
                 .format("%Y-%m-%d")
                 .to_string();
             if fetched_date == today {
-                error_page.add_error_message("Ei otteluita tänään");
+                no_games_page.add_error_message("Ei otteluita tänään");
             } else {
-                error_page.add_error_message(&format!(
+                no_games_page.add_error_message(&format!(
                     "Ei otteluita {} päivälle",
                     format_date_for_display(&fetched_date)
                 ));
             }
-            error_page
+            no_games_page
         } else {
             // Try to create a future games page, fall back to regular page if not future games
             // Only show future games header if no specific date was requested
@@ -722,9 +756,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     // Adaptive polling configuration
     let mut last_activity = Instant::now();
 
-    // Memory cleanup tracking
-    let mut memory_cleanup_timer = Instant::now();
-    const MEMORY_CLEANUP_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
+    // Cache monitoring tracking
+    let mut cache_monitor_timer = Instant::now();
+    const CACHE_MONITOR_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
 
     loop {
         // Adaptive polling interval based on activity
@@ -750,6 +784,56 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
         // Data fetching with change detection
         if needs_refresh {
             tracing::debug!("Fetching new data");
+
+            // Show loading indicator for historical dates or when specific date is requested
+            if let Some(ref date) = args.date {
+                let mut loading_page = TeletextPage::new(
+                    221,
+                    "JÄÄKIEKKO".to_string(),
+                    "SM-LIIGA".to_string(),
+                    args.disable_links,
+                    true,
+                    false,
+                );
+
+                if is_historical_date(date) {
+                    loading_page.add_error_message(&format!(
+                        "Haetaan historiallista dataa päivälle {}...",
+                        format_date_for_display(date)
+                    ));
+                    loading_page.add_error_message("Tämä voi kestää hetken, odotathan...");
+                } else {
+                    loading_page.add_error_message(&format!(
+                        "Haetaan otteluita päivälle {}...",
+                        format_date_for_display(date)
+                    ));
+                }
+
+                current_page = Some(loading_page);
+                needs_render = true;
+            } else if current_page.is_none() {
+                // Show loading for initial load when no specific date is requested
+                let mut loading_page = TeletextPage::new(
+                    221,
+                    "JÄÄKIEKKO".to_string(),
+                    "SM-LIIGA".to_string(),
+                    args.disable_links,
+                    true,
+                    false,
+                );
+                loading_page.add_error_message("Haetaan tämän päivän otteluita...");
+                current_page = Some(loading_page);
+                needs_render = true;
+            }
+
+            // Render the loading page immediately
+            if needs_render {
+                if let Some(page) = &current_page {
+                    page.render(stdout)?;
+                }
+                needs_render = false;
+            }
+
             let (games, had_error, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
                 Ok((games, fetched_date)) => (games, false, fetched_date),
                 Err(e) => {
@@ -919,11 +1003,11 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             }
         }
 
-        // Periodic memory cleanup for long-running sessions
-        if memory_cleanup_timer.elapsed() >= MEMORY_CLEANUP_INTERVAL {
-            tracing::debug!("Performing memory cleanup");
-            perform_memory_cleanup().await;
-            memory_cleanup_timer = Instant::now();
+        // Periodic cache monitoring for long-running sessions
+        if cache_monitor_timer.elapsed() >= CACHE_MONITOR_INTERVAL {
+            tracing::debug!("Monitoring cache usage");
+            monitor_cache_usage().await;
+            cache_monitor_timer = Instant::now();
         }
 
         // Only sleep if we're in idle mode to avoid unnecessary delays
@@ -968,8 +1052,8 @@ fn calculate_games_hash(games: &[GameData]) -> u64 {
     hasher.finish()
 }
 
-/// Perform memory cleanup for long-running sessions
-async fn perform_memory_cleanup() {
+/// Monitor cache usage and log statistics for long-running sessions
+async fn monitor_cache_usage() {
     // The LRU cache automatically manages memory by evicting least recently used entries
     // when it reaches capacity. We just need to log the current state for monitoring.
     use crate::data_fetcher::cache::{get_cache_capacity, get_cache_size};
