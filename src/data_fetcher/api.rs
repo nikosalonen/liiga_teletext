@@ -3,7 +3,8 @@ use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
     cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
     get_cached_goal_events_data, get_cached_http_response, get_cached_players,
-    get_cached_tournament_data,
+    get_cached_tournament_data, get_tournament_cache_size, get_detailed_game_cache_size,
+    get_goal_events_cache_size,
 };
 use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
@@ -2150,6 +2151,9 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
+        // Clear all caches to ensure clean state
+        clear_all_caches_for_test().await;
+
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
         assert!(result.is_ok());
@@ -2158,6 +2162,9 @@ mod tests {
         assert_eq!(goal_events[0].scorer_name, "Smith");
         assert_eq!(goal_events[0].home_team_score, 1);
         assert_eq!(goal_events[0].away_team_score, 0);
+
+        // Clear caches after test
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
@@ -2179,11 +2186,17 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
+        // Clear all caches to ensure clean state
+        clear_all_caches_for_test().await;
+
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
         assert!(result.is_ok());
         let goal_events = result.unwrap();
         assert_eq!(goal_events.len(), 0);
+
+        // Clear caches after test
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
@@ -2211,12 +2224,16 @@ mod tests {
         // Wait for cache clearing to complete
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-        // Verify cache is actually empty
-        let initial_cache_size = get_cache_size().await;
-        assert_eq!(
-            initial_cache_size, 0,
-            "Player cache should be empty before test"
-        );
+        // Verify cache is actually empty - check all cache types
+        let initial_player_cache_size = get_cache_size().await;
+        let initial_tournament_cache_size = get_tournament_cache_size().await;
+        let initial_detailed_game_cache_size = get_detailed_game_cache_size().await;
+        let initial_goal_events_cache_size = get_goal_events_cache_size().await;
+
+        assert_eq!(initial_player_cache_size, 0, "Player cache should be empty before test");
+        assert_eq!(initial_tournament_cache_size, 0, "Tournament cache should be empty before test");
+        assert_eq!(initial_detailed_game_cache_size, 0, "Detailed game cache should be empty before test");
+        assert_eq!(initial_goal_events_cache_size, 0, "Goal events cache should be empty before test");
 
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
@@ -2291,9 +2308,15 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
+        // Clear all caches to ensure clean state
+        clear_all_caches_for_test().await;
+
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
-        assert!(result.is_err());
+        assert!(result.is_err(), "Should return error for 500 status code");
+
+        // Clear caches after test
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
