@@ -2139,6 +2139,10 @@ mod tests {
         let config = create_mock_config();
         let client = Client::new();
 
+        // Clear all caches to ensure we actually make the HTTP request
+        use crate::data_fetcher::cache::clear_all_caches;
+        clear_all_caches().await;
+
         let mock_response = create_mock_detailed_game_response();
 
         Mock::given(method("GET"))
@@ -2158,6 +2162,9 @@ mod tests {
         assert_eq!(goal_events[0].scorer_name, "Smith");
         assert_eq!(goal_events[0].home_team_score, 1);
         assert_eq!(goal_events[0].away_team_score, 0);
+
+        // Clear cache after test to avoid interference
+        clear_all_caches().await;
     }
 
     #[tokio::test]
@@ -2165,6 +2172,10 @@ mod tests {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
+
+        // Clear all caches to ensure we actually make the HTTP request
+        use crate::data_fetcher::cache::clear_all_caches;
+        clear_all_caches().await;
 
         let mut mock_response = create_mock_detailed_game_response();
         mock_response.game.home_team.goal_events = vec![];
@@ -2184,6 +2195,9 @@ mod tests {
         assert!(result.is_ok());
         let goal_events = result.unwrap();
         assert_eq!(goal_events.len(), 0);
+
+        // Clear cache after test to avoid interference
+        clear_all_caches().await;
     }
 
     #[tokio::test]
