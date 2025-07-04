@@ -107,6 +107,7 @@ impl CachedTournamentData {
     }
 
     /// Gets the remaining time until expiration
+    #[allow(dead_code)]
     pub fn time_until_expiry(&self) -> Duration {
         let ttl = self.get_ttl();
         let elapsed = self.cached_at.elapsed();
