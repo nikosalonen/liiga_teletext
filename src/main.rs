@@ -330,13 +330,22 @@ async fn check_latest_version() -> Option<String> {
 /// Helper to print a dynamic-width version status box with optional color highlights
 fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
     // Compute max content width
-    let max_content_width = lines.iter().map(|(l, _)| l.chars().count()).max().unwrap_or(0);
+    let max_content_width = lines
+        .iter()
+        .map(|(l, _)| l.chars().count())
+        .max()
+        .unwrap_or(0);
     let box_width = max_content_width + 4; // 2 for borders, 2 for padding
     let border = format!("╔{:═<width$}╗", "", width = box_width - 2);
     let sep = format!("╠{:═<width$}╣", "", width = box_width - 2);
     let bottom = format!("╚{:═<width$}╝", "", width = box_width - 2);
     // Print top border
-    execute!(stdout(), SetForegroundColor(Color::White), Print(format!("{border}\n"))).ok();
+    execute!(
+        stdout(),
+        SetForegroundColor(Color::White),
+        Print(format!("{border}\n"))
+    )
+    .ok();
     // Print lines
     for (i, (line, color)) in lines.iter().enumerate() {
         let padded = format!("║ {line:<max_content_width$} ║");
@@ -347,20 +356,35 @@ fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
                     let pre = format!("║ {pre}:");
                     let col = col.trim_start();
                     let pad = max_content_width - (pre.chars().count() - 2 + col.chars().count());
-                    execute!(stdout(),
+                    execute!(
+                        stdout(),
                         SetForegroundColor(Color::White),
                         Print(pre),
                         SetForegroundColor(*c),
                         Print(col),
                         SetForegroundColor(Color::White),
                         Print(format!("{:pad$} ║\n", "", pad = pad)),
-                    ).ok();
+                    )
+                    .ok();
                 } else {
-                    execute!(stdout(), SetForegroundColor(*c), Print(padded), SetForegroundColor(Color::White), Print("\n")).ok();
+                    execute!(
+                        stdout(),
+                        SetForegroundColor(*c),
+                        Print(padded),
+                        SetForegroundColor(Color::White),
+                        Print("\n")
+                    )
+                    .ok();
                 }
             }
             None => {
-                execute!(stdout(), SetForegroundColor(Color::White), Print(padded), Print("\n")).ok();
+                execute!(
+                    stdout(),
+                    SetForegroundColor(Color::White),
+                    Print(padded),
+                    Print("\n")
+                )
+                .ok();
             }
         }
         // Separator after first or second line if needed
@@ -394,11 +418,20 @@ fn print_version_info(latest_version: &str) {
         print_version_status_box(vec![
             ("Liiga Teletext Status".to_string(), None),
             ("".to_string(), None),
-            (format!("Current Version: {CURRENT_VERSION}"), Some(Color::White)),
-            (format!("Latest Version:  {latest_version}"), Some(Color::Cyan)),
+            (
+                format!("Current Version: {CURRENT_VERSION}"),
+                Some(Color::White),
+            ),
+            (
+                format!("Latest Version:  {latest_version}"),
+                Some(Color::Cyan),
+            ),
             ("".to_string(), None),
             ("Update available! Run:".to_string(), None),
-            ("cargo install liiga_teletext".to_string(), Some(Color::Cyan)),
+            (
+                "cargo install liiga_teletext".to_string(),
+                Some(Color::Cyan),
+            ),
         ]);
     }
 }
