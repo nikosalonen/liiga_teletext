@@ -2088,9 +2088,9 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        // Clear the cache to simulate a cache miss after caching
-        use crate::data_fetcher::cache::PLAYER_CACHE;
-        PLAYER_CACHE.write().await.clear();
+        // Clear the cache to ensure a clean state
+        use crate::data_fetcher::cache::clear_cache;
+        clear_cache().await;
 
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
@@ -2101,6 +2101,9 @@ mod tests {
         assert_eq!(goal_events[0].scorer_name, "Smith");
         assert_eq!(goal_events[0].home_team_score, 1);
         assert_eq!(goal_events[0].away_team_score, 0);
+
+        // Clear the cache after the test to avoid interference
+        clear_cache().await;
     }
 
     #[tokio::test]

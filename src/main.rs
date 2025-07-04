@@ -970,21 +970,25 @@ fn calculate_games_hash(games: &[GameData]) -> u64 {
 
 /// Perform memory cleanup for long-running sessions
 async fn perform_memory_cleanup() {
-    // Clear any cached data that might have accumulated
-    // This is a placeholder for future memory management improvements
-    use crate::data_fetcher::cache::PLAYER_CACHE;
+    // The LRU cache automatically manages memory by evicting least recently used entries
+    // when it reaches capacity. We just need to log the current state for monitoring.
+    use crate::data_fetcher::cache::{get_cache_capacity, get_cache_size};
 
-    // Clean up player cache if it gets too large
-    let mut cache = PLAYER_CACHE.write().await;
-    if cache.len() > 100 {
-        // Keep only the most recent 50 entries
-        let keys_to_remove: Vec<i32> = cache.keys().take(cache.len() - 50).copied().collect();
-        for key in keys_to_remove {
-            cache.remove(&key);
+    let current_size = get_cache_size().await;
+    let capacity = get_cache_capacity().await;
+
+    tracing::debug!(
+        "Cache status: {}/{} entries ({}% full)",
+        current_size,
+        capacity,
+        if capacity > 0 {
+            (current_size * 100) / capacity
+        } else {
+            0
         }
-        tracing::debug!(
-            "Cleaned up player cache, removed {} entries",
-            cache.len().saturating_sub(50)
-        );
-    }
+    );
+
+    // The LRU cache automatically evicts entries when it reaches capacity,
+    // so we don't need manual cleanup logic anymore.
+    // This ensures that the oldest/least recently used entries are always removed first.
 }

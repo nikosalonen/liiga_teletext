@@ -349,9 +349,9 @@ mod tests {
     fn test_should_show_todays_games() {
         // This function depends on current time, so we test the logic indirectly
         // by checking that it returns a boolean
-        let _result = should_show_todays_games();
-        // The expression result || !result is always true, so we just assert true
-        assert!(true);
+        let result = should_show_todays_games();
+        // Just verify it returns a boolean value (no assertion needed)
+        let _: bool = result;
     }
 
     #[test]

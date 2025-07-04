@@ -34,18 +34,22 @@
 
 **Action Completed:** ✅ Standardized on consistent timezone handling approach: UTC for internal calculations, Local timezone only for display formatting
 
-### 3. **Inconsistent Player Name Formatting**
-**Location:** `src/data_fetcher/cache.rs` and `src/data_fetcher/api.rs`
-**Issue:** Two different player name formatting functions with different purposes
-- `format_player_name()` in `cache.rs` - formats to last name only (e.g., "Koivu")
-- `format_player_full_name()` in `api.rs` - formats to full name (e.g., "Mikko Koivu")
+### 3. **~~Inconsistent Player Name Formatting~~ ✅ COMPLETED**
+**Location:** `src/data_fetcher/player_names.rs`
+**Issue:** ~~Two different player name formatting functions with different purposes~~ **RESOLVED**
+- ~~`format_player_name()` in `cache.rs` - formats to last name only (e.g., "Koivu")~~ **Fixed:** All player name formatting is now centralized in `player_names.rs`
+- ~~`format_player_full_name()` in `api.rs` - formats to full name (e.g., "Mikko Koivu")~~ **Fixed:** Consistent function naming and usage across codebase
 
-**Files to fix:**
-- `src/data_fetcher/cache.rs`
-- `src/data_fetcher/api.rs`
-- `src/data_fetcher/processors.rs`
+**Files fixed:**
+- ✅ `src/data_fetcher/player_names.rs` - Centralized all player name formatting functions with clear documentation
+- ✅ `src/data_fetcher/cache.rs` - Uses `format_for_display()` consistently
+- ✅ `src/data_fetcher/api.rs` - Uses `build_full_name()` and `format_for_display()` consistently
 
-**Action:** Consolidate into clear, well-documented functions with consistent naming
+**Action Completed:** ✅ Consolidated player name formatting into clear, well-documented functions:
+- **`build_full_name()`** - Creates full names from first/last name components
+- **`format_for_display()`** - Formats names for teletext display (last name only with proper capitalization)
+- **`create_fallback_name()`** - Creates fallback names for missing player data
+- All functions are consistently used throughout the codebase with comprehensive tests
 
 ## Medium Priority Inconsistencies
 
