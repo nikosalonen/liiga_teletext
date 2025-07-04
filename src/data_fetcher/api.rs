@@ -1,8 +1,9 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
-    cache_players_with_formatting, cache_tournament_data, get_cached_players,
-    get_cached_tournament_data, cache_detailed_game_data, get_cached_detailed_game_data,
-    cache_goal_events_data, get_cached_goal_events_data, cache_http_response, get_cached_http_response,
+    cache_detailed_game_data, cache_goal_events_data, cache_http_response,
+    cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
+    get_cached_goal_events_data, get_cached_http_response, get_cached_players,
+    get_cached_tournament_data,
 };
 use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
@@ -1818,6 +1819,11 @@ mod tests {
         }
     }
 
+    async fn clear_all_caches_for_test() {
+        use crate::data_fetcher::cache::clear_all_caches;
+        clear_all_caches().await;
+    }
+
     fn create_mock_schedule_response() -> ScheduleResponse {
         ScheduleResponse {
             games: vec![ScheduleGame {
@@ -1953,8 +1959,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_tournament_data_success() {
-        use crate::data_fetcher::cache::clear_tournament_cache;
-        clear_tournament_cache().await;
+        clear_all_caches_for_test().await;
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -1985,12 +1990,13 @@ mod tests {
             response.games[0].away_team.team_name.as_deref(),
             Some("Tappara")
         );
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_tournament_data_no_games() {
-        use crate::data_fetcher::cache::clear_tournament_cache;
-        clear_tournament_cache().await;
+        clear_all_caches_for_test().await;
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -2013,12 +2019,13 @@ mod tests {
         let response = result.unwrap();
         assert_eq!(response.games.len(), 0);
         assert_eq!(response.next_game_date, Some("2024-01-16".to_string()));
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_tournament_data_server_error() {
-        use crate::data_fetcher::cache::clear_tournament_cache;
-        clear_tournament_cache().await;
+        clear_all_caches_for_test().await;
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -2036,12 +2043,13 @@ mod tests {
         let result = fetch_tournament_data(&client, &test_config, "runkosarja", "2024-01-15").await;
 
         assert!(result.is_err());
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_tournament_data_not_found() {
-        use crate::data_fetcher::cache::clear_tournament_cache;
-        clear_tournament_cache().await;
+        clear_all_caches_for_test().await;
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -2059,12 +2067,13 @@ mod tests {
         let result = fetch_tournament_data(&client, &test_config, "runkosarja", "2024-01-15").await;
 
         assert!(result.is_err());
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_day_data_success() {
-        use crate::data_fetcher::cache::clear_tournament_cache;
-        clear_tournament_cache().await;
+        clear_all_caches_for_test().await;
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -2090,10 +2099,14 @@ mod tests {
         let responses = responses.unwrap();
         assert_eq!(responses.len(), 1);
         assert_eq!(responses[0].games.len(), 1);
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_day_data_no_games() {
+        clear_all_caches_for_test().await;
+
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
@@ -2115,6 +2128,8 @@ mod tests {
         assert!(result.is_ok());
         let (responses, _) = result.unwrap();
         assert!(responses.is_none());
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
@@ -3085,8 +3100,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_find_future_games_fallback() {
-        use crate::data_fetcher::cache::clear_tournament_cache;
-        clear_tournament_cache().await;
+        clear_all_caches_for_test().await;
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -3116,13 +3130,12 @@ mod tests {
         assert_eq!(date, "2024-01-15");
 
         // Clear cache after test to prevent interference with other tests
-        clear_tournament_cache().await;
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_find_future_games_fallback_no_games() {
-        use crate::data_fetcher::cache::clear_tournament_cache;
-        clear_tournament_cache().await;
+        clear_all_caches_for_test().await;
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -3149,7 +3162,7 @@ mod tests {
         assert!(response.is_none());
 
         // Clear cache after test to prevent interference with other tests
-        clear_tournament_cache().await;
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
