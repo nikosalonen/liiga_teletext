@@ -20,6 +20,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run tests
+        env:
+          RUST_BACKTRACE: 1
         run: cargo test --all-features
 
       - name: Run clippy
