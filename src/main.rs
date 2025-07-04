@@ -26,6 +26,7 @@ use tracing_subscriber::{
     fmt::{self, format::FmtSpan},
     prelude::*,
 };
+use crossterm::style::Stylize;
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
@@ -327,6 +328,51 @@ async fn check_latest_version() -> Option<String> {
         .map(String::from)
 }
 
+/// Helper to print a dynamic-width version status box with optional color highlights
+fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
+    // Compute max content width
+    let max_content_width = lines.iter().map(|(l, _)| l.chars().count()).max().unwrap_or(0);
+    let box_width = max_content_width + 4; // 2 for borders, 2 for padding
+    let border = format!("╔{:═<width$}╗", "", width = box_width - 2);
+    let sep = format!("╠{:═<width$}╣", "", width = box_width - 2);
+    let bottom = format!("╚{:═<width$}╝", "", width = box_width - 2);
+    // Print top border
+    execute!(stdout(), SetForegroundColor(Color::White), Print(format!("{border}\n"))).ok();
+    // Print lines
+    for (i, (line, color)) in lines.iter().enumerate() {
+        let padded = format!("║ {:<width$} ║", line, width = max_content_width);
+        match color {
+            Some(c) => {
+                // Print up to the colored part, then color, then reset
+                if let Some((pre, col)) = line.split_once(':') {
+                    let pre = format!("║ {pre}:");
+                    let col = col.trim_start();
+                    let pad = max_content_width - (pre.chars().count() - 2 + col.chars().count());
+                    execute!(stdout(),
+                        SetForegroundColor(Color::White),
+                        Print(pre),
+                        SetForegroundColor(*c),
+                        Print(col),
+                        SetForegroundColor(Color::White),
+                        Print(format!("{:pad$} ║\n", "", pad = pad)),
+                    ).ok();
+                } else {
+                    execute!(stdout(), SetForegroundColor(*c), Print(padded), SetForegroundColor(Color::White), Print("\n")).ok();
+                }
+            }
+            None => {
+                execute!(stdout(), SetForegroundColor(Color::White), Print(padded), Print("\n")).ok();
+            }
+        }
+        // Separator after first or second line if needed
+        if i == 0 && lines.len() > 2 {
+            execute!(stdout(), Print(format!("{sep}\n"))).ok();
+        }
+    }
+    // Print bottom border
+    execute!(stdout(), Print(format!("{bottom}\n")), ResetColor).ok();
+}
+
 fn print_version_info(latest_version: &str) {
     let current = match Version::parse(CURRENT_VERSION) {
         Ok(v) => v,
@@ -346,33 +392,15 @@ fn print_version_info(latest_version: &str) {
 
     if latest > current {
         println!();
-        execute!(
-            stdout(),
-            SetForegroundColor(Color::White),
-            Print("╔════════════════════════════════════╗\n"),
-            Print("║ Liiga Teletext Status              ║\n"),
-            Print("╠════════════════════════════════════╣\n"),
-            Print("║ Current Version: "),
-            SetForegroundColor(Color::Yellow),
-            Print(CURRENT_VERSION),
-            SetForegroundColor(Color::White),
-            Print("             ║\n"),
-            Print("║ Latest Version:  "),
-            SetForegroundColor(Color::Cyan),
-            Print(latest_version),
-            SetForegroundColor(Color::White),
-            Print("             ║\n"),
-            Print("╠════════════════════════════════════╣\n"),
-            Print("║ Update available! Run:             ║\n"),
-            Print("║ "),
-            SetForegroundColor(Color::Cyan),
-            Print("cargo install liiga_teletext"),
-            SetForegroundColor(Color::White),
-            Print("       ║\n"),
-            Print("╚════════════════════════════════════╝\n"),
-            ResetColor
-        )
-        .ok();
+        print_version_status_box(vec![
+            ("Liiga Teletext Status".to_string(), None),
+            ("".to_string(), None),
+            (format!("Current Version: {CURRENT_VERSION}"), Some(Color::White)),
+            (format!("Latest Version:  {latest_version}"), Some(Color::Cyan)),
+            ("".to_string(), None),
+            ("Update available! Run:".to_string(), None),
+            ("cargo install liiga_teletext".to_string(), Some(Color::Cyan)),
+        ]);
     }
 }
 
@@ -383,12 +411,13 @@ fn print_logo() {
         Print(format!(
             "\n{}",
             r#"
- _     _ _               _____    _      _            _
-| |   (_|_) __ _  __ _  |_   _|__| | ___| |_ _____  _| |_
-| |   | | |/ _` |/ _` |   | |/ _ \ |/ _ \ __/ _ \ \/ / __|
-| |___| | | (_| | (_| |   | |  __/ |  __/ ||  __/>  <| |_
-|_____|_|_|\__, |\__,_|   |_|\___|_|\___|\__\___/_/\_\\__|
-           |___/
+
+██╗░░░░░██╗██╗░██████╗░░█████╗░  ██████╗░██████╗░░░███╗░░
+██║░░░░░██║██║██╔════╝░██╔══██╗  ╚════██╗╚════██╗░████║░░
+██║░░░░░██║██║██║░░██╗░███████║  ░░███╔═╝░░███╔═╝██╔██║░░
+██║░░░░░██║██║██║░░╚██╗██╔══██║  ██╔══╝░░██╔══╝░░╚═╝██║░░
+███████╗██║██║╚██████╔╝██║░░██║  ███████╗███████╗███████╗
+╚══════╝╚═╝╚═╝░╚═════╝░╚═╝░░╚═╝  ╚══════╝╚══════╝╚══════╝
 "#
         )),
         ResetColor
@@ -515,22 +544,12 @@ async fn main() -> Result<(), AppError> {
                 print_version_info(&latest_version);
             } else {
                 println!();
-                execute!(
-                    stdout(),
-                    SetForegroundColor(Color::White),
-                    Print("╔════════════════════════════════════╗\n"),
-                    Print("║ Liiga Teletext Status              ║\n"),
-                    Print("╠════════════════════════════════════╣\n"),
-                    Print("║ Version: "),
-                    SetForegroundColor(Color::Green),
-                    Print(CURRENT_VERSION),
-                    SetForegroundColor(Color::White),
-                    Print("                     ║\n"),
-                    Print("║ You're running the latest version! ║\n"),
-                    Print("╚════════════════════════════════════╝\n"),
-                    ResetColor
-                )
-                .ok();
+                print_version_status_box(vec![
+                    ("Liiga Teletext Status".to_string(), None),
+                    ("".to_string(), None),
+                    (format!("Version: {CURRENT_VERSION}"), Some(Color::White)),
+                    ("You're running the latest version!".to_string(), None),
+                ]);
             }
         }
 
