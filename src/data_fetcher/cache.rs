@@ -98,7 +98,6 @@ impl CachedTournamentData {
     }
 
     /// Gets the TTL duration for this cache entry
-    #[allow(dead_code)]
     pub fn get_ttl(&self) -> Duration {
         if self.has_live_games {
             Duration::from_secs(30)
@@ -108,15 +107,10 @@ impl CachedTournamentData {
     }
 
     /// Gets the remaining time until expiration
-    #[allow(dead_code)]
     pub fn time_until_expiry(&self) -> Duration {
         let ttl = self.get_ttl();
         let elapsed = self.cached_at.elapsed();
-        if elapsed >= ttl {
-            Duration::ZERO
-        } else {
-            ttl - elapsed
-        }
+        ttl.saturating_sub(elapsed)
     }
 }
 
@@ -142,7 +136,6 @@ impl CachedDetailedGameData {
     }
 
     /// Gets the TTL duration for this cache entry
-    #[allow(dead_code)]
     pub fn get_ttl(&self) -> Duration {
         if self.is_live_game {
             Duration::from_secs(15)
