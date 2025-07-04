@@ -1,7 +1,7 @@
 use crate::teletext_ui::ScoreType;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct GoalEvent {
     #[serde(rename = "scorerPlayerId")]
     pub scorer_player_id: i64,
@@ -193,7 +193,7 @@ pub struct DetailedGameResponse {
     pub away_team_players: Vec<Player>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct GameData {
     pub home_team: String,
     pub away_team: String,
@@ -208,7 +208,7 @@ pub struct GameData {
     pub start: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Hash)]
 pub struct GoalEventData {
     pub scorer_player_id: i64,
     pub scorer_name: String,

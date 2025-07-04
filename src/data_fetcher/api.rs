@@ -1521,7 +1521,7 @@ async fn fetch_historical_games(
 /// Determines if a date is from a previous season (not the current season).
 /// Hockey seasons typically start in September and end in April/May.
 /// So a date in May-July is from the previous season.
-fn is_historical_date(date: &str) -> bool {
+pub fn is_historical_date(date: &str) -> bool {
     let now = Utc::now().with_timezone(&Local);
     is_historical_date_with_current_time(date, now)
 }
@@ -2088,9 +2088,9 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        // Clear the cache to simulate a cache miss after caching
-        use crate::data_fetcher::cache::PLAYER_CACHE;
-        PLAYER_CACHE.write().await.clear();
+        // Clear the cache to ensure a clean state
+        use crate::data_fetcher::cache::clear_cache;
+        clear_cache().await;
 
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
@@ -2101,6 +2101,9 @@ mod tests {
         assert_eq!(goal_events[0].scorer_name, "Smith");
         assert_eq!(goal_events[0].home_team_score, 1);
         assert_eq!(goal_events[0].away_team_score, 0);
+
+        // Clear the cache after the test to avoid interference
+        clear_cache().await;
     }
 
     #[tokio::test]
