@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use tracing::{debug, info, instrument, warn};
 
 use crate::data_fetcher::models::{
     DetailedGameResponse, GameData, GoalEventData, ScheduleResponse,
@@ -222,24 +223,62 @@ pub fn has_live_games_from_game_data(games: &[GameData]) -> bool {
 }
 
 /// Caches tournament data with automatic live game detection
+#[instrument(skip(key, data), fields(cache_key = %key))]
 pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
+    let games_count = data.games.len();
     let has_live = has_live_games(&data);
+
+    debug!(
+        "Caching tournament data: key={}, games={}, has_live={}",
+        key, games_count, has_live
+    );
+
     let cached_data = CachedTournamentData::new(data, has_live);
 
-    TOURNAMENT_CACHE.write().await.put(key, cached_data);
+    let mut cache = TOURNAMENT_CACHE.write().await;
+    cache.put(key.clone(), cached_data);
+    info!(
+        "Successfully cached tournament data: key={}, games={}, has_live={}",
+        key, games_count, has_live
+    );
 }
 
 /// Retrieves cached tournament data if it's not expired
+#[instrument(skip(key), fields(cache_key = %key))]
 pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
+    debug!(
+        "Attempting to retrieve tournament data from cache for key: {}",
+        key
+    );
+
     let mut cache = TOURNAMENT_CACHE.write().await;
 
     if let Some(cached_entry) = cache.get(key) {
+        debug!("Found cached tournament data for key: {}", key);
+
         if !cached_entry.is_expired() {
+            let games_count = cached_entry.data.games.len();
+            let has_live = cached_entry.has_live_games;
+            debug!(
+                "Cache hit for tournament data: key={}, games={}, has_live={}, age={:?}",
+                key,
+                games_count,
+                has_live,
+                cached_entry.cached_at.elapsed()
+            );
             return Some(cached_entry.data.clone());
         } else {
             // Remove expired entry
+            warn!(
+                "Removing expired tournament cache entry: key={}, age={:?}, ttl={:?}",
+                key,
+                cached_entry.cached_at.elapsed(),
+                cached_entry.get_ttl()
+            );
             cache.pop(key);
         }
+    } else {
+        debug!("Cache miss for tournament data: key={}", key);
     }
 
     None
@@ -329,8 +368,26 @@ pub async fn clear_tournament_cache() {
 ///     }
 /// }
 /// ```
+#[instrument(skip(game_id), fields(game_id = %game_id))]
 pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
-    PLAYER_CACHE.write().await.get(&game_id).cloned()
+    debug!(
+        "Attempting to retrieve cached players for game_id: {}",
+        game_id
+    );
+
+    let mut cache = PLAYER_CACHE.write().await;
+
+    if let Some(players) = cache.get(&game_id) {
+        let player_count = players.len();
+        debug!(
+            "Cache hit for players: game_id={}, player_count={}",
+            game_id, player_count
+        );
+        Some(players.clone())
+    } else {
+        debug!("Cache miss for players: game_id={}", game_id);
+        None
+    }
 }
 
 /// Caches formatted player information for a specific game.
@@ -353,8 +410,21 @@ pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
 ///     cache_players(12345, players).await;
 /// }
 /// ```
+#[instrument(skip(game_id, players), fields(game_id = %game_id))]
 pub async fn cache_players(game_id: i32, players: HashMap<i64, String>) {
-    PLAYER_CACHE.write().await.put(game_id, players);
+    let player_count = players.len();
+    debug!(
+        "Caching players: game_id={}, player_count={}",
+        game_id, player_count
+    );
+
+    let mut cache = PLAYER_CACHE.write().await;
+    cache.put(game_id, players);
+
+    info!(
+        "Successfully cached players: game_id={}, player_count={}",
+        game_id, player_count
+    );
 }
 
 /// Caches player information with automatic formatting for a specific game.
@@ -414,6 +484,7 @@ pub fn create_detailed_game_key(season: i32, game_id: i32) -> String {
 }
 
 /// Caches detailed game data with automatic live game detection
+#[instrument(skip(season, game_id, data), fields(season = %season, game_id = %game_id))]
 pub async fn cache_detailed_game_data(
     season: i32,
     game_id: i32,
@@ -421,25 +492,59 @@ pub async fn cache_detailed_game_data(
     is_live_game: bool,
 ) {
     let key = create_detailed_game_key(season, game_id);
+    debug!(
+        "Caching detailed game data: key={}, is_live={}",
+        key, is_live_game
+    );
+
     let cached_data = CachedDetailedGameData::new(data, is_live_game);
-    DETAILED_GAME_CACHE.write().await.put(key, cached_data);
+    let mut cache = DETAILED_GAME_CACHE.write().await;
+    cache.put(key.clone(), cached_data);
+
+    info!(
+        "Successfully cached detailed game data: key={}, is_live={}",
+        key, is_live_game
+    );
 }
 
 /// Retrieves cached detailed game data if it's not expired
+#[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
 pub async fn get_cached_detailed_game_data(
     season: i32,
     game_id: i32,
 ) -> Option<DetailedGameResponse> {
     let key = create_detailed_game_key(season, game_id);
+    debug!(
+        "Attempting to retrieve detailed game data from cache: key={}",
+        key
+    );
+
     let mut cache = DETAILED_GAME_CACHE.write().await;
 
     if let Some(cached_entry) = cache.get(&key) {
+        debug!("Found cached detailed game data: key={}", key);
+
         if !cached_entry.is_expired() {
+            let is_live = cached_entry.is_live_game;
+            debug!(
+                "Cache hit for detailed game data: key={}, is_live={}, age={:?}",
+                key,
+                is_live,
+                cached_entry.cached_at.elapsed()
+            );
             return Some(cached_entry.data.clone());
         } else {
             // Remove expired entry
+            warn!(
+                "Removing expired detailed game cache entry: key={}, age={:?}, ttl={:?}",
+                key,
+                cached_entry.cached_at.elapsed(),
+                cached_entry.get_ttl()
+            );
             cache.pop(&key);
         }
+    } else {
+        debug!("Cache miss for detailed game data: key={}", key);
     }
 
     None
@@ -471,24 +576,60 @@ pub fn create_goal_events_key(season: i32, game_id: i32) -> String {
 }
 
 /// Caches processed goal events data
+#[instrument(skip(season, game_id, data), fields(season = %season, game_id = %game_id))]
 pub async fn cache_goal_events_data(season: i32, game_id: i32, data: Vec<GoalEventData>) {
     let key = create_goal_events_key(season, game_id);
+    let event_count = data.len();
+    debug!(
+        "Caching goal events data: key={}, event_count={}",
+        key, event_count
+    );
+
     let cached_data = CachedGoalEventsData::new(data, game_id, season);
-    GOAL_EVENTS_CACHE.write().await.put(key, cached_data);
+    let mut cache = GOAL_EVENTS_CACHE.write().await;
+    cache.put(key.clone(), cached_data);
+
+    info!(
+        "Successfully cached goal events data: key={}, event_count={}",
+        key, event_count
+    );
 }
 
 /// Retrieves cached goal events data if it's not expired
+#[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
 pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Vec<GoalEventData>> {
     let key = create_goal_events_key(season, game_id);
+    debug!(
+        "Attempting to retrieve goal events data from cache: key={}",
+        key
+    );
+
     let mut cache = GOAL_EVENTS_CACHE.write().await;
 
     if let Some(cached_entry) = cache.get(&key) {
+        debug!("Found cached goal events data: key={}", key);
+
         if !cached_entry.is_expired() {
+            let event_count = cached_entry.data.len();
+            debug!(
+                "Cache hit for goal events data: key={}, event_count={}, age={:?}",
+                key,
+                event_count,
+                cached_entry.cached_at.elapsed()
+            );
             return Some(cached_entry.data.clone());
         } else {
             // Remove expired entry
+            warn!(
+                "Removing expired goal events cache entry: key={}, age={:?}, ttl={:?}",
+                key,
+                cached_entry.cached_at.elapsed(),
+                Duration::from_secs(3600) // 1 hour TTL
+            );
             cache.pop(&key);
         }
+    } else {
+        debug!("Cache miss for goal events data: key={}", key);
     }
 
     None
@@ -515,22 +656,58 @@ pub async fn clear_goal_events_cache() {
 // HTTP Response Cache Functions
 
 /// Caches HTTP response data with TTL
+#[instrument(skip(url, data), fields(url = %url))]
 pub async fn cache_http_response(url: String, data: String, ttl_seconds: u64) {
+    let data_size = data.len();
+    debug!(
+        "Caching HTTP response: url={}, data_size={}, ttl={}s",
+        url, data_size, ttl_seconds
+    );
+
     let cached_data = CachedHttpResponse::new(data, ttl_seconds);
-    HTTP_RESPONSE_CACHE.write().await.put(url, cached_data);
+    let mut cache = HTTP_RESPONSE_CACHE.write().await;
+    cache.put(url.clone(), cached_data);
+
+    info!(
+        "Successfully cached HTTP response: url={}, data_size={}, ttl={}s",
+        url, data_size, ttl_seconds
+    );
 }
 
 /// Retrieves cached HTTP response if it's not expired
+#[instrument(skip(url), fields(url = %url))]
 pub async fn get_cached_http_response(url: &str) -> Option<String> {
+    debug!(
+        "Attempting to retrieve HTTP response from cache: url={}",
+        url
+    );
+
     let mut cache = HTTP_RESPONSE_CACHE.write().await;
 
     if let Some(cached_entry) = cache.get(url) {
+        debug!("Found cached HTTP response: url={}", url);
+
         if !cached_entry.is_expired() {
+            let data_size = cached_entry.data.len();
+            debug!(
+                "Cache hit for HTTP response: url={}, data_size={}, age={:?}",
+                url,
+                data_size,
+                cached_entry.cached_at.elapsed()
+            );
             return Some(cached_entry.data.clone());
         } else {
             // Remove expired entry
+            warn!(
+                "Removing expired HTTP response cache entry: url={}, age={:?}, ttl={:?}",
+                url,
+                cached_entry.cached_at.elapsed(),
+                Duration::from_secs(cached_entry.ttl_seconds)
+            );
             cache.pop(url);
         }
+    } else {
+        debug!("Cache miss for HTTP response: url={}", url);
     }
 
     None
@@ -557,17 +734,34 @@ pub async fn clear_http_response_cache() {
 // Combined Cache Management Functions
 
 /// Gets combined cache statistics for monitoring purposes
+/// Optimized to minimize RwLock contention by batching read operations
 pub async fn get_all_cache_stats() -> CacheStats {
-    let player_size = PLAYER_CACHE.read().await.len();
-    let player_capacity = PLAYER_CACHE.read().await.cap().get();
-    let tournament_size = TOURNAMENT_CACHE.read().await.len();
-    let tournament_capacity = TOURNAMENT_CACHE.read().await.cap().get();
-    let detailed_game_size = DETAILED_GAME_CACHE.read().await.len();
-    let detailed_game_capacity = DETAILED_GAME_CACHE.read().await.cap().get();
-    let goal_events_size = GOAL_EVENTS_CACHE.read().await.len();
-    let goal_events_capacity = GOAL_EVENTS_CACHE.read().await.cap().get();
-    let http_response_size = HTTP_RESPONSE_CACHE.read().await.len();
-    let http_response_capacity = HTTP_RESPONSE_CACHE.read().await.cap().get();
+    // Acquire all read locks concurrently to minimize contention
+    let (
+        player_cache,
+        tournament_cache,
+        detailed_game_cache,
+        goal_events_cache,
+        http_response_cache,
+    ) = tokio::join!(
+        PLAYER_CACHE.read(),
+        TOURNAMENT_CACHE.read(),
+        DETAILED_GAME_CACHE.read(),
+        GOAL_EVENTS_CACHE.read(),
+        HTTP_RESPONSE_CACHE.read(),
+    );
+
+    // Extract size and capacity from each cache in a single lock hold
+    let player_size = player_cache.len();
+    let player_capacity = player_cache.cap().get();
+    let tournament_size = tournament_cache.len();
+    let tournament_capacity = tournament_cache.cap().get();
+    let detailed_game_size = detailed_game_cache.len();
+    let detailed_game_capacity = detailed_game_cache.cap().get();
+    let goal_events_size = goal_events_cache.len();
+    let goal_events_capacity = goal_events_cache.cap().get();
+    let http_response_size = http_response_cache.len();
+    let http_response_capacity = http_response_cache.cap().get();
 
     CacheStats {
         player_cache: CacheInfo {
