@@ -63,9 +63,7 @@ pub struct CachedDetailedGameData {
 pub struct CachedGoalEventsData {
     pub data: Vec<GoalEventData>,
     pub cached_at: Instant,
-    #[allow(dead_code)]
     pub game_id: i32,
-    #[allow(dead_code)]
     pub season: i32,
 }
 
@@ -168,6 +166,26 @@ impl CachedGoalEventsData {
     pub fn is_expired(&self) -> bool {
         let ttl = Duration::from_secs(3600); // 1 hour for goal events
         self.cached_at.elapsed() > ttl
+    }
+
+    /// Gets the game ID associated with this cached data (useful for debugging and logging)
+    pub fn get_game_id(&self) -> i32 {
+        self.game_id
+    }
+
+    /// Gets the season associated with this cached data (useful for debugging and logging)
+    pub fn get_season(&self) -> i32 {
+        self.season
+    }
+
+    /// Gets cache metadata including game ID and season for monitoring and debugging
+    pub fn get_cache_info(&self) -> (i32, i32, usize, bool) {
+        (
+            self.game_id,
+            self.season,
+            self.data.len(),
+            self.is_expired(),
+        )
     }
 }
 
@@ -539,7 +557,6 @@ pub async fn clear_http_response_cache() {
 // Combined Cache Management Functions
 
 /// Gets combined cache statistics for monitoring purposes
-#[allow(dead_code)]
 pub async fn get_all_cache_stats() -> CacheStats {
     let player_size = PLAYER_CACHE.read().await.len();
     let player_capacity = PLAYER_CACHE.read().await.cap().get();
@@ -594,13 +611,86 @@ pub struct CacheStats {
 }
 
 /// Clears all caches (useful for testing and debugging)
-#[allow(dead_code)]
 pub async fn clear_all_caches() {
     clear_cache().await;
     clear_tournament_cache().await;
     clear_detailed_game_cache().await;
     clear_goal_events_cache().await;
     clear_http_response_cache().await;
+}
+
+/// Gets detailed cache debugging information including individual cache entries
+/// This function demonstrates usage of all debugging methods for monitoring purposes
+pub async fn get_detailed_cache_debug_info() -> String {
+    let mut debug_info = String::new();
+
+    // Get basic stats
+    let stats = get_all_cache_stats().await;
+    debug_info.push_str(&format!(
+        "Cache Statistics:\n\
+         Player Cache: {}/{} entries\n\
+         Tournament Cache: {}/{} entries\n\
+         Detailed Game Cache: {}/{} entries\n\
+         Goal Events Cache: {}/{} entries\n\
+         HTTP Response Cache: {}/{} entries\n\n",
+        stats.player_cache.size,
+        stats.player_cache.capacity,
+        stats.tournament_cache.size,
+        stats.tournament_cache.capacity,
+        stats.detailed_game_cache.size,
+        stats.detailed_game_cache.capacity,
+        stats.goal_events_cache.size,
+        stats.goal_events_cache.capacity,
+        stats.http_response_cache.size,
+        stats.http_response_cache.capacity,
+    ));
+
+    // Get detailed goal events cache info using debug methods
+    let goal_events_cache = GOAL_EVENTS_CACHE.read().await;
+    if !goal_events_cache.is_empty() {
+        debug_info.push_str("Goal Events Cache Details:\n");
+        for (key, entry) in goal_events_cache.iter() {
+            // Use individual debug methods for comprehensive information
+            let game_id = entry.get_game_id();
+            let season = entry.get_season();
+            let (returned_game_id, returned_season, event_count, is_expired) =
+                entry.get_cache_info();
+
+            // Verify consistency between individual methods and combined method
+            assert_eq!(game_id, returned_game_id);
+            assert_eq!(season, returned_season);
+
+            debug_info.push_str(&format!(
+                "  Key: {key}, Game ID: {game_id}, Season: {season}, Events: {event_count}, Expired: {is_expired}\n"
+            ));
+        }
+        debug_info.push('\n');
+    }
+
+    debug_info
+}
+
+/// Resets all caches and returns confirmation - demonstrates clear_all_caches usage
+pub async fn reset_all_caches_with_confirmation() -> String {
+    let stats_before = get_all_cache_stats().await;
+    let total_before = stats_before.player_cache.size
+        + stats_before.tournament_cache.size
+        + stats_before.detailed_game_cache.size
+        + stats_before.goal_events_cache.size
+        + stats_before.http_response_cache.size;
+
+    clear_all_caches().await;
+
+    let stats_after = get_all_cache_stats().await;
+    let total_after = stats_after.player_cache.size
+        + stats_after.tournament_cache.size
+        + stats_after.detailed_game_cache.size
+        + stats_after.goal_events_cache.size
+        + stats_after.http_response_cache.size;
+
+    format!(
+        "Cache reset completed. Entries before: {total_before}, after: {total_after}. All caches cleared successfully."
+    )
 }
 
 #[cfg(test)]
@@ -1325,5 +1415,115 @@ mod tests {
 
         // Clear cache after test
         clear_goal_events_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_goal_events_cache_debug_methods() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 96000 + test_id as i32;
+        let season = 2024;
+
+        // Clear cache to ensure clean state
+        clear_goal_events_cache().await;
+
+        // Create test data
+        let mock_events = vec![
+            GoalEventData {
+                scorer_player_id: 123,
+                scorer_name: "Koivu".to_string(),
+                minute: 15,
+                home_team_score: 1,
+                away_team_score: 0,
+                is_winning_goal: false,
+                goal_types: vec!["EV".to_string()],
+                is_home_team: true,
+                video_clip_url: None,
+            },
+            GoalEventData {
+                scorer_player_id: 456,
+                scorer_name: "Selänne".to_string(),
+                minute: 25,
+                home_team_score: 2,
+                away_team_score: 0,
+                is_winning_goal: false,
+                goal_types: vec!["PP".to_string()],
+                is_home_team: true,
+                video_clip_url: None,
+            },
+        ];
+
+        // Create cached entry directly to test debug methods
+        let cached_entry = CachedGoalEventsData::new(mock_events.clone(), game_id, season);
+
+        // Test debug methods
+        assert_eq!(cached_entry.get_game_id(), game_id);
+        assert_eq!(cached_entry.get_season(), season);
+
+        let (returned_game_id, returned_season, event_count, is_expired) =
+            cached_entry.get_cache_info();
+        assert_eq!(returned_game_id, game_id);
+        assert_eq!(returned_season, season);
+        assert_eq!(event_count, 2);
+        assert!(!is_expired); // Should not be expired immediately after creation
+
+        // Also test through the cache system
+        cache_goal_events_data(season, game_id, mock_events).await;
+
+        // Verify the cached data can be retrieved
+        let retrieved = get_cached_goal_events_data(season, game_id).await;
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().len(), 2);
+
+        // Clear cache after test
+        clear_goal_events_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_debugging_functions() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+
+        // Clear all caches first
+        clear_all_caches().await;
+
+        // Add some test data to various caches
+        let mut players = HashMap::new();
+        players.insert(1, "Test Player".to_string());
+        let player_game_id = 97000 + test_id as i32;
+        cache_players(player_game_id, players).await;
+
+        let mock_events = vec![GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Test Scorer".to_string(),
+            minute: 15,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["EV".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        }];
+
+        let goal_game_id = 98000 + test_id as i32;
+        cache_goal_events_data(2024, goal_game_id, mock_events).await;
+
+        // Test detailed debug info function
+        let debug_info = get_detailed_cache_debug_info().await;
+        assert!(debug_info.contains("Cache Statistics"));
+        assert!(debug_info.contains("Player Cache:"));
+        assert!(debug_info.contains("Goal Events Cache:"));
+
+        // Test cache reset with confirmation
+        let reset_confirmation = reset_all_caches_with_confirmation().await;
+        assert!(reset_confirmation.contains("Cache reset completed"));
+        assert!(reset_confirmation.contains("All caches cleared successfully"));
+
+        // Verify caches are actually cleared
+        let stats_after_reset = get_all_cache_stats().await;
+        assert_eq!(stats_after_reset.player_cache.size, 0);
+        assert_eq!(stats_after_reset.goal_events_cache.size, 0);
     }
 }
