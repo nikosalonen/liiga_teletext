@@ -147,7 +147,7 @@ pub enum TeletextRow {
     FutureGamesHeader(String), // For "Seuraavat ottelut {date}" line
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub enum ScoreType {
     Final,     // Final score
     Ongoing,   // Ongoing game with current score
@@ -921,14 +921,6 @@ impl TeletextPage {
                     }
                 }
                 TeletextRow::ErrorMessage(message) => {
-                    execute!(
-                        stdout,
-                        MoveTo(0, current_y),
-                        SetForegroundColor(text_fg()),
-                        Print("Virhe haettaessa otteluita:"),
-                        ResetColor
-                    )?;
-                    current_y += 1;
                     for line in message.lines() {
                         execute!(
                             stdout,

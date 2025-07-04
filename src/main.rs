@@ -13,7 +13,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use data_fetcher::{GameData, fetch_liiga_data};
+use data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
 use error::AppError;
 use semver::Version;
 use std::io::stdout;
@@ -579,9 +579,38 @@ async fn main() -> Result<(), AppError> {
 
     if args.once {
         // Quick view mode - just show the data once and exit
+
+        // Show loading indicator for historical dates or when specific date is requested
+        let showed_loading = if let Some(ref date) = args.date {
+            // Check if this is a historical date that might take longer to fetch
+            if is_historical_date(date) {
+                println!(
+                    "Haetaan historiallista dataa päivälle {}...",
+                    format_date_for_display(date)
+                );
+                println!("Tämä voi kestää hetken, odotathan...");
+                println!();
+                true
+            } else {
+                println!(
+                    "Haetaan otteluita päivälle {}...",
+                    format_date_for_display(date)
+                );
+                true
+            }
+        } else {
+            println!("Haetaan tämän päivän otteluita...");
+            true
+        };
+
         let (games, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
             Ok((games, fetched_date)) => (games, fetched_date),
             Err(e) => {
+                // Clear loading message if it was shown
+                if showed_loading {
+                    println!(); // Add space after loading message
+                }
+
                 let mut error_page = TeletextPage::new(
                     221,
                     "JÄÄKIEKKO".to_string(),
@@ -590,7 +619,7 @@ async fn main() -> Result<(), AppError> {
                     false,
                     true,
                 );
-                error_page.add_error_message(&e.to_string());
+                error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
                 // Set terminal title for non-interactive mode (error case)
                 execute!(stdout(), crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
 
@@ -599,8 +628,13 @@ async fn main() -> Result<(), AppError> {
                 return Ok(());
             }
         };
+        // Clear loading message if it was shown
+        if showed_loading {
+            println!(); // Add space after loading message
+        }
+
         let page = if games.is_empty() {
-            let mut error_page = TeletextPage::new(
+            let mut no_games_page = TeletextPage::new(
                 221,
                 "JÄÄKIEKKO".to_string(),
                 "SM-LIIGA".to_string(),
@@ -614,14 +648,14 @@ async fn main() -> Result<(), AppError> {
                 .format("%Y-%m-%d")
                 .to_string();
             if fetched_date == today {
-                error_page.add_error_message("Ei otteluita tänään");
+                no_games_page.add_error_message("Ei otteluita tänään");
             } else {
-                error_page.add_error_message(&format!(
+                no_games_page.add_error_message(&format!(
                     "Ei otteluita {} päivälle",
                     format_date_for_display(&fetched_date)
                 ));
             }
-            error_page
+            no_games_page
         } else {
             // Try to create a future games page, fall back to regular page if not future games
             // Only show future games header if no specific date was requested
@@ -686,7 +720,14 @@ async fn main() -> Result<(), AppError> {
     result
 }
 
+/// Optimized interactive UI with change detection and adaptive polling
+/// Performance improvements:
+/// - Change detection prevents unnecessary UI re-renders
+/// - Adaptive polling intervals reduce CPU usage
+/// - Batched UI updates reduce flickering
+/// - Memory cleanup for long-running sessions
 async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result<(), AppError> {
+    // Timer management with adaptive intervals
     let mut last_manual_refresh = Instant::now()
         .checked_sub(Duration::from_secs(15))
         .unwrap_or_else(Instant::now);
@@ -696,162 +737,262 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     let mut last_page_change = Instant::now()
         .checked_sub(Duration::from_millis(200))
         .unwrap_or_else(Instant::now);
-    let mut needs_refresh = true;
-    let mut current_page: Option<TeletextPage> = None;
-    let mut pending_resize = false;
-    let mut resize_timer = Instant::now();
     let mut last_resize = Instant::now()
         .checked_sub(Duration::from_millis(500))
         .unwrap_or_else(Instant::now);
+
+    // State management
+    let mut needs_refresh = true;
+    let mut needs_render = false;
+    let mut current_page: Option<TeletextPage> = None;
+    let mut pending_resize = false;
+    let mut resize_timer = Instant::now();
+
+    // Change detection - track data changes to avoid unnecessary re-renders
+    let mut last_games_hash = 0u64;
     let mut last_games = Vec::new();
     let mut all_games_scheduled = false;
 
+    // Adaptive polling configuration
+    let mut last_activity = Instant::now();
+
+    // Cache monitoring tracking
+    let mut cache_monitor_timer = Instant::now();
+    const CACHE_MONITOR_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
+
     loop {
-        // Check for auto-refresh first
-        // Don't auto-refresh if all games are scheduled (future games)
+        // Adaptive polling interval based on activity
+        let time_since_activity = last_activity.elapsed();
+        let poll_interval = if time_since_activity < Duration::from_secs(5) {
+            Duration::from_millis(50) // Active: 50ms (smooth interaction)
+        } else if time_since_activity < Duration::from_secs(30) {
+            Duration::from_millis(200) // Semi-active: 200ms (good responsiveness)
+        } else {
+            Duration::from_millis(500) // Idle: 500ms (conserve CPU)
+        };
+
+        // Check for auto-refresh with better logic
         if !needs_refresh
             && !last_games.is_empty()
             && !all_games_scheduled
             && last_auto_refresh.elapsed() >= Duration::from_secs(60)
         {
             needs_refresh = true;
+            tracing::debug!("Auto-refresh triggered");
         }
 
+        // Data fetching with change detection
         if needs_refresh {
-            let (games, had_error, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
-                Ok((games, fetched_date)) => (games, false, fetched_date),
-                Err(e) => {
-                    let mut error_page = TeletextPage::new(
-                        221,
-                        "JÄÄKIEKKO".to_string(),
-                        "SM-LIIGA".to_string(),
-                        args.disable_links,
-                        true,
-                        false,
-                    );
-                    error_page.add_error_message(&e.to_string());
-                    current_page = Some(error_page);
-                    if let Some(page) = &current_page {
-                        page.render(stdout)?;
-                    }
-                    (Vec::new(), true, String::new())
+            tracing::debug!("Fetching new data");
+
+            // Show loading indicator for historical dates or when specific date is requested
+            if let Some(ref date) = args.date {
+                let mut loading_page = TeletextPage::new(
+                    221,
+                    "JÄÄKIEKKO".to_string(),
+                    "SM-LIIGA".to_string(),
+                    args.disable_links,
+                    true,
+                    false,
+                );
+
+                if is_historical_date(date) {
+                    loading_page.add_error_message(&format!(
+                        "Haetaan historiallista dataa päivälle {}...",
+                        format_date_for_display(date)
+                    ));
+                    loading_page.add_error_message("Tämä voi kestää hetken, odotathan...");
+                } else {
+                    loading_page.add_error_message(&format!(
+                        "Haetaan otteluita päivälle {}...",
+                        format_date_for_display(date)
+                    ));
                 }
-            };
-            last_games = games.clone();
 
-            // Check if all games are scheduled (future games)
-            all_games_scheduled = !games.is_empty() && games.iter().all(is_future_game);
-
-            if all_games_scheduled {
-                tracing::info!("All games are scheduled - auto-refresh disabled");
+                current_page = Some(loading_page);
+                needs_render = true;
+            } else if current_page.is_none() {
+                // Show loading for initial load when no specific date is requested
+                let mut loading_page = TeletextPage::new(
+                    221,
+                    "JÄÄKIEKKO".to_string(),
+                    "SM-LIIGA".to_string(),
+                    args.disable_links,
+                    true,
+                    false,
+                );
+                loading_page.add_error_message("Haetaan tämän päivän otteluita...");
+                current_page = Some(loading_page);
+                needs_render = true;
             }
 
-            // Only create a new page if we didn't have an error
-            if !had_error {
-                let page = if games.is_empty() {
-                    let mut error_page = TeletextPage::new(
-                        221,
-                        "JÄÄKIEKKO".to_string(),
-                        "SM-LIIGA".to_string(),
-                        args.disable_links,
-                        true,
-                        false,
-                    );
-                    // Use UTC internally, convert to local time for date formatting
-                    let today = Utc::now()
-                        .with_timezone(&Local)
-                        .format("%Y-%m-%d")
-                        .to_string();
-                    if fetched_date == today {
-                        error_page.add_error_message("Ei otteluita tänään");
-                    } else {
-                        error_page.add_error_message(&format!(
-                            "Ei otteluita {} päivälle",
-                            format_date_for_display(&fetched_date)
-                        ));
-                    }
-                    error_page
-                } else {
-                    // Try to create a future games page, fall back to regular page if not future games
-                    // Only show future games header if no specific date was requested
-                    let show_future_header = args.date.is_none();
-                    match create_future_games_page(
-                        &games,
-                        args.disable_links,
-                        true,
-                        false,
-                        show_future_header,
-                    )
-                    .await
-                    {
-                        Some(page) => page,
-                        None => {
-                            create_page(
-                                &games,
-                                args.disable_links,
-                                true,
-                                false,
-                                Some(fetched_date.clone()),
-                            )
-                            .await
-                        }
-                    }
-                };
-
-                // Store the current page state
-                current_page = Some(page);
-
-                // Render only when we have new data
+            // Render the loading page immediately
+            if needs_render {
                 if let Some(page) = &current_page {
                     page.render(stdout)?;
                 }
+                needs_render = false;
             }
+
+            let (games, had_error, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
+                Ok((games, fetched_date)) => (games, false, fetched_date),
+                Err(e) => {
+                    tracing::error!("Error fetching data: {}", e);
+                    let mut error_page = TeletextPage::new(
+                        221,
+                        "JÄÄKIEKKO".to_string(),
+                        "SM-LIIGA".to_string(),
+                        args.disable_links,
+                        true,
+                        false,
+                    );
+                    error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
+                    current_page = Some(error_page);
+                    needs_render = true;
+                    (Vec::new(), true, String::new())
+                }
+            };
+
+            // Change detection using a simple hash of game data
+            let games_hash = calculate_games_hash(&games);
+            let data_changed = games_hash != last_games_hash;
+
+            if data_changed {
+                tracing::debug!("Data changed, updating UI");
+                last_games = games.clone();
+                last_games_hash = games_hash;
+
+                // Check if all games are scheduled (future games)
+                all_games_scheduled = !games.is_empty() && games.iter().all(is_future_game);
+
+                if all_games_scheduled {
+                    tracing::info!("All games are scheduled - auto-refresh disabled");
+                }
+
+                // Only create a new page if we didn't have an error and data changed
+                if !had_error {
+                    let page = if games.is_empty() {
+                        let mut error_page = TeletextPage::new(
+                            221,
+                            "JÄÄKIEKKO".to_string(),
+                            "SM-LIIGA".to_string(),
+                            args.disable_links,
+                            true,
+                            false,
+                        );
+                        // Use UTC internally, convert to local time for date formatting
+                        let today = Utc::now()
+                            .with_timezone(&Local)
+                            .format("%Y-%m-%d")
+                            .to_string();
+                        if fetched_date == today {
+                            error_page.add_error_message("Ei otteluita tänään");
+                        } else {
+                            error_page.add_error_message(&format!(
+                                "Ei otteluita {} päivälle",
+                                format_date_for_display(&fetched_date)
+                            ));
+                        }
+                        error_page
+                    } else {
+                        // Try to create a future games page, fall back to regular page if not future games
+                        let show_future_header = args.date.is_none();
+                        match create_future_games_page(
+                            &games,
+                            args.disable_links,
+                            true,
+                            false,
+                            show_future_header,
+                        )
+                        .await
+                        {
+                            Some(page) => page,
+                            None => {
+                                create_page(
+                                    &games,
+                                    args.disable_links,
+                                    true,
+                                    false,
+                                    Some(fetched_date.clone()),
+                                )
+                                .await
+                            }
+                        }
+                    };
+
+                    current_page = Some(page);
+                    needs_render = true;
+                }
+            } else {
+                tracing::debug!("No data changes detected, skipping UI update");
+            }
+
             needs_refresh = false;
             last_auto_refresh = Instant::now();
         }
 
-        // Handle pending resize after a longer delay
+        // Handle pending resize with debouncing
         if pending_resize && resize_timer.elapsed() >= Duration::from_millis(500) {
+            tracing::debug!("Handling resize");
             if let Some(page) = &mut current_page {
                 page.handle_resize();
-                page.render(stdout)?;
+                needs_render = true;
             }
             pending_resize = false;
         }
 
-        // Event loop with shorter timeout
-        if event::poll(Duration::from_millis(20))? {
+        // Batched UI rendering - only render when necessary
+        if needs_render {
+            if let Some(page) = &current_page {
+                page.render(stdout)?;
+                tracing::debug!("UI rendered");
+            }
+            needs_render = false;
+        }
+
+        // Event handling with adaptive polling
+        if event::poll(poll_interval)? {
+            last_activity = Instant::now(); // Reset activity timer
+
             match event::read()? {
-                Event::Key(key_event) => match key_event.code {
-                    KeyCode::Char('q') => return Ok(()),
-                    KeyCode::Char('r') => {
-                        if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
-                            needs_refresh = true;
-                            last_manual_refresh = Instant::now();
+                Event::Key(key_event) => {
+                    tracing::debug!("Key event: {:?}", key_event.code);
+                    match key_event.code {
+                        KeyCode::Char('q') => {
+                            tracing::info!("Quit requested");
+                            return Ok(());
                         }
-                    }
-                    KeyCode::Left => {
-                        if last_page_change.elapsed() >= Duration::from_millis(200) {
-                            if let Some(page) = &mut current_page {
-                                page.previous_page();
-                                page.render(stdout)?;
+                        KeyCode::Char('r') => {
+                            if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
+                                tracing::info!("Manual refresh requested");
+                                needs_refresh = true;
+                                last_manual_refresh = Instant::now();
                             }
-                            last_page_change = Instant::now();
                         }
-                    }
-                    KeyCode::Right => {
-                        if last_page_change.elapsed() >= Duration::from_millis(200) {
-                            if let Some(page) = &mut current_page {
-                                page.next_page();
-                                page.render(stdout)?;
+                        KeyCode::Left => {
+                            if last_page_change.elapsed() >= Duration::from_millis(200) {
+                                if let Some(page) = &mut current_page {
+                                    page.previous_page();
+                                    needs_render = true;
+                                }
+                                last_page_change = Instant::now();
                             }
-                            last_page_change = Instant::now();
                         }
+                        KeyCode::Right => {
+                            if last_page_change.elapsed() >= Duration::from_millis(200) {
+                                if let Some(page) = &mut current_page {
+                                    page.next_page();
+                                    needs_render = true;
+                                }
+                                last_page_change = Instant::now();
+                            }
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                },
+                }
                 Event::Resize(_, _) => {
-                    // Only set pending resize if enough time has passed since last resize
+                    tracing::debug!("Resize event");
+                    // Debounce resize events
                     if last_resize.elapsed() >= Duration::from_millis(500) {
                         resize_timer = Instant::now();
                         pending_resize = true;
@@ -862,7 +1003,76 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             }
         }
 
-        // Add a smaller delay between polls
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        // Periodic cache monitoring for long-running sessions
+        if cache_monitor_timer.elapsed() >= CACHE_MONITOR_INTERVAL {
+            tracing::debug!("Monitoring cache usage");
+            monitor_cache_usage().await;
+            cache_monitor_timer = Instant::now();
+        }
+
+        // Only sleep if we're in idle mode to avoid unnecessary delays
+        if poll_interval >= Duration::from_millis(200) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
     }
+}
+
+/// Calculate a simple hash of game data for change detection
+fn calculate_games_hash(games: &[GameData]) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+
+    for game in games {
+        game.home_team.hash(&mut hasher);
+        game.away_team.hash(&mut hasher);
+        game.result.hash(&mut hasher);
+        game.time.hash(&mut hasher);
+        game.score_type.hash(&mut hasher);
+        game.is_overtime.hash(&mut hasher);
+        game.is_shootout.hash(&mut hasher);
+        game.serie.hash(&mut hasher);
+        game.played_time.hash(&mut hasher);
+        game.start.hash(&mut hasher);
+
+        // Hash goal events for change detection
+        for goal in &game.goal_events {
+            goal.scorer_player_id.hash(&mut hasher);
+            goal.scorer_name.hash(&mut hasher);
+            goal.minute.hash(&mut hasher);
+            goal.home_team_score.hash(&mut hasher);
+            goal.away_team_score.hash(&mut hasher);
+            goal.is_winning_goal.hash(&mut hasher);
+            goal.is_home_team.hash(&mut hasher);
+            goal.goal_types.hash(&mut hasher);
+        }
+    }
+
+    hasher.finish()
+}
+
+/// Monitor cache usage and log statistics for long-running sessions
+async fn monitor_cache_usage() {
+    // The LRU cache automatically manages memory by evicting least recently used entries
+    // when it reaches capacity. We just need to log the current state for monitoring.
+    use crate::data_fetcher::cache::{get_cache_capacity, get_cache_size};
+
+    let current_size = get_cache_size().await;
+    let capacity = get_cache_capacity().await;
+
+    tracing::debug!(
+        "Cache status: {}/{} entries ({}% full)",
+        current_size,
+        capacity,
+        if capacity > 0 {
+            (current_size * 100) / capacity
+        } else {
+            0
+        }
+    );
+
+    // The LRU cache automatically evicts entries when it reaches capacity,
+    // so we don't need manual cleanup logic anymore.
+    // This ensures that the oldest/least recently used entries are always removed first.
 }
