@@ -1253,7 +1253,10 @@ mod tests {
 
         // Verify caches are actually empty before starting
         let initial_stats = get_all_cache_stats().await;
-        assert_eq!(initial_stats.player_cache.size, 0, "Player cache should be empty initially");
+        assert_eq!(
+            initial_stats.player_cache.size, 0,
+            "Player cache should be empty initially"
+        );
 
         // Add some test data to each cache with verification
         let mut players = HashMap::new();
@@ -1317,7 +1320,9 @@ mod tests {
 
         // Verify detailed game cache entry
         assert!(
-            get_cached_detailed_game_data(2024, detailed_game_id).await.is_some(),
+            get_cached_detailed_game_data(2024, detailed_game_id)
+                .await
+                .is_some(),
             "Detailed game cache entry should exist immediately after caching"
         );
 
@@ -1337,7 +1342,9 @@ mod tests {
 
         // Verify goal events cache entry
         assert!(
-            get_cached_goal_events_data(2024, goal_events_game_id).await.is_some(),
+            get_cached_goal_events_data(2024, goal_events_game_id)
+                .await
+                .is_some(),
             "Goal events cache entry should exist immediately after caching"
         );
 
@@ -1363,11 +1370,15 @@ mod tests {
             "Tournament cache entry should exist before stats check"
         );
         assert!(
-            get_cached_detailed_game_data(2024, detailed_game_id).await.is_some(),
+            get_cached_detailed_game_data(2024, detailed_game_id)
+                .await
+                .is_some(),
             "Detailed game cache entry should exist before stats check"
         );
         assert!(
-            get_cached_goal_events_data(2024, goal_events_game_id).await.is_some(),
+            get_cached_goal_events_data(2024, goal_events_game_id)
+                .await
+                .is_some(),
             "Goal events cache entry should exist before stats check"
         );
         assert!(
