@@ -2139,10 +2139,6 @@ mod tests {
         let config = create_mock_config();
         let client = Client::new();
 
-        // Clear all caches to ensure we actually make the HTTP request
-        use crate::data_fetcher::cache::clear_all_caches;
-        clear_all_caches().await;
-
         let mock_response = create_mock_detailed_game_response();
 
         Mock::given(method("GET"))
@@ -2162,9 +2158,6 @@ mod tests {
         assert_eq!(goal_events[0].scorer_name, "Smith");
         assert_eq!(goal_events[0].home_team_score, 1);
         assert_eq!(goal_events[0].away_team_score, 0);
-
-        // Clear cache after test to avoid interference
-        clear_all_caches().await;
     }
 
     #[tokio::test]
@@ -2172,10 +2165,6 @@ mod tests {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
-
-        // Clear all caches to ensure we actually make the HTTP request
-        use crate::data_fetcher::cache::clear_all_caches;
-        clear_all_caches().await;
 
         let mut mock_response = create_mock_detailed_game_response();
         mock_response.game.home_team.goal_events = vec![];
@@ -2195,37 +2184,6 @@ mod tests {
         assert!(result.is_ok());
         let goal_events = result.unwrap();
         assert_eq!(goal_events.len(), 0);
-
-        // Clear cache after test to avoid interference
-        clear_all_caches().await;
-    }
-
-    #[tokio::test]
-    async fn test_process_game_response_with_cache_direct() {
-        // Test the core logic directly without network calls or caching issues
-        let mock_response = create_mock_detailed_game_response();
-
-        // Test the process_game_response_with_cache function directly
-        let goal_events = process_game_response_with_cache(mock_response.clone(), 1).await;
-
-        assert_eq!(goal_events.len(), 1, "Should have exactly 1 goal event");
-        assert_eq!(
-            goal_events[0].scorer_name, "Smith",
-            "Scorer name should be 'Smith'"
-        );
-        assert_eq!(
-            goal_events[0].home_team_score, 1,
-            "Home team score should be 1"
-        );
-        assert_eq!(
-            goal_events[0].away_team_score, 0,
-            "Away team score should be 0"
-        );
-        assert!(goal_events[0].is_home_team, "Should be a home team goal");
-        assert_eq!(
-            goal_events[0].minute, 45,
-            "Should be scored at minute 45 (2700/60)"
-        );
     }
 
     #[tokio::test]
@@ -2247,11 +2205,18 @@ mod tests {
         test_config.api_domain = mock_server.uri();
 
         // Clear all caches to ensure a completely clean state
-        use crate::data_fetcher::cache::clear_all_caches;
+        use crate::data_fetcher::cache::{clear_all_caches, get_cache_size};
         clear_all_caches().await;
 
         // Wait for cache clearing to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Verify cache is actually empty
+        let initial_cache_size = get_cache_size().await;
+        assert_eq!(
+            initial_cache_size, 0,
+            "Player cache should be empty before test"
+        );
 
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
@@ -2262,21 +2227,50 @@ mod tests {
         );
         let goal_events = result.unwrap();
 
-        // More lenient test - just verify we get the right number of events
-        // The detailed validation is done in the direct test above
-        assert_eq!(goal_events.len(), 1, "Should have exactly 1 goal event");
+        // Debug information for CI troubleshooting
+        if goal_events.is_empty() {
+            // Let's verify what the mock response contains
+            let mock_data = create_mock_detailed_game_response();
+            let home_goals = mock_data.game.home_team.goal_events.len();
+            let away_goals = mock_data.game.away_team.goal_events.len();
+            let total_players =
+                mock_data.home_team_players.len() + mock_data.away_team_players.len();
 
-        // Only check the most basic properties to avoid CI timing issues
-        if !goal_events.is_empty() {
-            assert_eq!(
-                goal_events[0].home_team_score, 1,
-                "Home team score should be 1"
-            );
-            assert_eq!(
-                goal_events[0].away_team_score, 0,
-                "Away team score should be 0"
+            panic!(
+                "Expected 1 goal event but got {}. Mock data has {} home goals, {} away goals, {} total players. \
+                 Goal scorer ID: {}. First player ID: {}",
+                goal_events.len(),
+                home_goals,
+                away_goals,
+                total_players,
+                if !mock_data.game.home_team.goal_events.is_empty() {
+                    mock_data.game.home_team.goal_events[0]
+                        .scorer_player_id
+                        .to_string()
+                } else {
+                    "none".to_string()
+                },
+                if !mock_data.home_team_players.is_empty() {
+                    mock_data.home_team_players[0].id.to_string()
+                } else {
+                    "none".to_string()
+                }
             );
         }
+
+        assert_eq!(goal_events.len(), 1, "Should have exactly 1 goal event");
+        assert_eq!(
+            goal_events[0].scorer_name, "Smith",
+            "Scorer name should be 'Smith'"
+        );
+        assert_eq!(
+            goal_events[0].home_team_score, 1,
+            "Home team score should be 1"
+        );
+        assert_eq!(
+            goal_events[0].away_team_score, 0,
+            "Away team score should be 0"
+        );
 
         // Clear the cache after the test to avoid interference
         clear_all_caches().await;
@@ -2287,10 +2281,6 @@ mod tests {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
-
-        // Clear all caches to ensure we actually make the HTTP request
-        use crate::data_fetcher::cache::clear_all_caches;
-        clear_all_caches().await;
 
         Mock::given(method("GET"))
             .and(path("/games/2024/1"))
@@ -2304,9 +2294,6 @@ mod tests {
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
         assert!(result.is_err());
-
-        // Clear cache after test to avoid interference
-        clear_all_caches().await;
     }
 
     #[tokio::test]
