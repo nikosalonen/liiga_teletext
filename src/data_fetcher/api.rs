@@ -3,8 +3,11 @@ use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
     cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
     get_cached_goal_events_data, get_cached_http_response, get_cached_players,
-    get_cached_tournament_data, get_tournament_cache_size, get_detailed_game_cache_size,
-    get_goal_events_cache_size,
+    get_cached_tournament_data,
+};
+#[cfg(test)]
+use crate::data_fetcher::cache::{
+    get_detailed_game_cache_size, get_goal_events_cache_size, get_tournament_cache_size,
 };
 use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
@@ -2230,10 +2233,22 @@ mod tests {
         let initial_detailed_game_cache_size = get_detailed_game_cache_size().await;
         let initial_goal_events_cache_size = get_goal_events_cache_size().await;
 
-        assert_eq!(initial_player_cache_size, 0, "Player cache should be empty before test");
-        assert_eq!(initial_tournament_cache_size, 0, "Tournament cache should be empty before test");
-        assert_eq!(initial_detailed_game_cache_size, 0, "Detailed game cache should be empty before test");
-        assert_eq!(initial_goal_events_cache_size, 0, "Goal events cache should be empty before test");
+        assert_eq!(
+            initial_player_cache_size, 0,
+            "Player cache should be empty before test"
+        );
+        assert_eq!(
+            initial_tournament_cache_size, 0,
+            "Tournament cache should be empty before test"
+        );
+        assert_eq!(
+            initial_detailed_game_cache_size, 0,
+            "Detailed game cache should be empty before test"
+        );
+        assert_eq!(
+            initial_goal_events_cache_size, 0,
+            "Goal events cache should be empty before test"
+        );
 
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
