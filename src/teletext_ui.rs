@@ -147,7 +147,7 @@ pub enum TeletextRow {
     FutureGamesHeader(String), // For "Seuraavat ottelut {date}" line
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq)]
 pub enum ScoreType {
     Final,     // Final score
     Ongoing,   // Ongoing game with current score

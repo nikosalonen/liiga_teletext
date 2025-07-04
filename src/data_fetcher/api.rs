@@ -1,5 +1,10 @@
 use crate::config::Config;
-use crate::data_fetcher::cache::{cache_players_with_formatting, get_cached_players};
+use crate::data_fetcher::cache::{
+    cache_detailed_game_data, cache_goal_events_data, cache_http_response,
+    cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
+    get_cached_goal_events_data, get_cached_http_response, get_cached_players,
+    get_cached_tournament_data,
+};
 use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
     ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
@@ -518,6 +523,18 @@ async fn process_games(
 async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, AppError> {
     info!("Fetching data from URL: {}", url);
 
+    // Check HTTP response cache first
+    if let Some(cached_response) = get_cached_http_response(url).await {
+        info!("Using cached HTTP response for URL: {}", url);
+        match serde_json::from_str::<T>(&cached_response) {
+            Ok(parsed) => return Ok(parsed),
+            Err(e) => {
+                warn!("Failed to parse cached response for URL {}: {}", url, e);
+                // Continue with fresh request if cached response is invalid
+            }
+        }
+    }
+
     // Handle reqwest errors with specific error types
     let response = match client.get(url).send().await {
         Ok(response) => response,
@@ -575,6 +592,16 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
     info!("Response length: {} bytes", response_text.len());
     debug!("Response text: {}", response_text);
 
+    // Cache successful HTTP responses with appropriate TTL
+    let ttl_seconds = if url.contains("/games/") {
+        300 // 5 minutes for game data
+    } else if url.contains("/schedule") {
+        1800 // 30 minutes for schedule data
+    } else {
+        600 // 10 minutes for other data
+    };
+    cache_http_response(url.to_string(), response_text.clone(), ttl_seconds).await;
+
     // Enhanced JSON parsing with more specific error handling
     match serde_json::from_str::<T>(&response_text) {
         Ok(parsed) => Ok(parsed),
@@ -604,6 +631,7 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
 }
 
 /// Fetches game data for a specific tournament and date from the API.
+/// Uses caching to improve performance and reduce API calls.
 #[instrument(skip(client, config))]
 pub async fn fetch_tournament_data(
     client: &Client,
@@ -612,14 +640,35 @@ pub async fn fetch_tournament_data(
     date: &str,
 ) -> Result<ScheduleResponse, AppError> {
     info!("Fetching tournament data for {} on {}", tournament, date);
+
+    // Create cache key
+    let cache_key = create_tournament_key(tournament, date);
+
+    // Check cache first
+    if let Some(cached_response) = get_cached_tournament_data(&cache_key).await {
+        info!(
+            "Using cached tournament data for {} on {}",
+            tournament, date
+        );
+        return Ok(cached_response);
+    }
+
+    info!(
+        "Cache miss, fetching from API for {} on {}",
+        tournament, date
+    );
     let url = build_tournament_url(&config.api_domain, tournament, date);
 
-    match fetch(client, &url).await {
+    match fetch::<ScheduleResponse>(client, &url).await {
         Ok(response) => {
             info!(
                 "Successfully fetched tournament data for {} on {}",
                 tournament, date
             );
+
+            // Cache the response
+            cache_tournament_data(cache_key, response.clone()).await;
+
             Ok(response)
         }
         Err(e) => {
@@ -912,6 +961,27 @@ async fn fetch_game_data(
         "Fetching game data for game ID: {} (season: {})",
         game_id, season
     );
+
+    // Check goal events cache first
+    if let Some(cached_events) = get_cached_goal_events_data(season, game_id).await {
+        info!(
+            "Using cached goal events for game ID: {} ({} events)",
+            game_id,
+            cached_events.len()
+        );
+        return Ok(cached_events);
+    }
+
+    // Check detailed game cache
+    if let Some(cached_response) = get_cached_detailed_game_data(season, game_id).await {
+        info!(
+            "Using cached detailed game response for game ID: {}",
+            game_id
+        );
+        let events = process_game_response_with_cache(cached_response, game_id).await;
+        return Ok(events);
+    }
+
     let url = build_game_url(&config.api_domain, season, game_id);
 
     // Try to get detailed game response
@@ -940,8 +1010,23 @@ async fn fetch_game_data(
         }
     };
 
-    // Check cache first
-    info!("Checking player cache for game ID: {}", game_id);
+    // Cache the detailed game response
+    let is_live_game = game_response.game.started && !game_response.game.ended;
+    cache_detailed_game_data(season, game_id, game_response.clone(), is_live_game).await;
+
+    // Process the response and cache the goal events
+    let events = process_game_response_with_cache(game_response, game_id).await;
+    cache_goal_events_data(season, game_id, events.clone()).await;
+
+    Ok(events)
+}
+
+/// Helper function to process game response with player caching
+async fn process_game_response_with_cache(
+    game_response: DetailedGameResponse,
+    game_id: i32,
+) -> Vec<GoalEventData> {
+    // Check player cache first
     if let Some(cached_players) = get_cached_players(game_id).await {
         info!(
             "Using cached player data for game ID: {} ({} players)",
@@ -953,7 +1038,7 @@ async fn fetch_game_data(
             "Processed {} goal events using cached player data",
             events.len()
         );
-        return Ok(events);
+        return events;
     }
 
     // Build player names map if not in cache
@@ -1008,7 +1093,7 @@ async fn fetch_game_data(
         events.len(),
         game_id
     );
-    Ok(events)
+    events
 }
 
 /// Fetches the regular season schedule to determine the season start date.
@@ -1722,6 +1807,7 @@ struct DetailedGameData {
 mod tests {
     use super::*;
     use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Period, Player};
+    use serial_test::serial;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{method, path},
@@ -1732,6 +1818,11 @@ mod tests {
             api_domain: "http://localhost:8080".to_string(),
             log_file_path: None,
         }
+    }
+
+    async fn clear_all_caches_for_test() {
+        use crate::data_fetcher::cache::clear_all_caches;
+        clear_all_caches().await;
     }
 
     fn create_mock_schedule_response() -> ScheduleResponse {
@@ -1869,6 +1960,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_tournament_data_success() {
+        clear_all_caches_for_test().await;
+
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
@@ -1898,10 +1991,14 @@ mod tests {
             response.games[0].away_team.team_name.as_deref(),
             Some("Tappara")
         );
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_tournament_data_no_games() {
+        clear_all_caches_for_test().await;
+
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
@@ -1923,10 +2020,14 @@ mod tests {
         let response = result.unwrap();
         assert_eq!(response.games.len(), 0);
         assert_eq!(response.next_game_date, Some("2024-01-16".to_string()));
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_tournament_data_server_error() {
+        clear_all_caches_for_test().await;
+
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
@@ -1943,10 +2044,14 @@ mod tests {
         let result = fetch_tournament_data(&client, &test_config, "runkosarja", "2024-01-15").await;
 
         assert!(result.is_err());
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_tournament_data_not_found() {
+        clear_all_caches_for_test().await;
+
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
@@ -1963,10 +2068,14 @@ mod tests {
         let result = fetch_tournament_data(&client, &test_config, "runkosarja", "2024-01-15").await;
 
         assert!(result.is_err());
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_day_data_success() {
+        clear_all_caches_for_test().await;
+
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
@@ -1991,10 +2100,14 @@ mod tests {
         let responses = responses.unwrap();
         assert_eq!(responses.len(), 1);
         assert_eq!(responses[0].games.len(), 1);
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_fetch_day_data_no_games() {
+        clear_all_caches_for_test().await;
+
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
@@ -2016,6 +2129,8 @@ mod tests {
         assert!(result.is_ok());
         let (responses, _) = result.unwrap();
         assert!(responses.is_none());
+
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
@@ -2072,6 +2187,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_fetch_game_data_cache_fallback() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -2088,22 +2204,76 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        // Clear the cache to ensure a clean state
-        use crate::data_fetcher::cache::clear_cache;
-        clear_cache().await;
+        // Clear all caches to ensure a completely clean state
+        use crate::data_fetcher::cache::{clear_all_caches, get_cache_size};
+        clear_all_caches().await;
+
+        // Wait for cache clearing to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Verify cache is actually empty
+        let initial_cache_size = get_cache_size().await;
+        assert_eq!(
+            initial_cache_size, 0,
+            "Player cache should be empty before test"
+        );
 
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
         // Should still succeed due to fallback logic
-        assert!(result.is_ok());
+        assert!(
+            result.is_ok(),
+            "fetch_game_data should succeed with mock data"
+        );
         let goal_events = result.unwrap();
-        assert_eq!(goal_events.len(), 1);
-        assert_eq!(goal_events[0].scorer_name, "Smith");
-        assert_eq!(goal_events[0].home_team_score, 1);
-        assert_eq!(goal_events[0].away_team_score, 0);
+
+        // Debug information for CI troubleshooting
+        if goal_events.is_empty() {
+            // Let's verify what the mock response contains
+            let mock_data = create_mock_detailed_game_response();
+            let home_goals = mock_data.game.home_team.goal_events.len();
+            let away_goals = mock_data.game.away_team.goal_events.len();
+            let total_players =
+                mock_data.home_team_players.len() + mock_data.away_team_players.len();
+
+            panic!(
+                "Expected 1 goal event but got {}. Mock data has {} home goals, {} away goals, {} total players. \
+                 Goal scorer ID: {}. First player ID: {}",
+                goal_events.len(),
+                home_goals,
+                away_goals,
+                total_players,
+                if !mock_data.game.home_team.goal_events.is_empty() {
+                    mock_data.game.home_team.goal_events[0]
+                        .scorer_player_id
+                        .to_string()
+                } else {
+                    "none".to_string()
+                },
+                if !mock_data.home_team_players.is_empty() {
+                    mock_data.home_team_players[0].id.to_string()
+                } else {
+                    "none".to_string()
+                }
+            );
+        }
+
+        assert_eq!(goal_events.len(), 1, "Should have exactly 1 goal event");
+        assert_eq!(
+            goal_events[0].scorer_name, "Smith",
+            "Scorer name should be 'Smith'"
+        );
+        assert_eq!(
+            goal_events[0].home_team_score, 1,
+            "Home team score should be 1"
+        );
+        assert_eq!(
+            goal_events[0].away_team_score, 0,
+            "Away team score should be 0"
+        );
 
         // Clear the cache after the test to avoid interference
-        clear_cache().await;
+        clear_all_caches().await;
     }
 
     #[tokio::test]
@@ -2986,6 +3156,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_find_future_games_fallback() {
+        clear_all_caches_for_test().await;
+
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
@@ -3012,10 +3184,15 @@ mod tests {
         let (responses, date) = response.unwrap();
         assert_eq!(responses.len(), 1);
         assert_eq!(date, "2024-01-15");
+
+        // Clear cache after test to prevent interference with other tests
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
     async fn test_find_future_games_fallback_no_games() {
+        clear_all_caches_for_test().await;
+
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
         let client = Client::new();
@@ -3039,6 +3216,9 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         assert!(response.is_none());
+
+        // Clear cache after test to prevent interference with other tests
+        clear_all_caches_for_test().await;
     }
 
     #[tokio::test]
