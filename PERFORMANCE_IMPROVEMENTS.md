@@ -59,7 +59,7 @@ This document describes the high-impact performance improvements implemented in 
 - **Access tracking**: Each cache access updates the "recently used" status
 
 **Technical Implementation:**
-- Added `lru = "0.12"` dependency for robust LRU implementation
+- Added `lru = "0.16"` dependency for robust LRU implementation
 - Replaced `HashMap<i32, HashMap<i64, String>>` with `LruCache<i32, HashMap<i64, String>>`
 - Updated cache operations to use LRU methods (`put()`, `get()`, `peek()`)
 - Implemented proper cache monitoring with `get_cache_size()` and `get_cache_capacity()`

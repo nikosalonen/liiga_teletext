@@ -1521,7 +1521,7 @@ async fn fetch_historical_games(
 /// Determines if a date is from a previous season (not the current season).
 /// Hockey seasons typically start in September and end in April/May.
 /// So a date in May-July is from the previous season.
-fn is_historical_date(date: &str) -> bool {
+pub fn is_historical_date(date: &str) -> bool {
     let now = Utc::now().with_timezone(&Local);
     is_historical_date_with_current_time(date, now)
 }
