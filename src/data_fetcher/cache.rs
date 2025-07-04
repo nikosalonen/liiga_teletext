@@ -5,8 +5,8 @@ use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
+use crate::data_fetcher::models::{GameData, ScheduleResponse};
 use crate::data_fetcher::player_names::format_for_display;
-use crate::data_fetcher::models::{ScheduleResponse, GameData};
 use crate::teletext_ui::ScoreType;
 
 // LRU cache structure for formatted player information
@@ -43,7 +43,7 @@ impl CachedTournamentData {
     /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
         let ttl = if self.has_live_games {
-            Duration::from_secs(30)  // 30 seconds for live games
+            Duration::from_secs(30) // 30 seconds for live games
         } else {
             Duration::from_secs(3600) // 1 hour for completed games
         };
@@ -52,6 +52,7 @@ impl CachedTournamentData {
     }
 
     /// Gets the TTL duration for this cache entry
+    #[allow(dead_code)]
     pub fn get_ttl(&self) -> Duration {
         if self.has_live_games {
             Duration::from_secs(30)
@@ -61,6 +62,7 @@ impl CachedTournamentData {
     }
 
     /// Gets the remaining time until expiration
+    #[allow(dead_code)]
     pub fn time_until_expiry(&self) -> Duration {
         let ttl = self.get_ttl();
         let elapsed = self.cached_at.elapsed();
@@ -81,10 +83,11 @@ pub fn has_live_games(response: &ScheduleResponse) -> bool {
 }
 
 /// Determines if a list of GameData contains live games
+#[allow(dead_code)]
 pub fn has_live_games_from_game_data(games: &[GameData]) -> bool {
-    games.iter().any(|game| {
-        game.score_type == ScoreType::Ongoing
-    })
+    games
+        .iter()
+        .any(|game| game.score_type == ScoreType::Ongoing)
 }
 
 /// Caches tournament data with automatic live game detection
@@ -112,6 +115,7 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
 }
 
 /// Retrieves cached tournament data with custom live game state check
+#[allow(dead_code)]
 pub async fn get_cached_tournament_data_with_live_check(
     key: &str,
     current_games: &[GameData],
@@ -140,6 +144,7 @@ pub async fn get_cached_tournament_data_with_live_check(
 }
 
 /// Invalidates all tournament cache entries for a specific date
+#[allow(dead_code)]
 pub async fn invalidate_tournament_cache_for_date(date: &str) {
     let mut cache = TOURNAMENT_CACHE.write().await;
 
@@ -156,16 +161,19 @@ pub async fn invalidate_tournament_cache_for_date(date: &str) {
 }
 
 /// Gets the current tournament cache size for monitoring purposes
+#[allow(dead_code)]
 pub async fn get_tournament_cache_size() -> usize {
     TOURNAMENT_CACHE.read().await.len()
 }
 
 /// Gets the tournament cache capacity for monitoring purposes
+#[allow(dead_code)]
 pub async fn get_tournament_cache_capacity() -> usize {
     TOURNAMENT_CACHE.read().await.cap().get()
 }
 
 /// Clears all tournament cache entries
+#[allow(dead_code)]
 pub async fn clear_tournament_cache() {
     TOURNAMENT_CACHE.write().await.clear();
 }
@@ -268,9 +276,9 @@ pub async fn clear_cache() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_fetcher::models::{ScheduleGame, ScheduleTeam};
     use serial_test::serial;
     use tokio::sync::Mutex;
-    use crate::data_fetcher::models::{ScheduleGame, ScheduleTeam};
 
     // Mutex to ensure LRU tests run sequentially to avoid cache interference
     static TEST_MUTEX: Mutex<()> = Mutex::const_new(());
@@ -382,7 +390,7 @@ mod tests {
         clear_cache().await;
     }
 
-        #[tokio::test]
+    #[tokio::test]
     #[serial]
     async fn test_lru_simple_access_order() {
         // Simpler test to verify LRU access order behavior
@@ -474,47 +482,45 @@ mod tests {
 
         // Create a mock ScheduleResponse with live games
         let mock_response = ScheduleResponse {
-            games: vec![
-                ScheduleGame {
-                    id: 1,
-                    season: 2024,
-                    start: "2024-01-15T18:30:00Z".to_string(),
-                    end: None,
-                    home_team: ScheduleTeam {
-                        team_id: Some("team1".to_string()),
-                        team_placeholder: None,
-                        team_name: Some("HIFK".to_string()),
-                        goals: 2,
-                        time_out: None,
-                        powerplay_instances: 0,
-                        powerplay_goals: 0,
-                        short_handed_instances: 0,
-                        short_handed_goals: 0,
-                        ranking: Some(1),
-                        game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
-                        goal_events: vec![],
-                    },
-                    away_team: ScheduleTeam {
-                        team_id: Some("team2".to_string()),
-                        team_placeholder: None,
-                        team_name: Some("Tappara".to_string()),
-                        goals: 1,
-                        time_out: None,
-                        powerplay_instances: 0,
-                        powerplay_goals: 0,
-                        short_handed_instances: 0,
-                        short_handed_goals: 0,
-                        ranking: Some(2),
-                        game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
-                        goal_events: vec![],
-                    },
-                    finished_type: None,
-                    started: true,
-                    ended: false, // Live game
-                    game_time: 1800, // 30 minutes played
-                    serie: "runkosarja".to_string(),
-                }
-            ],
+            games: vec![ScheduleGame {
+                id: 1,
+                season: 2024,
+                start: "2024-01-15T18:30:00Z".to_string(),
+                end: None,
+                home_team: ScheduleTeam {
+                    team_id: Some("team1".to_string()),
+                    team_placeholder: None,
+                    team_name: Some("HIFK".to_string()),
+                    goals: 2,
+                    time_out: None,
+                    powerplay_instances: 0,
+                    powerplay_goals: 0,
+                    short_handed_instances: 0,
+                    short_handed_goals: 0,
+                    ranking: Some(1),
+                    game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+                    goal_events: vec![],
+                },
+                away_team: ScheduleTeam {
+                    team_id: Some("team2".to_string()),
+                    team_placeholder: None,
+                    team_name: Some("Tappara".to_string()),
+                    goals: 1,
+                    time_out: None,
+                    powerplay_instances: 0,
+                    powerplay_goals: 0,
+                    short_handed_instances: 0,
+                    short_handed_goals: 0,
+                    ranking: Some(2),
+                    game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+                    goal_events: vec![],
+                },
+                finished_type: None,
+                started: true,
+                ended: false,    // Live game
+                game_time: 1800, // 30 minutes played
+                serie: "runkosarja".to_string(),
+            }],
             previous_game_date: None,
             next_game_date: None,
         };
@@ -538,47 +544,45 @@ mod tests {
     async fn test_has_live_games_detection() {
         // Test with live games
         let live_response = ScheduleResponse {
-            games: vec![
-                ScheduleGame {
-                    id: 1,
-                    season: 2024,
-                    start: "2024-01-15T18:30:00Z".to_string(),
-                    end: None,
-                    home_team: ScheduleTeam {
-                        team_id: Some("team1".to_string()),
-                        team_placeholder: None,
-                        team_name: Some("HIFK".to_string()),
-                        goals: 2,
-                        time_out: None,
-                        powerplay_instances: 0,
-                        powerplay_goals: 0,
-                        short_handed_instances: 0,
-                        short_handed_goals: 0,
-                        ranking: Some(1),
-                        game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
-                        goal_events: vec![],
-                    },
-                    away_team: ScheduleTeam {
-                        team_id: Some("team2".to_string()),
-                        team_placeholder: None,
-                        team_name: Some("Tappara".to_string()),
-                        goals: 1,
-                        time_out: None,
-                        powerplay_instances: 0,
-                        powerplay_goals: 0,
-                        short_handed_instances: 0,
-                        short_handed_goals: 0,
-                        ranking: Some(2),
-                        game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
-                        goal_events: vec![],
-                    },
-                    finished_type: None,
-                    started: true,
-                    ended: false, // Live game
-                    game_time: 1800,
-                    serie: "runkosarja".to_string(),
-                }
-            ],
+            games: vec![ScheduleGame {
+                id: 1,
+                season: 2024,
+                start: "2024-01-15T18:30:00Z".to_string(),
+                end: None,
+                home_team: ScheduleTeam {
+                    team_id: Some("team1".to_string()),
+                    team_placeholder: None,
+                    team_name: Some("HIFK".to_string()),
+                    goals: 2,
+                    time_out: None,
+                    powerplay_instances: 0,
+                    powerplay_goals: 0,
+                    short_handed_instances: 0,
+                    short_handed_goals: 0,
+                    ranking: Some(1),
+                    game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+                    goal_events: vec![],
+                },
+                away_team: ScheduleTeam {
+                    team_id: Some("team2".to_string()),
+                    team_placeholder: None,
+                    team_name: Some("Tappara".to_string()),
+                    goals: 1,
+                    time_out: None,
+                    powerplay_instances: 0,
+                    powerplay_goals: 0,
+                    short_handed_instances: 0,
+                    short_handed_goals: 0,
+                    ranking: Some(2),
+                    game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+                    goal_events: vec![],
+                },
+                finished_type: None,
+                started: true,
+                ended: false, // Live game
+                game_time: 1800,
+                serie: "runkosarja".to_string(),
+            }],
             previous_game_date: None,
             next_game_date: None,
         };
@@ -587,47 +591,45 @@ mod tests {
 
         // Test with completed games
         let completed_response = ScheduleResponse {
-            games: vec![
-                ScheduleGame {
-                    id: 1,
-                    season: 2024,
-                    start: "2024-01-15T18:30:00Z".to_string(),
-                    end: Some("2024-01-15T20:30:00Z".to_string()),
-                    home_team: ScheduleTeam {
-                        team_id: Some("team1".to_string()),
-                        team_placeholder: None,
-                        team_name: Some("HIFK".to_string()),
-                        goals: 3,
-                        time_out: None,
-                        powerplay_instances: 0,
-                        powerplay_goals: 0,
-                        short_handed_instances: 0,
-                        short_handed_goals: 0,
-                        ranking: Some(1),
-                        game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
-                        goal_events: vec![],
-                    },
-                    away_team: ScheduleTeam {
-                        team_id: Some("team2".to_string()),
-                        team_placeholder: None,
-                        team_name: Some("Tappara".to_string()),
-                        goals: 2,
-                        time_out: None,
-                        powerplay_instances: 0,
-                        powerplay_goals: 0,
-                        short_handed_instances: 0,
-                        short_handed_goals: 0,
-                        ranking: Some(2),
-                        game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
-                        goal_events: vec![],
-                    },
-                    finished_type: Some("regular".to_string()),
-                    started: true,
-                    ended: true, // Completed game
-                    game_time: 3600,
-                    serie: "runkosarja".to_string(),
-                }
-            ],
+            games: vec![ScheduleGame {
+                id: 1,
+                season: 2024,
+                start: "2024-01-15T18:30:00Z".to_string(),
+                end: Some("2024-01-15T20:30:00Z".to_string()),
+                home_team: ScheduleTeam {
+                    team_id: Some("team1".to_string()),
+                    team_placeholder: None,
+                    team_name: Some("HIFK".to_string()),
+                    goals: 3,
+                    time_out: None,
+                    powerplay_instances: 0,
+                    powerplay_goals: 0,
+                    short_handed_instances: 0,
+                    short_handed_goals: 0,
+                    ranking: Some(1),
+                    game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+                    goal_events: vec![],
+                },
+                away_team: ScheduleTeam {
+                    team_id: Some("team2".to_string()),
+                    team_placeholder: None,
+                    team_name: Some("Tappara".to_string()),
+                    goals: 2,
+                    time_out: None,
+                    powerplay_instances: 0,
+                    powerplay_goals: 0,
+                    short_handed_instances: 0,
+                    short_handed_goals: 0,
+                    ranking: Some(2),
+                    game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+                    goal_events: vec![],
+                },
+                finished_type: Some("regular".to_string()),
+                started: true,
+                ended: true, // Completed game
+                game_time: 3600,
+                serie: "runkosarja".to_string(),
+            }],
             previous_game_date: None,
             next_game_date: None,
         };
