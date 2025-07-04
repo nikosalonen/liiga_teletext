@@ -1807,6 +1807,7 @@ struct DetailedGameData {
 mod tests {
     use super::*;
     use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Period, Player};
+    use serial_test::serial;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{method, path},
@@ -2186,6 +2187,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_fetch_game_data_cache_fallback() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -2202,22 +2204,58 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        // Clear the cache to ensure a clean state
-        use crate::data_fetcher::cache::clear_cache;
-        clear_cache().await;
+        // Clear all caches to ensure a completely clean state
+        use crate::data_fetcher::cache::{clear_all_caches, get_cache_size};
+        clear_all_caches().await;
+
+        // Wait for cache clearing to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Verify cache is actually empty
+        let initial_cache_size = get_cache_size().await;
+        assert_eq!(initial_cache_size, 0, "Player cache should be empty before test");
 
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
         // Should still succeed due to fallback logic
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "fetch_game_data should succeed with mock data");
         let goal_events = result.unwrap();
-        assert_eq!(goal_events.len(), 1);
-        assert_eq!(goal_events[0].scorer_name, "Smith");
-        assert_eq!(goal_events[0].home_team_score, 1);
-        assert_eq!(goal_events[0].away_team_score, 0);
+
+        // Debug information for CI troubleshooting
+        if goal_events.is_empty() {
+            // Let's verify what the mock response contains
+            let mock_data = create_mock_detailed_game_response();
+            let home_goals = mock_data.game.home_team.goal_events.len();
+            let away_goals = mock_data.game.away_team.goal_events.len();
+            let total_players = mock_data.home_team_players.len() + mock_data.away_team_players.len();
+
+                         panic!(
+                 "Expected 1 goal event but got {}. Mock data has {} home goals, {} away goals, {} total players. \
+                 Goal scorer ID: {}. First player ID: {}",
+                 goal_events.len(),
+                 home_goals,
+                 away_goals,
+                 total_players,
+                 if !mock_data.game.home_team.goal_events.is_empty() {
+                     mock_data.game.home_team.goal_events[0].scorer_player_id.to_string()
+                 } else {
+                     "none".to_string()
+                 },
+                 if !mock_data.home_team_players.is_empty() {
+                     mock_data.home_team_players[0].id.to_string()
+                 } else {
+                     "none".to_string()
+                 }
+             );
+        }
+
+        assert_eq!(goal_events.len(), 1, "Should have exactly 1 goal event");
+        assert_eq!(goal_events[0].scorer_name, "Smith", "Scorer name should be 'Smith'");
+        assert_eq!(goal_events[0].home_team_score, 1, "Home team score should be 1");
+        assert_eq!(goal_events[0].away_team_score, 0, "Away team score should be 0");
 
         // Clear the cache after the test to avoid interference
-        clear_cache().await;
+        clear_all_caches().await;
     }
 
     #[tokio::test]
