@@ -834,7 +834,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 needs_render = false;
             }
 
-                            let (games, had_error, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
+            let (games, had_error, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
                 Ok((games, fetched_date)) => (games, false, fetched_date),
                 Err(e) => {
                     tracing::error!("Error fetching data: {}", e);
