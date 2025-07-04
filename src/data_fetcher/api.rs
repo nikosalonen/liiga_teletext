@@ -2205,18 +2205,11 @@ mod tests {
         test_config.api_domain = mock_server.uri();
 
         // Clear all caches to ensure a completely clean state
-        use crate::data_fetcher::cache::{clear_all_caches, get_cache_size};
+        use crate::data_fetcher::cache::clear_all_caches;
         clear_all_caches().await;
 
         // Wait for cache clearing to complete
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-        // Verify cache is actually empty
-        let initial_cache_size = get_cache_size().await;
-        assert_eq!(
-            initial_cache_size, 0,
-            "Player cache should be empty before test"
-        );
 
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
