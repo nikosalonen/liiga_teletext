@@ -2274,6 +2274,10 @@ mod tests {
         let config = create_mock_config();
         let client = Client::new();
 
+        // Clear all caches to ensure we actually make the HTTP request
+        use crate::data_fetcher::cache::clear_all_caches;
+        clear_all_caches().await;
+
         Mock::given(method("GET"))
             .and(path("/games/2024/1"))
             .respond_with(ResponseTemplate::new(500))
@@ -2286,6 +2290,9 @@ mod tests {
         let result = fetch_game_data(&client, &test_config, 2024, 1).await;
 
         assert!(result.is_err());
+
+        // Clear cache after test to avoid interference
+        clear_all_caches().await;
     }
 
     #[tokio::test]
