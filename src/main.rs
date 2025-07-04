@@ -834,7 +834,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 needs_render = false;
             }
 
-            let (games, had_error, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
+                            let (games, had_error, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
                 Ok((games, fetched_date)) => (games, false, fetched_date),
                 Err(e) => {
                     tracing::error!("Error fetching data: {}", e);
@@ -846,7 +846,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         true,
                         false,
                     );
-                    error_page.add_error_message(&e.to_string());
+                    error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
                     current_page = Some(error_page);
                     needs_render = true;
                     (Vec::new(), true, String::new())
