@@ -196,6 +196,260 @@ The application follows a modular architecture with clear separation of concerns
    }
    ```
 
+## CRITICAL: Clippy Warning Prevention
+
+**ALWAYS AVOID THESE COMMON CLIPPY WARNINGS THAT GET MADE REPEATEDLY:**
+
+### 1. **await_holding_lock** (CRITICAL ERROR)
+- **NEVER** use `std::sync::Mutex` in async code
+- **ALWAYS** use `tokio::sync::Mutex` for async contexts
+- **NEVER** hold a mutex guard across `.await` points
+
+```rust
+// ❌ WRONG - Will cause clippy warning
+use std::sync::Mutex;
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
+let _guard = TEST_MUTEX.lock().unwrap(); // Held across await
+some_async_function().await;
+
+// ✅ CORRECT - Use tokio::sync::Mutex
+use tokio::sync::Mutex;
+static TEST_MUTEX: Mutex<()> = Mutex::const_new(());
+let _guard = TEST_MUTEX.lock().await; // Async-aware mutex
+some_async_function().await;
+```
+
+### 2. **uninlined_format_args** (VERY COMMON ERROR)
+- **ALWAYS** use inline format arguments
+- **NEVER** use positional arguments in format! macros
+
+```rust
+// ❌ WRONG - Will cause clippy warning
+let name = "test";
+let id = 123;
+format!("Player {}", name);
+format!("ID: {}, Name: {}", id, name);
+println!("Value: {}", value);
+
+// ✅ CORRECT - Use inline arguments
+format!("Player {name}");
+format!("ID: {id}, Name: {name}");
+println!("Value: {value}");
+```
+
+### 3. **assertions_on_constants** (USELESS CODE)
+- **NEVER** use `assert!(true)` or similar constant assertions
+- **ALWAYS** make meaningful assertions or remove them
+
+```rust
+// ❌ WRONG - Will cause clippy warning
+assert!(true);
+assert!(false);
+assert_eq!(1, 1);
+
+// ✅ CORRECT - Make meaningful assertions or remove
+let result = some_function();
+assert!(result.is_ok());
+assert_eq!(result.unwrap(), expected_value);
+// Or just verify the type without assertion:
+let _: bool = result;
+```
+
+### 4. **needless_return** (STYLE ISSUE)
+- **NEVER** use explicit `return` on the last expression
+- **ALWAYS** use implicit returns
+
+```rust
+// ❌ WRONG
+fn example() -> i32 {
+    return 42;
+}
+
+// ✅ CORRECT
+fn example() -> i32 {
+    42
+}
+```
+
+### 5. **redundant_clone** (PERFORMANCE ISSUE)
+- **NEVER** clone unnecessarily
+- **ALWAYS** move values when possible
+
+```rust
+// ❌ WRONG
+let data = get_data();
+process_data(data.clone());
+
+// ✅ CORRECT
+let data = get_data();
+process_data(data);
+```
+
+### 6. **unused_mut** (CORRECTNESS ISSUE)
+- **NEVER** mark variables as `mut` if they're not mutated
+- **ALWAYS** remove unnecessary `mut` keywords
+
+```rust
+// ❌ WRONG
+let mut value = 42; // Never mutated
+println!("{}", value);
+
+// ✅ CORRECT
+let value = 42;
+println!("{}", value);
+```
+
+### 7. **needless_lifetimes** (VERBOSITY ISSUE)
+- **NEVER** specify lifetimes when they can be elided
+- **ALWAYS** let the compiler infer lifetimes when possible
+
+```rust
+// ❌ WRONG
+fn process<'a>(data: &'a str) -> &'a str {
+    data
+}
+
+// ✅ CORRECT
+fn process(data: &str) -> &str {
+    data
+}
+```
+
+### 8. **map_or_none** (EFFICIENCY ISSUE)
+- **NEVER** use `.map().unwrap_or(None)` pattern
+- **ALWAYS** use `.and_then()` for Option chaining
+
+```rust
+// ❌ WRONG
+option.map(|x| some_function(x)).unwrap_or(None)
+
+// ✅ CORRECT
+option.and_then(|x| some_function(x))
+```
+
+### 9. **single_char_add_str** (PERFORMANCE ISSUE)
+- **NEVER** use `.push_str()` with single characters
+- **ALWAYS** use `.push()` for single characters
+
+```rust
+// ❌ WRONG
+string.push_str("a");
+
+// ✅ CORRECT
+string.push('a');
+```
+
+### 10. **unnecessary_wraps** (API DESIGN ISSUE)
+- **NEVER** return `Result<T, E>` if function never fails
+- **ALWAYS** return `T` directly if no error is possible
+
+```rust
+// ❌ WRONG
+fn get_constant() -> Result<i32, ()> {
+    Ok(42)
+}
+
+// ✅ CORRECT
+fn get_constant() -> i32 {
+    42
+}
+```
+
+### Async-Specific Clippy Rules
+
+### 11. **async_yields_async** (ASYNC ISSUE)
+- **NEVER** return futures from async functions unnecessarily
+- **ALWAYS** await futures in async contexts
+
+```rust
+// ❌ WRONG
+async fn bad_async() -> impl Future<Output = i32> {
+    async { 42 }
+}
+
+// ✅ CORRECT
+async fn good_async() -> i32 {
+    42
+}
+```
+
+### 12. **manual_async_fn** (STYLE ISSUE)
+- **NEVER** manually implement async functions with Future
+- **ALWAYS** use `async fn` syntax
+
+```rust
+// ❌ WRONG
+fn fetch_data() -> impl Future<Output = String> {
+    async { "data".to_string() }
+}
+
+// ✅ CORRECT
+async fn fetch_data() -> String {
+    "data".to_string()
+}
+```
+
+### Testing-Specific Clippy Rules
+
+### 13. **panic_in_result_fn** (TEST SAFETY)
+- **NEVER** use `panic!` in functions returning `Result`
+- **ALWAYS** return proper error types
+
+```rust
+// ❌ WRONG
+fn test_function() -> Result<(), Error> {
+    panic!("This should not happen");
+}
+
+// ✅ CORRECT
+fn test_function() -> Result<(), Error> {
+    Err(Error::new("This should not happen"))
+}
+```
+
+### 14. **bool_assert_comparison** (TEST CLARITY)
+- **NEVER** use `assert_eq!(value, true)` or `assert_eq!(value, false)`
+- **ALWAYS** use `assert!(value)` or `assert!(!value)`
+
+```rust
+// ❌ WRONG
+assert_eq!(result, true);
+assert_eq!(flag, false);
+
+// ✅ CORRECT
+assert!(result);
+assert!(!flag);
+```
+
+### **MANDATORY PRE-COMMIT CHECKLIST:**
+
+Before any commit, **ALWAYS** run these commands and fix **ALL** warnings:
+
+```bash
+# 1. Format code
+cargo fmt
+
+# 2. Check for clippy warnings (MUST PASS WITH ZERO WARNINGS)
+cargo clippy --all-features --all-targets -- -D warnings
+
+# 3. Run tests
+cargo test --all-features
+
+# 4. Check for unused dependencies
+cargo machete  # if available
+```
+
+### **EMERGENCY CLIPPY FIX REFERENCE:**
+
+When clippy fails, use this quick reference:
+
+1. **await_holding_lock**: Replace `std::sync::Mutex` → `tokio::sync::Mutex`, change `.lock().unwrap()` → `.lock().await`
+2. **uninlined_format_args**: Replace `format!("{}", var)` → `format!("{var}")`
+3. **assertions_on_constants**: Remove `assert!(true)` or replace with meaningful assertion
+4. **needless_return**: Remove `return` from last expression
+5. **unused_mut**: Remove `mut` from variables that aren't mutated
+6. **redundant_clone**: Remove unnecessary `.clone()` calls
+
 ### Testing Guidelines
 
 1. **Integration Tests** (`tests/integration_tests.rs`):
