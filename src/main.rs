@@ -26,7 +26,6 @@ use tracing_subscriber::{
     fmt::{self, format::FmtSpan},
     prelude::*,
 };
-use crossterm::style::Stylize;
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
@@ -340,7 +339,7 @@ fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
     execute!(stdout(), SetForegroundColor(Color::White), Print(format!("{border}\n"))).ok();
     // Print lines
     for (i, (line, color)) in lines.iter().enumerate() {
-        let padded = format!("║ {:<width$} ║", line, width = max_content_width);
+        let padded = format!("║ {line:<max_content_width$} ║");
         match color {
             Some(c) => {
                 // Print up to the colored part, then color, then reset
