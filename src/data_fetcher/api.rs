@@ -1,5 +1,8 @@
 use crate::config::Config;
-use crate::data_fetcher::cache::{cache_players_with_formatting, get_cached_players};
+use crate::data_fetcher::cache::{
+    cache_players_with_formatting, get_cached_players,
+    cache_tournament_data, get_cached_tournament_data
+};
 use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
     ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
@@ -604,6 +607,7 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
 }
 
 /// Fetches game data for a specific tournament and date from the API.
+/// Uses caching to improve performance and reduce API calls.
 #[instrument(skip(client, config))]
 pub async fn fetch_tournament_data(
     client: &Client,
@@ -612,14 +616,32 @@ pub async fn fetch_tournament_data(
     date: &str,
 ) -> Result<ScheduleResponse, AppError> {
     info!("Fetching tournament data for {} on {}", tournament, date);
+
+    // Create cache key
+    let cache_key = create_tournament_key(tournament, date);
+
+    // Check cache first
+    if let Some(cached_response) = get_cached_tournament_data(&cache_key).await {
+        info!(
+            "Using cached tournament data for {} on {}",
+            tournament, date
+        );
+        return Ok(cached_response);
+    }
+
+    info!("Cache miss, fetching from API for {} on {}", tournament, date);
     let url = build_tournament_url(&config.api_domain, tournament, date);
 
-    match fetch(client, &url).await {
+    match fetch::<ScheduleResponse>(client, &url).await {
         Ok(response) => {
             info!(
                 "Successfully fetched tournament data for {} on {}",
                 tournament, date
             );
+
+            // Cache the response
+            cache_tournament_data(cache_key, response.clone()).await;
+
             Ok(response)
         }
         Err(e) => {
