@@ -1056,23 +1056,77 @@ fn calculate_games_hash(games: &[GameData]) -> u64 {
 async fn monitor_cache_usage() {
     // The LRU cache automatically manages memory by evicting least recently used entries
     // when it reaches capacity. We just need to log the current state for monitoring.
-    use crate::data_fetcher::cache::{get_cache_capacity, get_cache_size};
+    use crate::data_fetcher::cache::{get_all_cache_stats, get_detailed_cache_debug_info};
 
-    let current_size = get_cache_size().await;
-    let capacity = get_cache_capacity().await;
+    let stats = get_all_cache_stats().await;
 
     tracing::debug!(
-        "Cache status: {}/{} entries ({}% full)",
-        current_size,
-        capacity,
-        if capacity > 0 {
-            (current_size * 100) / capacity
+        "Cache status - Player: {}/{} ({}%), Tournament: {}/{} ({}%), Detailed Game: {}/{} ({}%), Goal Events: {}/{} ({}%), HTTP Response: {}/{} ({}%)",
+        stats.player_cache.size,
+        stats.player_cache.capacity,
+        if stats.player_cache.capacity > 0 {
+            (stats.player_cache.size * 100) / stats.player_cache.capacity
+        } else {
+            0
+        },
+        stats.tournament_cache.size,
+        stats.tournament_cache.capacity,
+        if stats.tournament_cache.capacity > 0 {
+            (stats.tournament_cache.size * 100) / stats.tournament_cache.capacity
+        } else {
+            0
+        },
+        stats.detailed_game_cache.size,
+        stats.detailed_game_cache.capacity,
+        if stats.detailed_game_cache.capacity > 0 {
+            (stats.detailed_game_cache.size * 100) / stats.detailed_game_cache.capacity
+        } else {
+            0
+        },
+        stats.goal_events_cache.size,
+        stats.goal_events_cache.capacity,
+        if stats.goal_events_cache.capacity > 0 {
+            (stats.goal_events_cache.size * 100) / stats.goal_events_cache.capacity
+        } else {
+            0
+        },
+        stats.http_response_cache.size,
+        stats.http_response_cache.capacity,
+        if stats.http_response_cache.capacity > 0 {
+            (stats.http_response_cache.size * 100) / stats.http_response_cache.capacity
         } else {
             0
         }
     );
 
+    // Get detailed debug information including goal events cache details
+    let detailed_debug = get_detailed_cache_debug_info().await;
+    if !detailed_debug.is_empty() {
+        tracing::trace!("Detailed cache debug info: {}", detailed_debug);
+    }
+
     // The LRU cache automatically evicts entries when it reaches capacity,
     // so we don't need manual cleanup logic anymore.
     // This ensures that the oldest/least recently used entries are always removed first.
+}
+
+/// Emergency cache management function for debugging and troubleshooting
+/// This ensures cache management functions are available for diagnostic purposes
+#[allow(dead_code)]
+async fn emergency_cache_management() -> Result<String, AppError> {
+    use crate::data_fetcher::cache::{clear_all_caches, reset_all_caches_with_confirmation};
+
+    // In case of cache corruption or memory issues, this function provides
+    // emergency cache clearing capabilities for debugging and troubleshooting
+    tracing::warn!("Emergency cache clearing initiated");
+
+    // Use the monitoring function to demonstrate comprehensive cache management
+    let result = reset_all_caches_with_confirmation().await;
+    tracing::info!("Emergency cache reset completed: {}", result);
+
+    // Alternative direct clearing method
+    clear_all_caches().await;
+    tracing::info!("All caches cleared directly");
+
+    Ok(result)
 }

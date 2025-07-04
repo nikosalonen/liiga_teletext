@@ -174,7 +174,7 @@ pub struct DetailedGame {
     pub serie: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Player {
     pub id: i64,
     #[serde(rename = "lastName")]
@@ -183,7 +183,7 @@ pub struct Player {
     pub first_name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DetailedGameResponse {
     pub game: DetailedGame,
     pub awards: Vec<serde_json::Value>,

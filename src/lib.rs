@@ -50,6 +50,12 @@ pub use data_fetcher::models::{DetailedGameResponse, GameData, ScheduleResponse}
 pub use error::AppError;
 pub use teletext_ui::{GameResultData, TeletextPage};
 
+// Re-export cache debugging and monitoring functions for external tools
+pub use data_fetcher::cache::{
+    CacheInfo, CacheStats, clear_all_caches, get_all_cache_stats, get_detailed_cache_debug_info,
+    reset_all_caches_with_confirmation,
+};
+
 /// Current version of the library
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
