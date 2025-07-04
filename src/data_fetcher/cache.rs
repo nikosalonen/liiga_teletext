@@ -1248,14 +1248,24 @@ mod tests {
         // Clear all caches to ensure clean state
         clear_all_caches().await;
 
-        // Wait a bit to ensure cache is cleared
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        // Wait a bit to ensure cache is cleared and verify it's actually empty
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        // Add some test data to each cache
+        // Verify caches are actually empty before starting
+        let initial_stats = get_all_cache_stats().await;
+        assert_eq!(initial_stats.player_cache.size, 0, "Player cache should be empty initially");
+
+        // Add some test data to each cache with verification
         let mut players = HashMap::new();
         players.insert(1, "Player 1".to_string());
         let player_game_id = 92000 + test_id as i32;
         cache_players(player_game_id, players).await;
+
+        // Immediately verify the player cache entry was added
+        assert!(
+            get_cached_players(player_game_id).await.is_some(),
+            "Player cache entry should exist immediately after caching"
+        );
 
         let mock_response = ScheduleResponse {
             games: vec![],
@@ -1263,7 +1273,13 @@ mod tests {
             next_game_date: None,
         };
         let tournament_key = format!("test-tournament-{test_id}");
-        cache_tournament_data(tournament_key, mock_response).await;
+        cache_tournament_data(tournament_key.clone(), mock_response).await;
+
+        // Verify tournament cache entry
+        assert!(
+            get_cached_tournament_data(&tournament_key).await.is_some(),
+            "Tournament cache entry should exist immediately after caching"
+        );
 
         let detailed_game_id = 93000 + test_id as i32;
         let mock_detailed_response = DetailedGameResponse {
@@ -1299,6 +1315,12 @@ mod tests {
         };
         cache_detailed_game_data(2024, detailed_game_id, mock_detailed_response, false).await;
 
+        // Verify detailed game cache entry
+        assert!(
+            get_cached_detailed_game_data(2024, detailed_game_id).await.is_some(),
+            "Detailed game cache entry should exist immediately after caching"
+        );
+
         let goal_events_game_id = 94000 + test_id as i32;
         let mock_events = vec![GoalEventData {
             scorer_player_id: 123,
@@ -1313,57 +1335,73 @@ mod tests {
         }];
         cache_goal_events_data(2024, goal_events_game_id, mock_events).await;
 
-        let http_url = format!("https://api.example.com/test-stats-{test_id}");
-        cache_http_response(http_url, format!("test data {test_id}"), 60).await;
+        // Verify goal events cache entry
+        assert!(
+            get_cached_goal_events_data(2024, goal_events_game_id).await.is_some(),
+            "Goal events cache entry should exist immediately after caching"
+        );
 
-        // Wait a bit to ensure all caches are populated
+        let http_url = format!("https://api.example.com/test-stats-{test_id}");
+        cache_http_response(http_url.clone(), format!("test data {test_id}"), 60).await;
+
+        // Verify HTTP response cache entry
+        assert!(
+            get_cached_http_response(&http_url).await.is_some(),
+            "HTTP response cache entry should exist immediately after caching"
+        );
+
+        // Wait a bit to ensure all async operations complete
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-        // Verify individual cache entries exist before checking stats
+        // Final verification that all entries still exist before checking stats
         assert!(
             get_cached_players(player_game_id).await.is_some(),
-            "Player cache entry should exist"
+            "Player cache entry should exist before stats check. Test ID: {test_id}, Player Game ID: {player_game_id}"
         );
         assert!(
-            get_cached_detailed_game_data(2024, detailed_game_id)
-                .await
-                .is_some(),
-            "Detailed game cache entry should exist"
+            get_cached_tournament_data(&tournament_key).await.is_some(),
+            "Tournament cache entry should exist before stats check"
         );
         assert!(
-            get_cached_goal_events_data(2024, goal_events_game_id)
-                .await
-                .is_some(),
-            "Goal events cache entry should exist"
+            get_cached_detailed_game_data(2024, detailed_game_id).await.is_some(),
+            "Detailed game cache entry should exist before stats check"
+        );
+        assert!(
+            get_cached_goal_events_data(2024, goal_events_game_id).await.is_some(),
+            "Goal events cache entry should exist before stats check"
+        );
+        assert!(
+            get_cached_http_response(&http_url).await.is_some(),
+            "HTTP response cache entry should exist before stats check"
         );
 
         // Get stats
         let stats = get_all_cache_stats().await;
 
-        // Verify stats (allowing for some variance due to concurrency)
+        // Verify stats with detailed error messages
         assert!(
             stats.player_cache.size >= 1,
-            "Player cache size: {}",
+            "Player cache size should be >= 1, but was {}. Test ID: {test_id}",
             stats.player_cache.size
         );
         assert!(
             stats.tournament_cache.size >= 1,
-            "Tournament cache size: {}",
+            "Tournament cache size should be >= 1, but was {}. Test ID: {test_id}",
             stats.tournament_cache.size
         );
         assert!(
             stats.detailed_game_cache.size >= 1,
-            "Detailed game cache size: {}",
+            "Detailed game cache size should be >= 1, but was {}. Test ID: {test_id}",
             stats.detailed_game_cache.size
         );
         assert!(
             stats.goal_events_cache.size >= 1,
-            "Goal events cache size: {}",
+            "Goal events cache size should be >= 1, but was {}. Test ID: {test_id}",
             stats.goal_events_cache.size
         );
         assert!(
             stats.http_response_cache.size >= 1,
-            "HTTP response cache size: {}",
+            "HTTP response cache size should be >= 1, but was {}. Test ID: {test_id}",
             stats.http_response_cache.size
         );
 
