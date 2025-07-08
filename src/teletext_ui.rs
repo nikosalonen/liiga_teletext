@@ -48,6 +48,7 @@ fn title_bg() -> Color {
 
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
+const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
 
 /// Calculates the number of days until the regular season starts.
 /// Returns None if the regular season has already started or if we can't determine the start date.
@@ -747,15 +748,15 @@ impl TeletextPage {
                     // Draw game result line
                     execute!(
                         stdout,
-                        MoveTo(0, current_y),
+                        MoveTo(CONTENT_MARGIN as u16, current_y),
                         SetForegroundColor(text_fg()),
                         Print(format!(
                             "{:<20}",
                             home_team.chars().take(20).collect::<String>()
                         )),
-                        MoveTo(SEPARATOR_OFFSET as u16, current_y),
+                        MoveTo((SEPARATOR_OFFSET + CONTENT_MARGIN) as u16, current_y),
                         Print("- "),
-                        MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
+                        MoveTo((AWAY_TEAM_OFFSET + CONTENT_MARGIN) as u16, current_y),
                         Print(format!(
                             "{:<20}",
                             away_team.chars().take(20).collect::<String>()
@@ -765,7 +766,7 @@ impl TeletextPage {
                             ScoreType::Ongoing => text_fg(),
                             ScoreType::Scheduled => text_fg(),
                         }),
-                        MoveTo(45, current_y),
+                        MoveTo((45 + CONTENT_MARGIN) as u16, current_y),
                         Print(time_display),
                         ResetColor
                     )?;
@@ -795,7 +796,7 @@ impl TeletextPage {
                                 };
                                 execute!(
                                     stdout,
-                                    MoveTo(0, current_y),
+                                    MoveTo(CONTENT_MARGIN as u16, current_y),
                                     SetForegroundColor(scorer_color),
                                     Print(format!("{:2}", event.minute)),
                                 )?;
@@ -859,7 +860,7 @@ impl TeletextPage {
                                 };
                                 execute!(
                                     stdout,
-                                    MoveTo(AWAY_TEAM_OFFSET as u16, current_y),
+                                    MoveTo((AWAY_TEAM_OFFSET + CONTENT_MARGIN) as u16, current_y),
                                     SetForegroundColor(scorer_color),
                                     Print(format!("{:2}", event.minute)),
                                 )?;
@@ -924,7 +925,7 @@ impl TeletextPage {
                     for line in message.lines() {
                         execute!(
                             stdout,
-                            MoveTo(0, current_y),
+                            MoveTo(CONTENT_MARGIN as u16, current_y),
                             SetForegroundColor(text_fg()),
                             Print(line),
                             ResetColor
@@ -935,7 +936,7 @@ impl TeletextPage {
                 TeletextRow::FutureGamesHeader(header_text) => {
                     execute!(
                         stdout,
-                        MoveTo(0, current_y),
+                        MoveTo(CONTENT_MARGIN as u16, current_y),
                         SetForegroundColor(subheader_fg()),
                         Print(header_text),
                         ResetColor
