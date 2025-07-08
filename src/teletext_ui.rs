@@ -653,8 +653,10 @@ impl TeletextPage {
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
     pub fn render(&self, stdout: &mut Stdout) -> Result<(), AppError> {
-        // Always clear the screen to ensure proper rendering
-        execute!(stdout, Clear(ClearType::All))?;
+        // Only clear the screen in interactive mode (when height limit is not ignored)
+        if !self.ignore_height_limit {
+            execute!(stdout, Clear(ClearType::All))?;
+        }
 
         // Draw header with title having green background and rest blue
         let (width, _) = crossterm::terminal::size()?;
@@ -948,7 +950,13 @@ impl TeletextPage {
 
         // Render footer area if show_footer is true
         if self.show_footer {
-            let footer_y = self.screen_height.saturating_sub(1);
+            let footer_y = if self.ignore_height_limit {
+                // In --once mode, position footer right after content
+                current_y + 1
+            } else {
+                // In interactive mode, position footer at bottom of screen
+                self.screen_height.saturating_sub(1)
+            };
             let countdown_y = footer_y.saturating_sub(2);
             let empty_y = footer_y.saturating_sub(1);
 
