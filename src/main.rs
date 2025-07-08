@@ -631,37 +631,11 @@ async fn main() -> Result<(), AppError> {
     if args.once {
         // Quick view mode - just show the data once and exit
 
-        // Show loading indicator for historical dates or when specific date is requested
-        let showed_loading = if let Some(ref date) = args.date {
-            // Check if this is a historical date that might take longer to fetch
-            if is_historical_date(date) {
-                println!(
-                    "Haetaan historiallista dataa päivälle {}...",
-                    format_date_for_display(date)
-                );
-                println!("Tämä voi kestää hetken, odotathan...");
-                println!();
-                true
-            } else {
-                println!(
-                    "Haetaan otteluita päivälle {}...",
-                    format_date_for_display(date)
-                );
-                true
-            }
-        } else {
-            println!("Haetaan tämän päivän otteluita...");
-            true
-        };
+        // In --once mode, don't show loading messages (only show in interactive mode)
 
         let (games, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
             Ok((games, fetched_date)) => (games, fetched_date),
             Err(e) => {
-                // Clear loading message if it was shown
-                if showed_loading {
-                    println!(); // Add space after loading message
-                }
-
                 let mut error_page = TeletextPage::new(
                     221,
                     "JÄÄKIEKKO".to_string(),
@@ -679,10 +653,6 @@ async fn main() -> Result<(), AppError> {
                 return Ok(());
             }
         };
-        // Clear loading message if it was shown
-        if showed_loading {
-            println!(); // Add space after loading message
-        }
 
         let page = if games.is_empty() {
             let mut no_games_page = TeletextPage::new(
