@@ -336,20 +336,20 @@ fn would_be_previous_season(date: &str) -> bool {
         return true;
     }
 
-        // If same year, check hockey season logic
+            // If same year, check hockey season logic
     if date_year == current_year {
-        // Hockey season runs roughly September-May
-        // Off-season is June-August
+        // Hockey season: September-February (regular), March-May (playoffs/playout)
+        // Off-season: June-August
 
-        // If we're in regular season (September-December) and date is from earlier in the year,
-        // it's from the previous season
+        // If we're in new regular season (September-December) and date is from previous season
+        // (January-August), it's from the previous season
         if (9..=12).contains(&current_month) && date_month <= 8 {
             return true;
         }
 
-        // If we're in off-season (June-August) and date is from September-December,
-        // it's from the previous season (impossible in same year, but defensive)
-        if (6..=8).contains(&current_month) && date_month >= 9 {
+        // If we're in early regular season (January-February) and date is from off-season
+        // (June-August), it's from the previous season
+        if (1..=2).contains(&current_month) && (6..=8).contains(&date_month) {
             return true;
         }
     }
