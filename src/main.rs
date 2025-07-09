@@ -314,6 +314,27 @@ fn is_date_navigation_key(key_event: &crossterm::event::KeyEvent, is_left: bool)
     false
 }
 
+/// Gets the target date for navigation, using current_date if available,
+/// otherwise determining the appropriate date based on current time.
+fn get_target_date_for_navigation(current_date: &Option<String>) -> String {
+    current_date.as_ref().cloned().unwrap_or_else(|| {
+        // If no current date, use today/yesterday based on time
+        if crate::data_fetcher::processors::should_show_todays_games() {
+            Utc::now()
+                .with_timezone(&Local)
+                .format("%Y-%m-%d")
+                .to_string()
+        } else {
+            let yesterday = Utc::now()
+                .with_timezone(&Local)
+                .date_naive()
+                .pred_opt()
+                .expect("Date underflow cannot happen");
+            yesterday.format("%Y-%m-%d").to_string()
+        }
+    })
+}
+
 /// Checks if a date would require historical/schedule endpoint (from previous season).
 /// This prevents navigation to previous season games via arrow keys.
 fn would_be_previous_season(date: &str) -> bool {
@@ -1242,22 +1263,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         // Cmd/Ctrl + Left: Previous date with games
                         tracing::info!("Previous date navigation requested");
                         tracing::debug!("Current date state: {:?}", current_date);
-                        let target_date = current_date.as_ref().cloned().unwrap_or_else(|| {
-                            // If no current date, use today/yesterday based on time
-                            if crate::data_fetcher::processors::should_show_todays_games() {
-                                Utc::now()
-                                    .with_timezone(&Local)
-                                    .format("%Y-%m-%d")
-                                    .to_string()
-                            } else {
-                                let yesterday = Utc::now()
-                                    .with_timezone(&Local)
-                                    .date_naive()
-                                    .pred_opt()
-                                    .expect("Date underflow cannot happen");
-                                yesterday.format("%Y-%m-%d").to_string()
-                            }
-                        });
+                        let target_date = get_target_date_for_navigation(&current_date);
 
                         tracing::info!(
                             "Searching for previous date with games from: {}",
@@ -1274,22 +1280,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         // Cmd/Ctrl + Right: Next date with games
                         tracing::info!("Next date navigation requested");
                         tracing::debug!("Current date state: {:?}", current_date);
-                        let target_date = current_date.as_ref().cloned().unwrap_or_else(|| {
-                            // If no current date, use today/yesterday based on time
-                            if crate::data_fetcher::processors::should_show_todays_games() {
-                                Utc::now()
-                                    .with_timezone(&Local)
-                                    .format("%Y-%m-%d")
-                                    .to_string()
-                            } else {
-                                let yesterday = Utc::now()
-                                    .with_timezone(&Local)
-                                    .date_naive()
-                                    .pred_opt()
-                                    .expect("Date underflow cannot happen");
-                                yesterday.format("%Y-%m-%d").to_string()
-                            }
-                        });
+                        let target_date = get_target_date_for_navigation(&current_date);
 
                         tracing::info!("Searching for next date with games from: {}", target_date);
                         if let Some(next_date) = find_next_date_with_games(&target_date).await {
