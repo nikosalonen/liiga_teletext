@@ -336,7 +336,7 @@ fn would_be_previous_season(date: &str) -> bool {
         return true;
     }
 
-            // If same year, check hockey season logic
+    // If same year, check hockey season logic
     if date_year == current_year {
         // Hockey season: September-February (regular), March-May (playoffs/playout)
         // Off-season: June-August
