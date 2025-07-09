@@ -304,8 +304,10 @@ fn is_date_navigation_key(key_event: &crossterm::event::KeyEvent, is_left: bool)
     let has_shift_modifier = key_event.modifiers.contains(KeyModifiers::SHIFT);
 
     if has_shift_modifier {
-        tracing::debug!("Date navigation key detected: Shift + {}",
-            if is_left { "Left" } else { "Right" });
+        tracing::debug!(
+            "Date navigation key detected: Shift + {}",
+            if is_left { "Left" } else { "Right" }
+        );
         return true;
     }
 
@@ -363,7 +365,10 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
         Err(_) => return None,
     };
 
-    tracing::info!("Starting search for previous date with games from: {}", current_date);
+    tracing::info!(
+        "Starting search for previous date with games from: {}",
+        current_date
+    );
 
     // Search up to 30 days in the past to stay within current season
     for days_back in 1..=30 {
@@ -372,29 +377,42 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
 
             // Check if this date would be from the previous season
             if would_be_previous_season(&date_string) {
-                tracing::info!("Reached previous season boundary at {}, stopping navigation (use -d flag for historical games)", date_string);
+                tracing::info!(
+                    "Reached previous season boundary at {}, stopping navigation (use -d flag for historical games)",
+                    date_string
+                );
                 break;
             }
 
             // Log progress every 10 days
             if days_back % 10 == 0 {
-                tracing::info!("Date navigation: checking {} ({} days back)", date_string, days_back);
+                tracing::info!(
+                    "Date navigation: checking {} ({} days back)",
+                    date_string,
+                    days_back
+                );
             }
 
             // Add timeout to the fetch operation (shorter timeout for faster navigation)
             let fetch_future = fetch_liiga_data(Some(date_string.clone()));
             let timeout_duration = tokio::time::Duration::from_secs(5);
 
-                        match tokio::time::timeout(timeout_duration, fetch_future).await {
+            match tokio::time::timeout(timeout_duration, fetch_future).await {
                 Ok(Ok((games, fetched_date))) if !games.is_empty() => {
                     // Ensure the fetched date matches the requested date
                     if fetched_date == date_string {
-                        tracing::info!("Found previous date with games: {} (after {} days)", date_string, days_back);
+                        tracing::info!(
+                            "Found previous date with games: {} (after {} days)",
+                            date_string,
+                            days_back
+                        );
                         return Some(date_string);
                     } else {
                         tracing::debug!(
                             "Skipping date {} because fetcher returned different date: {} (after {} days)",
-                            date_string, fetched_date, days_back
+                            date_string,
+                            fetched_date,
+                            days_back
                         );
                     }
                 }
@@ -402,10 +420,17 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
                     // No games found, continue searching
                 }
                 Ok(Err(e)) => {
-                    tracing::warn!("Error fetching data for {}: {} (continuing search)", date_string, e);
+                    tracing::warn!(
+                        "Error fetching data for {}: {} (continuing search)",
+                        date_string,
+                        e
+                    );
                 }
                 Err(_) => {
-                    tracing::warn!("Timeout fetching data for {} (continuing search)", date_string);
+                    tracing::warn!(
+                        "Timeout fetching data for {} (continuing search)",
+                        date_string
+                    );
                 }
             }
 
@@ -414,7 +439,10 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
         }
     }
 
-    tracing::info!("No previous date with games found within current season from {}", current_date);
+    tracing::info!(
+        "No previous date with games found within current season from {}",
+        current_date
+    );
     None
 }
 
@@ -426,7 +454,10 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
         Err(_) => return None,
     };
 
-    tracing::info!("Starting search for next date with games from: {}", current_date);
+    tracing::info!(
+        "Starting search for next date with games from: {}",
+        current_date
+    );
 
     // Search up to 60 days in the future (handles off-season periods)
     for days_ahead in 1..=60 {
@@ -435,23 +466,33 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
 
             // Log progress every 10 days
             if days_ahead % 10 == 0 {
-                tracing::info!("Date navigation: checking {} ({} days ahead)", date_string, days_ahead);
+                tracing::info!(
+                    "Date navigation: checking {} ({} days ahead)",
+                    date_string,
+                    days_ahead
+                );
             }
 
             // Add timeout to the fetch operation (shorter timeout for faster navigation)
             let fetch_future = fetch_liiga_data(Some(date_string.clone()));
             let timeout_duration = tokio::time::Duration::from_secs(5);
 
-                        match tokio::time::timeout(timeout_duration, fetch_future).await {
+            match tokio::time::timeout(timeout_duration, fetch_future).await {
                 Ok(Ok((games, fetched_date))) if !games.is_empty() => {
                     // Ensure the fetched date matches the requested date
                     if fetched_date == date_string {
-                        tracing::info!("Found next date with games: {} (after {} days)", date_string, days_ahead);
+                        tracing::info!(
+                            "Found next date with games: {} (after {} days)",
+                            date_string,
+                            days_ahead
+                        );
                         return Some(date_string);
                     } else {
                         tracing::debug!(
                             "Skipping date {} because fetcher returned different date: {} (after {} days)",
-                            date_string, fetched_date, days_ahead
+                            date_string,
+                            fetched_date,
+                            days_ahead
                         );
                     }
                 }
@@ -459,10 +500,17 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
                     // No games found, continue searching
                 }
                 Ok(Err(e)) => {
-                    tracing::warn!("Error fetching data for {}: {} (continuing search)", date_string, e);
+                    tracing::warn!(
+                        "Error fetching data for {}: {} (continuing search)",
+                        date_string,
+                        e
+                    );
                 }
                 Err(_) => {
-                    tracing::warn!("Timeout fetching data for {} (continuing search)", date_string);
+                    tracing::warn!(
+                        "Timeout fetching data for {} (continuing search)",
+                        date_string
+                    );
                 }
             }
 
@@ -471,7 +519,10 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
         }
     }
 
-    tracing::info!("No next date with games found within search range from {}", current_date);
+    tracing::info!(
+        "No next date with games found within search range from {}",
+        current_date
+    );
     None
 }
 
@@ -1049,24 +1100,25 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 needs_render = false;
             }
 
-            let (games, had_error, fetched_date) = match fetch_liiga_data(current_date.clone()).await {
-                Ok((games, fetched_date)) => (games, false, fetched_date),
-                Err(e) => {
-                    tracing::error!("Error fetching data: {}", e);
-                    let mut error_page = TeletextPage::new(
-                        221,
-                        "JÄÄKIEKKO".to_string(),
-                        "SM-LIIGA".to_string(),
-                        args.disable_links,
-                        true,
-                        false,
-                    );
-                    error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
-                    current_page = Some(error_page);
-                    needs_render = true;
-                    (Vec::new(), true, String::new())
-                }
-            };
+            let (games, had_error, fetched_date) =
+                match fetch_liiga_data(current_date.clone()).await {
+                    Ok((games, fetched_date)) => (games, false, fetched_date),
+                    Err(e) => {
+                        tracing::error!("Error fetching data: {}", e);
+                        let mut error_page = TeletextPage::new(
+                            221,
+                            "JÄÄKIEKKO".to_string(),
+                            "SM-LIIGA".to_string(),
+                            args.disable_links,
+                            true,
+                            false,
+                        );
+                        error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
+                        current_page = Some(error_page);
+                        needs_render = true;
+                        (Vec::new(), true, String::new())
+                    }
+                };
 
             // Update current_date to track the actual date being displayed
             if !had_error && !fetched_date.is_empty() {
@@ -1178,29 +1230,38 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
             match event::read()? {
                 Event::Key(key_event) => {
-                    tracing::debug!("Key event: {:?}, modifiers: {:?}", key_event.code, key_event.modifiers);
+                    tracing::debug!(
+                        "Key event: {:?}, modifiers: {:?}",
+                        key_event.code,
+                        key_event.modifiers
+                    );
 
                     // Check for date navigation first (Cmd/Ctrl + Arrow keys)
                     if is_date_navigation_key(&key_event, true) {
                         // Cmd/Ctrl + Left: Previous date with games
                         tracing::info!("Previous date navigation requested");
                         tracing::debug!("Current date state: {:?}", current_date);
-                        let target_date = current_date.as_ref()
-                            .cloned()
-                            .unwrap_or_else(|| {
-                                // If no current date, use today/yesterday based on time
-                                if crate::data_fetcher::processors::should_show_todays_games() {
-                                    Utc::now().with_timezone(&Local).format("%Y-%m-%d").to_string()
-                                } else {
-                                    let yesterday = Utc::now().with_timezone(&Local)
-                                        .date_naive()
-                                        .pred_opt()
-                                        .expect("Date underflow cannot happen");
-                                    yesterday.format("%Y-%m-%d").to_string()
-                                }
-                            });
+                        let target_date = current_date.as_ref().cloned().unwrap_or_else(|| {
+                            // If no current date, use today/yesterday based on time
+                            if crate::data_fetcher::processors::should_show_todays_games() {
+                                Utc::now()
+                                    .with_timezone(&Local)
+                                    .format("%Y-%m-%d")
+                                    .to_string()
+                            } else {
+                                let yesterday = Utc::now()
+                                    .with_timezone(&Local)
+                                    .date_naive()
+                                    .pred_opt()
+                                    .expect("Date underflow cannot happen");
+                                yesterday.format("%Y-%m-%d").to_string()
+                            }
+                        });
 
-                        tracing::info!("Searching for previous date with games from: {}", target_date);
+                        tracing::info!(
+                            "Searching for previous date with games from: {}",
+                            target_date
+                        );
                         if let Some(prev_date) = find_previous_date_with_games(&target_date).await {
                             current_date = Some(prev_date.clone());
                             needs_refresh = true;
@@ -1212,20 +1273,22 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         // Cmd/Ctrl + Right: Next date with games
                         tracing::info!("Next date navigation requested");
                         tracing::debug!("Current date state: {:?}", current_date);
-                        let target_date = current_date.as_ref()
-                            .cloned()
-                            .unwrap_or_else(|| {
-                                // If no current date, use today/yesterday based on time
-                                if crate::data_fetcher::processors::should_show_todays_games() {
-                                    Utc::now().with_timezone(&Local).format("%Y-%m-%d").to_string()
-                                } else {
-                                    let yesterday = Utc::now().with_timezone(&Local)
-                                        .date_naive()
-                                        .pred_opt()
-                                        .expect("Date underflow cannot happen");
-                                    yesterday.format("%Y-%m-%d").to_string()
-                                }
-                            });
+                        let target_date = current_date.as_ref().cloned().unwrap_or_else(|| {
+                            // If no current date, use today/yesterday based on time
+                            if crate::data_fetcher::processors::should_show_todays_games() {
+                                Utc::now()
+                                    .with_timezone(&Local)
+                                    .format("%Y-%m-%d")
+                                    .to_string()
+                            } else {
+                                let yesterday = Utc::now()
+                                    .with_timezone(&Local)
+                                    .date_naive()
+                                    .pred_opt()
+                                    .expect("Date underflow cannot happen");
+                                yesterday.format("%Y-%m-%d").to_string()
+                            }
+                        });
 
                         tracing::info!("Searching for next date with games from: {}", target_date);
                         if let Some(next_date) = find_next_date_with_games(&target_date).await {

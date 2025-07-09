@@ -868,12 +868,19 @@ pub async fn fetch_liiga_data(
     // Check if this is a historical date (previous season) or requires schedule endpoint for playoffs
     let is_historical = is_historical_date(&date);
     let use_schedule_for_playoffs = should_use_schedule_for_playoffs(&date);
-    info!("Date: {}, is_historical: {}, use_schedule_for_playoffs: {}", date, is_historical, use_schedule_for_playoffs);
+    info!(
+        "Date: {}, is_historical: {}, use_schedule_for_playoffs: {}",
+        date, is_historical, use_schedule_for_playoffs
+    );
 
     if is_historical || use_schedule_for_playoffs {
         info!(
             "Detected {} date: {}, using schedule endpoint",
-            if is_historical { "historical" } else { "playoff" },
+            if is_historical {
+                "historical"
+            } else {
+                "playoff"
+            },
             date
         );
         let historical_games = fetch_historical_games(&client, &config, &date).await?;
@@ -1631,7 +1638,10 @@ fn should_use_schedule_for_playoffs(date: &str) -> bool {
 }
 
 /// Internal function to check if a date requires the schedule endpoint for playoffs.
-fn should_use_schedule_for_playoffs_with_current_time(date: &str, current_time: chrono::DateTime<Local>) -> bool {
+fn should_use_schedule_for_playoffs_with_current_time(
+    date: &str,
+    current_time: chrono::DateTime<Local>,
+) -> bool {
     let date_parts: Vec<&str> = date.split('-').collect();
     if date_parts.len() < 2 {
         return false;
