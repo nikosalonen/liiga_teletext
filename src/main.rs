@@ -1022,6 +1022,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     let mut last_page_change = Instant::now()
         .checked_sub(Duration::from_millis(200))
         .unwrap_or_else(Instant::now);
+    let mut last_date_navigation = Instant::now()
+        .checked_sub(Duration::from_millis(1000))
+        .unwrap_or_else(Instant::now);
     let mut last_resize = Instant::now()
         .checked_sub(Duration::from_millis(500))
         .unwrap_or_else(Instant::now);
@@ -1258,37 +1261,43 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         key_event.modifiers
                     );
 
-                    // Check for date navigation first (Cmd/Ctrl + Arrow keys)
+                    // Check for date navigation first (Shift + Arrow keys)
                     if is_date_navigation_key(&key_event, true) {
-                        // Cmd/Ctrl + Left: Previous date with games
-                        tracing::info!("Previous date navigation requested");
-                        tracing::debug!("Current date state: {:?}", current_date);
-                        let target_date = get_target_date_for_navigation(&current_date);
+                        // Shift + Left: Previous date with games
+                        if last_date_navigation.elapsed() >= Duration::from_millis(1000) {
+                            tracing::info!("Previous date navigation requested");
+                            tracing::debug!("Current date state: {:?}", current_date);
+                            let target_date = get_target_date_for_navigation(&current_date);
 
-                        tracing::info!(
-                            "Searching for previous date with games from: {}",
-                            target_date
-                        );
-                        if let Some(prev_date) = find_previous_date_with_games(&target_date).await {
-                            current_date = Some(prev_date.clone());
-                            needs_refresh = true;
-                            tracing::info!("Navigated to previous date: {}", prev_date);
-                        } else {
-                            tracing::warn!("No previous date with games found");
+                            tracing::info!(
+                                "Searching for previous date with games from: {}",
+                                target_date
+                            );
+                            if let Some(prev_date) = find_previous_date_with_games(&target_date).await {
+                                current_date = Some(prev_date.clone());
+                                needs_refresh = true;
+                                tracing::info!("Navigated to previous date: {}", prev_date);
+                            } else {
+                                tracing::warn!("No previous date with games found");
+                            }
+                            last_date_navigation = Instant::now();
                         }
                     } else if is_date_navigation_key(&key_event, false) {
-                        // Cmd/Ctrl + Right: Next date with games
-                        tracing::info!("Next date navigation requested");
-                        tracing::debug!("Current date state: {:?}", current_date);
-                        let target_date = get_target_date_for_navigation(&current_date);
+                        // Shift + Right: Next date with games
+                        if last_date_navigation.elapsed() >= Duration::from_millis(1000) {
+                            tracing::info!("Next date navigation requested");
+                            tracing::debug!("Current date state: {:?}", current_date);
+                            let target_date = get_target_date_for_navigation(&current_date);
 
-                        tracing::info!("Searching for next date with games from: {}", target_date);
-                        if let Some(next_date) = find_next_date_with_games(&target_date).await {
-                            current_date = Some(next_date.clone());
-                            needs_refresh = true;
-                            tracing::info!("Navigated to next date: {}", next_date);
-                        } else {
-                            tracing::warn!("No next date with games found");
+                            tracing::info!("Searching for next date with games from: {}", target_date);
+                            if let Some(next_date) = find_next_date_with_games(&target_date).await {
+                                current_date = Some(next_date.clone());
+                                needs_refresh = true;
+                                tracing::info!("Navigated to next date: {}", next_date);
+                            } else {
+                                tracing::warn!("No next date with games found");
+                            }
+                            last_date_navigation = Instant::now();
                         }
                     } else {
                         // Handle regular key events (without modifiers)
