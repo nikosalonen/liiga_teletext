@@ -90,6 +90,7 @@ liiga_teletext/
 ### Interactive Mode (Default)
 - Press `q` to quit the application
 - Use left/right arrow keys to navigate between pages
+- Use **Cmd+Left/Right** (macOS) or **Ctrl+Left/Right** (other platforms) to navigate between dates with games
 - Press `r` to manually refresh data
 - Data refreshes automatically:
   - Every minute for live games
