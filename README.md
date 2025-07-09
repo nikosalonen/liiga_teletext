@@ -79,8 +79,8 @@ liiga_teletext/
 │   │   ├── cache.rs       # Caching functionality
 │   │   └── player_names.rs # Player name resolution
 │   └── schemas/           # JSON schema definitions
-│       ├── game_schema.json         # Game data structure schema
-│       └── game_schedule_schema.json# Game schedule data structure schema
+│       ├── game_schema.json          # Game data structure schema
+│       └── game_schedule_schema.json # Game schedule data structure schema
 ├── tests/                 # Integration tests
 └── scripts/              # Build and utility scripts
 ```
@@ -90,6 +90,9 @@ liiga_teletext/
 ### Interactive Mode (Default)
 - Press `q` to quit the application
 - Use left/right arrow keys to navigate between pages
+- Use **Shift+Left/Right** to navigate between dates with games
+  - **Note**: Date navigation is limited to the current season for performance and UX reasons
+  - To view games from previous seasons, use the `-d` flag with a specific date
 - Press `r` to manually refresh data
 - Data refreshes automatically:
   - Every minute for live games
@@ -149,6 +152,16 @@ The application intelligently handles different tournament types based on the se
 
 During off-season periods, the app shows a countdown to the next regular season start.
 
+## Performance Features
+
+The application includes several performance optimizations:
+
+- **HTTP Response Caching**: Intelligent caching with time-based expiration reduces API calls
+- **Connection Pooling**: Reuses HTTP connections for better performance
+- **Incremental Updates**: Only refreshes data when necessary based on game state
+- **Memory Management**: Efficient data structures and resource cleanup
+- **Async Architecture**: Non-blocking I/O operations for responsive UI
+
 ## Features Status
 
 - [x] Real API integration with comprehensive error handling
@@ -186,8 +199,10 @@ cargo test --test integration_tests
 
 # Check code quality
 cargo fmt
-cargo clippy
+cargo clippy --all-features --all-targets -- -D warnings
 ```
+
+**Note**: This project uses Rust 2024 edition and requires all clippy warnings to be resolved before committing.
 
 ### Architecture
 
@@ -201,13 +216,14 @@ The application follows a modular architecture with clear separation of concerns
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+Contributions are welcome! Please feel free to submit a Pull Request. See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines including commit message format and development workflow.
 
 **Important**: Before submitting any changes, please ensure:
 - All tests pass: `cargo test --all-features`
 - Code is formatted: `cargo fmt`
-- No clippy warnings: `cargo clippy`
+- No clippy warnings: `cargo clippy --all-features --all-targets -- -D warnings`
 - New functionality includes appropriate tests
+- Follow conventional commits for commit messages
 
 ## License
 
