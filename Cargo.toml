@@ -1,6 +1,6 @@
 [package]
 name = "liiga_teletext"
-version = "0.10.4"
+version = "0.11.0"
 edition = "2024"
 authors = ["Niko Salonen <nikotsalonen@gmail.com>"]
 description = "A terminal application that displays Finnish Liiga hockey results in a teletext style"
@@ -30,7 +30,7 @@ reqwest = { version = "0.12.22", features = ["json", "blocking"] }
 tokio = { version = "1.46", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "0.8"
+toml = "0.9.0"
 dirs = "6.0.0"
 futures = "0.3"
 lazy_static = "1.5.0"
