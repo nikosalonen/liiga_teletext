@@ -1630,6 +1630,16 @@ fn is_historical_date_with_current_time(date: &str, current_time: chrono::DateTi
         .parse::<u32>()
         .unwrap_or_else(|_| current_time.month());
 
+    // Try to parse the full date to check if it's in the future
+    if let Ok(parsed_date) = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+        let current_date = current_time.date_naive();
+
+        // Future dates should not be considered historical
+        if parsed_date > current_date {
+            return false;
+        }
+    }
+
     let current_year = current_time.year();
     let current_month = current_time.month();
 
@@ -3117,6 +3127,15 @@ mod tests {
             "2024-12-31",
             specific_current_time
         )); // Future month in same year
+
+        // Test the specific case reported by the user
+        let january_2025_time = chrono::DateTime::parse_from_rfc3339("2025-01-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Local);
+        assert!(!is_historical_date_with_current_time(
+            "2025-09-09",
+            january_2025_time
+        )); // Future date should not be historical
     }
 
     #[test]
