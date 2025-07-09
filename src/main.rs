@@ -1023,7 +1023,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
         .checked_sub(Duration::from_millis(200))
         .unwrap_or_else(Instant::now);
     let mut last_date_navigation = Instant::now()
-        .checked_sub(Duration::from_millis(1000))
+        .checked_sub(Duration::from_millis(250))
         .unwrap_or_else(Instant::now);
     let mut last_resize = Instant::now()
         .checked_sub(Duration::from_millis(500))
@@ -1264,7 +1264,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     // Check for date navigation first (Shift + Arrow keys)
                     if is_date_navigation_key(&key_event, true) {
                         // Shift + Left: Previous date with games
-                        if last_date_navigation.elapsed() >= Duration::from_millis(1000) {
+                        if last_date_navigation.elapsed() >= Duration::from_millis(250) {
                             tracing::info!("Previous date navigation requested");
                             tracing::debug!("Current date state: {:?}", current_date);
                             let target_date = get_target_date_for_navigation(&current_date);
@@ -1284,7 +1284,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         }
                     } else if is_date_navigation_key(&key_event, false) {
                         // Shift + Right: Next date with games
-                        if last_date_navigation.elapsed() >= Duration::from_millis(1000) {
+                        if last_date_navigation.elapsed() >= Duration::from_millis(250) {
                             tracing::info!("Next date navigation requested");
                             tracing::debug!("Current date state: {:?}", current_date);
                             let target_date = get_target_date_for_navigation(&current_date);
