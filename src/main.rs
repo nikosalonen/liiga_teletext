@@ -4,11 +4,11 @@ mod data_fetcher;
 mod error;
 mod teletext_ui;
 
-use chrono::{Local, NaiveDate, Utc};
+use chrono::{Datelike, Local, NaiveDate, Utc};
 use clap::Parser;
 use config::Config;
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyModifiers},
     execute,
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -48,6 +48,7 @@ fn is_noninteractive_mode(args: &Args) -> bool {
 ///
 /// In interactive mode (default):
 /// - Use arrow keys (←/→) to navigate between pages
+/// - Use Shift+←/→ to navigate between dates with games
 /// - Press 'r' to refresh data (10s cooldown between refreshes)
 /// - Press 'q' to quit
 ///
@@ -247,6 +248,7 @@ async fn create_future_games_page(
     show_footer: bool,
     ignore_height_limit: bool,
     show_future_header: bool,
+    fetched_date: Option<String>,
 ) -> Option<TeletextPage> {
     // Check if these are future games by validating both time and start fields
     if !games.is_empty() && is_future_game(&games[0]) {
@@ -272,7 +274,7 @@ async fn create_future_games_page(
             show_footer,
             ignore_height_limit,
             future_games_header,
-            None, // No fetched date for future games
+            fetched_date, // Pass the fetched date to show it in the header
         )
         .await;
 
@@ -283,6 +285,267 @@ async fn create_future_games_page(
     } else {
         None
     }
+}
+
+/// Checks if the given key event matches the date navigation shortcut.
+/// Uses Shift + Left/Right for all platforms (works reliably in all terminals)
+fn is_date_navigation_key(key_event: &crossterm::event::KeyEvent, is_left: bool) -> bool {
+    let expected_code = if is_left {
+        KeyCode::Left
+    } else {
+        KeyCode::Right
+    };
+
+    if key_event.code != expected_code {
+        return false;
+    }
+
+    // Use Shift key for date navigation (works reliably in all terminals)
+    let has_shift_modifier = key_event.modifiers.contains(KeyModifiers::SHIFT);
+
+    if has_shift_modifier {
+        tracing::debug!(
+            "Date navigation key detected: Shift + {}",
+            if is_left { "Left" } else { "Right" }
+        );
+        return true;
+    }
+
+    false
+}
+
+/// Gets the target date for navigation, using current_date if available,
+/// otherwise determining the appropriate date based on current time.
+fn get_target_date_for_navigation(current_date: &Option<String>) -> String {
+    current_date.as_ref().cloned().unwrap_or_else(|| {
+        // If no current date, use today/yesterday based on time
+        if crate::data_fetcher::processors::should_show_todays_games() {
+            Utc::now()
+                .with_timezone(&Local)
+                .format("%Y-%m-%d")
+                .to_string()
+        } else {
+            let yesterday = Utc::now()
+                .with_timezone(&Local)
+                .date_naive()
+                .pred_opt()
+                .expect("Date underflow cannot happen");
+            yesterday.format("%Y-%m-%d").to_string()
+        }
+    })
+}
+
+/// Checks if a date would require historical/schedule endpoint (from previous season).
+/// This prevents navigation to previous season games via arrow keys.
+fn would_be_previous_season(date: &str) -> bool {
+    use chrono::{Local, Utc};
+    let now = Utc::now().with_timezone(&Local);
+
+    let date_parts: Vec<&str> = date.split('-').collect();
+    if date_parts.len() < 2 {
+        return false;
+    }
+
+    let date_year = date_parts[0].parse::<i32>().unwrap_or(now.year());
+    let date_month = date_parts[1].parse::<u32>().unwrap_or(now.month());
+
+    let current_year = now.year();
+    let current_month = now.month();
+
+    // If date is from a previous year, it's definitely previous season
+    if date_year < current_year {
+        return true;
+    }
+
+    // If same year, check hockey season logic
+    if date_year == current_year {
+        // Hockey season: September-February (regular), March-May (playoffs/playout)
+        // Off-season: June-August
+
+        // If we're in new regular season (September-December) and date is from previous season
+        // (January-August), it's from the previous season
+        if (9..=12).contains(&current_month) && date_month <= 8 {
+            return true;
+        }
+
+        // If we're in early regular season (January-February) and date is from off-season
+        // (June-August), it's from the previous season
+        if (1..=2).contains(&current_month) && (6..=8).contains(&date_month) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Finds the previous date with games by checking dates going backwards.
+/// Returns None if no games are found within the current season or a reasonable time range.
+/// Prevents navigation to previous season games for better UX.
+async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
+    let current_parsed = match chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d") {
+        Ok(date) => date,
+        Err(_) => return None,
+    };
+
+    tracing::info!(
+        "Starting search for previous date with games from: {}",
+        current_date
+    );
+
+    // Search up to 30 days in the past to stay within current season
+    for days_back in 1..=30 {
+        if let Some(check_date) = current_parsed.checked_sub_days(chrono::Days::new(days_back)) {
+            let date_string = check_date.format("%Y-%m-%d").to_string();
+
+            // Check if this date would be from the previous season
+            if would_be_previous_season(&date_string) {
+                tracing::info!(
+                    "Reached previous season boundary at {}, stopping navigation (use -d flag for historical games)",
+                    date_string
+                );
+                break;
+            }
+
+            // Log progress every 10 days
+            if days_back % 10 == 0 {
+                tracing::info!(
+                    "Date navigation: checking {} ({} days back)",
+                    date_string,
+                    days_back
+                );
+            }
+
+            // Add timeout to the fetch operation (shorter timeout for faster navigation)
+            let fetch_future = fetch_liiga_data(Some(date_string.clone()));
+            let timeout_duration = tokio::time::Duration::from_secs(5);
+
+            match tokio::time::timeout(timeout_duration, fetch_future).await {
+                Ok(Ok((games, fetched_date))) if !games.is_empty() => {
+                    // Ensure the fetched date matches the requested date
+                    if fetched_date == date_string {
+                        tracing::info!(
+                            "Found previous date with games: {} (after {} days)",
+                            date_string,
+                            days_back
+                        );
+                        return Some(date_string);
+                    } else {
+                        tracing::debug!(
+                            "Skipping date {} because fetcher returned different date: {} (after {} days)",
+                            date_string,
+                            fetched_date,
+                            days_back
+                        );
+                    }
+                }
+                Ok(Ok(_)) => {
+                    // No games found, continue searching
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        "Error fetching data for {}: {} (continuing search)",
+                        date_string,
+                        e
+                    );
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "Timeout fetching data for {} (continuing search)",
+                        date_string
+                    );
+                }
+            }
+
+            // Small delay to prevent API spam
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    tracing::info!(
+        "No previous date with games found within current season from {}",
+        current_date
+    );
+    None
+}
+
+/// Finds the next date with games by checking dates going forwards.
+/// Returns None if no games are found within a reasonable time range.
+async fn find_next_date_with_games(current_date: &str) -> Option<String> {
+    let current_parsed = match chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d") {
+        Ok(date) => date,
+        Err(_) => return None,
+    };
+
+    tracing::info!(
+        "Starting search for next date with games from: {}",
+        current_date
+    );
+
+    // Search up to 60 days in the future (handles off-season periods)
+    for days_ahead in 1..=60 {
+        if let Some(check_date) = current_parsed.checked_add_days(chrono::Days::new(days_ahead)) {
+            let date_string = check_date.format("%Y-%m-%d").to_string();
+
+            // Log progress every 10 days
+            if days_ahead % 10 == 0 {
+                tracing::info!(
+                    "Date navigation: checking {} ({} days ahead)",
+                    date_string,
+                    days_ahead
+                );
+            }
+
+            // Add timeout to the fetch operation (shorter timeout for faster navigation)
+            let fetch_future = fetch_liiga_data(Some(date_string.clone()));
+            let timeout_duration = tokio::time::Duration::from_secs(5);
+
+            match tokio::time::timeout(timeout_duration, fetch_future).await {
+                Ok(Ok((games, fetched_date))) if !games.is_empty() => {
+                    // Ensure the fetched date matches the requested date
+                    if fetched_date == date_string {
+                        tracing::info!(
+                            "Found next date with games: {} (after {} days)",
+                            date_string,
+                            days_ahead
+                        );
+                        return Some(date_string);
+                    } else {
+                        tracing::debug!(
+                            "Skipping date {} because fetcher returned different date: {} (after {} days)",
+                            date_string,
+                            fetched_date,
+                            days_ahead
+                        );
+                    }
+                }
+                Ok(Ok(_)) => {
+                    // No games found, continue searching
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        "Error fetching data for {}: {} (continuing search)",
+                        date_string,
+                        e
+                    );
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "Timeout fetching data for {} (continuing search)",
+                        date_string
+                    );
+                }
+            }
+
+            // Small delay to prevent API spam
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    tracing::info!(
+        "No next date with games found within search range from {}",
+        current_date
+    );
+    None
 }
 
 /// Checks for the latest version of this crate on crates.io.
@@ -641,8 +904,8 @@ async fn main() -> Result<(), AppError> {
                     "JÄÄKIEKKO".to_string(),
                     "SM-LIIGA".to_string(),
                     args.disable_links,
-                    false,
                     true,
+                    false,
                 );
                 error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
                 // Set terminal title for non-interactive mode (error case)
@@ -687,6 +950,7 @@ async fn main() -> Result<(), AppError> {
                 true,
                 true,
                 show_future_header,
+                Some(fetched_date.clone()),
             )
             .await
             {
@@ -769,6 +1033,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     let mut pending_resize = false;
     let mut resize_timer = Instant::now();
 
+    // Date navigation state - track the current date being displayed
+    let mut current_date = args.date.clone();
+
     // Change detection - track data changes to avoid unnecessary re-renders
     let mut last_games_hash = 0u64;
     let mut last_games = Vec::new();
@@ -807,7 +1074,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             tracing::debug!("Fetching new data");
 
             // Show loading indicator for historical dates or when specific date is requested
-            if let Some(ref date) = args.date {
+            if let Some(ref date) = current_date {
                 let mut loading_page = TeletextPage::new(
                     221,
                     "JÄÄKIEKKO".to_string(),
@@ -842,7 +1109,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     true,
                     false,
                 );
-                loading_page.add_error_message("Haetaan tämän päivän otteluita...");
+                loading_page.add_error_message("Haetaan päivän otteluita...");
                 current_page = Some(loading_page);
                 needs_render = true;
             }
@@ -855,24 +1122,31 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 needs_render = false;
             }
 
-            let (games, had_error, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
-                Ok((games, fetched_date)) => (games, false, fetched_date),
-                Err(e) => {
-                    tracing::error!("Error fetching data: {}", e);
-                    let mut error_page = TeletextPage::new(
-                        221,
-                        "JÄÄKIEKKO".to_string(),
-                        "SM-LIIGA".to_string(),
-                        args.disable_links,
-                        true,
-                        false,
-                    );
-                    error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
-                    current_page = Some(error_page);
-                    needs_render = true;
-                    (Vec::new(), true, String::new())
-                }
-            };
+            let (games, had_error, fetched_date) =
+                match fetch_liiga_data(current_date.clone()).await {
+                    Ok((games, fetched_date)) => (games, false, fetched_date),
+                    Err(e) => {
+                        tracing::error!("Error fetching data: {}", e);
+                        let mut error_page = TeletextPage::new(
+                            221,
+                            "JÄÄKIEKKO".to_string(),
+                            "SM-LIIGA".to_string(),
+                            args.disable_links,
+                            true,
+                            false,
+                        );
+                        error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
+                        current_page = Some(error_page);
+                        needs_render = true;
+                        (Vec::new(), true, String::new())
+                    }
+                };
+
+            // Update current_date to track the actual date being displayed
+            if !had_error && !fetched_date.is_empty() {
+                current_date = Some(fetched_date.clone());
+                tracing::debug!("Updated current_date to: {:?}", current_date);
+            }
 
             // Change detection using a simple hash of game data
             let games_hash = calculate_games_hash(&games);
@@ -917,13 +1191,14 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         error_page
                     } else {
                         // Try to create a future games page, fall back to regular page if not future games
-                        let show_future_header = args.date.is_none();
+                        let show_future_header = current_date.is_none();
                         match create_future_games_page(
                             &games,
                             args.disable_links,
                             true,
                             false,
                             show_future_header,
+                            Some(fetched_date.clone()),
                         )
                         .await
                         {
@@ -977,38 +1252,78 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
             match event::read()? {
                 Event::Key(key_event) => {
-                    tracing::debug!("Key event: {:?}", key_event.code);
-                    match key_event.code {
-                        KeyCode::Char('q') => {
-                            tracing::info!("Quit requested");
-                            return Ok(());
+                    tracing::debug!(
+                        "Key event: {:?}, modifiers: {:?}",
+                        key_event.code,
+                        key_event.modifiers
+                    );
+
+                    // Check for date navigation first (Cmd/Ctrl + Arrow keys)
+                    if is_date_navigation_key(&key_event, true) {
+                        // Cmd/Ctrl + Left: Previous date with games
+                        tracing::info!("Previous date navigation requested");
+                        tracing::debug!("Current date state: {:?}", current_date);
+                        let target_date = get_target_date_for_navigation(&current_date);
+
+                        tracing::info!(
+                            "Searching for previous date with games from: {}",
+                            target_date
+                        );
+                        if let Some(prev_date) = find_previous_date_with_games(&target_date).await {
+                            current_date = Some(prev_date.clone());
+                            needs_refresh = true;
+                            tracing::info!("Navigated to previous date: {}", prev_date);
+                        } else {
+                            tracing::warn!("No previous date with games found");
                         }
-                        KeyCode::Char('r') => {
-                            if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
-                                tracing::info!("Manual refresh requested");
-                                needs_refresh = true;
-                                last_manual_refresh = Instant::now();
+                    } else if is_date_navigation_key(&key_event, false) {
+                        // Cmd/Ctrl + Right: Next date with games
+                        tracing::info!("Next date navigation requested");
+                        tracing::debug!("Current date state: {:?}", current_date);
+                        let target_date = get_target_date_for_navigation(&current_date);
+
+                        tracing::info!("Searching for next date with games from: {}", target_date);
+                        if let Some(next_date) = find_next_date_with_games(&target_date).await {
+                            current_date = Some(next_date.clone());
+                            needs_refresh = true;
+                            tracing::info!("Navigated to next date: {}", next_date);
+                        } else {
+                            tracing::warn!("No next date with games found");
+                        }
+                    } else {
+                        // Handle regular key events (without modifiers)
+                        match key_event.code {
+                            KeyCode::Char('q') => {
+                                tracing::info!("Quit requested");
+                                return Ok(());
                             }
-                        }
-                        KeyCode::Left => {
-                            if last_page_change.elapsed() >= Duration::from_millis(200) {
-                                if let Some(page) = &mut current_page {
-                                    page.previous_page();
-                                    needs_render = true;
+                            KeyCode::Char('r') => {
+                                if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
+                                    tracing::info!("Manual refresh requested");
+                                    needs_refresh = true;
+                                    last_manual_refresh = Instant::now();
                                 }
-                                last_page_change = Instant::now();
                             }
-                        }
-                        KeyCode::Right => {
-                            if last_page_change.elapsed() >= Duration::from_millis(200) {
-                                if let Some(page) = &mut current_page {
-                                    page.next_page();
-                                    needs_render = true;
+                            KeyCode::Left => {
+                                if last_page_change.elapsed() >= Duration::from_millis(200) {
+                                    if let Some(page) = &mut current_page {
+                                        page.previous_page();
+                                        needs_render = true;
+                                    }
+                                    last_page_change = Instant::now();
                                 }
-                                last_page_change = Instant::now();
                             }
+                            KeyCode::Right => {
+                                if last_page_change.elapsed() >= Duration::from_millis(200) {
+                                    if let Some(page) = &mut current_page {
+                                        page.next_page();
+                                        needs_render = true;
+                                    }
+                                    last_page_change = Instant::now();
+                                }
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
                 }
                 Event::Resize(_, _) => {

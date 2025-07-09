@@ -837,6 +837,8 @@ async fn find_future_games_fallback(
 }
 
 /// Determines the appropriate date to return based on whether games were found.
+/// If games were found on a different date than the original (earliest_date is set),
+/// returns that date. Otherwise returns the original date.
 fn determine_return_date(
     games: &[GameData],
     earliest_date: Option<String>,
@@ -845,7 +847,9 @@ fn determine_return_date(
     if games.is_empty() {
         earliest_date.unwrap_or_else(|| original_date.to_string())
     } else {
-        original_date.to_string()
+        // If we have games and earliest_date is set, it means we found games on a different date
+        // than the original requested date, so we should return that date
+        earliest_date.unwrap_or_else(|| original_date.to_string())
     }
 }
 
@@ -861,12 +865,22 @@ pub async fn fetch_liiga_data(
     // Determine the date to fetch data for
     let date = determine_fetch_date(custom_date);
 
-    // Check if this is a historical date (previous season)
+    // Check if this is a historical date (previous season) or requires schedule endpoint for playoffs
     let is_historical = is_historical_date(&date);
-    info!("Date: {}, is_historical: {}", date, is_historical);
-    if is_historical {
+    let use_schedule_for_playoffs = should_use_schedule_for_playoffs(&date);
+    info!(
+        "Date: {}, is_historical: {}, use_schedule_for_playoffs: {}",
+        date, is_historical, use_schedule_for_playoffs
+    );
+
+    if is_historical || use_schedule_for_playoffs {
         info!(
-            "Detected historical date: {}, using schedule endpoint",
+            "Detected {} date: {}, using schedule endpoint",
+            if is_historical {
+                "historical"
+            } else {
+                "playoff"
+            },
             date
         );
         let historical_games = fetch_historical_games(&client, &config, &date).await?;
@@ -1615,6 +1629,54 @@ pub fn is_historical_date(date: &str) -> bool {
     is_historical_date_with_current_time(date, now)
 }
 
+/// Determines if a date requires the schedule endpoint for playoff games.
+/// This handles the specific case where playoff games from the previous season
+/// need to be fetched using the schedule endpoint instead of the games endpoint.
+fn should_use_schedule_for_playoffs(date: &str) -> bool {
+    let now = Utc::now().with_timezone(&Local);
+    should_use_schedule_for_playoffs_with_current_time(date, now)
+}
+
+/// Internal function to check if a date requires the schedule endpoint for playoffs.
+fn should_use_schedule_for_playoffs_with_current_time(
+    date: &str,
+    current_time: chrono::DateTime<Local>,
+) -> bool {
+    let date_parts: Vec<&str> = date.split('-').collect();
+    if date_parts.len() < 2 {
+        return false;
+    }
+
+    let date_year = date_parts[0]
+        .parse::<i32>()
+        .unwrap_or_else(|_| current_time.year());
+    let date_month = date_parts[1]
+        .parse::<u32>()
+        .unwrap_or_else(|_| current_time.month());
+
+    // Check if date is in the future
+    if let Ok(parsed_date) = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+        let current_date = current_time.date_naive();
+        if parsed_date > current_date {
+            return false;
+        }
+    }
+
+    let current_year = current_time.year();
+    let current_month = current_time.month();
+
+    // Only check for playoff games in the same year
+    if date_year == current_year {
+        // If we're in the off-season (June-August) and looking at playoff months (March-May)
+        // from the same year, we need to use the schedule endpoint
+        if (6..=8).contains(&current_month) && (3..=5).contains(&date_month) {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Internal function that determines if a date is historical given a specific current time.
 /// This allows for testing with mocked current times.
 fn is_historical_date_with_current_time(date: &str, current_time: chrono::DateTime<Local>) -> bool {
@@ -1629,6 +1691,16 @@ fn is_historical_date_with_current_time(date: &str, current_time: chrono::DateTi
     let date_month = date_parts[1]
         .parse::<u32>()
         .unwrap_or_else(|_| current_time.month());
+
+    // Try to parse the full date to check if it's in the future
+    if let Ok(parsed_date) = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+        let current_date = current_time.date_naive();
+
+        // Future dates should not be considered historical
+        if parsed_date > current_date {
+            return false;
+        }
+    }
 
     let current_year = current_time.year();
     let current_month = current_time.month();
@@ -3117,6 +3189,15 @@ mod tests {
             "2024-12-31",
             specific_current_time
         )); // Future month in same year
+
+        // Test the specific case reported by the user
+        let january_2025_time = chrono::DateTime::parse_from_rfc3339("2025-01-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Local);
+        assert!(!is_historical_date_with_current_time(
+            "2025-09-09",
+            january_2025_time
+        )); // Future date should not be historical
     }
 
     #[test]
