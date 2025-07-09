@@ -1273,7 +1273,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                 "Searching for previous date with games from: {}",
                                 target_date
                             );
-                            if let Some(prev_date) = find_previous_date_with_games(&target_date).await {
+                            if let Some(prev_date) =
+                                find_previous_date_with_games(&target_date).await
+                            {
                                 current_date = Some(prev_date.clone());
                                 needs_refresh = true;
                                 tracing::info!("Navigated to previous date: {}", prev_date);
@@ -1289,7 +1291,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                             tracing::debug!("Current date state: {:?}", current_date);
                             let target_date = get_target_date_for_navigation(&current_date);
 
-                            tracing::info!("Searching for next date with games from: {}", target_date);
+                            tracing::info!(
+                                "Searching for next date with games from: {}",
+                                target_date
+                            );
                             if let Some(next_date) = find_next_date_with_games(&target_date).await {
                                 current_date = Some(next_date.clone());
                                 needs_refresh = true;
