@@ -163,6 +163,7 @@ pub async fn run_interactive_ui(
                                 }
                                 Err(e) => {
                                     warn!("Manual refresh failed: {}", e);
+                                    last_refresh = Instant::now(); // Maintain cooldown even on failure
                                 }
                             }
                         } else {
