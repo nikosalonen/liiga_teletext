@@ -232,7 +232,7 @@ pub async fn run_interactive_ui(
 mod tests {
     use super::*;
     use crate::testing_utils::TestDataBuilder;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     #[test]
     fn test_calculate_games_hash() {
