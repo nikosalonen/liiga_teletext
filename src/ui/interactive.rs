@@ -24,6 +24,59 @@ fn calculate_games_hash(games: &[GameData]) -> u64 {
     hasher.finish()
 }
 
+/// Creates a TeletextPage with an error message
+/// This helper function eliminates code duplication for error handling
+fn create_error_page(error_message: String, disable_video_links: bool) -> Vec<TeletextPage> {
+    let mut page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        disable_video_links,
+        true,
+        false,
+    );
+    page.add_error_message(&error_message);
+    vec![page]
+}
+
+/// Creates a vector of TeletextPage instances from game data
+/// This helper function eliminates code duplication by centralizing the page creation logic
+fn create_teletext_pages(
+    games: &[GameData],
+    fetched_date: String,
+    disable_video_links: bool,
+) -> Vec<TeletextPage> {
+    if games.is_empty() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            disable_video_links,
+            true,
+            false,
+        );
+        page.add_error_message("Ei otteluita tälle päivälle");
+        page.set_fetched_date(fetched_date);
+        vec![page]
+    } else {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            disable_video_links,
+            true,
+            false,
+        );
+        page.set_fetched_date(fetched_date);
+
+        for game in games {
+            page.add_game_result(GameResultData::new(game));
+        }
+
+        vec![page]
+    }
+}
+
 /// Runs the interactive UI with adaptive polling and change detection
 pub async fn run_interactive_ui(
     date: Option<String>,
@@ -50,49 +103,11 @@ pub async fn run_interactive_ui(
             let games_hash = calculate_games_hash(&games);
             last_games_hash = games_hash;
 
-            if games.is_empty() {
-                let mut page = TeletextPage::new(
-                    221,
-                    "JÄÄKIEKKO".to_string(),
-                    "SM-LIIGA".to_string(),
-                    disable_video_links,
-                    true,
-                    false,
-                );
-                page.add_error_message("Ei otteluita tälle päivälle");
-                page.set_fetched_date(fetched_date);
-                pages = vec![page];
-            } else {
-                // Create pages from games
-                let mut page = TeletextPage::new(
-                    221,
-                    "JÄÄKIEKKO".to_string(),
-                    "SM-LIIGA".to_string(),
-                    disable_video_links,
-                    true,
-                    false,
-                );
-                page.set_fetched_date(fetched_date);
-
-                for game in &games {
-                    page.add_game_result(GameResultData::new(game));
-                }
-
-                pages = vec![page];
-            }
+            pages = create_teletext_pages(&games, fetched_date, disable_video_links);
         }
         Err(e) => {
             warn!("Failed to fetch initial data: {}", e);
-            let mut page = TeletextPage::new(
-                221,
-                "JÄÄKIEKKO".to_string(),
-                "SM-LIIGA".to_string(),
-                disable_video_links,
-                true,
-                false,
-            );
-            page.add_error_message(&format!("Virhe tietojen haussa: {}", e));
-            pages = vec![page];
+            pages = create_error_page(format!("Virhe tietojen haussa: {}", e), disable_video_links);
         }
     }
 
@@ -126,35 +141,7 @@ pub async fn run_interactive_ui(
                                         current_date = Some(fetched_date.clone());
 
                                         // Rebuild pages
-                                        if games.is_empty() {
-                                            let mut page = TeletextPage::new(
-                                                221,
-                                                "JÄÄKIEKKO".to_string(),
-                                                "SM-LIIGA".to_string(),
-                                                disable_video_links,
-                                                true,
-                                                false,
-                                            );
-                                            page.add_error_message("Ei otteluita tälle päivälle");
-                                            page.set_fetched_date(fetched_date);
-                                            pages = vec![page];
-                                        } else {
-                                            let mut page = TeletextPage::new(
-                                                221,
-                                                "JÄÄKIEKKO".to_string(),
-                                                "SM-LIIGA".to_string(),
-                                                disable_video_links,
-                                                true,
-                                                false,
-                                            );
-                                            page.set_fetched_date(fetched_date);
-
-                                            for game in &games {
-                                                page.add_game_result(GameResultData::new(game));
-                                            }
-
-                                            pages = vec![page];
-                                        }
+                                        pages = create_teletext_pages(&games, fetched_date, disable_video_links);
 
                                         current_page = 0;
                                         needs_render = true;
@@ -199,35 +186,7 @@ pub async fn run_interactive_ui(
                         current_date = Some(fetched_date.clone());
 
                         // Rebuild pages
-                        if games.is_empty() {
-                            let mut page = TeletextPage::new(
-                                221,
-                                "JÄÄKIEKKO".to_string(),
-                                "SM-LIIGA".to_string(),
-                                disable_video_links,
-                                true,
-                                false,
-                            );
-                            page.add_error_message("Ei otteluita tälle päivälle");
-                            page.set_fetched_date(fetched_date);
-                            pages = vec![page];
-                        } else {
-                            let mut page = TeletextPage::new(
-                                221,
-                                "JÄÄKIEKKO".to_string(),
-                                "SM-LIIGA".to_string(),
-                                disable_video_links,
-                                true,
-                                false,
-                            );
-                            page.set_fetched_date(fetched_date);
-
-                            for game in &games {
-                                page.add_game_result(GameResultData::new(game));
-                            }
-
-                            pages = vec![page];
-                        }
+                        pages = create_teletext_pages(&games, fetched_date, disable_video_links);
 
                         needs_render = true;
                     }
