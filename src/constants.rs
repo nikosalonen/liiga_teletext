@@ -97,6 +97,21 @@ pub mod retry {
 
     /// Maximum delay between retries (seconds)
     pub const MAX_DELAY_SECONDS: u64 = 30;
+
+    /// Retry delay for rate limit errors (seconds)
+    pub const RATE_LIMIT_DELAY_SECONDS: u64 = 60;
+
+    /// Retry delay for server errors (seconds)
+    pub const SERVER_ERROR_DELAY_SECONDS: u64 = 5;
+
+    /// Retry delay for service unavailable errors (seconds)
+    pub const SERVICE_UNAVAILABLE_DELAY_SECONDS: u64 = 30;
+
+    /// Retry delay for network timeout errors (seconds)
+    pub const NETWORK_TIMEOUT_DELAY_SECONDS: u64 = 2;
+
+    /// Retry delay for network connection errors (seconds)
+    pub const NETWORK_CONNECTION_DELAY_SECONDS: u64 = 10;
 }
 
 /// Validation limits
@@ -201,6 +216,31 @@ mod tests {
         assert!(max_attempts > 0);
         assert!(base_delay > 0);
         assert!(max_delay > 0);
+
+        // Test specific retry delay constants
+        let rate_limit_delay = retry::RATE_LIMIT_DELAY_SECONDS;
+        let server_error_delay = retry::SERVER_ERROR_DELAY_SECONDS;
+        let service_unavailable_delay = retry::SERVICE_UNAVAILABLE_DELAY_SECONDS;
+        let timeout_delay = retry::NETWORK_TIMEOUT_DELAY_SECONDS;
+        let connection_delay = retry::NETWORK_CONNECTION_DELAY_SECONDS;
+
+        // All delays should be positive
+        assert!(rate_limit_delay > 0);
+        assert!(server_error_delay > 0);
+        assert!(service_unavailable_delay > 0);
+        assert!(timeout_delay > 0);
+        assert!(connection_delay > 0);
+
+        // Rate limit delay should be the longest (most severe)
+        assert!(rate_limit_delay >= service_unavailable_delay);
+        assert!(rate_limit_delay >= connection_delay);
+        assert!(rate_limit_delay >= server_error_delay);
+        assert!(rate_limit_delay >= timeout_delay);
+
+        // Timeout delay should be the shortest (least severe)
+        assert!(timeout_delay <= server_error_delay);
+        assert!(timeout_delay <= connection_delay);
+        assert!(timeout_delay <= service_unavailable_delay);
     }
 
     #[test]
