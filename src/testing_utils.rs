@@ -215,17 +215,17 @@ impl PropertyTesting {
         for (i, goal) in game.goal_events.iter().enumerate() {
             // Check that scorer name is not empty
             if goal.scorer_name.is_empty() {
-                return Err(format!("Goal {} scorer name cannot be empty", i));
+                return Err(format!("Goal {i} scorer name cannot be empty"));
             }
 
             // Check that minute is reasonable
             if goal.minute < 0 || goal.minute > 200 {
-                return Err(format!("Goal {} minute {} is unreasonable", i, goal.minute));
+                return Err(format!("Goal {i} minute {} is unreasonable", goal.minute));
             }
 
             // Check that scores are non-negative
             if goal.home_team_score < 0 || goal.away_team_score < 0 {
-                return Err(format!("Goal {} scores cannot be negative", i));
+                return Err(format!("Goal {i} scores cannot be negative"));
             }
 
             // Check that scores are progressing logically
@@ -236,8 +236,7 @@ impl PropertyTesting {
 
                 if total_current != total_prev + 1 {
                     return Err(format!(
-                        "Goal {} score progression is invalid: {} -> {}",
-                        i, total_prev, total_current
+                        "Goal {i} score progression is invalid: {total_prev} -> {total_current}"
                     ));
                 }
             }
