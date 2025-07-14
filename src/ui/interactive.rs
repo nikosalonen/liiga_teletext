@@ -22,6 +22,15 @@ const TELETEXT_PAGE_NUMBER: u16 = 221;
 const TELETEXT_HEADER: &str = "JÄÄKIEKKO";
 const TELETEXT_SUBHEADER: &str = "SM-LIIGA";
 
+// UI timing constants
+const ACTIVE_POLL_INTERVAL_MS: u64 = 50;
+const SEMI_ACTIVE_POLL_INTERVAL_MS: u64 = 200;
+const IDLE_POLL_INTERVAL_MS: u64 = 500;
+const ACTIVE_THRESHOLD_SECS: u64 = 5;
+const SEMI_ACTIVE_THRESHOLD_SECS: u64 = 30;
+const MANUAL_REFRESH_COOLDOWN_SECS: u64 = 10;
+const AUTO_REFRESH_INTERVAL_SECS: u64 = 60;
+
 /// Calculates a hash of the games data for change detection
 fn calculate_games_hash(games: &[GameData]) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -119,12 +128,12 @@ pub async fn run_interactive_ui(
     loop {
         // Adaptive polling based on user activity
         let idle_duration = last_activity.elapsed();
-        let poll_interval = if idle_duration < Duration::from_secs(5) {
-            Duration::from_millis(50) // Active use
-        } else if idle_duration < Duration::from_secs(30) {
-            Duration::from_millis(200) // Semi-active
+        let poll_interval = if idle_duration < Duration::from_secs(ACTIVE_THRESHOLD_SECS) {
+            Duration::from_millis(ACTIVE_POLL_INTERVAL_MS) // Active use
+        } else if idle_duration < Duration::from_secs(SEMI_ACTIVE_THRESHOLD_SECS) {
+            Duration::from_millis(SEMI_ACTIVE_POLL_INTERVAL_MS) // Semi-active
         } else {
-            Duration::from_millis(500) // Idle
+            Duration::from_millis(IDLE_POLL_INTERVAL_MS) // Idle
         };
 
         // Check for user input
@@ -136,7 +145,7 @@ pub async fn run_interactive_ui(
                     KeyCode::Char('q') | KeyCode::Char('Q') => break,
                     KeyCode::Char('r') | KeyCode::Char('R') => {
                         // Manual refresh with cooldown
-                        if last_refresh.elapsed() >= Duration::from_secs(10) {
+                        if last_refresh.elapsed() >= Duration::from_secs(MANUAL_REFRESH_COOLDOWN_SECS) {
                             info!("Manual refresh requested");
                             match fetch_liiga_data(current_date.clone()).await {
                                 Ok((games, fetched_date)) => {
@@ -184,7 +193,7 @@ pub async fn run_interactive_ui(
         }
 
         // Auto-refresh logic
-        let should_refresh = last_refresh.elapsed() >= Duration::from_secs(60);
+        let should_refresh = last_refresh.elapsed() >= Duration::from_secs(AUTO_REFRESH_INTERVAL_SECS);
         if should_refresh {
             debug!("Auto-refresh triggered");
             match fetch_liiga_data(current_date.clone()).await {
