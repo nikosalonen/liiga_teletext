@@ -107,7 +107,7 @@ pub async fn run_interactive_ui(
         }
         Err(e) => {
             warn!("Failed to fetch initial data: {}", e);
-            pages = create_error_page(format!("Virhe tietojen haussa: {}", e), disable_video_links);
+            pages = create_error_page(format!("Virhe tietojen haussa: {e}"), disable_video_links);
         }
     }
 
@@ -232,6 +232,7 @@ pub async fn run_interactive_ui(
 mod tests {
     use super::*;
     use crate::testing_utils::TestDataBuilder;
+    use tokio::time::{timeout, Duration};
 
     #[test]
     fn test_calculate_games_hash() {
@@ -275,5 +276,203 @@ mod tests {
         let _hash = calculate_games_hash(&single_game);
 
         // Should not panic - any hash value is valid
+    }
+
+    #[test]
+    fn test_create_teletext_pages_with_games() {
+        let games = vec![
+            TestDataBuilder::create_basic_game("HIFK", "Jokerit"),
+            TestDataBuilder::create_basic_game("TPS", "Ilves"),
+        ];
+        let fetched_date = "2024-01-15".to_string();
+        let disable_video_links = false;
+
+        let pages = create_teletext_pages(&games, fetched_date.clone(), disable_video_links);
+
+        assert_eq!(pages.len(), 1);
+        // Verify the page was created with correct parameters
+        // Note: We can't easily test internal state without exposing more methods
+    }
+
+    #[test]
+    fn test_create_teletext_pages_empty_games() {
+        let games: Vec<GameData> = vec![];
+        let fetched_date = "2024-01-15".to_string();
+        let disable_video_links = false;
+
+        let pages = create_teletext_pages(&games, fetched_date.clone(), disable_video_links);
+
+        assert_eq!(pages.len(), 1);
+        // Should create a page with error message for no games
+    }
+
+    #[test]
+    fn test_create_error_page() {
+        let error_message = "Test error message".to_string();
+        let disable_video_links = true;
+
+        let pages = create_error_page(error_message.clone(), disable_video_links);
+
+        assert_eq!(pages.len(), 1);
+        // Should create a single page with the error message
+    }
+
+    // Since we can't easily mock the fetch_liiga_data function directly without
+    // dependency injection, we'll test the helper functions and create comprehensive
+    // tests that verify the UI initialization logic works correctly
+
+    #[tokio::test]
+    async fn test_ui_initialization_with_successful_data() {
+        // Test the helper functions that would be called during UI initialization
+        let games = vec![
+            TestDataBuilder::create_basic_game("HIFK", "Jokerit"),
+            TestDataBuilder::create_basic_game("TPS", "Ilves"),
+        ];
+        let fetched_date = "2024-01-15".to_string();
+        let disable_video_links = false;
+
+        // Test that pages are created correctly with successful data
+        let pages = create_teletext_pages(&games, fetched_date.clone(), disable_video_links);
+        assert_eq!(pages.len(), 1);
+
+        // Test hash calculation for change detection
+        let hash1 = calculate_games_hash(&games);
+        let hash2 = calculate_games_hash(&games);
+        assert_eq!(hash1, hash2);
+
+        // Test with different games to ensure hash changes
+        let different_games = vec![TestDataBuilder::create_basic_game("Kärpät", "Lukko")];
+        let hash3 = calculate_games_hash(&different_games);
+        assert_ne!(hash1, hash3);
+    }
+
+    #[tokio::test]
+    async fn test_ui_initialization_with_empty_data() {
+        // Test initialization with no games (common scenario)
+        let games: Vec<GameData> = vec![];
+        let fetched_date = "2024-01-15".to_string();
+        let disable_video_links = false;
+
+        let pages = create_teletext_pages(&games, fetched_date.clone(), disable_video_links);
+        assert_eq!(pages.len(), 1);
+
+        // Test hash calculation with empty games
+        let hash = calculate_games_hash(&games);
+        let hash2 = calculate_games_hash(&games);
+        assert_eq!(hash, hash2);
+    }
+
+    #[tokio::test]
+    async fn test_error_page_creation() {
+        // Test error handling scenario
+        let error_message = "Failed to fetch data: Network timeout".to_string();
+        let disable_video_links = true;
+
+        let pages = create_error_page(error_message.clone(), disable_video_links);
+        assert_eq!(pages.len(), 1);
+
+        // Test with different error messages
+        let different_error = "API rate limit exceeded".to_string();
+        let pages2 = create_error_page(different_error, false);
+        assert_eq!(pages2.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_ui_state_transitions() {
+        // Test state transitions that would occur during UI operation
+        let initial_games = vec![TestDataBuilder::create_basic_game("Team A", "Team B")];
+        let updated_games = vec![
+            TestDataBuilder::create_basic_game("Team A", "Team B"),
+            TestDataBuilder::create_basic_game("Team C", "Team D"),
+        ];
+
+        let initial_hash = calculate_games_hash(&initial_games);
+        let updated_hash = calculate_games_hash(&updated_games);
+
+        // Verify that hash changes when games are updated (triggers UI refresh)
+        assert_ne!(initial_hash, updated_hash);
+
+        // Test page creation for both states
+        let fetched_date = "2024-01-15".to_string();
+        let initial_pages = create_teletext_pages(&initial_games, fetched_date.clone(), false);
+        let updated_pages = create_teletext_pages(&updated_games, fetched_date, false);
+
+        assert_eq!(initial_pages.len(), 1);
+        assert_eq!(updated_pages.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_hash_calculations() {
+        // Test that hash calculations work correctly in concurrent scenarios
+        let games = vec![
+            TestDataBuilder::create_basic_game("HIFK", "Jokerit"),
+            TestDataBuilder::create_basic_game("TPS", "Ilves"),
+        ];
+
+        // Spawn multiple concurrent hash calculations
+        let handles: Vec<_> = (0..10)
+            .map(|_| {
+                let games_clone = games.clone();
+                tokio::spawn(async move { calculate_games_hash(&games_clone) })
+            })
+            .collect();
+
+        // Wait for all calculations to complete
+        let results: Vec<_> = futures::future::join_all(handles)
+            .await
+            .into_iter()
+            .map(|r| r.unwrap())
+            .collect();
+
+        // All results should be identical
+        let first_hash = results[0];
+        for hash in &results[1..] {
+            assert_eq!(first_hash, *hash);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ui_timeout_behavior() {
+        // Test that UI operations complete within reasonable time limits
+        let games = vec![TestDataBuilder::create_basic_game("Team A", "Team B")];
+        let fetched_date = "2024-01-15".to_string();
+
+        // Test that page creation completes quickly
+        let result = timeout(Duration::from_millis(100), async {
+            create_teletext_pages(&games, fetched_date, false)
+        })
+        .await;
+
+        assert!(result.is_ok());
+        let pages = result.unwrap();
+        assert_eq!(pages.len(), 1);
+
+        // Test that hash calculation completes quickly
+        let hash_result = timeout(Duration::from_millis(50), async {
+            calculate_games_hash(&games)
+        })
+        .await;
+
+        assert!(hash_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_error_scenarios() {
+        // Test various error scenarios that could occur during UI operation
+
+        // Test with different error types
+        let network_error = "Network connection failed".to_string();
+        let api_error = "API returned invalid data".to_string();
+        let timeout_error = "Request timed out".to_string();
+
+        let error_pages = vec![
+            create_error_page(network_error, false),
+            create_error_page(api_error, true),
+            create_error_page(timeout_error, false),
+        ];
+
+        for pages in error_pages {
+            assert_eq!(pages.len(), 1);
+        }
     }
 }
