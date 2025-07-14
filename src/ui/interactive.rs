@@ -418,11 +418,10 @@ mod tests {
             .collect();
 
         // Wait for all calculations to complete
-        let results: Vec<_> = futures::future::join_all(handles)
-            .await
-            .into_iter()
-            .map(|r| r.unwrap())
-            .collect();
+        let mut results = Vec::new();
+        for handle in handles {
+            results.push(handle.await.unwrap());
+        }
 
         // All results should be identical
         let first_hash = results[0];
