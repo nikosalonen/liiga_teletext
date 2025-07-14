@@ -17,6 +17,11 @@ use std::io::stdout;
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
+// Teletext page constants
+const TELETEXT_PAGE_NUMBER: u16 = 221;
+const TELETEXT_HEADER: &str = "JÄÄKIEKKO";
+const TELETEXT_SUBHEADER: &str = "SM-LIIGA";
+
 /// Calculates a hash of the games data for change detection
 fn calculate_games_hash(games: &[GameData]) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -28,9 +33,9 @@ fn calculate_games_hash(games: &[GameData]) -> u64 {
 /// This helper function eliminates code duplication for error handling
 fn create_error_page(error_message: String, disable_video_links: bool) -> Vec<TeletextPage> {
     let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
+        TELETEXT_PAGE_NUMBER,
+        TELETEXT_HEADER.to_string(),
+        TELETEXT_SUBHEADER.to_string(),
         disable_video_links,
         true,
         false,
@@ -48,9 +53,9 @@ fn create_teletext_pages(
 ) -> Vec<TeletextPage> {
     if games.is_empty() {
         let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
+            TELETEXT_PAGE_NUMBER,
+            TELETEXT_HEADER.to_string(),
+            TELETEXT_SUBHEADER.to_string(),
             disable_video_links,
             true,
             false,
@@ -60,9 +65,9 @@ fn create_teletext_pages(
         vec![page]
     } else {
         let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
+            TELETEXT_PAGE_NUMBER,
+            TELETEXT_HEADER.to_string(),
+            TELETEXT_SUBHEADER.to_string(),
             disable_video_links,
             true,
             false,
