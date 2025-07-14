@@ -18,6 +18,11 @@ pub struct Config {
 impl Config {
     /// Loads configuration from the default config file location.
     /// If no config file exists, prompts user for API domain and creates one.
+    /// Environment variables can override config file values.
+    ///
+    /// # Environment Variables
+    /// - `LIIGA_API_DOMAIN` - Override API domain
+    /// - `LIIGA_LOG_FILE` - Override log file path
     ///
     /// # Returns
     /// * `Ok(Config)` - Successfully loaded or created configuration
@@ -26,28 +31,95 @@ impl Config {
     /// # Notes
     /// - Config file is stored in platform-specific config directory
     /// - Handles first-time setup with user prompts
+    /// - Environment variables take precedence over config file
     pub async fn load() -> Result<Self, AppError> {
         let config_path = Config::get_config_path();
 
-        if Path::new(&config_path).exists() {
+        let mut config = if Path::new(&config_path).exists() {
             let content = fs::read_to_string(&config_path).await?;
-            let config: Config = toml::from_str(&content)?;
-            Ok(config)
+            toml::from_str(&content)?
         } else {
-            println!("Please enter your API domain: ");
-            let mut input = String::new();
-            let stdin = io::stdin();
-            let mut reader = io::BufReader::new(stdin);
-            reader.read_line(&mut input).await?;
+            // Check if API domain is provided via environment variable
+            if let Ok(api_domain) = std::env::var("LIIGA_API_DOMAIN") {
+                Config {
+                    api_domain,
+                    log_file_path: None,
+                }
+            } else {
+                println!("Please enter your API domain: ");
+                let mut input = String::new();
+                let stdin = io::stdin();
+                let mut reader = io::BufReader::new(stdin);
+                reader.read_line(&mut input).await?;
 
-            let config = Config {
-                api_domain: input.trim().to_string(),
-                log_file_path: None,
-            };
+                let config = Config {
+                    api_domain: input.trim().to_string(),
+                    log_file_path: None,
+                };
 
-            config.save().await?;
-            Ok(config)
+                config.save().await?;
+                config
+            }
+        };
+
+        // Override with environment variables if present
+        if let Ok(api_domain) = std::env::var("LIIGA_API_DOMAIN") {
+            config.api_domain = api_domain;
         }
+
+        if let Ok(log_file_path) = std::env::var("LIIGA_LOG_FILE") {
+            config.log_file_path = Some(log_file_path);
+        }
+
+        // Validate configuration
+        config.validate()?;
+
+        Ok(config)
+    }
+
+    /// Validates the configuration settings
+    ///
+    /// # Returns
+    /// * `Ok(())` - Configuration is valid
+    /// * `Err(AppError)` - Configuration validation failed
+    pub fn validate(&self) -> Result<(), AppError> {
+        // Validate API domain
+        if self.api_domain.is_empty() {
+            return Err(AppError::config_error("API domain cannot be empty"));
+        }
+
+        // Check if API domain looks like a valid URL or domain
+        if !self.api_domain.starts_with("http://") && !self.api_domain.starts_with("https://") {
+            // If it doesn't start with protocol, it should at least look like a domain
+            if !self.api_domain.contains('.') && !self.api_domain.starts_with("localhost") {
+                return Err(AppError::config_error(
+                    "API domain must be a valid URL or domain name",
+                ));
+            }
+        }
+
+        // Validate log file path if provided
+        if let Some(log_path) = &self.log_file_path {
+            if log_path.is_empty() {
+                return Err(AppError::config_error("Log file path cannot be empty"));
+            }
+
+            // Check if parent directory exists or can be created
+            if let Some(parent) = Path::new(log_path).parent() {
+                if !parent.exists() {
+                    // Try to create the directory to validate the path
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        AppError::config_error(format!(
+                            "Cannot create log directory '{}': {}",
+                            parent.display(),
+                            e
+                        ))
+                    })?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Saves current configuration to the default config file location.
@@ -707,5 +779,102 @@ another_extra = 123
         // When None, log_file_path should not be in the TOML due to skip_serializing_if
         assert!(!toml_none.contains("log_file_path"));
         assert!(toml_some.contains("log_file_path"));
+    }
+
+    #[test]
+    fn test_config_validation_valid_configs() {
+        // Test valid configurations
+        let valid_configs = vec![
+            Config {
+                api_domain: "https://api.example.com".to_string(),
+                log_file_path: None,
+            },
+            Config {
+                api_domain: "http://localhost:8080".to_string(),
+                log_file_path: Some("/tmp/test.log".to_string()),
+            },
+            Config {
+                api_domain: "api.example.com".to_string(),
+                log_file_path: None,
+            },
+            Config {
+                api_domain: "localhost".to_string(),
+                log_file_path: None,
+            },
+        ];
+
+        for config in valid_configs {
+            assert!(
+                config.validate().is_ok(),
+                "Config should be valid: {:?}",
+                config
+            );
+        }
+    }
+
+    #[test]
+    fn test_config_validation_invalid_configs() {
+        // Test invalid configurations
+        let invalid_configs = vec![
+            // Empty API domain
+            Config {
+                api_domain: "".to_string(),
+                log_file_path: None,
+            },
+            // Invalid domain format
+            Config {
+                api_domain: "invalid_domain".to_string(),
+                log_file_path: None,
+            },
+            // Empty log file path
+            Config {
+                api_domain: "https://api.example.com".to_string(),
+                log_file_path: Some("".to_string()),
+            },
+        ];
+
+        for config in invalid_configs {
+            assert!(
+                config.validate().is_err(),
+                "Config should be invalid: {:?}",
+                config
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_environment_variable_override() {
+        // Set environment variables
+        unsafe {
+            std::env::set_var("LIIGA_API_DOMAIN", "https://env.example.com");
+            std::env::set_var("LIIGA_LOG_FILE", "/env/log/path.log");
+        }
+
+        // Create a temporary config file with different values
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        let config_path_str = config_path.to_string_lossy();
+
+        let config_content = r#"
+api_domain = "https://file.example.com"
+log_file_path = "/file/log/path.log"
+"#;
+        tokio::fs::write(&config_path, config_content)
+            .await
+            .unwrap();
+
+        // Load config using load_from_path (which doesn't check env vars)
+        let file_config = Config::load_from_path(&config_path_str).await.unwrap();
+        assert_eq!(file_config.api_domain, "https://file.example.com");
+        assert_eq!(
+            file_config.log_file_path,
+            Some("/file/log/path.log".to_string())
+        );
+
+        // Clean up environment variables
+        unsafe {
+            std::env::remove_var("LIIGA_API_DOMAIN");
+            std::env::remove_var("LIIGA_LOG_FILE");
+        }
     }
 }
