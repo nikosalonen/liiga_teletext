@@ -216,7 +216,7 @@ impl AppError {
     }
 
     /// Check if error is retryable (network issues, server errors, rate limits)
-    #[allow(dead_code)] // Utility method for future error handling patterns
+    #[allow(dead_code)]
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -226,6 +226,19 @@ impl AppError {
                 | AppError::ApiServiceUnavailable { .. }
                 | AppError::ApiRateLimit { .. }
         )
+    }
+
+    /// Get suggested retry delay in seconds based on error type
+    #[allow(dead_code)]
+    pub fn retry_delay_seconds(&self) -> Option<u64> {
+        match self {
+            AppError::ApiRateLimit { .. } => Some(60), // Wait 1 minute for rate limits
+            AppError::ApiServerError { .. } => Some(5), // Wait 5 seconds for server errors
+            AppError::ApiServiceUnavailable { .. } => Some(30), // Wait 30 seconds for service unavailable
+            AppError::NetworkTimeout { .. } => Some(2), // Wait 2 seconds for timeouts
+            AppError::NetworkConnection { .. } => Some(10), // Wait 10 seconds for connection issues
+            _ => None,
+        }
     }
 
     /// Check if error indicates data not found (business logic, not technical error)
