@@ -145,7 +145,9 @@ pub async fn run_interactive_ui(
                     KeyCode::Char('q') | KeyCode::Char('Q') => break,
                     KeyCode::Char('r') | KeyCode::Char('R') => {
                         // Manual refresh with cooldown
-                        if last_refresh.elapsed() >= Duration::from_secs(MANUAL_REFRESH_COOLDOWN_SECS) {
+                        if last_refresh.elapsed()
+                            >= Duration::from_secs(MANUAL_REFRESH_COOLDOWN_SECS)
+                        {
                             info!("Manual refresh requested");
                             match fetch_liiga_data(current_date.clone()).await {
                                 Ok((games, fetched_date)) => {
@@ -193,7 +195,8 @@ pub async fn run_interactive_ui(
         }
 
         // Auto-refresh logic
-        let should_refresh = last_refresh.elapsed() >= Duration::from_secs(AUTO_REFRESH_INTERVAL_SECS);
+        let should_refresh =
+            last_refresh.elapsed() >= Duration::from_secs(AUTO_REFRESH_INTERVAL_SECS);
         if should_refresh {
             debug!("Auto-refresh triggered");
             match fetch_liiga_data(current_date.clone()).await {
