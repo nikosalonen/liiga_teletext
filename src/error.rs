@@ -552,7 +552,8 @@ mod tests {
             Some(5) // constants::retry::SERVER_ERROR_DELAY_SECONDS
         );
 
-        let service_unavailable_error = AppError::api_service_unavailable(503, "unavailable", "https://example.com");
+        let service_unavailable_error =
+            AppError::api_service_unavailable(503, "unavailable", "https://example.com");
         assert_eq!(
             service_unavailable_error.retry_delay_seconds(),
             Some(30) // constants::retry::SERVICE_UNAVAILABLE_DELAY_SECONDS
@@ -564,7 +565,8 @@ mod tests {
             Some(2) // constants::retry::NETWORK_TIMEOUT_DELAY_SECONDS
         );
 
-        let connection_error = AppError::network_connection("https://example.com", "connection failed");
+        let connection_error =
+            AppError::network_connection("https://example.com", "connection failed");
         assert_eq!(
             connection_error.retry_delay_seconds(),
             Some(10) // constants::retry::NETWORK_CONNECTION_DELAY_SECONDS
@@ -580,12 +582,31 @@ mod tests {
         // Test all retryable error types return appropriate delay values
         // Values correspond to constants in src/constants.rs retry module
         let retryable_errors = vec![
-            (AppError::api_rate_limit("rate limit", "https://example.com"), 60), // RATE_LIMIT_DELAY_SECONDS
-            (AppError::api_server_error(500, "internal error", "https://example.com"), 5), // SERVER_ERROR_DELAY_SECONDS
-            (AppError::api_server_error(502, "bad gateway", "https://example.com"), 5), // SERVER_ERROR_DELAY_SECONDS
-            (AppError::api_service_unavailable(503, "service unavailable", "https://example.com"), 30), // SERVICE_UNAVAILABLE_DELAY_SECONDS
+            (
+                AppError::api_rate_limit("rate limit", "https://example.com"),
+                60,
+            ), // RATE_LIMIT_DELAY_SECONDS
+            (
+                AppError::api_server_error(500, "internal error", "https://example.com"),
+                5,
+            ), // SERVER_ERROR_DELAY_SECONDS
+            (
+                AppError::api_server_error(502, "bad gateway", "https://example.com"),
+                5,
+            ), // SERVER_ERROR_DELAY_SECONDS
+            (
+                AppError::api_service_unavailable(
+                    503,
+                    "service unavailable",
+                    "https://example.com",
+                ),
+                30,
+            ), // SERVICE_UNAVAILABLE_DELAY_SECONDS
             (AppError::network_timeout("https://example.com"), 2), // NETWORK_TIMEOUT_DELAY_SECONDS
-            (AppError::network_connection("https://example.com", "connection refused"), 10), // NETWORK_CONNECTION_DELAY_SECONDS
+            (
+                AppError::network_connection("https://example.com", "connection refused"),
+                10,
+            ), // NETWORK_CONNECTION_DELAY_SECONDS
         ];
 
         for (error, expected_delay) in retryable_errors {
@@ -666,11 +687,26 @@ mod tests {
         assert!(server_error_delay >= timeout_delay);
 
         // Verify that the retry_delay_seconds method returns these exact values
-        assert_eq!(AppError::api_rate_limit("test", "url").retry_delay_seconds(), Some(rate_limit_delay));
-        assert_eq!(AppError::api_server_error(500, "test", "url").retry_delay_seconds(), Some(server_error_delay));
-        assert_eq!(AppError::api_service_unavailable(503, "test", "url").retry_delay_seconds(), Some(service_unavailable_delay));
-        assert_eq!(AppError::network_timeout("url").retry_delay_seconds(), Some(timeout_delay));
-        assert_eq!(AppError::network_connection("url", "test").retry_delay_seconds(), Some(connection_delay));
+        assert_eq!(
+            AppError::api_rate_limit("test", "url").retry_delay_seconds(),
+            Some(rate_limit_delay)
+        );
+        assert_eq!(
+            AppError::api_server_error(500, "test", "url").retry_delay_seconds(),
+            Some(server_error_delay)
+        );
+        assert_eq!(
+            AppError::api_service_unavailable(503, "test", "url").retry_delay_seconds(),
+            Some(service_unavailable_delay)
+        );
+        assert_eq!(
+            AppError::network_timeout("url").retry_delay_seconds(),
+            Some(timeout_delay)
+        );
+        assert_eq!(
+            AppError::network_connection("url", "test").retry_delay_seconds(),
+            Some(connection_delay)
+        );
     }
 
     #[test]

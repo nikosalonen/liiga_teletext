@@ -93,7 +93,7 @@ impl Config {
             // If it doesn't start with protocol, it should at least look like a domain
             if !self.api_domain.contains('.') && !self.api_domain.starts_with("localhost") {
                 return Err(AppError::config_error(
-                    "API domain must be a valid URL or domain name"
+                    "API domain must be a valid URL or domain name",
                 ));
             }
         }
@@ -804,7 +804,11 @@ another_extra = 123
         ];
 
         for config in valid_configs {
-            assert!(config.validate().is_ok(), "Config should be valid: {:?}", config);
+            assert!(
+                config.validate().is_ok(),
+                "Config should be valid: {:?}",
+                config
+            );
         }
     }
 
@@ -830,7 +834,11 @@ another_extra = 123
         ];
 
         for config in invalid_configs {
-            assert!(config.validate().is_err(), "Config should be invalid: {:?}", config);
+            assert!(
+                config.validate().is_err(),
+                "Config should be invalid: {:?}",
+                config
+            );
         }
     }
 
@@ -851,12 +859,17 @@ another_extra = 123
 api_domain = "https://file.example.com"
 log_file_path = "/file/log/path.log"
 "#;
-        tokio::fs::write(&config_path, config_content).await.unwrap();
+        tokio::fs::write(&config_path, config_content)
+            .await
+            .unwrap();
 
         // Load config using load_from_path (which doesn't check env vars)
         let file_config = Config::load_from_path(&config_path_str).await.unwrap();
         assert_eq!(file_config.api_domain, "https://file.example.com");
-        assert_eq!(file_config.log_file_path, Some("/file/log/path.log".to_string()));
+        assert_eq!(
+            file_config.log_file_path,
+            Some("/file/log/path.log".to_string())
+        );
 
         // Clean up environment variables
         unsafe {

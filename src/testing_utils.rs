@@ -140,10 +140,7 @@ impl TestDataBuilder {
     pub fn create_multiple_games(count: usize) -> Vec<GameData> {
         (0..count)
             .map(|i| {
-                Self::create_basic_game(
-                    &format!("Team {}", i * 2),
-                    &format!("Team {}", i * 2 + 1),
-                )
+                Self::create_basic_game(&format!("Team {}", i * 2), &format!("Team {}", i * 2 + 1))
             })
             .collect()
     }
@@ -340,13 +337,21 @@ mod tests {
         let mut game = TestDataBuilder::create_basic_game("", "Jokerit");
         let result = PropertyTesting::validate_game_data(&game);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Home team name cannot be empty"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Home team name cannot be empty")
+        );
 
         game.home_team = "HIFK".to_string();
         game.away_team = "".to_string();
         let result = PropertyTesting::validate_game_data(&game);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Away team name cannot be empty"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Away team name cannot be empty")
+        );
     }
 
     #[test]
@@ -356,7 +361,11 @@ mod tests {
         game.is_shootout = true;
         let result = PropertyTesting::validate_game_data(&game);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("cannot be both overtime and shootout"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("cannot be both overtime and shootout")
+        );
     }
 
     #[test]
