@@ -39,9 +39,13 @@
 //! ```
 
 pub mod config;
+pub mod constants;
 pub mod data_fetcher;
 pub mod error;
+pub mod performance;
 pub mod teletext_ui;
+pub mod testing_utils;
+pub mod ui;
 
 // Re-export commonly used types for convenience
 pub use config::Config;
