@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
+use tokio::sync::{Mutex, RwLock};
 
 /// Type alias for complex request handle type
 type RequestHandle = Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>;
@@ -72,8 +72,9 @@ impl PerformanceMetrics {
         if self.api_call_count == 1 {
             self.average_response_time_ms = response_time_ms;
         } else {
-            self.average_response_time_ms =
-                (self.average_response_time_ms * (self.api_call_count - 1) as f64 + response_time_ms)
+            self.average_response_time_ms = (self.average_response_time_ms
+                * (self.api_call_count - 1) as f64
+                + response_time_ms)
                 / self.api_call_count as f64;
         }
 

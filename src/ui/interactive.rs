@@ -3,13 +3,13 @@
 //! This module contains the main interactive UI loop that was previously in main.rs.
 //! It handles user input, screen updates, and the main application flow.
 
-use crate::data_fetcher::{fetch_liiga_data, GameData};
+use crate::data_fetcher::{GameData, fetch_liiga_data};
 use crate::error::AppError;
 use crate::teletext_ui::{GameResultData, TeletextPage};
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -141,7 +141,11 @@ pub async fn run_interactive_ui(
                                         current_date = Some(fetched_date.clone());
 
                                         // Rebuild pages
-                                        pages = create_teletext_pages(&games, fetched_date, disable_video_links);
+                                        pages = create_teletext_pages(
+                                            &games,
+                                            fetched_date,
+                                            disable_video_links,
+                                        );
 
                                         current_page = 0;
                                         needs_render = true;
@@ -202,7 +206,10 @@ pub async fn run_interactive_ui(
         // Render UI only when needed
         if needs_render {
             if !debug_mode {
-                execute!(stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
+                execute!(
+                    stdout(),
+                    crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+                )?;
             }
 
             if !pages.is_empty() && current_page < pages.len() {
