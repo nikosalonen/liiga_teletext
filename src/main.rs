@@ -911,7 +911,7 @@ async fn main() -> Result<(), AppError> {
                 // Set terminal title for non-interactive mode (error case)
                 execute!(stdout(), crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
 
-                error_page.render(&mut stdout())?;
+                error_page.render_buffered(&mut stdout())?;
                 println!();
                 return Ok(());
             }
@@ -971,7 +971,7 @@ async fn main() -> Result<(), AppError> {
         // Set terminal title for non-interactive mode
         execute!(stdout(), crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
 
-        page.render(&mut stdout())?;
+        page.render_buffered(&mut stdout())?;
         println!(); // Add a newline at the end
 
         // Show version info after display if update is available
@@ -1120,7 +1120,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             // Render the loading page immediately
             if needs_render {
                 if let Some(page) = &current_page {
-                    page.render(stdout)?;
+                    page.render_buffered(stdout)?;
                 }
                 needs_render = false;
             }
@@ -1241,10 +1241,11 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
         }
 
         // Batched UI rendering - only render when necessary
+        // Use buffered rendering to minimize flickering
         if needs_render {
             if let Some(page) = &current_page {
-                page.render(stdout)?;
-                tracing::debug!("UI rendered");
+                page.render_buffered(stdout)?;
+                tracing::debug!("UI rendered with buffering");
             }
             needs_render = false;
         }
