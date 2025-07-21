@@ -8,8 +8,7 @@ use chrono::{DateTime, Datelike, Local, Utc};
 use crossterm::{
     cursor::MoveTo,
     execute,
-    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal::{Clear, ClearType},
+    style::{Color, Print, ResetColor, SetForegroundColor},
 };
 use reqwest::Client;
 use std::io::{Stdout, Write};
@@ -49,6 +48,15 @@ fn title_bg() -> Color {
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
+
+/// Helper function to extract ANSI color code from crossterm Color enum.
+/// Provides a fallback value for non-ANSI colors.
+fn get_ansi_code(color: Color, fallback: u8) -> u8 {
+    match color {
+        Color::AnsiValue(val) => val,
+        _ => fallback,
+    }
+}
 
 /// Calculates the number of days until the regular season starts.
 /// Returns None if the regular season has already started or if we can't determine the start date.
@@ -330,7 +338,7 @@ impl TeletextPage {
     /// // Only render if we have a proper terminal (skip in CI)
     /// if std::env::var("CI").is_err() {
     ///     let mut stdout = stdout();
-    ///     page.render(&mut stdout)?;
+    ///     page.render_buffered(&mut stdout)?;
     /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
@@ -724,6 +732,7 @@ impl TeletextPage {
 
     /// Renders the page content to the provided stdout.
     /// Handles all formatting, colors, and layout according to current settings.
+    /// Optimized to reduce flickering by minimizing screen clears and using cursor positioning.
     ///
     /// # Arguments
     /// * `stdout` - Mutable reference to stdout for writing
@@ -748,51 +757,120 @@ impl TeletextPage {
     /// // Set a fixed screen height for testing to avoid terminal size issues
     /// page.set_screen_height(20);
     ///
+    /// // When terminal is resized
+    /// page.handle_resize();
+    ///
     /// // Only render if we have a proper terminal (skip in CI)
     /// if std::env::var("CI").is_err() {
     ///     let mut stdout = stdout();
-    ///     page.render(&mut stdout)?;
+    ///     page.render_buffered(&mut stdout)?;
     /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
-    pub fn render(&self, stdout: &mut Stdout) -> Result<(), AppError> {
-        // Only clear the screen in interactive mode (when height limit is not ignored)
-        if !self.ignore_height_limit {
-            execute!(stdout, Clear(ClearType::All))?;
+    /// Calculates the expected buffer size for rendering to avoid reallocations.
+    /// Estimates size based on terminal width, content rows, and ANSI escape sequences.
+    ///
+    /// # Arguments
+    /// * `width` - Terminal width in characters
+    /// * `visible_rows` - The content rows that will be rendered
+    ///
+    /// # Returns
+    /// * `usize` - Estimated buffer size in bytes
+    fn calculate_buffer_size(&self, width: u16, visible_rows: &[&TeletextRow]) -> usize {
+        let width = width as usize;
+
+        // Base overhead for headers, ANSI escape sequences, and screen control
+        let mut size = 500; // Header, subheader, screen clear sequences
+
+        // Add terminal size as base (each line could be full width)
+        size += width * 4; // Header + subheader + padding lines
+
+        // Calculate content size
+        for row in visible_rows {
+            match row {
+                TeletextRow::GameResult { goal_events, .. } => {
+                    // Game line: ~80 chars + ANSI sequences (~50 chars)
+                    size += 130;
+
+                    // Goal events: estimate 2 lines per game on average
+                    // Each goal line: ~40 chars + ANSI sequences (~30 chars)
+                    size += goal_events.len() * 70;
+
+                    // Extra spacing
+                    size += 20;
+                }
+                TeletextRow::ErrorMessage(message) => {
+                    // Error message: actual length + ANSI sequences
+                    size += message.len() + 50;
+                }
+                TeletextRow::FutureGamesHeader(header) => {
+                    // Header: actual length + ANSI sequences
+                    size += header.len() + 30;
+                }
+            }
         }
 
-        // Draw header with title having green background and rest blue
+        // Footer: ~100 chars + ANSI sequences
+        if self.show_footer {
+            size += 150;
+        }
+
+        // Add 25% overhead for ANSI positioning sequences and safety margin
+        size + (size / 4)
+    }
+
+    /// Renders the page content using double buffering for reduced flickering.
+    /// This method builds all terminal escape sequences and content in a buffer first,
+    /// then writes everything in a single operation.
+    pub fn render_buffered(&self, stdout: &mut Stdout) -> Result<(), AppError> {
+        // Hide cursor to prevent visual artifacts during rendering
+        execute!(stdout, crossterm::cursor::Hide)?;
+
+        // Get terminal dimensions
         let (width, _) = crossterm::terminal::size()?;
+
+        // Get content for current page to calculate buffer size
+        let (visible_rows, _) = self.get_page_content();
+
+        // Calculate expected buffer size to avoid reallocations
+        let expected_size = self.calculate_buffer_size(width, &visible_rows);
+
+        // Build the entire screen content in a string buffer (double buffering)
+        let mut buffer = String::with_capacity(expected_size);
+
+        // Only clear the screen in interactive mode using more efficient method
+        if !self.ignore_height_limit {
+            buffer.push_str("\x1b[H"); // Move to home position
+            buffer.push_str("\x1b[0J"); // Clear from cursor down
+        }
 
         // Format the header text with date if available
         let header_text = if let Some(ref date) = self.fetched_date {
-            // Format date for display (convert YYYY-MM-DD to DD.MM.YYYY)
             let formatted_date = match chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
                 Ok(date) => date.format("%d.%m.%Y").to_string(),
-                Err(_) => date.clone(), // Fallback if parsing fails
+                Err(_) => date.clone(),
             };
             format!("SM-LIIGA {} {}", self.page_number, formatted_date)
         } else {
             format!("SM-LIIGA {}", self.page_number)
         };
 
-        execute!(
-            stdout,
-            MoveTo(0, 0),
-            SetBackgroundColor(title_bg()),
-            SetForegroundColor(header_fg()),
-            Print(format!("{:<20}", self.title)),
-            SetBackgroundColor(header_bg()),
-            SetForegroundColor(Color::AnsiValue(231)), // Pure white
-            Print(format!(
-                "{:>width$}",
-                header_text,
-                width = (width as usize).saturating_sub(20)
-            )),
-            ResetColor
-        )?;
+        // Build header with proper ANSI escape codes
+        let title_bg_code = get_ansi_code(title_bg(), 46);
+        let header_fg_code = get_ansi_code(header_fg(), 21);
+        let header_bg_code = get_ansi_code(header_bg(), 21);
 
-        // Draw subheader with pagination info on the right
+        buffer.push_str(&format!(
+            "\x1b[1;1H\x1b[48;5;{}m\x1b[38;5;{}m{:<20}\x1b[48;5;{}m\x1b[38;5;231m{:>width$}\x1b[0m",
+            title_bg_code,
+            header_fg_code,
+            self.title,
+            header_bg_code,
+            header_text,
+            width = (width as usize).saturating_sub(20)
+        ));
+
+        // Build subheader with pagination info
         let total_pages = self.total_pages();
         let page_info = if total_pages > 1 && !self.ignore_height_limit {
             format!("{}/{}", self.current_page + 1, total_pages)
@@ -800,24 +878,20 @@ impl TeletextPage {
             String::new()
         };
 
-        execute!(
-            stdout,
-            MoveTo(0, 1),
-            SetForegroundColor(subheader_fg()),
-            Print(format!("{:<20}", self.subheader)),
-            Print(format!(
-                "{:>width$}",
-                page_info,
-                width = (width as usize).saturating_sub(20)
-            )),
-            ResetColor
-        )?;
+        let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
 
-        // Get content for current page
-        let (visible_rows, _) = self.get_page_content();
+        buffer.push_str(&format!(
+            "\x1b[2;1H\x1b[38;5;{}m{:<20}{:>width$}\x1b[0m",
+            subheader_fg_code,
+            self.subheader,
+            page_info,
+            width = (width as usize).saturating_sub(20)
+        ));
 
-        // Draw content with exact positioning
-        let mut current_y = 3; // Start content after one row space from subheader
+        // Build content starting at line 4 (1-based ANSI positioning)
+        let mut current_line = 4;
+        let text_fg_code = get_ansi_code(text_fg(), 231);
+        let result_fg_code = get_ansi_code(result_fg(), 46);
 
         for row in visible_rows {
             match row {
@@ -841,47 +915,49 @@ impl TeletextPage {
                         result.clone()
                     };
 
-                    // Format played time for ongoing games
-                    let formatted_time = format!("{:02}:{:02}", played_time / 60, played_time % 60);
-                    let ongoing_display = format!("{formatted_time} {result_text}");
+                    // Format time display based on game state
                     let time_display = match score_type {
-                        ScoreType::Scheduled => time.as_str(),
-                        ScoreType::Ongoing => ongoing_display.as_str(),
-                        ScoreType::Final => result_text.as_str(),
+                        ScoreType::Scheduled => time.clone(),
+                        ScoreType::Ongoing => {
+                            let formatted_time =
+                                format!("{:02}:{:02}", played_time / 60, played_time % 60);
+                            format!("{formatted_time} {result_text}")
+                        }
+                        ScoreType::Final => result_text.clone(),
                     };
 
-                    // Draw game result line
-                    execute!(
-                        stdout,
-                        MoveTo(CONTENT_MARGIN as u16, current_y),
-                        SetForegroundColor(text_fg()),
-                        Print(format!(
-                            "{:<20}",
-                            home_team.chars().take(20).collect::<String>()
-                        )),
-                        MoveTo((SEPARATOR_OFFSET + CONTENT_MARGIN) as u16, current_y),
-                        Print("- "),
-                        MoveTo((AWAY_TEAM_OFFSET + CONTENT_MARGIN) as u16, current_y),
-                        Print(format!(
-                            "{:<20}",
-                            away_team.chars().take(20).collect::<String>()
-                        )),
-                        SetForegroundColor(match score_type {
-                            ScoreType::Final => result_fg(),
-                            ScoreType::Ongoing => text_fg(),
-                            ScoreType::Scheduled => text_fg(),
-                        }),
-                        MoveTo((45 + CONTENT_MARGIN) as u16, current_y),
-                        Print(time_display),
-                        ResetColor
-                    )?;
+                    let result_color = match score_type {
+                        ScoreType::Final => result_fg_code,
+                        _ => text_fg_code,
+                    };
 
-                    current_y += 1;
+                    // Build game line with precise positioning (using 1-based ANSI coordinates)
+                    buffer.push_str(&format!(
+                        "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                        current_line, CONTENT_MARGIN + 1,
+                        text_fg_code,
+                        home_team.chars().take(20).collect::<String>(),
+                        current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
+                        text_fg_code,
+                        current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                        text_fg_code,
+                        away_team.chars().take(20).collect::<String>(),
+                        current_line, 45 + CONTENT_MARGIN + 1,
+                        result_color,
+                        time_display
+                    ));
 
-                    // Draw goal events if game has started
+                    current_line += 1;
+
+                    // Add goal events for finished/ongoing games
                     if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
                         && !goal_events.is_empty()
                     {
+                        let home_scorer_fg_code = get_ansi_code(home_scorer_fg(), 51);
+                        let away_scorer_fg_code = get_ansi_code(away_scorer_fg(), 51);
+                        let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
+                        let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
+
                         let home_scorers: Vec<_> =
                             goal_events.iter().filter(|e| e.is_home_team).collect();
                         let away_scorers: Vec<_> =
@@ -895,61 +971,47 @@ impl TeletextPage {
                                     && (*is_overtime || *is_shootout))
                                     || event.goal_types.contains(&"VL".to_string())
                                 {
-                                    winning_goal_fg()
+                                    winning_goal_fg_code
                                 } else {
-                                    home_scorer_fg()
+                                    home_scorer_fg_code
                                 };
-                                execute!(
-                                    stdout,
-                                    MoveTo(CONTENT_MARGIN as u16, current_y),
-                                    SetForegroundColor(scorer_color),
-                                    Print(format!("{:2}", event.minute)),
-                                )?;
 
-                                // If there's a video clip and video links are not disabled, make the scorer name a clickable link
+                                buffer.push_str(&format!(
+                                    "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
+                                    current_line,
+                                    CONTENT_MARGIN + 1,
+                                    scorer_color,
+                                    event.minute
+                                ));
+
+                                // Add video link functionality if there's a video clip and links are enabled
                                 if let Some(url) = &event.video_clip_url {
                                     if !self.disable_video_links {
-                                        execute!(
-                                            stdout,
-                                            Print(" "),
-                                            SetForegroundColor(scorer_color),
-                                            Print(format!("{:<12}", event.scorer_name)),
-                                            Print("\x1B]8;;"),
-                                            Print(url),
-                                            Print("\x07"),
-                                            Print("▶"),
-                                            Print("\x1B]8;;\x07"),
-                                            ResetColor
-                                        )?;
+                                        buffer.push_str(&format!(
+                                            "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
+                                            scorer_color, event.scorer_name, url
+                                        ));
                                     } else {
-                                        execute!(
-                                            stdout,
-                                            Print(" "),
-                                            SetForegroundColor(scorer_color),
-                                            Print(format!("{:<12}", event.scorer_name)),
-                                            ResetColor
-                                        )?;
+                                        buffer.push_str(&format!(
+                                            "\x1b[38;5;{}m{:<12}",
+                                            scorer_color, event.scorer_name
+                                        ));
                                     }
                                 } else {
-                                    execute!(
-                                        stdout,
-                                        Print(" "),
-                                        SetForegroundColor(scorer_color),
-                                        Print(format!("{:<12}", event.scorer_name)),
-                                        ResetColor
-                                    )?;
+                                    buffer.push_str(&format!(
+                                        "\x1b[38;5;{}m{:<12}",
+                                        scorer_color, event.scorer_name
+                                    ));
                                 }
 
-                                // Add goal type indicators if present
+                                // Add goal type indicators
                                 let goal_type = event.get_goal_type_display();
                                 if !goal_type.is_empty() {
-                                    execute!(
-                                        stdout,
-                                        Print(" "),
-                                        SetForegroundColor(goal_type_fg()),
-                                        Print(goal_type),
-                                        ResetColor
-                                    )?;
+                                    buffer.push_str(&format!(
+                                        " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
+                                    ));
+                                } else {
+                                    buffer.push_str("\x1b[0m");
                                 }
                             }
 
@@ -959,192 +1021,126 @@ impl TeletextPage {
                                     && (*is_overtime || *is_shootout))
                                     || event.goal_types.contains(&"VL".to_string())
                                 {
-                                    winning_goal_fg()
+                                    winning_goal_fg_code
                                 } else {
-                                    away_scorer_fg()
+                                    away_scorer_fg_code
                                 };
-                                execute!(
-                                    stdout,
-                                    MoveTo((AWAY_TEAM_OFFSET + CONTENT_MARGIN) as u16, current_y),
-                                    SetForegroundColor(scorer_color),
-                                    Print(format!("{:2}", event.minute)),
-                                )?;
 
-                                // If there's a video clip and video links are not disabled, make the scorer name a clickable link
+                                buffer.push_str(&format!(
+                                    "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
+                                    current_line,
+                                    AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                                    scorer_color,
+                                    event.minute
+                                ));
+
+                                // Add video link functionality if there's a video clip and links are enabled
                                 if let Some(url) = &event.video_clip_url {
                                     if !self.disable_video_links {
-                                        execute!(
-                                            stdout,
-                                            Print(" "),
-                                            SetForegroundColor(scorer_color),
-                                            Print(format!("{:<12}", event.scorer_name)),
-                                            Print("\x1B]8;;"),
-                                            Print(url),
-                                            Print("\x07"),
-                                            Print("▶"),
-                                            Print("\x1B]8;;\x07"),
-                                            ResetColor
-                                        )?;
+                                        buffer.push_str(&format!(
+                                            "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
+                                            scorer_color, event.scorer_name, url
+                                        ));
                                     } else {
-                                        execute!(
-                                            stdout,
-                                            Print(" "),
-                                            SetForegroundColor(scorer_color),
-                                            Print(format!("{:<12}", event.scorer_name)),
-                                            ResetColor
-                                        )?;
+                                        buffer.push_str(&format!(
+                                            "\x1b[38;5;{}m{:<12}",
+                                            scorer_color, event.scorer_name
+                                        ));
                                     }
                                 } else {
-                                    execute!(
-                                        stdout,
-                                        Print(" "),
-                                        SetForegroundColor(scorer_color),
-                                        Print(format!("{:<12}", event.scorer_name)),
-                                        ResetColor
-                                    )?;
+                                    buffer.push_str(&format!(
+                                        "\x1b[38;5;{}m{:<12}",
+                                        scorer_color, event.scorer_name
+                                    ));
                                 }
 
-                                // Add goal type indicators if present
+                                // Add goal type indicators
                                 let goal_type = event.get_goal_type_display();
                                 if !goal_type.is_empty() {
-                                    execute!(
-                                        stdout,
-                                        Print(" "),
-                                        SetForegroundColor(goal_type_fg()),
-                                        Print(goal_type),
-                                        ResetColor
-                                    )?;
+                                    buffer.push_str(&format!(
+                                        " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
+                                    ));
+                                } else {
+                                    buffer.push_str("\x1b[0m");
                                 }
                             }
 
-                            current_y += 1;
+                            if home_scorers.get(i).is_some() || away_scorers.get(i).is_some() {
+                                current_line += 1;
+                            }
                         }
                     }
 
-                    // Add a blank line between games, but only if not the last game and not in single-view mode
+                    // Add spacing between games in interactive mode
                     if !self.ignore_height_limit {
-                        current_y += 1;
+                        current_line += 1;
                     }
                 }
                 TeletextRow::ErrorMessage(message) => {
                     for line in message.lines() {
-                        execute!(
-                            stdout,
-                            MoveTo(CONTENT_MARGIN as u16, current_y),
-                            SetForegroundColor(text_fg()),
-                            Print(line),
-                            ResetColor
-                        )?;
-                        current_y += 1;
+                        buffer.push_str(&format!(
+                            "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                            current_line,
+                            CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            line
+                        ));
+                        current_line += 1;
                     }
                 }
                 TeletextRow::FutureGamesHeader(header_text) => {
-                    execute!(
-                        stdout,
-                        MoveTo(CONTENT_MARGIN as u16, current_y),
-                        SetForegroundColor(subheader_fg()),
-                        Print(header_text),
-                        ResetColor
-                    )?;
-                    current_y += 1;
+                    buffer.push_str(&format!(
+                        "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                        current_line,
+                        CONTENT_MARGIN + 1,
+                        subheader_fg_code,
+                        header_text
+                    ));
+                    current_line += 1;
                 }
             }
         }
 
-        // Render footer area if show_footer is true
+        // Add footer if enabled
         if self.show_footer {
             let footer_y = if self.ignore_height_limit {
-                // In --once mode, position footer right after content
-                current_y + 1
+                current_line + 1
             } else {
-                // In interactive mode, position footer at bottom of screen
                 self.screen_height.saturating_sub(1)
             };
-            let countdown_y = footer_y.saturating_sub(2);
-            let empty_y = footer_y.saturating_sub(1);
 
-            // Show countdown two lines above the blue bar, if available
-            if let Some(ref countdown_text) = self.season_countdown {
-                // Center the countdown text
-                let countdown_width = countdown_text.chars().count();
-                let left_padding = if width as usize > countdown_width {
-                    (width as usize - countdown_width) / 2
-                } else {
-                    0
-                };
-                execute!(
-                    stdout,
-                    MoveTo(0, countdown_y),
-                    SetForegroundColor(subheader_fg()),
-                    Print(format!(
-                        "{space:>pad$}{text}",
-                        space = "",
-                        pad = left_padding,
-                        text = countdown_text
-                    )),
-                    ResetColor
-                )?;
-            }
-
-            // Show loading indicator if active, otherwise show empty line above the blue bar
-            if let Some(ref loading) = self.loading_indicator {
-                // Show loading indicator centered above the blue bar
-                let loading_text = format!("{} {}", loading.current_frame(), loading.message());
-                let loading_width = loading_text.chars().count();
-                let left_padding = if width as usize > loading_width {
-                    (width as usize - loading_width) / 2
-                } else {
-                    0
-                };
-                execute!(
-                    stdout,
-                    MoveTo(0, empty_y),
-                    SetForegroundColor(Color::Yellow),
-                    Print(format!(
-                        "{space:>pad$}{text}",
-                        space = "",
-                        pad = left_padding,
-                        text = loading_text
-                    )),
-                    ResetColor
-                )?;
+            let controls = if total_pages > 1 {
+                "q=Lopeta ←→=Sivut r=Päivitä"
             } else {
-                // Always print an empty line above the blue bar
-                execute!(stdout, MoveTo(0, empty_y), Print(""))?;
-            }
-
-            let mut controls = if total_pages > 1 {
-                "q=Lopeta ←→=Sivut"
-            } else {
-                "q=Lopeta"
+                "q=Lopeta r=Päivitä"
             };
 
-            // Add auto-refresh status if disabled
-            if self.auto_refresh_disabled {
-                controls = if total_pages > 1 {
+            let controls = if self.auto_refresh_disabled {
+                if total_pages > 1 {
                     "q=Lopeta ←→=Sivut (Ei päivity)"
                 } else {
                     "q=Lopeta (Ei päivity)"
-                };
-            }
+                }
+            } else {
+                controls
+            };
 
-            execute!(
-                stdout,
-                MoveTo(0, footer_y),
-                SetBackgroundColor(header_bg()),
-                SetForegroundColor(Color::Blue),
-                Print(if total_pages > 1 { "<<<" } else { "   " }),
-                SetForegroundColor(Color::White),
-                Print(format!(
-                    "{:^width$}",
-                    controls,
-                    width = (width as usize).saturating_sub(6)
-                )),
-                SetForegroundColor(Color::Blue),
-                Print(if total_pages > 1 { ">>>" } else { "   " }),
-                ResetColor
-            )?;
+            buffer.push_str(&format!(
+                "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
+                footer_y,
+                get_ansi_code(header_bg(), 21),
+                if total_pages > 1 { "<<<" } else { "   " },
+                controls,
+                if total_pages > 1 { ">>>" } else { "   " },
+                width = (width as usize).saturating_sub(6)
+            ));
         }
+
+        // Write entire buffer in one operation (minimizes flicker)
+        execute!(stdout, Print(buffer))?;
+
+        // Show cursor again
+        execute!(stdout, crossterm::cursor::Show)?;
 
         stdout.flush()?;
         Ok(())
@@ -1203,7 +1199,7 @@ mod tests {
         for i in 0..10 {
             let goal_events = vec![
                 GoalEventData {
-                    scorer_player_id: i as i64,
+                    scorer_player_id: i64::from(i),
                     scorer_name: format!("Scorer {i}"),
                     minute: 10,
                     home_team_score: 1,
@@ -1214,8 +1210,8 @@ mod tests {
                     video_clip_url: None,
                 },
                 GoalEventData {
-                    scorer_player_id: (i + 100) as i64,
-                    scorer_name: format!("Scorer {}", i + 100),
+                    scorer_player_id: i64::from(i + 100),
+                    scorer_name: format!("Scorer {val}", val = i + 100),
                     minute: 20,
                     home_team_score: 1,
                     away_team_score: 1,
@@ -1268,7 +1264,7 @@ mod tests {
         for i in 0..10 {
             let goal_events = vec![
                 GoalEventData {
-                    scorer_player_id: i as i64,
+                    scorer_player_id: i64::from(i),
                     scorer_name: format!("Scorer {i}"),
                     minute: 10,
                     home_team_score: 1,
@@ -1279,8 +1275,8 @@ mod tests {
                     video_clip_url: None,
                 },
                 GoalEventData {
-                    scorer_player_id: (i + 100) as i64,
-                    scorer_name: format!("Scorer {}", i + 100),
+                    scorer_player_id: i64::from(i + 100),
+                    scorer_name: format!("Scorer {val}", val = i + 100),
                     minute: 20,
                     home_team_score: 1,
                     away_team_score: 1,
@@ -1604,5 +1600,107 @@ mod tests {
             content_no_video.len(),
             "Should have same number of games"
         );
+    }
+
+    #[test]
+    fn test_buffer_size_calculation() {
+        let page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+        );
+
+        // Test with empty content
+        let empty_rows: Vec<&TeletextRow> = vec![];
+        let empty_size = page.calculate_buffer_size(80, &empty_rows);
+
+        // Should have base overhead + terminal width overhead (500 + 80*4 = 820, +25% = 1025)
+        assert!(empty_size > 500); // Base overhead
+        assert!(empty_size < 1500); // Should be reasonable for empty content
+
+        // Test with game content
+        let goal_events = vec![
+            GoalEventData {
+                scorer_name: "Player 1".to_string(),
+                scorer_player_id: 1001,
+                minute: 10,
+                home_team_score: 1,
+                away_team_score: 0,
+                is_home_team: true,
+                is_winning_goal: false,
+                goal_types: vec![],
+                video_clip_url: None,
+            },
+            GoalEventData {
+                scorer_name: "Player 2".to_string(),
+                scorer_player_id: 1002,
+                minute: 25,
+                home_team_score: 1,
+                away_team_score: 1,
+                is_home_team: false,
+                is_winning_goal: false,
+                goal_types: vec![],
+                video_clip_url: None,
+            },
+        ];
+
+        let game_row = TeletextRow::GameResult {
+            home_team: "Team A".to_string(),
+            away_team: "Team B".to_string(),
+            time: "20:00".to_string(),
+            result: "2-1".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events,
+            played_time: 3600,
+        };
+
+        let game_rows = vec![&game_row];
+        let game_size = page.calculate_buffer_size(80, &game_rows);
+
+        // Should be larger than empty content
+        assert!(game_size > empty_size);
+
+        // Should account for game content + goal events
+        // Game: 130 bytes + 2 goals * 70 bytes = 270 bytes content overhead
+        assert!(game_size > empty_size + 200);
+
+        // Test with error message
+        let error_row = TeletextRow::ErrorMessage("Test error message".to_string());
+        let error_rows = vec![&error_row];
+        let error_size = page.calculate_buffer_size(80, &error_rows);
+
+        // Should be appropriately sized for error message
+        assert!(error_size > empty_size);
+        assert!(error_size < game_size); // Smaller than game with goals
+
+        // Test scaling with terminal width
+        let wide_size = page.calculate_buffer_size(160, &empty_rows);
+        assert!(wide_size > empty_size); // Larger terminal should need more buffer
+    }
+
+    #[test]
+    fn test_get_ansi_code_helper() {
+        // Test with AnsiValue color
+        let ansi_color = Color::AnsiValue(42);
+        assert_eq!(get_ansi_code(ansi_color, 100), 42);
+
+        // Test with non-AnsiValue color (should use fallback)
+        let rgb_color = Color::Rgb { r: 255, g: 0, b: 0 };
+        assert_eq!(get_ansi_code(rgb_color, 100), 100);
+
+        // Test with different fallback values
+        let reset_color = Color::Reset;
+        assert_eq!(get_ansi_code(reset_color, 231), 231);
+        assert_eq!(get_ansi_code(reset_color, 46), 46);
+
+        // Test actual teletext colors
+        assert_eq!(get_ansi_code(text_fg(), 231), 231); // Should be 231 (white)
+        assert_eq!(get_ansi_code(header_bg(), 21), 21); // Should be 21 (blue)
+        assert_eq!(get_ansi_code(result_fg(), 46), 46); // Should be 46 (green)
     }
 }
