@@ -230,7 +230,7 @@ pub async fn run_interactive_ui(
             }
 
             if !pages.is_empty() && current_page < pages.len() {
-                pages[current_page].render(&mut stdout())?;
+                pages[current_page].render_buffered(&mut stdout())?;
             }
 
             needs_render = false;
