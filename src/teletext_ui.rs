@@ -117,6 +117,40 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
     None
 }
 
+/// Simple ASCII loading indicator with rotating animation
+#[derive(Debug, Clone)]
+pub struct LoadingIndicator {
+    message: String,
+    frame: usize,
+    frames: Vec<&'static str>,
+}
+
+impl LoadingIndicator {
+    /// Creates a new loading indicator with the specified message
+    pub fn new(message: String) -> Self {
+        Self {
+            message,
+            frame: 0,
+            frames: vec!["|", "/", "-", "\\"],
+        }
+    }
+
+    /// Gets the current animation frame character
+    pub fn current_frame(&self) -> &str {
+        self.frames[self.frame]
+    }
+
+    /// Gets the loading message
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Advances to the next animation frame
+    pub fn next_frame(&mut self) {
+        self.frame = (self.frame + 1) % self.frames.len();
+    }
+}
+
 pub struct TeletextPage {
     page_number: u16,
     title: String,
@@ -130,6 +164,7 @@ pub struct TeletextPage {
     auto_refresh_disabled: bool,
     season_countdown: Option<String>,
     fetched_date: Option<String>, // Date for which data was fetched
+    loading_indicator: Option<LoadingIndicator>,
 }
 
 pub enum TeletextRow {
@@ -265,6 +300,7 @@ impl TeletextPage {
             auto_refresh_disabled: false,
             season_countdown: None,
             fetched_date: None,
+            loading_indicator: None,
         }
     }
 
@@ -430,6 +466,73 @@ impl TeletextPage {
     /// This helps users understand which date's data they're viewing.
     pub fn set_fetched_date(&mut self, date: String) {
         self.fetched_date = Some(date);
+    }
+
+    /// Shows a loading indicator with the specified message
+    pub fn show_loading(&mut self, message: String) {
+        self.loading_indicator = Some(LoadingIndicator::new(message));
+    }
+
+    /// Hides the loading indicator
+    pub fn hide_loading(&mut self) {
+        self.loading_indicator = None;
+    }
+
+    /// Updates the loading indicator animation frame
+    pub fn update_loading_animation(&mut self) {
+        if let Some(ref mut indicator) = self.loading_indicator {
+            indicator.next_frame();
+        }
+    }
+
+    /// Renders only the loading indicator area without redrawing the entire screen
+    pub fn render_loading_indicator_only(&self, stdout: &mut Stdout) -> Result<(), AppError> {
+        if !self.show_footer {
+            return Ok(());
+        }
+
+        let (width, _) = crossterm::terminal::size()?;
+        let footer_y = if self.ignore_height_limit {
+            // In --once mode, we don't update loading indicators
+            return Ok(());
+        } else {
+            // In interactive mode, position footer at bottom of screen
+            self.screen_height.saturating_sub(1)
+        };
+        let empty_y = footer_y.saturating_sub(1);
+
+        // Clear the loading indicator line first
+        execute!(
+            stdout,
+            MoveTo(0, empty_y),
+            Print(" ".repeat(width as usize))
+        )?;
+
+        // Show loading indicator if active
+        if let Some(ref loading) = self.loading_indicator {
+            let loading_text = format!("{} {}", loading.current_frame(), loading.message());
+            let loading_width = loading_text.chars().count();
+            let left_padding = if width as usize > loading_width {
+                (width as usize - loading_width) / 2
+            } else {
+                0
+            };
+            execute!(
+                stdout,
+                MoveTo(0, empty_y),
+                SetForegroundColor(Color::Yellow),
+                Print(format!(
+                    "{space:>pad$}{text}",
+                    space = "",
+                    pad = left_padding,
+                    text = loading_text
+                )),
+                ResetColor
+            )?;
+        }
+
+        stdout.flush()?;
+        Ok(())
     }
 
     /// Sets whether to show the season countdown in the footer.
@@ -983,8 +1086,32 @@ impl TeletextPage {
                 )?;
             }
 
-            // Always print an empty line above the blue bar
-            execute!(stdout, MoveTo(0, empty_y), Print(""))?;
+            // Show loading indicator if active, otherwise show empty line above the blue bar
+            if let Some(ref loading) = self.loading_indicator {
+                // Show loading indicator centered above the blue bar
+                let loading_text = format!("{} {}", loading.current_frame(), loading.message());
+                let loading_width = loading_text.chars().count();
+                let left_padding = if width as usize > loading_width {
+                    (width as usize - loading_width) / 2
+                } else {
+                    0
+                };
+                execute!(
+                    stdout,
+                    MoveTo(0, empty_y),
+                    SetForegroundColor(Color::Yellow),
+                    Print(format!(
+                        "{space:>pad$}{text}",
+                        space = "",
+                        pad = left_padding,
+                        text = loading_text
+                    )),
+                    ResetColor
+                )?;
+            } else {
+                // Always print an empty line above the blue bar
+                execute!(stdout, MoveTo(0, empty_y), Print(""))?;
+            }
 
             let mut controls = if total_pages > 1 {
                 "q=Lopeta ←→=Sivut"
@@ -1028,6 +1155,37 @@ impl TeletextPage {
 mod tests {
     use super::*;
     use crate::data_fetcher::GoalEventData;
+
+    #[test]
+    fn test_loading_indicator() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+        );
+
+        // Test showing loading indicator
+        page.show_loading("Etsitään otteluita...".to_string());
+        assert!(page.loading_indicator.is_some());
+
+        if let Some(ref indicator) = page.loading_indicator {
+            assert_eq!(indicator.message(), "Etsitään otteluita...");
+            assert_eq!(indicator.current_frame(), "|"); // First frame
+        }
+
+        // Test updating animation
+        page.update_loading_animation();
+        if let Some(ref indicator) = page.loading_indicator {
+            assert_eq!(indicator.current_frame(), "/"); // Second frame
+        }
+
+        // Test hiding loading indicator
+        page.hide_loading();
+        assert!(page.loading_indicator.is_none());
+    }
 
     #[test]
     fn test_page_navigation() {
