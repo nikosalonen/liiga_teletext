@@ -32,7 +32,7 @@
 //!
 //!     // Render the page to stdout
 //!     let mut stdout = std::io::stdout();
-    //!     page.render_buffered(&mut stdout)?;
+//!     page.render_buffered(&mut stdout)?;
 //!
 //!     Ok(())
 //! }

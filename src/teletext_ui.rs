@@ -49,6 +49,15 @@ const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
 
+/// Helper function to extract ANSI color code from crossterm Color enum.
+/// Provides a fallback value for non-ANSI colors.
+fn get_ansi_code(color: Color, fallback: u8) -> u8 {
+    match color {
+        Color::AnsiValue(val) => val,
+        _ => fallback,
+    }
+}
+
 /// Calculates the number of days until the regular season starts.
 /// Returns None if the regular season has already started or if we can't determine the start date.
 /// Uses UTC internally for consistent calculations across timezone changes.
@@ -760,33 +769,33 @@ impl TeletextPage {
     /// ```
     /// Calculates the expected buffer size for rendering to avoid reallocations.
     /// Estimates size based on terminal width, content rows, and ANSI escape sequences.
-    /// 
+    ///
     /// # Arguments
     /// * `width` - Terminal width in characters
     /// * `visible_rows` - The content rows that will be rendered
-    /// 
+    ///
     /// # Returns
     /// * `usize` - Estimated buffer size in bytes
     fn calculate_buffer_size(&self, width: u16, visible_rows: &[&TeletextRow]) -> usize {
         let width = width as usize;
-        
+
         // Base overhead for headers, ANSI escape sequences, and screen control
         let mut size = 500; // Header, subheader, screen clear sequences
-        
+
         // Add terminal size as base (each line could be full width)
         size += width * 4; // Header + subheader + padding lines
-        
+
         // Calculate content size
         for row in visible_rows {
             match row {
                 TeletextRow::GameResult { goal_events, .. } => {
                     // Game line: ~80 chars + ANSI sequences (~50 chars)
                     size += 130;
-                    
+
                     // Goal events: estimate 2 lines per game on average
                     // Each goal line: ~40 chars + ANSI sequences (~30 chars)
                     size += goal_events.len() * 70;
-                    
+
                     // Extra spacing
                     size += 20;
                 }
@@ -800,16 +809,16 @@ impl TeletextPage {
                 }
             }
         }
-        
+
         // Footer: ~100 chars + ANSI sequences
         if self.show_footer {
             size += 150;
         }
-        
+
         // Add 25% overhead for ANSI positioning sequences and safety margin
         size + (size / 4)
     }
-    
+
     /// Renders the page content using double buffering for reduced flickering.
     /// This method builds all terminal escape sequences and content in a buffer first,
     /// then writes everything in a single operation.
@@ -817,15 +826,15 @@ impl TeletextPage {
         // Hide cursor to prevent visual artifacts during rendering
         execute!(stdout, crossterm::cursor::Hide)?;
 
-                // Get terminal dimensions
+        // Get terminal dimensions
         let (width, _) = crossterm::terminal::size()?;
-        
+
         // Get content for current page to calculate buffer size
         let (visible_rows, _) = self.get_page_content();
-        
+
         // Calculate expected buffer size to avoid reallocations
         let expected_size = self.calculate_buffer_size(width, &visible_rows);
-        
+
         // Build the entire screen content in a string buffer (double buffering)
         let mut buffer = String::with_capacity(expected_size);
 
@@ -847,18 +856,9 @@ impl TeletextPage {
         };
 
         // Build header with proper ANSI escape codes
-        let title_bg_code = match title_bg() {
-            Color::AnsiValue(val) => val,
-            _ => 46,
-        };
-        let header_fg_code = match header_fg() {
-            Color::AnsiValue(val) => val,
-            _ => 21,
-        };
-        let header_bg_code = match header_bg() {
-            Color::AnsiValue(val) => val,
-            _ => 21,
-        };
+        let title_bg_code = get_ansi_code(title_bg(), 46);
+        let header_fg_code = get_ansi_code(header_fg(), 21);
+        let header_bg_code = get_ansi_code(header_bg(), 21);
 
         buffer.push_str(&format!(
             "\x1b[1;1H\x1b[48;5;{}m\x1b[38;5;{}m{:<20}\x1b[48;5;{}m\x1b[38;5;231m{:>width$}\x1b[0m",
@@ -878,10 +878,7 @@ impl TeletextPage {
             String::new()
         };
 
-        let subheader_fg_code = match subheader_fg() {
-            Color::AnsiValue(val) => val,
-            _ => 46,
-        };
+        let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
 
         buffer.push_str(&format!(
             "\x1b[2;1H\x1b[38;5;{}m{:<20}{:>width$}\x1b[0m",
@@ -893,14 +890,8 @@ impl TeletextPage {
 
         // Build content starting at line 4 (1-based ANSI positioning)
         let mut current_line = 4;
-        let text_fg_code = match text_fg() {
-            Color::AnsiValue(val) => val,
-            _ => 231,
-        };
-        let result_fg_code = match result_fg() {
-            Color::AnsiValue(val) => val,
-            _ => 46,
-        };
+        let text_fg_code = get_ansi_code(text_fg(), 231);
+        let result_fg_code = get_ansi_code(result_fg(), 46);
 
         for row in visible_rows {
             match row {
@@ -962,22 +953,10 @@ impl TeletextPage {
                     if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
                         && !goal_events.is_empty()
                     {
-                        let home_scorer_fg_code = match home_scorer_fg() {
-                            Color::AnsiValue(val) => val,
-                            _ => 51,
-                        };
-                        let away_scorer_fg_code = match away_scorer_fg() {
-                            Color::AnsiValue(val) => val,
-                            _ => 51,
-                        };
-                        let winning_goal_fg_code = match winning_goal_fg() {
-                            Color::AnsiValue(val) => val,
-                            _ => 201,
-                        };
-                        let goal_type_fg_code = match goal_type_fg() {
-                            Color::AnsiValue(val) => val,
-                            _ => 226,
-                        };
+                        let home_scorer_fg_code = get_ansi_code(home_scorer_fg(), 51);
+                        let away_scorer_fg_code = get_ansi_code(away_scorer_fg(), 51);
+                        let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
+                        let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
 
                         let home_scorers: Vec<_> =
                             goal_events.iter().filter(|e| e.is_home_team).collect();
@@ -1151,7 +1130,7 @@ impl TeletextPage {
             buffer.push_str(&format!(
                 "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
                 footer_y,
-                header_bg_code,
+                get_ansi_code(header_bg(), 21),
                 if total_pages > 1 { "<<<" } else { "   " },
                 controls,
                 if total_pages > 1 { ">>>" } else { "   " },
@@ -1639,7 +1618,7 @@ mod tests {
         // Test with empty content
         let empty_rows: Vec<&TeletextRow> = vec![];
         let empty_size = page.calculate_buffer_size(80, &empty_rows);
-        
+
         // Should have base overhead + terminal width overhead (500 + 80*4 = 820, +25% = 1025)
         assert!(empty_size > 500); // Base overhead
         assert!(empty_size < 1500); // Should be reasonable for empty content
@@ -1684,10 +1663,10 @@ mod tests {
 
         let game_rows = vec![&game_row];
         let game_size = page.calculate_buffer_size(80, &game_rows);
-        
+
         // Should be larger than empty content
         assert!(game_size > empty_size);
-        
+
         // Should account for game content + goal events
         // Game: 130 bytes + 2 goals * 70 bytes = 270 bytes content overhead
         assert!(game_size > empty_size + 200);
@@ -1696,7 +1675,7 @@ mod tests {
         let error_row = TeletextRow::ErrorMessage("Test error message".to_string());
         let error_rows = vec![&error_row];
         let error_size = page.calculate_buffer_size(80, &error_rows);
-        
+
         // Should be appropriately sized for error message
         assert!(error_size > empty_size);
         assert!(error_size < game_size); // Smaller than game with goals
@@ -1704,5 +1683,26 @@ mod tests {
         // Test scaling with terminal width
         let wide_size = page.calculate_buffer_size(160, &empty_rows);
         assert!(wide_size > empty_size); // Larger terminal should need more buffer
+    }
+
+    #[test]
+    fn test_get_ansi_code_helper() {
+        // Test with AnsiValue color
+        let ansi_color = Color::AnsiValue(42);
+        assert_eq!(get_ansi_code(ansi_color, 100), 42);
+
+        // Test with non-AnsiValue color (should use fallback)
+        let rgb_color = Color::Rgb { r: 255, g: 0, b: 0 };
+        assert_eq!(get_ansi_code(rgb_color, 100), 100);
+
+        // Test with different fallback values
+        let reset_color = Color::Reset;
+        assert_eq!(get_ansi_code(reset_color, 231), 231);
+        assert_eq!(get_ansi_code(reset_color, 46), 46);
+
+        // Test actual teletext colors
+        assert_eq!(get_ansi_code(text_fg(), 231), 231); // Should be 231 (white)
+        assert_eq!(get_ansi_code(header_bg(), 21), 21); // Should be 21 (blue)
+        assert_eq!(get_ansi_code(result_fg(), 46), 46); // Should be 46 (green)
     }
 }
