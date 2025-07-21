@@ -1291,7 +1291,18 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                             let result = loop {
                                 tokio::select! {
                                     search_result = &mut search_task => {
-                                        break search_result.unwrap_or(None);
+                                        match search_result {
+                                            Ok(date_option) => {
+                                                break date_option;
+                                            }
+                                            Err(join_error) => {
+                                                tracing::error!(
+                                                    "Previous date search task failed: {}",
+                                                    join_error
+                                                );
+                                                break None;
+                                            }
+                                        }
                                     }
                                     _ = animation_interval.tick() => {
                                         if let Some(page) = &mut current_page {
@@ -1345,7 +1356,18 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                             let result = loop {
                                 tokio::select! {
                                     search_result = &mut search_task => {
-                                        break search_result.unwrap_or(None);
+                                        match search_result {
+                                            Ok(date_option) => {
+                                                break date_option;
+                                            }
+                                            Err(join_error) => {
+                                                tracing::error!(
+                                                    "Next date search task failed: {}",
+                                                    join_error
+                                                );
+                                                break None;
+                                            }
+                                        }
                                     }
                                     _ = animation_interval.tick() => {
                                         if let Some(page) = &mut current_page {
