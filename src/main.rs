@@ -1269,18 +1269,61 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                             tracing::debug!("Current date state: {:?}", current_date);
                             let target_date = get_target_date_for_navigation(&current_date);
 
+                            // Show loading indicator
+                            if let Some(page) = &mut current_page {
+                                page.show_loading("Etsitään edellisiä otteluita...".to_string());
+                                page.render_loading_indicator_only(stdout)?;
+                            }
+
                             tracing::info!(
                                 "Searching for previous date with games from: {}",
                                 target_date
                             );
-                            if let Some(prev_date) =
-                                find_previous_date_with_games(&target_date).await
-                            {
+
+                            // Create a task that will update animation while search runs
+                            let target_date_clone = target_date.clone();
+                            let mut search_task = tokio::spawn(async move {
+                                find_previous_date_with_games(&target_date_clone).await
+                            });
+                            let mut animation_interval =
+                                tokio::time::interval(Duration::from_millis(200));
+
+                            let result = loop {
+                                tokio::select! {
+                                    search_result = &mut search_task => {
+                                        match search_result {
+                                            Ok(date_option) => {
+                                                break date_option;
+                                            }
+                                            Err(join_error) => {
+                                                tracing::error!(
+                                                    "Previous date search task failed: {}",
+                                                    join_error
+                                                );
+                                                break None;
+                                            }
+                                        }
+                                    }
+                                    _ = animation_interval.tick() => {
+                                        if let Some(page) = &mut current_page {
+                                            page.update_loading_animation();
+                                            page.render_loading_indicator_only(stdout)?;
+                                        }
+                                    }
+                                }
+                            };
+
+                            if let Some(prev_date) = result {
                                 current_date = Some(prev_date.clone());
                                 needs_refresh = true;
                                 tracing::info!("Navigated to previous date: {}", prev_date);
                             } else {
                                 tracing::warn!("No previous date with games found");
+                            }
+
+                            // Hide loading indicator
+                            if let Some(page) = &mut current_page {
+                                page.hide_loading();
                             }
                             last_date_navigation = Instant::now();
                         }
@@ -1291,16 +1334,61 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                             tracing::debug!("Current date state: {:?}", current_date);
                             let target_date = get_target_date_for_navigation(&current_date);
 
+                            // Show loading indicator
+                            if let Some(page) = &mut current_page {
+                                page.show_loading("Etsitään seuraavia otteluita...".to_string());
+                                page.render_loading_indicator_only(stdout)?;
+                            }
+
                             tracing::info!(
                                 "Searching for next date with games from: {}",
                                 target_date
                             );
-                            if let Some(next_date) = find_next_date_with_games(&target_date).await {
+
+                            // Create a task that will update animation while search runs
+                            let target_date_clone = target_date.clone();
+                            let mut search_task = tokio::spawn(async move {
+                                find_next_date_with_games(&target_date_clone).await
+                            });
+                            let mut animation_interval =
+                                tokio::time::interval(Duration::from_millis(200));
+
+                            let result = loop {
+                                tokio::select! {
+                                    search_result = &mut search_task => {
+                                        match search_result {
+                                            Ok(date_option) => {
+                                                break date_option;
+                                            }
+                                            Err(join_error) => {
+                                                tracing::error!(
+                                                    "Next date search task failed: {}",
+                                                    join_error
+                                                );
+                                                break None;
+                                            }
+                                        }
+                                    }
+                                    _ = animation_interval.tick() => {
+                                        if let Some(page) = &mut current_page {
+                                            page.update_loading_animation();
+                                            page.render_loading_indicator_only(stdout)?;
+                                        }
+                                    }
+                                }
+                            };
+
+                            if let Some(next_date) = result {
                                 current_date = Some(next_date.clone());
                                 needs_refresh = true;
                                 tracing::info!("Navigated to next date: {}", next_date);
                             } else {
                                 tracing::warn!("No next date with games found");
+                            }
+
+                            // Hide loading indicator
+                            if let Some(page) = &mut current_page {
+                                page.hide_loading();
                             }
                             last_date_navigation = Instant::now();
                         }

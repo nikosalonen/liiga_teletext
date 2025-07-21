@@ -1886,7 +1886,7 @@ mod tests {
     use serial_test::serial;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
-        matchers::{method, path},
+        matchers::{method, path, query_param},
     };
 
     fn create_mock_config() -> Config {
@@ -2046,6 +2046,8 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/games"))
+            .and(query_param("tournament", "runkosarja"))
+            .and(query_param("date", "2024-01-15"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&mock_response))
             .mount(&mock_server)
             .await;
