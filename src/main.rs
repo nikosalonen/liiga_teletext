@@ -956,14 +956,23 @@ async fn main() -> Result<(), AppError> {
             {
                 Some(page) => page,
                 None => {
-                    create_page(
+                    let mut page = create_page(
                         &games,
                         args.disable_links,
                         true,
                         true,
                         Some(fetched_date.clone()),
                     )
-                    .await
+                    .await;
+                    
+                    // Disable auto-refresh for historical dates in --once mode too
+                    if let Some(ref date) = args.date {
+                        if is_historical_date(date) {
+                            page.set_auto_refresh_disabled(true);
+                        }
+                    }
+                    
+                    page
                 }
             }
         };
@@ -1068,8 +1077,18 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             && !all_games_scheduled
             && last_auto_refresh.elapsed() >= Duration::from_secs(60)
         {
-            needs_refresh = true;
-            tracing::debug!("Auto-refresh triggered");
+            // Don't auto-refresh for historical dates
+            if let Some(ref date) = current_date {
+                if is_historical_date(date) {
+                    tracing::debug!("Auto-refresh skipped for historical date: {}", date);
+                } else {
+                    needs_refresh = true;
+                    tracing::debug!("Auto-refresh triggered");
+                }
+            } else {
+                needs_refresh = true;
+                tracing::debug!("Auto-refresh triggered");
+            }
         }
 
         // Data fetching with change detection
@@ -1207,14 +1226,25 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         {
                             Some(page) => page,
                             None => {
-                                create_page(
-                                    &games,
-                                    args.disable_links,
-                                    true,
-                                    false,
-                                    Some(fetched_date.clone()),
-                                )
-                                .await
+                                {
+                                    let mut page = create_page(
+                                        &games,
+                                        args.disable_links,
+                                        true,
+                                        false,
+                                        Some(fetched_date.clone()),
+                                    )
+                                    .await;
+                                    
+                                    // Disable auto-refresh for historical dates
+                                    if let Some(ref date) = current_date {
+                                        if is_historical_date(date) {
+                                            page.set_auto_refresh_disabled(true);
+                                        }
+                                    }
+                                    
+                                    page
+                                }
                             }
                         }
                     };
@@ -1401,6 +1431,14 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                 return Ok(());
                             }
                             KeyCode::Char('r') => {
+                                // Check if current date is historical - don't refresh historical data
+                                if let Some(ref date) = current_date {
+                                    if is_historical_date(date) {
+                                        tracing::info!("Manual refresh skipped for historical date: {}", date);
+                                        continue; // Skip refresh for historical dates
+                                    }
+                                }
+
                                 if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
                                     tracing::info!("Manual refresh requested");
                                     needs_refresh = true;
