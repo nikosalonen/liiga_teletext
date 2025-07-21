@@ -758,6 +758,58 @@ impl TeletextPage {
     /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
+    /// Calculates the expected buffer size for rendering to avoid reallocations.
+    /// Estimates size based on terminal width, content rows, and ANSI escape sequences.
+    /// 
+    /// # Arguments
+    /// * `width` - Terminal width in characters
+    /// * `visible_rows` - The content rows that will be rendered
+    /// 
+    /// # Returns
+    /// * `usize` - Estimated buffer size in bytes
+    fn calculate_buffer_size(&self, width: u16, visible_rows: &[&TeletextRow]) -> usize {
+        let width = width as usize;
+        
+        // Base overhead for headers, ANSI escape sequences, and screen control
+        let mut size = 500; // Header, subheader, screen clear sequences
+        
+        // Add terminal size as base (each line could be full width)
+        size += width * 4; // Header + subheader + padding lines
+        
+        // Calculate content size
+        for row in visible_rows {
+            match row {
+                TeletextRow::GameResult { goal_events, .. } => {
+                    // Game line: ~80 chars + ANSI sequences (~50 chars)
+                    size += 130;
+                    
+                    // Goal events: estimate 2 lines per game on average
+                    // Each goal line: ~40 chars + ANSI sequences (~30 chars)
+                    size += goal_events.len() * 70;
+                    
+                    // Extra spacing
+                    size += 20;
+                }
+                TeletextRow::ErrorMessage(message) => {
+                    // Error message: actual length + ANSI sequences
+                    size += message.len() + 50;
+                }
+                TeletextRow::FutureGamesHeader(header) => {
+                    // Header: actual length + ANSI sequences
+                    size += header.len() + 30;
+                }
+            }
+        }
+        
+        // Footer: ~100 chars + ANSI sequences
+        if self.show_footer {
+            size += 150;
+        }
+        
+        // Add 25% overhead for ANSI positioning sequences and safety margin
+        size + (size / 4)
+    }
+    
     /// Renders the page content using double buffering for reduced flickering.
     /// This method builds all terminal escape sequences and content in a buffer first,
     /// then writes everything in a single operation.
@@ -765,11 +817,17 @@ impl TeletextPage {
         // Hide cursor to prevent visual artifacts during rendering
         execute!(stdout, crossterm::cursor::Hide)?;
 
-        // Get terminal dimensions
+                // Get terminal dimensions
         let (width, _) = crossterm::terminal::size()?;
-
+        
+        // Get content for current page to calculate buffer size
+        let (visible_rows, _) = self.get_page_content();
+        
+        // Calculate expected buffer size to avoid reallocations
+        let expected_size = self.calculate_buffer_size(width, &visible_rows);
+        
         // Build the entire screen content in a string buffer (double buffering)
-        let mut buffer = String::with_capacity(8192); // Pre-allocate reasonable size
+        let mut buffer = String::with_capacity(expected_size);
 
         // Only clear the screen in interactive mode using more efficient method
         if !self.ignore_height_limit {
@@ -832,9 +890,6 @@ impl TeletextPage {
             page_info,
             width = (width as usize).saturating_sub(20)
         ));
-
-        // Get content for current page
-        let (visible_rows, _) = self.get_page_content();
 
         // Build content starting at line 4 (1-based ANSI positioning)
         let mut current_line = 4;
@@ -1568,5 +1623,86 @@ mod tests {
             content_no_video.len(),
             "Should have same number of games"
         );
+    }
+
+    #[test]
+    fn test_buffer_size_calculation() {
+        let page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+        );
+
+        // Test with empty content
+        let empty_rows: Vec<&TeletextRow> = vec![];
+        let empty_size = page.calculate_buffer_size(80, &empty_rows);
+        
+        // Should have base overhead + terminal width overhead (500 + 80*4 = 820, +25% = 1025)
+        assert!(empty_size > 500); // Base overhead
+        assert!(empty_size < 1500); // Should be reasonable for empty content
+
+        // Test with game content
+        let goal_events = vec![
+            GoalEventData {
+                scorer_name: "Player 1".to_string(),
+                scorer_player_id: 1001,
+                minute: 10,
+                home_team_score: 1,
+                away_team_score: 0,
+                is_home_team: true,
+                is_winning_goal: false,
+                goal_types: vec![],
+                video_clip_url: None,
+            },
+            GoalEventData {
+                scorer_name: "Player 2".to_string(),
+                scorer_player_id: 1002,
+                minute: 25,
+                home_team_score: 1,
+                away_team_score: 1,
+                is_home_team: false,
+                is_winning_goal: false,
+                goal_types: vec![],
+                video_clip_url: None,
+            },
+        ];
+
+        let game_row = TeletextRow::GameResult {
+            home_team: "Team A".to_string(),
+            away_team: "Team B".to_string(),
+            time: "20:00".to_string(),
+            result: "2-1".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events,
+            played_time: 3600,
+        };
+
+        let game_rows = vec![&game_row];
+        let game_size = page.calculate_buffer_size(80, &game_rows);
+        
+        // Should be larger than empty content
+        assert!(game_size > empty_size);
+        
+        // Should account for game content + goal events
+        // Game: 130 bytes + 2 goals * 70 bytes = 270 bytes content overhead
+        assert!(game_size > empty_size + 200);
+
+        // Test with error message
+        let error_row = TeletextRow::ErrorMessage("Test error message".to_string());
+        let error_rows = vec![&error_row];
+        let error_size = page.calculate_buffer_size(80, &error_rows);
+        
+        // Should be appropriately sized for error message
+        assert!(error_size > empty_size);
+        assert!(error_size < game_size); // Smaller than game with goals
+
+        // Test scaling with terminal width
+        let wide_size = page.calculate_buffer_size(160, &empty_rows);
+        assert!(wide_size > empty_size); // Larger terminal should need more buffer
     }
 }
