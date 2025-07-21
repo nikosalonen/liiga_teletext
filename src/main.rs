@@ -964,14 +964,14 @@ async fn main() -> Result<(), AppError> {
                         Some(fetched_date.clone()),
                     )
                     .await;
-                    
+
                     // Disable auto-refresh for historical dates in --once mode too
                     if let Some(ref date) = args.date {
                         if is_historical_date(date) {
                             page.set_auto_refresh_disabled(true);
                         }
                     }
-                    
+
                     page
                 }
             }
@@ -1235,14 +1235,14 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                         Some(fetched_date.clone()),
                                     )
                                     .await;
-                                    
+
                                     // Disable auto-refresh for historical dates
                                     if let Some(ref date) = current_date {
                                         if is_historical_date(date) {
                                             page.set_auto_refresh_disabled(true);
                                         }
                                     }
-                                    
+
                                     page
                                 }
                             }
@@ -1434,7 +1434,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                 // Check if current date is historical - don't refresh historical data
                                 if let Some(ref date) = current_date {
                                     if is_historical_date(date) {
-                                        tracing::info!("Manual refresh skipped for historical date: {}", date);
+                                        tracing::info!(
+                                            "Manual refresh skipped for historical date: {}",
+                                            date
+                                        );
                                         continue; // Skip refresh for historical dates
                                     }
                                 }
