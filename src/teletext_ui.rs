@@ -49,8 +49,6 @@ const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
 
-
-
 /// Calculates the number of days until the regular season starts.
 /// Returns None if the regular season has already started or if we can't determine the start date.
 /// Uses UTC internally for consistent calculations across timezone changes.
@@ -331,7 +329,7 @@ impl TeletextPage {
     /// // Only render if we have a proper terminal (skip in CI)
     /// if std::env::var("CI").is_err() {
     ///     let mut stdout = stdout();
-    ///     page.render(&mut stdout)?;
+    ///     page.render_buffered(&mut stdout)?;
     /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
@@ -760,7 +758,6 @@ impl TeletextPage {
     /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
-
     /// Renders the page content using double buffering for reduced flickering.
     /// This method builds all terminal escape sequences and content in a buffer first,
     /// then writes everything in a single operation.
@@ -770,7 +767,7 @@ impl TeletextPage {
 
         // Get terminal dimensions
         let (width, _) = crossterm::terminal::size()?;
-        
+
         // Build the entire screen content in a string buffer (double buffering)
         let mut buffer = String::with_capacity(8192); // Pre-allocate reasonable size
 
@@ -876,9 +873,10 @@ impl TeletextPage {
                     let time_display = match score_type {
                         ScoreType::Scheduled => time.clone(),
                         ScoreType::Ongoing => {
-                            let formatted_time = format!("{:02}:{:02}", played_time / 60, played_time % 60);
+                            let formatted_time =
+                                format!("{:02}:{:02}", played_time / 60, played_time % 60);
                             format!("{formatted_time} {result_text}")
-                        },
+                        }
                         ScoreType::Final => result_text.clone(),
                     };
 
@@ -906,7 +904,9 @@ impl TeletextPage {
                     current_line += 1;
 
                     // Add goal events for finished/ongoing games
-                    if matches!(score_type, ScoreType::Ongoing | ScoreType::Final) && !goal_events.is_empty() {
+                    if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
+                        && !goal_events.is_empty()
+                    {
                         let home_scorer_fg_code = match home_scorer_fg() {
                             Color::AnsiValue(val) => val,
                             _ => 51,
@@ -924,15 +924,19 @@ impl TeletextPage {
                             _ => 226,
                         };
 
-                        let home_scorers: Vec<_> = goal_events.iter().filter(|e| e.is_home_team).collect();
-                        let away_scorers: Vec<_> = goal_events.iter().filter(|e| !e.is_home_team).collect();
+                        let home_scorers: Vec<_> =
+                            goal_events.iter().filter(|e| e.is_home_team).collect();
+                        let away_scorers: Vec<_> =
+                            goal_events.iter().filter(|e| !e.is_home_team).collect();
                         let max_scorers = home_scorers.len().max(away_scorers.len());
 
                         for i in 0..max_scorers {
                             // Home team scorer
                             if let Some(event) = home_scorers.get(i) {
-                                let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout))
-                                    || event.goal_types.contains(&"VL".to_string()) {
+                                let scorer_color = if (event.is_winning_goal
+                                    && (*is_overtime || *is_shootout))
+                                    || event.goal_types.contains(&"VL".to_string())
+                                {
                                     winning_goal_fg_code
                                 } else {
                                     home_scorer_fg_code
@@ -940,7 +944,8 @@ impl TeletextPage {
 
                                 buffer.push_str(&format!(
                                     "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
-                                    current_line, CONTENT_MARGIN + 1,
+                                    current_line,
+                                    CONTENT_MARGIN + 1,
                                     scorer_color,
                                     event.minute
                                 ));
@@ -950,22 +955,18 @@ impl TeletextPage {
                                     if !self.disable_video_links {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                            scorer_color,
-                                            event.scorer_name,
-                                            url
+                                            scorer_color, event.scorer_name, url
                                         ));
                                     } else {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}",
-                                            scorer_color,
-                                            event.scorer_name
+                                            scorer_color, event.scorer_name
                                         ));
                                     }
                                 } else {
                                     buffer.push_str(&format!(
                                         "\x1b[38;5;{}m{:<12}",
-                                        scorer_color,
-                                        event.scorer_name
+                                        scorer_color, event.scorer_name
                                     ));
                                 }
 
@@ -974,8 +975,7 @@ impl TeletextPage {
                                 if !goal_type.is_empty() {
                                     buffer.push_str(&format!(
                                         " \x1b[38;5;{}m{}\x1b[0m",
-                                        goal_type_fg_code,
-                                        goal_type
+                                        goal_type_fg_code, goal_type
                                     ));
                                 } else {
                                     buffer.push_str("\x1b[0m");
@@ -984,8 +984,10 @@ impl TeletextPage {
 
                             // Away team scorer
                             if let Some(event) = away_scorers.get(i) {
-                                let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout))
-                                    || event.goal_types.contains(&"VL".to_string()) {
+                                let scorer_color = if (event.is_winning_goal
+                                    && (*is_overtime || *is_shootout))
+                                    || event.goal_types.contains(&"VL".to_string())
+                                {
                                     winning_goal_fg_code
                                 } else {
                                     away_scorer_fg_code
@@ -993,7 +995,8 @@ impl TeletextPage {
 
                                 buffer.push_str(&format!(
                                     "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
-                                    current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                                    current_line,
+                                    AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
                                     scorer_color,
                                     event.minute
                                 ));
@@ -1003,22 +1006,18 @@ impl TeletextPage {
                                     if !self.disable_video_links {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                            scorer_color,
-                                            event.scorer_name,
-                                            url
+                                            scorer_color, event.scorer_name, url
                                         ));
                                     } else {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}",
-                                            scorer_color,
-                                            event.scorer_name
+                                            scorer_color, event.scorer_name
                                         ));
                                     }
                                 } else {
                                     buffer.push_str(&format!(
                                         "\x1b[38;5;{}m{:<12}",
-                                        scorer_color,
-                                        event.scorer_name
+                                        scorer_color, event.scorer_name
                                     ));
                                 }
 
@@ -1027,8 +1026,7 @@ impl TeletextPage {
                                 if !goal_type.is_empty() {
                                     buffer.push_str(&format!(
                                         " \x1b[38;5;{}m{}\x1b[0m",
-                                        goal_type_fg_code,
-                                        goal_type
+                                        goal_type_fg_code, goal_type
                                     ));
                                 } else {
                                     buffer.push_str("\x1b[0m");
@@ -1050,7 +1048,8 @@ impl TeletextPage {
                     for line in message.lines() {
                         buffer.push_str(&format!(
                             "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                            current_line, CONTENT_MARGIN + 1,
+                            current_line,
+                            CONTENT_MARGIN + 1,
                             text_fg_code,
                             line
                         ));
@@ -1060,7 +1059,8 @@ impl TeletextPage {
                 TeletextRow::FutureGamesHeader(header_text) => {
                     buffer.push_str(&format!(
                         "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                        current_line, CONTENT_MARGIN + 1,
+                        current_line,
+                        CONTENT_MARGIN + 1,
                         subheader_fg_code,
                         header_text
                     ));
