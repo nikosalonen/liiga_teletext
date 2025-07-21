@@ -1008,8 +1008,7 @@ impl TeletextPage {
                                 let goal_type = event.get_goal_type_display();
                                 if !goal_type.is_empty() {
                                     buffer.push_str(&format!(
-                                        " \x1b[38;5;{}m{}\x1b[0m",
-                                        goal_type_fg_code, goal_type
+                                        " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
                                     ));
                                 } else {
                                     buffer.push_str("\x1b[0m");
@@ -1059,8 +1058,7 @@ impl TeletextPage {
                                 let goal_type = event.get_goal_type_display();
                                 if !goal_type.is_empty() {
                                     buffer.push_str(&format!(
-                                        " \x1b[38;5;{}m{}\x1b[0m",
-                                        goal_type_fg_code, goal_type
+                                        " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
                                     ));
                                 } else {
                                     buffer.push_str("\x1b[0m");
@@ -1201,7 +1199,7 @@ mod tests {
         for i in 0..10 {
             let goal_events = vec![
                 GoalEventData {
-                    scorer_player_id: i as i64,
+                    scorer_player_id: i64::from(i),
                     scorer_name: format!("Scorer {i}"),
                     minute: 10,
                     home_team_score: 1,
@@ -1212,8 +1210,8 @@ mod tests {
                     video_clip_url: None,
                 },
                 GoalEventData {
-                    scorer_player_id: (i + 100) as i64,
-                    scorer_name: format!("Scorer {}", i + 100),
+                    scorer_player_id: i64::from(i + 100),
+                    scorer_name: format!("Scorer {val}", val = i + 100),
                     minute: 20,
                     home_team_score: 1,
                     away_team_score: 1,
@@ -1266,7 +1264,7 @@ mod tests {
         for i in 0..10 {
             let goal_events = vec![
                 GoalEventData {
-                    scorer_player_id: i as i64,
+                    scorer_player_id: i64::from(i),
                     scorer_name: format!("Scorer {i}"),
                     minute: 10,
                     home_team_score: 1,
@@ -1277,8 +1275,8 @@ mod tests {
                     video_clip_url: None,
                 },
                 GoalEventData {
-                    scorer_player_id: (i + 100) as i64,
-                    scorer_name: format!("Scorer {}", i + 100),
+                    scorer_player_id: i64::from(i + 100),
+                    scorer_name: format!("Scorer {val}", val = i + 100),
                     minute: 20,
                     home_team_score: 1,
                     away_team_score: 1,
