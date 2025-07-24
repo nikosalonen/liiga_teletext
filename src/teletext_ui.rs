@@ -813,6 +813,10 @@ impl TeletextPage {
         // Footer: ~100 chars + ANSI sequences
         if self.show_footer {
             size += 150;
+            // Add space for season countdown if present
+            if self.season_countdown.is_some() {
+                size += 100;
+            }
         }
 
         // Add 25% overhead for ANSI positioning sequences and safety margin
@@ -1124,6 +1128,18 @@ impl TeletextPage {
             } else {
                 controls
             };
+
+            // Add season countdown above the footer if available
+            if let Some(ref countdown) = self.season_countdown {
+                let countdown_y = footer_y.saturating_sub(1);
+                buffer.push_str(&format!(
+                    "\x1b[{};1H\x1b[38;5;{}m{:^width$}\x1b[0m",
+                    countdown_y,
+                    get_ansi_code(Color::AnsiValue(226), 226), // Bright yellow
+                    countdown,
+                    width = width as usize
+                ));
+            }
 
             buffer.push_str(&format!(
                 "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
