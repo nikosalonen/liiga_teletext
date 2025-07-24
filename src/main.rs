@@ -1431,6 +1431,16 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                 return Ok(());
                             }
                             KeyCode::Char('r') => {
+                                // Check if auto-refresh is disabled - ignore manual refresh too
+                                if let Some(page) = &current_page {
+                                    if page.is_auto_refresh_disabled() {
+                                        tracing::info!(
+                                            "Manual refresh ignored - auto-refresh is disabled"
+                                        );
+                                        continue; // Skip refresh when auto-refresh is disabled
+                                    }
+                                }
+
                                 // Check if current date is historical - don't refresh historical data
                                 if let Some(ref date) = current_date {
                                     if is_historical_date(date) {

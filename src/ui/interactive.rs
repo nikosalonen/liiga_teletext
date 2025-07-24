@@ -144,6 +144,14 @@ pub async fn run_interactive_ui(
                 match key_event.code {
                     KeyCode::Char('q') | KeyCode::Char('Q') => break,
                     KeyCode::Char('r') | KeyCode::Char('R') => {
+                        // Check if auto-refresh is disabled - ignore manual refresh too
+                        if !pages.is_empty() && current_page < pages.len() {
+                            if pages[current_page].is_auto_refresh_disabled() {
+                                debug!("Manual refresh ignored - auto-refresh is disabled");
+                                continue; // Skip refresh when auto-refresh is disabled
+                            }
+                        }
+
                         // Manual refresh with cooldown
                         if last_refresh.elapsed()
                             >= Duration::from_secs(MANUAL_REFRESH_COOLDOWN_SECS)
