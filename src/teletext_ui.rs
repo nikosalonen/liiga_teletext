@@ -463,6 +463,12 @@ impl TeletextPage {
         self.auto_refresh_disabled = disabled;
     }
 
+    /// Gets whether auto-refresh is disabled for this page.
+    /// Returns true if automatic updates are disabled.
+    pub fn is_auto_refresh_disabled(&self) -> bool {
+        self.auto_refresh_disabled
+    }
+
     /// Sets the screen height for testing purposes.
     /// This method is primarily used in tests to avoid terminal size detection issues.
     #[allow(dead_code)]
