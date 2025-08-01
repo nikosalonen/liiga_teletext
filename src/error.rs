@@ -616,10 +616,7 @@ mod tests {
                 "Error {error:?} should return delay of {expected_delay} seconds"
             );
             // Also verify that these errors are marked as retryable
-            assert!(
-                error.is_retryable(),
-                "Error {error:?} should be retryable"
-            );
+            assert!(error.is_retryable(), "Error {error:?} should be retryable");
         }
     }
 
