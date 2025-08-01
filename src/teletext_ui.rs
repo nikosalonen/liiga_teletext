@@ -173,6 +173,7 @@ pub struct TeletextPage {
     season_countdown: Option<String>,
     fetched_date: Option<String>, // Date for which data was fetched
     loading_indicator: Option<LoadingIndicator>,
+    auto_refresh_indicator: Option<LoadingIndicator>, // Subtle indicator for auto-refresh
 }
 
 pub enum TeletextRow {
@@ -309,6 +310,7 @@ impl TeletextPage {
             season_countdown: None,
             fetched_date: None,
             loading_indicator: None,
+            auto_refresh_indicator: None,
         }
     }
 
@@ -497,6 +499,28 @@ impl TeletextPage {
         if let Some(ref mut indicator) = self.loading_indicator {
             indicator.next_frame();
         }
+    }
+
+    /// Shows a subtle auto-refresh indicator in the footer
+    pub fn show_auto_refresh_indicator(&mut self) {
+        self.auto_refresh_indicator = Some(LoadingIndicator::new("Päivitetään...".to_string()));
+    }
+
+    /// Hides the auto-refresh indicator
+    pub fn hide_auto_refresh_indicator(&mut self) {
+        self.auto_refresh_indicator = None;
+    }
+
+    /// Updates the auto-refresh indicator animation
+    pub fn update_auto_refresh_animation(&mut self) {
+        if let Some(ref mut indicator) = self.auto_refresh_indicator {
+            indicator.next_frame();
+        }
+    }
+
+    /// Checks if the auto-refresh indicator is active
+    pub fn is_auto_refresh_indicator_active(&self) -> bool {
+        self.auto_refresh_indicator.is_some()
     }
 
     /// Renders only the loading indicator area without redrawing the entire screen
@@ -1147,12 +1171,20 @@ impl TeletextPage {
                 ));
             }
 
+            // Add auto-refresh indicator if active
+            let footer_text = if let Some(ref indicator) = self.auto_refresh_indicator {
+                let indicator_frame = indicator.current_frame();
+                format!("{controls} {indicator_frame}")
+            } else {
+                controls.to_string()
+            };
+
             buffer.push_str(&format!(
                 "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
                 footer_y,
                 get_ansi_code(header_bg(), 21),
                 if total_pages > 1 { "<<<" } else { "   " },
-                controls,
+                footer_text,
                 if total_pages > 1 { ">>>" } else { "   " },
                 width = (width as usize).saturating_sub(6)
             ));

@@ -1045,6 +1045,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     let mut current_page: Option<TeletextPage> = None;
     let mut pending_resize = false;
     let mut resize_timer = Instant::now();
+    let mut is_auto_refresh = false; // Track if this is an auto-refresh
 
     // Date navigation state - track the current date being displayed
     let mut current_date = args.date.clone();
@@ -1075,20 +1076,35 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
         // Check for auto-refresh with better logic
         if !needs_refresh
             && !last_games.is_empty()
-            && !all_games_scheduled
             && last_auto_refresh.elapsed() >= Duration::from_secs(60)
         {
+            // Check if there are ongoing games - if so, always refresh
+            let has_ongoing_games = has_live_games_from_game_data(&last_games);
+
             // Don't auto-refresh for historical dates
             if let Some(ref date) = current_date {
                 if is_historical_date(date) {
                     tracing::debug!("Auto-refresh skipped for historical date: {}", date);
-                } else {
+                } else if has_ongoing_games {
                     needs_refresh = true;
-                    tracing::debug!("Auto-refresh triggered");
+                    is_auto_refresh = true;
+                    tracing::debug!("Auto-refresh triggered for ongoing games");
+                } else if !all_games_scheduled {
+                    // Only refresh if not all games are scheduled (i.e., some are finished)
+                    needs_refresh = true;
+                    is_auto_refresh = true;
+                    tracing::debug!("Auto-refresh triggered for non-scheduled games");
+                } else {
+                    tracing::debug!("Auto-refresh skipped - all games are scheduled");
                 }
-            } else {
+            } else if has_ongoing_games {
                 needs_refresh = true;
-                tracing::debug!("Auto-refresh triggered");
+                tracing::debug!("Auto-refresh triggered for ongoing games");
+            } else if !all_games_scheduled {
+                needs_refresh = true;
+                tracing::debug!("Auto-refresh triggered for non-scheduled games");
+            } else {
+                tracing::debug!("Auto-refresh skipped - all games are scheduled");
             }
         }
 
@@ -1102,14 +1118,22 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             // Show loading indicator only in specific cases:
             // 1. For historical dates (always show loading)
             // 2. For initial load (when current_page is None)
-            // 3. When there are no ongoing games (to avoid interrupting ongoing game updates)
+            // 3. For manual refresh (not auto-refresh)
             let should_show_loading = if let Some(ref date) = current_date {
                 // Always show loading for historical dates
-                is_historical_date(date) || !has_ongoing_games
+                is_historical_date(date) || (!is_auto_refresh && !has_ongoing_games)
             } else {
                 // Show loading for initial load when no specific date is requested
                 current_page.is_none()
             };
+
+            // Show auto-refresh indicator for ongoing games
+            if has_ongoing_games {
+                if let Some(page) = &mut current_page {
+                    page.show_auto_refresh_indicator();
+                    needs_render = true;
+                }
+            }
 
             if should_show_loading {
                 let mut loading_page = TeletextPage::new(
@@ -1187,11 +1211,14 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 last_games = games.clone();
                 last_games_hash = games_hash;
 
-                // Check if all games are scheduled (future games)
+                // Check if all games are scheduled (future games) - only relevant if no ongoing games
+                let has_ongoing_games = has_live_games_from_game_data(&games);
                 all_games_scheduled = !games.is_empty() && games.iter().all(is_future_game);
 
-                if all_games_scheduled {
+                if all_games_scheduled && !has_ongoing_games {
                     tracing::info!("All games are scheduled - auto-refresh disabled");
+                } else if has_ongoing_games {
+                    tracing::info!("Ongoing games detected - auto-refresh enabled");
                 }
 
                 // Only create a new page if we didn't have an error and data changed
@@ -1264,7 +1291,14 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 tracing::debug!("No data changes detected, skipping UI update");
             }
 
+            // Hide auto-refresh indicator after data is fetched
+            if let Some(page) = &mut current_page {
+                page.hide_auto_refresh_indicator();
+                needs_render = true;
+            }
+
             needs_refresh = false;
+            is_auto_refresh = false; // Reset the flag
             last_auto_refresh = Instant::now();
         }
 
@@ -1276,6 +1310,14 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 needs_render = true;
             }
             pending_resize = false;
+        }
+
+        // Update auto-refresh indicator animation (only when active)
+        if let Some(page) = &mut current_page {
+            if page.is_auto_refresh_indicator_active() {
+                page.update_auto_refresh_animation();
+                needs_render = true;
+            }
         }
 
         // Batched UI rendering - only render when necessary
@@ -1463,6 +1505,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                 if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
                                     tracing::info!("Manual refresh requested");
                                     needs_refresh = true;
+                                    is_auto_refresh = false;
                                     last_manual_refresh = Instant::now();
                                 }
                             }
