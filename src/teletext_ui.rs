@@ -950,14 +950,14 @@ impl TeletextPage {
                     };
 
                     // Format time display based on game state
-                    let time_display = match score_type {
-                        ScoreType::Scheduled => time.clone(),
+                    let (time_display, score_display) = match score_type {
+                        ScoreType::Scheduled => (time.clone(), String::new()),
                         ScoreType::Ongoing => {
                             let formatted_time =
                                 format!("{:02}:{:02}", played_time / 60, played_time % 60);
-                            format!("{formatted_time} {result_text}")
+                            (formatted_time, result_text.clone())
                         }
-                        ScoreType::Final => result_text.clone(),
+                        ScoreType::Final => (String::new(), result_text.clone()),
                     };
 
                     let result_color = match score_type {
@@ -966,20 +966,47 @@ impl TeletextPage {
                     };
 
                     // Build game line with precise positioning (using 1-based ANSI coordinates)
-                    buffer.push_str(&format!(
-                        "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                        current_line, CONTENT_MARGIN + 1,
-                        text_fg_code,
-                        home_team.chars().take(20).collect::<String>(),
-                        current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
-                        text_fg_code,
-                        current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
-                        text_fg_code,
-                        away_team.chars().take(20).collect::<String>(),
-                        current_line, 45 + CONTENT_MARGIN + 1,
-                        result_color,
-                        time_display
-                    ));
+                    if !time_display.is_empty() && !score_display.is_empty() {
+                        // For ongoing games: show time on the left, score on the right
+                        buffer.push_str(&format!(
+                            "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{:<10}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                            current_line, CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            home_team.chars().take(20).collect::<String>(),
+                            current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            away_team.chars().take(20).collect::<String>(),
+                            current_line, 35 + CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            time_display,
+                            current_line, 45 + CONTENT_MARGIN + 1,
+                            result_color,
+                            score_display
+                        ));
+                    } else {
+                        // For scheduled/final games: show time or score on the right
+                        let display_text = if !time_display.is_empty() {
+                            time_display
+                        } else {
+                            score_display
+                        };
+                        buffer.push_str(&format!(
+                            "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                            current_line, CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            home_team.chars().take(20).collect::<String>(),
+                            current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            away_team.chars().take(20).collect::<String>(),
+                            current_line, 45 + CONTENT_MARGIN + 1,
+                            result_color,
+                            display_text
+                        ));
+                    }
 
                     current_line += 1;
 

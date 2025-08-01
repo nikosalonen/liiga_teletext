@@ -3,7 +3,7 @@ use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
     cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
     get_cached_goal_events_data, get_cached_http_response, get_cached_players,
-    get_cached_tournament_data,
+    get_cached_tournament_data, has_live_games,
 };
 #[cfg(test)]
 use crate::data_fetcher::cache::{
@@ -604,7 +604,25 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
     } else {
         600 // 10 minutes for other data
     };
-    cache_http_response(url.to_string(), response_text.clone(), ttl_seconds).await;
+
+    // For tournament data URLs, check if the response contains live games
+    let final_ttl = if url.contains("tournament=") && url.contains("date=") {
+        // Try to parse as ScheduleResponse to check for live games
+        match serde_json::from_str::<ScheduleResponse>(&response_text) {
+            Ok(schedule_response) => {
+                if has_live_games(&schedule_response) {
+                    crate::constants::cache_ttl::LIVE_GAMES_SECONDS // Use live games TTL
+                } else {
+                    ttl_seconds // Use default TTL for completed games
+                }
+            }
+            Err(_) => ttl_seconds, // Fallback to default if parsing fails
+        }
+    } else {
+        ttl_seconds // Use default TTL for other URLs
+    };
+
+    cache_http_response(url.to_string(), response_text.clone(), final_ttl).await;
 
     // Enhanced JSON parsing with more specific error handling
     match serde_json::from_str::<T>(&response_text) {
