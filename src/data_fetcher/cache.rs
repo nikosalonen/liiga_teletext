@@ -67,6 +67,7 @@ pub struct CachedGoalEventsData {
     pub cached_at: Instant,
     pub game_id: i32,
     pub season: i32,
+    pub is_live_game: bool,
 }
 
 /// Cached HTTP response with TTL support
@@ -157,19 +158,43 @@ impl CachedDetailedGameData {
 
 impl CachedGoalEventsData {
     /// Creates a new cached goal events data entry
-    pub fn new(data: Vec<GoalEventData>, game_id: i32, season: i32) -> Self {
+    pub fn new(data: Vec<GoalEventData>, game_id: i32, season: i32, is_live_game: bool) -> Self {
         Self {
             data,
             cached_at: Instant::now(),
             game_id,
             season,
+            is_live_game,
         }
     }
 
-    /// Checks if the cached data is expired
+    /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
-        let ttl = Duration::from_secs(3600); // 1 hour for goal events
-        self.cached_at.elapsed() > ttl
+        let ttl = if self.is_live_game {
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 30 seconds for live games
+        } else {
+            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS) // 1 hour for completed games
+        };
+
+        let age = self.cached_at.elapsed();
+        let is_expired = age > ttl;
+
+        debug!(
+            "Goal events cache expiration check: is_live_game={}, age={:?}, ttl={:?}, is_expired={}",
+            self.is_live_game, age, ttl, is_expired
+        );
+
+        is_expired
+    }
+
+    /// Gets the TTL duration for this cache entry
+    #[allow(dead_code)]
+    pub fn get_ttl(&self) -> Duration {
+        if self.is_live_game {
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS)
+        } else {
+            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
+        }
     }
 
     /// Gets the game ID associated with this cached data (useful for debugging and logging)
@@ -691,21 +716,21 @@ pub fn create_goal_events_key(season: i32, game_id: i32) -> String {
 
 /// Caches processed goal events data
 #[instrument(skip(season, game_id, data), fields(season = %season, game_id = %game_id))]
-pub async fn cache_goal_events_data(season: i32, game_id: i32, data: Vec<GoalEventData>) {
+pub async fn cache_goal_events_data(season: i32, game_id: i32, data: Vec<GoalEventData>, is_live_game: bool) {
     let key = create_goal_events_key(season, game_id);
     let event_count = data.len();
     debug!(
-        "Caching goal events data: key={}, event_count={}",
-        key, event_count
+        "Caching goal events data: key={}, event_count={}, is_live_game={}",
+        key, event_count, is_live_game
     );
 
-    let cached_data = CachedGoalEventsData::new(data, game_id, season);
+    let cached_data = CachedGoalEventsData::new(data, game_id, season, is_live_game);
     let mut cache = GOAL_EVENTS_CACHE.write().await;
     cache.put(key.clone(), cached_data);
 
     info!(
-        "Successfully cached goal events data: key={}, event_count={}",
-        key, event_count
+        "Successfully cached goal events data: key={}, event_count={}, is_live_game={}",
+        key, event_count, is_live_game
     );
 }
 
@@ -1505,7 +1530,7 @@ mod tests {
             video_clip_url: None,
         }];
 
-        cache_goal_events_data(2024, game_id, mock_events.clone()).await;
+        cache_goal_events_data(2024, game_id, mock_events.clone(), false).await;
 
         // Should be able to retrieve it
         let cached = get_cached_goal_events_data(2024, game_id).await;
@@ -1646,7 +1671,7 @@ mod tests {
             is_home_team: true,
             video_clip_url: None,
         }];
-        cache_goal_events_data(2024, goal_events_game_id, mock_events).await;
+        cache_goal_events_data(2024, goal_events_game_id, mock_events, false).await;
 
         // Verify goal events cache entry
         assert!(
@@ -1761,7 +1786,7 @@ mod tests {
             video_clip_url: None,
         }];
 
-        cache_goal_events_data(2024, game_id, mock_events).await;
+        cache_goal_events_data(2024, game_id, mock_events, false).await;
 
         // Should be able to retrieve it immediately
         let cached = get_cached_goal_events_data(2024, game_id).await;
@@ -1812,7 +1837,7 @@ mod tests {
         ];
 
         // Create cached entry directly to test debug methods
-        let cached_entry = CachedGoalEventsData::new(mock_events.clone(), game_id, season);
+        let cached_entry = CachedGoalEventsData::new(mock_events.clone(), game_id, season, false);
 
         // Test debug methods
         assert_eq!(cached_entry.get_game_id(), game_id);
@@ -1826,7 +1851,7 @@ mod tests {
         assert!(!is_expired); // Should not be expired immediately after creation
 
         // Also test through the cache system
-        cache_goal_events_data(season, game_id, mock_events).await;
+        cache_goal_events_data(season, game_id, mock_events, false).await;
 
         // Verify the cached data can be retrieved
         let retrieved = get_cached_goal_events_data(season, game_id).await;
@@ -2368,7 +2393,7 @@ mod tests {
         }];
 
         let goal_game_id = 98000 + test_id as i32;
-        cache_goal_events_data(2024, goal_game_id, mock_events).await;
+        cache_goal_events_data(2024, goal_game_id, mock_events, false).await;
 
         // Test detailed debug info function
         let debug_info = get_detailed_cache_debug_info().await;

@@ -1052,7 +1052,7 @@ async fn fetch_game_data(
 
     // Process the response and cache the goal events
     let events = process_game_response_with_cache(game_response, game_id).await;
-    cache_goal_events_data(season, game_id, events.clone()).await;
+    cache_goal_events_data(season, game_id, events.clone(), is_live_game).await;
 
     Ok(events)
 }
