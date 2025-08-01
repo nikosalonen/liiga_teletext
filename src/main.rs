@@ -14,6 +14,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
+use data_fetcher::cache::has_live_games_from_game_data;
 use error::AppError;
 use semver::Version;
 use std::io::stdout;
@@ -1095,34 +1096,22 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
         if needs_refresh {
             tracing::debug!("Fetching new data");
 
-            // Show loading indicator for historical dates or when specific date is requested
-            if let Some(ref date) = current_date {
-                let mut loading_page = TeletextPage::new(
-                    221,
-                    "JÄÄKIEKKO".to_string(),
-                    "SM-LIIGA".to_string(),
-                    args.disable_links,
-                    true,
-                    false,
-                );
+            // Check if there are ongoing games to avoid showing loading screen during auto-refresh
+            let has_ongoing_games = has_live_games_from_game_data(&last_games);
 
-                if is_historical_date(date) {
-                    loading_page.add_error_message(&format!(
-                        "Haetaan historiallista dataa päivälle {}...",
-                        format_date_for_display(date)
-                    ));
-                    loading_page.add_error_message("Tämä voi kestää hetken, odotathan...");
-                } else {
-                    loading_page.add_error_message(&format!(
-                        "Haetaan otteluita päivälle {}...",
-                        format_date_for_display(date)
-                    ));
-                }
-
-                current_page = Some(loading_page);
-                needs_render = true;
-            } else if current_page.is_none() {
+            // Show loading indicator only in specific cases:
+            // 1. For historical dates (always show loading)
+            // 2. For initial load (when current_page is None)
+            // 3. When there are no ongoing games (to avoid interrupting ongoing game updates)
+            let should_show_loading = if let Some(ref date) = current_date {
+                // Always show loading for historical dates
+                is_historical_date(date) || !has_ongoing_games
+            } else {
                 // Show loading for initial load when no specific date is requested
+                current_page.is_none()
+            };
+
+            if should_show_loading {
                 let mut loading_page = TeletextPage::new(
                     221,
                     "JÄÄKIEKKO".to_string(),
@@ -1131,17 +1120,36 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     true,
                     false,
                 );
-                loading_page.add_error_message("Haetaan päivän otteluita...");
+
+                if let Some(ref date) = current_date {
+                    if is_historical_date(date) {
+                        loading_page.add_error_message(&format!(
+                            "Haetaan historiallista dataa päivälle {}...",
+                            format_date_for_display(date)
+                        ));
+                        loading_page.add_error_message("Tämä voi kestää hetken, odotathan...");
+                    } else {
+                        loading_page.add_error_message(&format!(
+                            "Haetaan otteluita päivälle {}...",
+                            format_date_for_display(date)
+                        ));
+                    }
+                } else {
+                    loading_page.add_error_message("Haetaan päivän otteluita...");
+                }
+
                 current_page = Some(loading_page);
                 needs_render = true;
-            }
 
-            // Render the loading page immediately
-            if needs_render {
-                if let Some(page) = &current_page {
-                    page.render_buffered(stdout)?;
+                // Render the loading page immediately
+                if needs_render {
+                    if let Some(page) = &current_page {
+                        page.render_buffered(stdout)?;
+                    }
+                    needs_render = false;
                 }
-                needs_render = false;
+            } else {
+                tracing::debug!("Skipping loading screen due to ongoing games");
             }
 
             let (games, had_error, fetched_date) =
