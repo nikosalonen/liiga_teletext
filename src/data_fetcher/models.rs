@@ -36,7 +36,7 @@ pub struct ScheduleTeam {
     pub team_name: Option<String>,
     pub goals: i32,
     #[serde(rename = "timeOut", default)]
-    pub time_out: Option<String>,
+    pub time_out: Option<i32>,
     #[serde(rename = "powerplayInstances", default)]
     pub powerplay_instances: i32,
     #[serde(rename = "powerplayGoals", default)]
