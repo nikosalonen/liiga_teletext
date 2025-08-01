@@ -21,7 +21,7 @@ use semver::Version;
 use std::io::stdout;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use teletext_ui::{GameResultData, TeletextPage};
+use teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{
     EnvFilter,
@@ -1318,6 +1318,21 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
             if data_changed {
                 tracing::debug!("Data changed, updating UI");
+                // Log specific changes for live games to help debug game clock updates
+                if !last_games.is_empty() && games.len() == last_games.len() {
+                    for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate() {
+                        if new_game.played_time != old_game.played_time && new_game.score_type == ScoreType::Ongoing {
+                            tracing::info!(
+                                "Game clock update detected: Game {} - {} vs {} - time changed from {}s to {}s",
+                                i + 1,
+                                new_game.home_team,
+                                new_game.away_team,
+                                old_game.played_time,
+                                new_game.played_time
+                            );
+                        }
+                    }
+                }
                 last_games = games.clone();
                 last_games_hash = games_hash;
 
