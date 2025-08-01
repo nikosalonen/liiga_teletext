@@ -210,4 +210,150 @@ mod tests {
         handler.check_for_resize((100, 30));
         assert_eq!(handler.last_size(), (100, 30));
     }
+
+    #[test]
+    fn test_resize_detection_timing_accuracy() {
+        let mut handler = ResizeHandler::with_debounce(100); // Use default debounce time
+        
+        // Record start time
+        let start = Instant::now();
+        
+        // Trigger a resize
+        handler.check_for_resize((80, 24));
+        
+        // Should detect change immediately (within requirement 4.1: 100ms)
+        let detection_time = start.elapsed();
+        assert!(detection_time < Duration::from_millis(10), 
+                "Resize detection took too long: {:?}", detection_time);
+        
+        // Should be debouncing
+        assert!(handler.is_debouncing());
+        
+        // Wait for debounce to complete
+        thread::sleep(Duration::from_millis(110));
+        
+        // Should now return the size
+        let result = handler.check_for_resize((80, 24));
+        assert_eq!(result, Some((80, 24)));
+    }
+
+    #[test]
+    fn test_rapid_resize_changes_debouncing() {
+        let mut handler = ResizeHandler::with_debounce(50);
+        
+        // Simulate rapid terminal resizing
+        let sizes = vec![
+            (80, 24), (85, 25), (90, 26), (95, 27), (100, 28),
+            (105, 29), (110, 30), (115, 31), (120, 32)
+        ];
+        
+        // Apply all size changes rapidly
+        for size in &sizes {
+            handler.check_for_resize(*size);
+            // Small delay to simulate rapid but not instantaneous changes
+            thread::sleep(Duration::from_millis(5));
+        }
+        
+        // Should still be debouncing after rapid changes
+        assert!(handler.is_debouncing());
+        
+        // Last size should be tracked correctly
+        assert_eq!(handler.last_size(), (120, 32));
+        
+        // Should not return a size yet due to debouncing
+        let result = handler.check_for_resize((120, 32));
+        assert!(result.is_none());
+        
+        // Wait for debounce to complete
+        thread::sleep(Duration::from_millis(60));
+        
+        // Now should return the final size
+        let result = handler.check_for_resize((120, 32));
+        assert_eq!(result, Some((120, 32)));
+    }
+
+    #[test]
+    fn test_size_validation_edge_cases() {
+        let mut handler = ResizeHandler::new();
+        
+        // Test with zero dimensions
+        assert!(handler.should_update_layout((0, 0)));
+        handler.check_for_resize((0, 0));
+        
+        // Test with very small dimensions
+        assert!(handler.should_update_layout((1, 1)));
+        handler.check_for_resize((1, 1));
+        
+        // Test with very large dimensions
+        assert!(handler.should_update_layout((u16::MAX, u16::MAX)));
+        handler.check_for_resize((u16::MAX, u16::MAX));
+        
+        // Test crossing all thresholds
+        handler.reset();
+        handler.check_for_resize((dynamic_ui::MIN_TERMINAL_WIDTH, dynamic_ui::MIN_TERMINAL_HEIGHT));
+        
+        // Cross standard threshold
+        assert!(handler.should_update_layout((dynamic_ui::STANDARD_DETAIL_WIDTH_THRESHOLD, 24)));
+        handler.check_for_resize((dynamic_ui::STANDARD_DETAIL_WIDTH_THRESHOLD, 24));
+        
+        // Cross extended threshold
+        assert!(handler.should_update_layout((dynamic_ui::EXTENDED_DETAIL_WIDTH_THRESHOLD, 24)));
+        handler.check_for_resize((dynamic_ui::EXTENDED_DETAIL_WIDTH_THRESHOLD, 24));
+        
+        // Test height change boundary (exactly 3 lines difference)
+        assert!(handler.should_update_layout((dynamic_ui::EXTENDED_DETAIL_WIDTH_THRESHOLD, 27)));
+        
+        // Test height change just under boundary (2 lines difference)
+        handler.check_for_resize((dynamic_ui::EXTENDED_DETAIL_WIDTH_THRESHOLD, 27));
+        assert!(!handler.should_update_layout((dynamic_ui::EXTENDED_DETAIL_WIDTH_THRESHOLD, 29)));
+    }
+
+    #[test]
+    fn test_debounce_timing_precision() {
+        let debounce_ms = 50; // Use a longer debounce time for more reliable testing
+        let mut handler = ResizeHandler::with_debounce(debounce_ms);
+        
+        // Trigger initial resize
+        handler.check_for_resize((80, 24));
+        
+        // Check that debouncing is active immediately after resize
+        assert!(handler.is_debouncing());
+        
+        // Wait slightly less than debounce time
+        thread::sleep(Duration::from_millis(debounce_ms - 10));
+        
+        // Should still be debouncing
+        assert!(handler.is_debouncing());
+        let result = handler.check_for_resize((80, 24));
+        assert!(result.is_none());
+        
+        // Wait for remaining debounce time plus a buffer
+        thread::sleep(Duration::from_millis(20));
+        
+        // Should no longer be debouncing and should return size
+        let result = handler.check_for_resize((80, 24));
+        assert_eq!(result, Some((80, 24)));
+        assert!(!handler.is_debouncing());
+    }
+
+    #[test]
+    fn test_no_size_change_behavior() {
+        let mut handler = ResizeHandler::with_debounce(20);
+        
+        // Set initial size
+        handler.check_for_resize((100, 30));
+        
+        // Wait for debounce
+        thread::sleep(Duration::from_millis(25));
+        let result = handler.check_for_resize((100, 30));
+        assert_eq!(result, Some((100, 30)));
+        
+        // Subsequent calls with same size should not trigger debouncing
+        let result = handler.check_for_resize((100, 30));
+        assert!(result.is_none());
+        assert!(!handler.is_debouncing());
+        
+        // Should not require layout update for same size
+        assert!(!handler.should_update_layout((100, 30)));
+    }
 }
