@@ -959,7 +959,6 @@ pub async fn clear_goal_events_cache() {
 }
 
 /// Clears goal events cache for a specific game
-#[allow(dead_code)]
 pub async fn clear_goal_events_cache_for_game(season: i32, game_id: i32) {
     let key = create_goal_events_key(season, game_id);
     let mut cache = GOAL_EVENTS_CACHE.write().await;
