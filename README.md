@@ -112,6 +112,7 @@ liiga_teletext/
 - `-d, --date <DATE>` - Show games for a specific date in YYYY-MM-DD format
 - `-o, --once` - Show scores once and exit immediately (useful for scripts)
 - `-p, --plain` - Disable clickable video links in the output
+- `--min-refresh-interval <SECONDS>` - Set minimum refresh interval in seconds (default: auto-detect based on game count). Higher values reduce API calls but may miss updates. Use with caution.
 
 #### Configuration
 - `-c, --config [DOMAIN]` - Update API domain in config (prompts if not provided)
@@ -167,6 +168,7 @@ The application includes several performance optimizations:
 - **HTTP Response Caching**: Intelligent caching with time-based expiration reduces API calls
 - **Request Deduplication**: Prevents multiple identical API calls from running simultaneously
 - **Performance Metrics**: Tracks API call counts, cache hit rates, and response times
+- **Rate Limiting Protection**: Adaptive refresh intervals based on game count with exponential backoff
 - **Connection Pooling**: Reuses HTTP connections for better performance
 - **Incremental Updates**: Only refreshes data when necessary based on game state
 - **Memory Management**: Efficient data structures and resource cleanup
@@ -194,6 +196,9 @@ The application includes several performance optimizations:
 - [x] Request deduplication to prevent duplicate API calls
 - [x] Performance metrics collection and monitoring
 - [x] Emergency cache management for memory optimization
+- [x] Rate limiting protection with exponential backoff
+- [x] Adaptive refresh intervals based on game count
+- [x] Configurable minimum refresh intervals
 - [x] Robust error handling with user-friendly messages
 - [x] Comprehensive test coverage with testing utilities
 - [x] Advanced UI components with interactive features
