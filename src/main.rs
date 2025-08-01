@@ -1073,9 +1073,15 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
         };
 
         // Check for auto-refresh with better logic
+        let auto_refresh_interval = if has_live_games_from_game_data(&last_games) {
+            Duration::from_secs(15) // More aggressive for ongoing games
+        } else {
+            Duration::from_secs(60) // Standard interval for completed/scheduled games
+        };
+
         if !needs_refresh
             && !last_games.is_empty()
-            && last_auto_refresh.elapsed() >= Duration::from_secs(60)
+            && last_auto_refresh.elapsed() >= auto_refresh_interval
         {
             // Check if there are ongoing games - if so, always refresh
             let has_ongoing_games = has_live_games_from_game_data(&last_games);
@@ -1320,8 +1326,11 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 tracing::debug!("Data changed, updating UI");
                 // Log specific changes for live games to help debug game clock updates
                 if !last_games.is_empty() && games.len() == last_games.len() {
-                    for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate() {
-                        if new_game.played_time != old_game.played_time && new_game.score_type == ScoreType::Ongoing {
+                    for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate()
+                    {
+                        if new_game.played_time != old_game.played_time
+                            && new_game.score_type == ScoreType::Ongoing
+                        {
                             tracing::info!(
                                 "Game clock update detected: Game {} - {} vs {} - time changed from {}s to {}s",
                                 i + 1,
@@ -1332,18 +1341,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                             );
                         }
                     }
-                }
-                last_games = games.clone();
-                last_games_hash = games_hash;
-
-                // Check if all games are scheduled (future games) - only relevant if no ongoing games
-                let has_ongoing_games = has_live_games_from_game_data(&games);
-                let all_scheduled = !games.is_empty() && games.iter().all(is_future_game);
-
-                if all_scheduled && !has_ongoing_games {
-                    tracing::info!("All games are scheduled - auto-refresh disabled");
-                } else if has_ongoing_games {
-                    tracing::info!("Ongoing games detected - auto-refresh enabled");
                 }
 
                 // Only create a new page if we didn't have an error and data changed
@@ -1417,6 +1414,41 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     "Auto-refresh failed but no data changes detected, continuing with existing UI"
                 );
             } else {
+                // Track ongoing games with static time to confirm API limitations
+                let ongoing_games: Vec<_> = games
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, game)| game.score_type == ScoreType::Ongoing)
+                    .collect();
+
+                if !ongoing_games.is_empty() {
+                    tracing::debug!(
+                        "No data changes detected despite {} ongoing game(s): {}",
+                        ongoing_games.len(),
+                        ongoing_games
+                            .iter()
+                            .map(|(i, game)| format!(
+                                "{}. {} vs {} ({}s)",
+                                i + 1,
+                                game.home_team,
+                                game.away_team,
+                                game.played_time
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+
+                // Check if all games are scheduled (future games) - only relevant if no ongoing games
+                let has_ongoing_games = has_live_games_from_game_data(&games);
+                let all_scheduled = !games.is_empty() && games.iter().all(is_future_game);
+
+                if all_scheduled && !has_ongoing_games {
+                    tracing::info!("All games are scheduled - auto-refresh disabled");
+                } else if has_ongoing_games {
+                    tracing::info!("Ongoing games detected - auto-refresh enabled");
+                }
+
                 tracing::debug!("No data changes detected, skipping UI update");
             }
 
@@ -1425,6 +1457,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 page.hide_auto_refresh_indicator();
                 needs_render = true;
             }
+
+            // Update change detection variables
+            last_games_hash = games_hash;
+            last_games = games.clone();
 
             needs_refresh = false;
 
