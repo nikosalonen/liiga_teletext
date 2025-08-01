@@ -254,7 +254,8 @@ fn is_game_near_start_time(game: &GameData) -> bool {
             let time_diff = now.signed_duration_since(game_start);
 
             // Check if game should start within the next 5 minutes or started within the last 5 minutes
-            let is_near_start = time_diff >= chrono::Duration::minutes(-5) && time_diff <= chrono::Duration::minutes(5);
+            let is_near_start = time_diff >= chrono::Duration::minutes(-5)
+                && time_diff <= chrono::Duration::minutes(5);
 
             if is_near_start {
                 tracing::debug!(
@@ -1166,7 +1167,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         needs_refresh = true;
                         tracing::info!("Auto-refresh triggered for games that may have started");
                     } else {
-                        tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
+                        tracing::debug!(
+                            "Auto-refresh skipped - all games are scheduled for future"
+                        );
                     }
                 }
             } else if has_ongoing_games {
