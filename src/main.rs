@@ -1,5 +1,6 @@
 // src/main.rs
 mod config;
+mod constants;
 mod data_fetcher;
 mod error;
 mod teletext_ui;
@@ -1052,7 +1053,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     // Change detection - track data changes to avoid unnecessary re-renders
     let mut last_games_hash = 0u64;
     let mut last_games = Vec::new();
-    let mut all_games_scheduled = false;
 
     // Adaptive polling configuration
     let mut last_activity = Instant::now();
@@ -1079,6 +1079,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
         {
             // Check if there are ongoing games - if so, always refresh
             let has_ongoing_games = has_live_games_from_game_data(&last_games);
+            // Compute current state directly from last_games (don't rely on stale all_games_scheduled)
+            let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
 
             // Don't auto-refresh for historical dates
             if let Some(ref date) = current_date {
@@ -1087,7 +1089,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 } else if has_ongoing_games {
                     needs_refresh = true;
                     tracing::debug!("Auto-refresh triggered for ongoing games");
-                } else if !all_games_scheduled {
+                } else if !all_scheduled {
                     // Only refresh if not all games are scheduled (i.e., some are finished)
                     needs_refresh = true;
                     tracing::debug!("Auto-refresh triggered for non-scheduled games");
@@ -1097,7 +1099,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             } else if has_ongoing_games {
                 needs_refresh = true;
                 tracing::debug!("Auto-refresh triggered for ongoing games");
-            } else if !all_games_scheduled {
+            } else if !all_scheduled {
                 needs_refresh = true;
                 tracing::debug!("Auto-refresh triggered for non-scheduled games");
             } else {
@@ -1124,8 +1126,16 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 current_page.is_none()
             };
 
-            // Show auto-refresh indicator for ongoing games
-            if has_ongoing_games {
+            // Show auto-refresh indicator whenever auto-refresh is active
+            // This should match the auto-refresh logic above
+            let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
+            let should_show_indicator = if let Some(ref date) = current_date {
+                !is_historical_date(date) && (has_ongoing_games || !all_scheduled)
+            } else {
+                has_ongoing_games || !all_scheduled
+            };
+
+            if should_show_indicator {
                 if let Some(page) = &mut current_page {
                     page.show_auto_refresh_indicator();
                     needs_render = true;
@@ -1210,9 +1220,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
                 // Check if all games are scheduled (future games) - only relevant if no ongoing games
                 let has_ongoing_games = has_live_games_from_game_data(&games);
-                all_games_scheduled = !games.is_empty() && games.iter().all(is_future_game);
+                let all_scheduled = !games.is_empty() && games.iter().all(is_future_game);
 
-                if all_games_scheduled && !has_ongoing_games {
+                if all_scheduled && !has_ongoing_games {
                     tracing::info!("All games are scheduled - auto-refresh disabled");
                 } else if has_ongoing_games {
                     tracing::info!("Ongoing games detected - auto-refresh enabled");

@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{DateTime, Datelike, Local, NaiveTime, Utc};
 use std::collections::HashMap;
+use tracing;
 
 // Tournament season constants for month-based logic
 const PRESEASON_START_MONTH: u32 = 6; // June
@@ -190,6 +191,14 @@ pub fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
     } else {
         ScoreType::Final
     };
+
+    tracing::debug!(
+        "Game {} status: started={}, ended={}, score_type={:?}",
+        game.id,
+        game.started,
+        game.ended,
+        score_type
+    );
 
     (score_type, is_overtime, is_shootout)
 }
