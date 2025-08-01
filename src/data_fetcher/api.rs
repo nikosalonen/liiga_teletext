@@ -438,8 +438,27 @@ async fn process_single_game(
         debug!("Fetching detailed game data");
         fetch_detailed_game_data(client, config, &game).await
     } else {
-        info!("No detailed data needed for this game");
-        Vec::new()
+        // Fallback: process goal events from schedule response if available
+        if has_actual_goals(&game) {
+            debug!("Processing goal events from schedule response");
+            // Create a simple player name mapping for basic goal events
+            let mut player_names = HashMap::new();
+            // For schedule response, we don't have detailed player data, so use fallback names
+            for event in &game.home_team.goal_events {
+                if !event.goal_types.contains(&"RL0".to_string()) {
+                    player_names.insert(event.scorer_player_id, format!("Player {}", event.scorer_player_id));
+                }
+            }
+            for event in &game.away_team.goal_events {
+                if !event.goal_types.contains(&"RL0".to_string()) {
+                    player_names.insert(event.scorer_player_id, format!("Player {}", event.scorer_player_id));
+                }
+            }
+            crate::data_fetcher::processors::process_goal_events(&game, &player_names)
+        } else {
+            info!("No detailed data needed for this game");
+            Vec::new()
+        }
     };
 
     info!(
