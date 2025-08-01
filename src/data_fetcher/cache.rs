@@ -905,7 +905,10 @@ pub async fn clear_goal_events_cache_for_game(season: i32, game_id: i32) {
     let key = create_goal_events_key(season, game_id);
     let mut cache = GOAL_EVENTS_CACHE.write().await;
     cache.pop(&key);
-    debug!("Cleared goal events cache for game: season={}, game_id={}", season, game_id);
+    debug!(
+        "Cleared goal events cache for game: season={}, game_id={}",
+        season, game_id
+    );
 }
 
 // HTTP Response Cache Functions

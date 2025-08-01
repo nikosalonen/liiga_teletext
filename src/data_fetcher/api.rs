@@ -436,27 +436,31 @@ async fn process_single_game(
 
     let goal_events = if should_fetch_detailed_data(&game) {
         debug!("Fetching detailed game data");
-        
+
         // Check if score has changed since last fetch to force refresh goal events
         let current_score = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-        let score_changed = if let Some(cached_events) = get_cached_goal_events_data(game.season, game.id).await {
-            // If we have cached events, check if the score has changed
-            let cached_score = if let Some(last_event) = cached_events.last() {
-                format!("{}-{}", last_event.home_team_score, last_event.away_team_score)
+        let score_changed =
+            if let Some(cached_events) = get_cached_goal_events_data(game.season, game.id).await {
+                // If we have cached events, check if the score has changed
+                let cached_score = if let Some(last_event) = cached_events.last() {
+                    format!(
+                        "{}-{}",
+                        last_event.home_team_score, last_event.away_team_score
+                    )
+                } else {
+                    "0-0".to_string()
+                };
+                current_score != cached_score
             } else {
-                "0-0".to_string()
+                false
             };
-            current_score != cached_score
-        } else {
-            false
-        };
-        
+
         if score_changed {
             debug!("Score changed from cached data, forcing fresh goal events fetch");
             // Clear the cache to force a fresh fetch
             clear_goal_events_cache_for_game(game.season, game.id).await;
         }
-        
+
         fetch_detailed_game_data(client, config, &game).await
     } else {
         // Fallback: process goal events from schedule response if available

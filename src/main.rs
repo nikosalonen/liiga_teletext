@@ -1152,7 +1152,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
         // Debug logging for rate limit backoff enforcement
         if rate_limit_backoff > Duration::from_secs(0) {
-            let backoff_remaining = rate_limit_backoff.saturating_sub(last_rate_limit_hit.elapsed());
+            let backoff_remaining =
+                rate_limit_backoff.saturating_sub(last_rate_limit_hit.elapsed());
             if backoff_remaining > Duration::from_secs(0) {
                 tracing::debug!(
                     "Rate limit backoff active: {}s remaining (total backoff: {}s, elapsed since rate limit: {}s)",
@@ -1188,7 +1189,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
             // Log rate limit backoff status
             if rate_limit_backoff > Duration::from_secs(0) {
-                let backoff_remaining = rate_limit_backoff.saturating_sub(last_rate_limit_hit.elapsed());
+                let backoff_remaining =
+                    rate_limit_backoff.saturating_sub(last_rate_limit_hit.elapsed());
                 if backoff_remaining > Duration::from_secs(0) {
                     tracing::debug!(
                         "Auto-refresh skipped due to rate limit backoff: {}s remaining (total backoff: {}s)",
@@ -1465,7 +1467,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         "Auto-refresh timeout after {:?}, continuing with existing data ({} games, {} live games)",
                         auto_refresh_interval,
                         last_games.len(),
-                        last_games.iter().filter(|g| g.score_type == ScoreType::Ongoing).count()
+                        last_games
+                            .iter()
+                            .filter(|g| g.score_type == ScoreType::Ongoing)
+                            .count()
                     );
                     (Vec::new(), true, String::new(), true)
                 }
