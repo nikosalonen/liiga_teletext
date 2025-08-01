@@ -716,7 +716,12 @@ pub fn create_goal_events_key(season: i32, game_id: i32) -> String {
 
 /// Caches processed goal events data
 #[instrument(skip(season, game_id, data), fields(season = %season, game_id = %game_id))]
-pub async fn cache_goal_events_data(season: i32, game_id: i32, data: Vec<GoalEventData>, is_live_game: bool) {
+pub async fn cache_goal_events_data(
+    season: i32,
+    game_id: i32,
+    data: Vec<GoalEventData>,
+    is_live_game: bool,
+) {
     let key = create_goal_events_key(season, game_id);
     let event_count = data.len();
     debug!(
