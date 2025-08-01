@@ -607,23 +607,30 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
     };
 
     // For both tournament and schedule URLs, check if the response contains live games
-    let final_ttl = if (url.contains("tournament=") && url.contains("date=")) || url.contains("/schedule") {
-        // Try to parse as ScheduleResponse to check for live games
-        match serde_json::from_str::<ScheduleResponse>(&response_text) {
-            Ok(schedule_response) => {
-                if has_live_games(&schedule_response) {
-                    info!("Live games detected in response from {}, using short cache TTL", url);
-                    crate::constants::cache_ttl::LIVE_GAMES_SECONDS // Use live games TTL (15 seconds)
-                } else {
-                    debug!("No live games detected in response from {}, using default TTL", url);
-                    ttl_seconds // Use default TTL for completed games
+    let final_ttl =
+        if (url.contains("tournament=") && url.contains("date=")) || url.contains("/schedule") {
+            // Try to parse as ScheduleResponse to check for live games
+            match serde_json::from_str::<ScheduleResponse>(&response_text) {
+                Ok(schedule_response) => {
+                    if has_live_games(&schedule_response) {
+                        info!(
+                            "Live games detected in response from {}, using short cache TTL",
+                            url
+                        );
+                        crate::constants::cache_ttl::LIVE_GAMES_SECONDS // Use live games TTL (15 seconds)
+                    } else {
+                        debug!(
+                            "No live games detected in response from {}, using default TTL",
+                            url
+                        );
+                        ttl_seconds // Use default TTL for completed games
+                    }
                 }
+                Err(_) => ttl_seconds, // Fallback to default if parsing fails
             }
-            Err(_) => ttl_seconds, // Fallback to default if parsing fails
-        }
-    } else {
-        ttl_seconds // Use default TTL for other URLs
-    };
+        } else {
+            ttl_seconds // Use default TTL for other URLs
+        };
 
     cache_http_response(url.to_string(), response_text.clone(), final_ttl).await;
 
