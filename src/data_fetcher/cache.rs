@@ -969,10 +969,12 @@ pub async fn clear_goal_events_cache_for_game(season: i32, game_id: i32) {
     // Get the current cached data to extract the last known score
     let last_known_score = if let Some(cached_entry) = cache.get(&key) {
         // Extract the last known score from the cached goal events
-        cached_entry.data.last().map(|last_event| format!(
-            "{}-{}",
-            last_event.home_team_score, last_event.away_team_score
-        ))
+        cached_entry.data.last().map(|last_event| {
+            format!(
+                "{}-{}",
+                last_event.home_team_score, last_event.away_team_score
+            )
+        })
     } else {
         None
     };
