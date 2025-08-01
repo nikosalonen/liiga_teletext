@@ -613,15 +613,12 @@ mod tests {
             assert_eq!(
                 error.retry_delay_seconds(),
                 Some(expected_delay),
-                "Error {:?} should return delay of {} seconds",
-                error,
-                expected_delay
+                "Error {error:?} should return delay of {expected_delay} seconds"
             );
             // Also verify that these errors are marked as retryable
             assert!(
                 error.is_retryable(),
-                "Error {:?} should be retryable",
-                error
+                "Error {error:?} should be retryable"
             );
         }
     }
@@ -649,14 +646,12 @@ mod tests {
             assert_eq!(
                 error.retry_delay_seconds(),
                 None,
-                "Error {:?} should not have a retry delay",
-                error
+                "Error {error:?} should not have a retry delay"
             );
             // Also verify that these errors are not marked as retryable
             assert!(
                 !error.is_retryable(),
-                "Error {:?} should not be retryable",
-                error
+                "Error {error:?} should not be retryable"
             );
         }
     }

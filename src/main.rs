@@ -13,8 +13,8 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
 use data_fetcher::cache::has_live_games_from_game_data;
+use data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
 use error::AppError;
 use semver::Version;
 use std::io::stdout;
