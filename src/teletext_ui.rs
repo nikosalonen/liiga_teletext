@@ -4,6 +4,8 @@ use crate::config::Config;
 use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::api::fetch_regular_season_start_date;
 use crate::error::AppError;
+use crate::ui::layout::{LayoutCalculator, LayoutConfig, ContentPositioning, DetailLevel};
+use crate::ui::content_adapter::{ContentAdapter, AdaptedGameContent};
 use chrono::{DateTime, Datelike, Local, Utc};
 use crossterm::{
     cursor::MoveTo,
@@ -174,6 +176,8 @@ pub struct TeletextPage {
     fetched_date: Option<String>, // Date for which data was fetched
     loading_indicator: Option<LoadingIndicator>,
     auto_refresh_indicator: Option<LoadingIndicator>, // Subtle indicator for auto-refresh
+    layout_calculator: LayoutCalculator,
+    layout_config: LayoutConfig,
 }
 
 pub enum TeletextRow {
@@ -296,6 +300,12 @@ impl TeletextPage {
             .map(|(_, height)| height)
             .unwrap_or(24);
 
+        let mut layout_calculator = LayoutCalculator::new();
+        let layout_config = layout_calculator.calculate_layout((
+            crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80),
+            screen_height,
+        ));
+
         TeletextPage {
             page_number,
             title,
@@ -311,6 +321,8 @@ impl TeletextPage {
             fetched_date: None,
             loading_indicator: None,
             auto_refresh_indicator: None,
+            layout_calculator,
+            layout_config,
         }
     }
 
@@ -367,6 +379,62 @@ impl TeletextPage {
 
             // Ensure current_page is within bounds
             self.current_page = self.current_page.min(current_page);
+        }
+    }
+
+    /// Updates the layout configuration when terminal size changes.
+    /// This method integrates with the dynamic layout system to recalculate
+    /// optimal layout settings based on new terminal dimensions.
+    ///
+    /// # Arguments
+    /// * `terminal_size` - New terminal dimensions (width, height)
+    ///
+    /// # Example
+    /// ```
+    /// use liiga_teletext::TeletextPage;
+    ///
+    /// let mut page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false
+    /// );
+    ///
+    /// // Update layout for new terminal size
+    /// page.update_layout((120, 40));
+    /// ```
+    pub fn update_layout(&mut self, terminal_size: (u16, u16)) {
+        // Update screen height from terminal size
+        self.screen_height = terminal_size.1;
+
+        // Recalculate layout configuration using the layout calculator
+        self.layout_config = self.layout_calculator.calculate_layout(terminal_size);
+
+        // Recalculate current page to ensure content fits with new layout
+        if !self.ignore_height_limit {
+            let available_height = self.layout_config.content_height;
+            let mut current_height = 0u16;
+            let mut current_page = 0;
+            let mut items_in_current_page = 0;
+
+            for game in &self.content_rows {
+                let game_height = Self::calculate_game_height(game);
+
+                if current_height + game_height > available_height && items_in_current_page > 0 {
+                    current_page += 1;
+                    current_height = game_height;
+                    items_in_current_page = 1;
+                } else {
+                    current_height += game_height;
+                    items_in_current_page += 1;
+                }
+            }
+
+            // Ensure current_page is within bounds
+            let total_pages = std::cmp::max(1, current_page + 1);
+            self.current_page = self.current_page.min(total_pages - 1);
         }
     }
 
@@ -477,6 +545,18 @@ impl TeletextPage {
         self.content_rows
             .iter()
             .any(|row| matches!(row, TeletextRow::ErrorMessage(_)))
+    }
+
+    /// Gets the current layout configuration.
+    /// Returns a reference to the current layout configuration.
+    pub fn layout_config(&self) -> &LayoutConfig {
+        &self.layout_config
+    }
+
+    /// Gets a mutable reference to the layout calculator.
+    /// Allows external code to access layout calculation functionality.
+    pub fn layout_calculator(&mut self) -> &mut LayoutCalculator {
+        &mut self.layout_calculator
     }
 
     /// Sets the screen height for testing purposes.
@@ -784,6 +864,111 @@ impl TeletextPage {
         };
     }
 
+    /// Renders the page content using the dynamic layout system.
+    /// This method uses the current layout configuration to determine optimal
+    /// content formatting and positioning.
+    ///
+    /// # Arguments
+    /// * `stdout` - Mutable reference to stdout for writing
+    ///
+    /// # Returns
+    /// * `Result<(), AppError>` - Ok if rendering succeeded, Err otherwise
+    ///
+    /// # Example
+    /// ```
+    /// use liiga_teletext::TeletextPage;
+    /// use std::io::stdout;
+    ///
+    /// let mut page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false
+    /// );
+    ///
+    /// // Only render if we have a proper terminal (skip in CI)
+    /// if std::env::var("CI").is_err() {
+    ///     let mut stdout = stdout();
+    ///     page.render_with_layout(&mut stdout)?;
+    /// }
+    /// # Ok::<(), liiga_teletext::AppError>(())
+    /// ```
+    pub fn render_with_layout(&self, stdout: &mut Stdout) -> Result<(), AppError> {
+        // Use the existing render_buffered method but with dynamic layout considerations
+        // For now, delegate to render_buffered which will be enhanced in task 5.3
+        self.render_buffered(stdout)
+    }
+
+    /// Renders a single game with the specified detail level.
+    /// Adapts the game content based on the detail level and available space.
+    ///
+    /// # Arguments
+    /// * `game` - The game row to render
+    /// * `detail_level` - The detail level to use for rendering
+    ///
+    /// # Returns
+    /// * `String` - Formatted game content as a string
+    pub fn render_game_with_detail_level(&self, game: &TeletextRow, detail_level: DetailLevel) -> String {
+        match game {
+            TeletextRow::GameResult {
+                home_team,
+                away_team,
+                time,
+                result,
+                goal_events,
+                ..
+            } => {
+                let adapted_content = ContentAdapter::adapt_game_content(
+                    home_team,
+                    away_team,
+                    time,
+                    result,
+                    goal_events,
+                    detail_level,
+                    self.layout_config.content_width,
+                );
+
+                // Format the adapted content into a display string
+                let mut output = String::new();
+
+                // Add the main game line
+                output.push_str(&format!(
+                    "{:<20} - {:<20} {:>8} {}",
+                    adapted_content.home_team,
+                    adapted_content.away_team,
+                    adapted_content.time_display,
+                    adapted_content.result_display
+                ));
+                output.push('\n');
+
+                // Add goal lines
+                for goal_line in &adapted_content.goal_lines {
+                    output.push_str(goal_line);
+                    output.push('\n');
+                }
+
+                output
+            }
+            TeletextRow::ErrorMessage(message) => {
+                format!("{}\n", message)
+            }
+            TeletextRow::FutureGamesHeader(header) => {
+                format!("{}\n", header)
+            }
+        }
+    }
+
+    /// Calculates content positioning for dynamic placement of UI elements.
+    /// Uses the current layout configuration to determine optimal positioning.
+    ///
+    /// # Returns
+    /// * `ContentPositioning` - Positioning information for UI elements
+    pub fn calculate_content_positioning(&self) -> ContentPositioning {
+        self.layout_calculator.calculate_content_positioning(&self.layout_config)
+    }
+
     /// Renders the page content to the provided stdout.
     /// Handles all formatting, colors, and layout according to current settings.
     /// Optimized to reduce flickering by minimizing screen clears and using cursor positioning.
@@ -822,7 +1007,8 @@ impl TeletextPage {
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
     /// Calculates the expected buffer size for rendering to avoid reallocations.
-    /// Estimates size based on terminal width, content rows, and ANSI escape sequences.
+    /// Estimates size based on terminal width, content rows, ANSI escape sequences,
+    /// and dynamic layout configuration.
     ///
     /// # Arguments
     /// * `width` - Terminal width in characters
@@ -832,6 +1018,7 @@ impl TeletextPage {
     /// * `usize` - Estimated buffer size in bytes
     fn calculate_buffer_size(&self, width: u16, visible_rows: &[&TeletextRow]) -> usize {
         let width = width as usize;
+        let detail_level = self.layout_config.detail_level;
 
         // Base overhead for headers, ANSI escape sequences, and screen control
         let mut size = 500; // Header, subheader, screen clear sequences
@@ -839,19 +1026,33 @@ impl TeletextPage {
         // Add terminal size as base (each line could be full width)
         size += width * 4; // Header + subheader + padding lines
 
-        // Calculate content size
+        // Calculate content size based on detail level and layout configuration
         for row in visible_rows {
             match row {
                 TeletextRow::GameResult { goal_events, .. } => {
-                    // Game line: ~80 chars + ANSI sequences (~50 chars)
-                    size += 130;
+                    // Base game line size varies by detail level
+                    let base_game_size = match detail_level {
+                        DetailLevel::Minimal => 130,
+                        DetailLevel::Standard => 160,
+                        DetailLevel::Extended => 200,
+                    };
+                    size += base_game_size;
 
-                    // Goal events: estimate 2 lines per game on average
-                    // Each goal line: ~40 chars + ANSI sequences (~30 chars)
-                    size += goal_events.len() * 70;
+                    // Goal events size varies by detail level
+                    let goal_event_multiplier = match detail_level {
+                        DetailLevel::Minimal => 70,
+                        DetailLevel::Standard => 90,
+                        DetailLevel::Extended => 120,
+                    };
+                    size += goal_events.len() * goal_event_multiplier;
 
-                    // Extra spacing
-                    size += 20;
+                    // Extra spacing varies by detail level
+                    let spacing = match detail_level {
+                        DetailLevel::Minimal => 20,
+                        DetailLevel::Standard => 25,
+                        DetailLevel::Extended => 35,
+                    };
+                    size += spacing;
                 }
                 TeletextRow::ErrorMessage(message) => {
                     // Error message: actual length + ANSI sequences
@@ -864,22 +1065,34 @@ impl TeletextPage {
             }
         }
 
-        // Footer: ~100 chars + ANSI sequences
+        // Footer size varies by detail level
         if self.show_footer {
-            size += 150;
+            let footer_size = match detail_level {
+                DetailLevel::Minimal => 150,
+                DetailLevel::Standard => 180,
+                DetailLevel::Extended => 220,
+            };
+            size += footer_size;
+
             // Add space for season countdown if present
             if self.season_countdown.is_some() {
                 size += 100;
             }
         }
 
-        // Add 25% overhead for ANSI positioning sequences and safety margin
-        size + (size / 4)
+        // Add overhead based on layout complexity
+        let overhead_multiplier = match detail_level {
+            DetailLevel::Minimal => 0.25,
+            DetailLevel::Standard => 0.30,
+            DetailLevel::Extended => 0.35,
+        };
+
+        size + (size as f32 * overhead_multiplier) as usize
     }
 
     /// Renders the page content using double buffering for reduced flickering.
     /// This method builds all terminal escape sequences and content in a buffer first,
-    /// then writes everything in a single operation.
+    /// then writes everything in a single operation. Now enhanced with dynamic layout support.
     pub fn render_buffered(&self, stdout: &mut Stdout) -> Result<(), AppError> {
         // Hide cursor to prevent visual artifacts during rendering
         execute!(stdout, crossterm::cursor::Hide)?;
@@ -890,11 +1103,14 @@ impl TeletextPage {
         // Get content for current page to calculate buffer size
         let (visible_rows, _) = self.get_page_content();
 
-        // Calculate expected buffer size to avoid reallocations
+        // Calculate expected buffer size using dynamic layout considerations
         let expected_size = self.calculate_buffer_size(width, &visible_rows);
 
         // Build the entire screen content in a string buffer (double buffering)
         let mut buffer = String::with_capacity(expected_size);
+
+        // Get content positioning from layout calculator
+        let positioning = self.calculate_content_positioning();
 
         // Only clear the screen in interactive mode using more efficient method
         if !self.ignore_height_limit {
@@ -946,10 +1162,11 @@ impl TeletextPage {
             width = (width as usize).saturating_sub(20)
         ));
 
-        // Build content starting at line 4 (1-based ANSI positioning)
-        let mut current_line = 4;
+        // Build content starting at calculated position (1-based ANSI positioning)
+        let mut current_line = positioning.content_start_y + 1; // Convert to 1-based
         let text_fg_code = get_ansi_code(text_fg(), 231);
         let result_fg_code = get_ansi_code(result_fg(), 46);
+        let detail_level = self.layout_config.detail_level;
 
         for row in visible_rows {
             match row {
@@ -964,18 +1181,29 @@ impl TeletextPage {
                     goal_events,
                     played_time,
                 } => {
-                    // Format result with overtime/shootout indicator
+                    // Use content adapter to format game content based on detail level
+                    let adapted_content = ContentAdapter::adapt_game_content(
+                        home_team,
+                        away_team,
+                        time,
+                        result,
+                        goal_events,
+                        detail_level,
+                        self.layout_config.content_width,
+                    );
+
+                    // Format result with overtime/shootout indicator (preserve existing logic)
                     let result_text = if *is_shootout {
-                        format!("{result} rl")
+                        format!("{} rl", adapted_content.result_display)
                     } else if *is_overtime {
-                        format!("{result} ja")
+                        format!("{} ja", adapted_content.result_display)
                     } else {
-                        result.clone()
+                        adapted_content.result_display.clone()
                     };
 
-                    // Format time display based on game state
+                    // Format time display based on game state (preserve existing logic)
                     let (time_display, score_display) = match score_type {
-                        ScoreType::Scheduled => (time.clone(), String::new()),
+                        ScoreType::Scheduled => (adapted_content.time_display.clone(), String::new()),
                         ScoreType::Ongoing => {
                             let formatted_time =
                                 format!("{:02}:{:02}", played_time / 60, played_time % 60);
@@ -994,18 +1222,18 @@ impl TeletextPage {
                         // For ongoing games: show time on the left, score on the right
                         buffer.push_str(&format!(
                             "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{:<10}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                            current_line, CONTENT_MARGIN + 1,
+                            current_line, positioning.left_margin + 1,
                             text_fg_code,
-                            home_team.chars().take(20).collect::<String>(),
-                            current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
+                            adapted_content.home_team.chars().take(20).collect::<String>(),
+                            current_line, SEPARATOR_OFFSET + positioning.left_margin + 1,
                             text_fg_code,
-                            current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                            current_line, AWAY_TEAM_OFFSET + positioning.left_margin + 1,
                             text_fg_code,
-                            away_team.chars().take(20).collect::<String>(),
-                            current_line, 35 + CONTENT_MARGIN + 1,
+                            adapted_content.away_team.chars().take(20).collect::<String>(),
+                            current_line, 35 + positioning.left_margin + 1,
                             text_fg_code,
                             time_display,
-                            current_line, 45 + CONTENT_MARGIN + 1,
+                            current_line, 45 + positioning.left_margin + 1,
                             result_color,
                             score_display
                         ));
@@ -1018,15 +1246,15 @@ impl TeletextPage {
                         };
                         buffer.push_str(&format!(
                             "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                            current_line, CONTENT_MARGIN + 1,
+                            current_line, positioning.left_margin + 1,
                             text_fg_code,
-                            home_team.chars().take(20).collect::<String>(),
-                            current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
+                            adapted_content.home_team.chars().take(20).collect::<String>(),
+                            current_line, SEPARATOR_OFFSET + positioning.left_margin + 1,
                             text_fg_code,
-                            current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                            current_line, AWAY_TEAM_OFFSET + positioning.left_margin + 1,
                             text_fg_code,
-                            away_team.chars().take(20).collect::<String>(),
-                            current_line, 45 + CONTENT_MARGIN + 1,
+                            adapted_content.away_team.chars().take(20).collect::<String>(),
+                            current_line, 45 + positioning.left_margin + 1,
                             result_color,
                             display_text
                         ));
@@ -1034,10 +1262,25 @@ impl TeletextPage {
 
                     current_line += 1;
 
-                    // Add goal events for finished/ongoing games
+                    // Add goal events using adapted content
                     if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
+                        && !adapted_content.goal_lines.is_empty()
+                    {
+                        // Use the adapted goal lines from the content adapter
+                        for goal_line in &adapted_content.goal_lines {
+                            buffer.push_str(&format!(
+                                "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                                current_line,
+                                positioning.left_margin + 1,
+                                text_fg_code,
+                                goal_line
+                            ));
+                            current_line += 1;
+                        }
+                    } else if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
                         && !goal_events.is_empty()
                     {
+                        // Fallback to original rendering for backward compatibility
                         let home_scorer_fg_code = get_ansi_code(home_scorer_fg(), 51);
                         let away_scorer_fg_code = get_ansi_code(away_scorer_fg(), 51);
                         let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
@@ -1064,7 +1307,7 @@ impl TeletextPage {
                                 buffer.push_str(&format!(
                                     "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
                                     current_line,
-                                    CONTENT_MARGIN + 1,
+                                    positioning.left_margin + 1,
                                     scorer_color,
                                     event.minute
                                 ));
@@ -1114,7 +1357,7 @@ impl TeletextPage {
                                 buffer.push_str(&format!(
                                     "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
                                     current_line,
-                                    AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                                    AWAY_TEAM_OFFSET + positioning.left_margin + 1,
                                     scorer_color,
                                     event.minute
                                 ));
@@ -1166,7 +1409,7 @@ impl TeletextPage {
                         buffer.push_str(&format!(
                             "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                             current_line,
-                            CONTENT_MARGIN + 1,
+                            positioning.left_margin + 1,
                             text_fg_code,
                             line
                         ));
@@ -1177,7 +1420,7 @@ impl TeletextPage {
                     buffer.push_str(&format!(
                         "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                         current_line,
-                        CONTENT_MARGIN + 1,
+                        positioning.left_margin + 1,
                         subheader_fg_code,
                         header_text
                     ));
@@ -1191,7 +1434,7 @@ impl TeletextPage {
             let footer_y = if self.ignore_height_limit {
                 current_line + 1
             } else {
-                self.screen_height.saturating_sub(1)
+                positioning.footer_y + 1 // Convert to 1-based positioning
             };
 
             let controls = if total_pages > 1 {

@@ -56,26 +56,26 @@
     - Test goal event formatting with various inputs
     - _Requirements: 3.3_
 
-- [ ] 5. Enhance TeletextPage with dynamic capabilities
-  - [ ] 5.1 Add layout integration to TeletextPage
+- [x] 5. Enhance TeletextPage with dynamic capabilities
+  - [x] 5.1 Add layout integration to TeletextPage
     - Integrate LayoutCalculator into TeletextPage struct
     - Add layout_config field and update methods
     - Implement update_layout method for size changes
     - _Requirements: 1.3, 2.2, 4.3_
 
-  - [ ] 5.2 Implement dynamic rendering methods
+  - [x] 5.2 Implement dynamic rendering methods
     - Create render_with_layout method using new layout system
     - Implement render_game_with_detail_level for adaptive content
     - Add calculate_content_positioning for dynamic placement
     - _Requirements: 1.1, 2.1, 3.1_
 
-  - [ ] 5.3 Update existing rendering pipeline
+  - [x] 5.3 Update existing rendering pipeline
     - Modify render_buffered to use dynamic layout calculations
     - Update buffer size calculation for variable content
     - Ensure backward compatibility with existing behavior
     - _Requirements: 2.3, 4.4_
 
-- [ ] 6. Integrate resize handling into UI loop
+- [-] 6. Integrate resize handling into UI loop
   - [ ] 6.1 Add resize detection to interactive UI
     - Integrate ResizeHandler into run_interactive_ui function
     - Add size change detection to main UI loop

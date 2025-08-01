@@ -6,10 +6,11 @@
 use crate::data_fetcher::{GameData, fetch_liiga_data};
 use crate::error::AppError;
 use crate::teletext_ui::{GameResultData, TeletextPage};
+use crate::ui::resize::ResizeHandler;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size},
 };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -109,6 +110,7 @@ pub async fn run_interactive_ui(
     let mut last_activity = Instant::now();
     let mut current_date = date;
     let mut needs_render = true;
+    let mut resize_handler = ResizeHandler::new();
 
     // Initial data fetch
     match fetch_liiga_data(current_date.clone()).await {
@@ -118,10 +120,24 @@ pub async fn run_interactive_ui(
             last_games_hash = games_hash;
 
             pages = create_teletext_pages(&games, fetched_date, disable_video_links);
+            
+            // Initialize layout for all pages with current terminal size
+            if let Ok(terminal_size) = size() {
+                for page in &mut pages {
+                    page.update_layout(terminal_size);
+                }
+            }
         }
         Err(e) => {
             warn!("Failed to fetch initial data: {}", e);
             pages = create_error_page(format!("Virhe tietojen haussa: {e}"), disable_video_links);
+            
+            // Initialize layout for error page
+            if let Ok(terminal_size) = size() {
+                for page in &mut pages {
+                    page.update_layout(terminal_size);
+                }
+            }
         }
     }
 
@@ -172,6 +188,13 @@ pub async fn run_interactive_ui(
                                             disable_video_links,
                                         );
 
+                                        // Initialize layout for new pages
+                                        if let Ok(terminal_size) = size() {
+                                            for page in &mut pages {
+                                                page.update_layout(terminal_size);
+                                            }
+                                        }
+
                                         current_page = 0;
                                         needs_render = true;
                                     }
@@ -203,6 +226,20 @@ pub async fn run_interactive_ui(
             }
         }
 
+        // Check for terminal resize
+        if let Ok(current_size) = size() {
+            if let Some(new_size) = resize_handler.check_for_resize(current_size) {
+                debug!("Terminal resize detected: {:?}", new_size);
+                
+                // Update layout for all pages
+                for page in &mut pages {
+                    page.update_layout(new_size);
+                }
+                
+                needs_render = true;
+            }
+        }
+
         // Auto-refresh logic
         let should_refresh =
             last_refresh.elapsed() >= Duration::from_secs(AUTO_REFRESH_INTERVAL_SECS);
@@ -217,6 +254,13 @@ pub async fn run_interactive_ui(
 
                         // Rebuild pages
                         pages = create_teletext_pages(&games, fetched_date, disable_video_links);
+
+                        // Initialize layout for new pages
+                        if let Ok(terminal_size) = size() {
+                            for page in &mut pages {
+                                page.update_layout(terminal_size);
+                            }
+                        }
 
                         needs_render = true;
                     }
