@@ -87,7 +87,7 @@ impl CachedTournamentData {
         }
     }
 
-        /// Checks if the cached data is expired based on game state
+    /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
         let ttl = if self.has_live_games {
             Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 30 seconds for live games
@@ -225,8 +225,15 @@ pub fn has_live_games_from_game_data(games: &[GameData]) -> bool {
         .any(|game| game.score_type == ScoreType::Ongoing);
 
     if has_live {
-        let ongoing_count = games.iter().filter(|g| g.score_type == ScoreType::Ongoing).count();
-        debug!("Live games detected: {} ongoing out of {} total games", ongoing_count, games.len());
+        let ongoing_count = games
+            .iter()
+            .filter(|g| g.score_type == ScoreType::Ongoing)
+            .count();
+        debug!(
+            "Live games detected: {} ongoing out of {} total games",
+            ongoing_count,
+            games.len()
+        );
     } else {
         debug!("No live games detected in {} games", games.len());
     }
@@ -249,10 +256,23 @@ pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
 
     let mut cache = TOURNAMENT_CACHE.write().await;
     cache.put(key.clone(), cached_data);
-    info!(
-        "Successfully cached tournament data: key={}, games={}, has_live={}",
-        key, games_count, has_live
-    );
+
+    // Enhanced logging for live game cache entries
+    if has_live {
+        info!(
+            "Live game cache entry created: key={}, games={}, ttl={}s",
+            key,
+            games_count,
+            crate::constants::cache_ttl::LIVE_GAMES_SECONDS
+        );
+    } else {
+        info!(
+            "Completed game cache entry created: key={}, games={}, ttl={}s",
+            key,
+            games_count,
+            crate::constants::cache_ttl::COMPLETED_GAMES_SECONDS
+        );
+    }
 }
 
 /// Retrieves cached tournament data if it's not expired
@@ -280,13 +300,22 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
             );
             return Some(cached_entry.data.clone());
         } else {
-            // Remove expired entry
-            warn!(
-                "Removing expired tournament cache entry: key={}, age={:?}, ttl={:?}",
-                key,
-                cached_entry.cached_at.elapsed(),
-                cached_entry.get_ttl()
-            );
+            // Enhanced logging for expired cache entries during auto-refresh
+            let has_live = cached_entry.has_live_games;
+            let age = cached_entry.cached_at.elapsed();
+            let ttl = cached_entry.get_ttl();
+
+            if has_live {
+                info!(
+                    "Cache bypass: Expired live game cache entry removed during auto-refresh: key={}, age={:?}, ttl={:?}",
+                    key, age, ttl
+                );
+            } else {
+                warn!(
+                    "Removing expired tournament cache entry: key={}, age={:?}, ttl={:?}",
+                    key, age, ttl
+                );
+            }
             cache.pop(key);
         }
     } else {
@@ -310,6 +339,10 @@ pub async fn get_cached_tournament_data_with_live_check(
 
         // If the live state has changed, consider the cache expired
         if cached_entry.has_live_games != has_live {
+            debug!(
+                "Cache invalidated due to live game state change: key={}, cached_has_live={}, current_has_live={}",
+                key, cached_entry.has_live_games, has_live
+            );
             cache.pop(key);
             return None;
         }
@@ -318,8 +351,63 @@ pub async fn get_cached_tournament_data_with_live_check(
             return Some(cached_entry.data.clone());
         } else {
             // Remove expired entry
+            debug!(
+                "Removing expired cache entry during live game state check: key={}, age={:?}",
+                key,
+                cached_entry.cached_at.elapsed()
+            );
             cache.pop(key);
         }
+    }
+
+    None
+}
+
+/// Retrieves cached tournament data specifically for auto-refresh scenarios
+/// This function provides enhanced logging and ensures proper cache bypass for expired entries
+#[allow(dead_code)]
+pub async fn get_cached_tournament_data_for_auto_refresh(key: &str) -> Option<ScheduleResponse> {
+    debug!(
+        "Auto-refresh: Attempting to retrieve tournament data from cache for key: {}",
+        key
+    );
+
+    let mut cache = TOURNAMENT_CACHE.write().await;
+
+    if let Some(cached_entry) = cache.get(key) {
+        let has_live = cached_entry.has_live_games;
+        let age = cached_entry.cached_at.elapsed();
+        let ttl = cached_entry.get_ttl();
+
+        debug!(
+            "Auto-refresh: Found cached tournament data: key={}, has_live={}, age={:?}, ttl={:?}",
+            key, has_live, age, ttl
+        );
+
+        if !cached_entry.is_expired() {
+            let games_count = cached_entry.data.games.len();
+            info!(
+                "Auto-refresh: Using cached data: key={}, games={}, has_live={}, age={:?}",
+                key, games_count, has_live, age
+            );
+            return Some(cached_entry.data.clone());
+        } else {
+            // Enhanced logging for auto-refresh cache bypass
+            if has_live {
+                info!(
+                    "Auto-refresh: Cache bypass for expired live game entry: key={}, age={:?}, ttl={:?} - fetching fresh data",
+                    key, age, ttl
+                );
+            } else {
+                info!(
+                    "Auto-refresh: Cache bypass for expired completed game entry: key={}, age={:?}, ttl={:?}",
+                    key, age, ttl
+                );
+            }
+            cache.pop(key);
+        }
+    } else {
+        debug!("Auto-refresh: Cache miss for tournament data: key={}", key);
     }
 
     None
@@ -1733,6 +1821,509 @@ mod tests {
 
         // Clear cache after test
         clear_goal_events_cache().await;
+    }
+
+    // Comprehensive unit tests for live game detection
+    // Task 7: Create comprehensive unit tests for live game detection
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_all_ongoing() {
+        // Test scenario with all ongoing games
+        let ongoing_games = vec![
+            GameData {
+                home_team: "HIFK".to_string(),
+                away_team: "Tappara".to_string(),
+                time: "18:30".to_string(),
+                result: "2-1".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 1800,
+                start: "2024-01-15T18:30:00Z".to_string(),
+            },
+            GameData {
+                home_team: "Kärpät".to_string(),
+                away_team: "Lukko".to_string(),
+                time: "19:00".to_string(),
+                result: "0-3".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 2400,
+                start: "2024-01-15T19:00:00Z".to_string(),
+            },
+            GameData {
+                home_team: "JYP".to_string(),
+                away_team: "Ilves".to_string(),
+                time: "19:30".to_string(),
+                result: "1-1".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 900,
+                start: "2024-01-15T19:30:00Z".to_string(),
+            },
+        ];
+
+        let result = has_live_games_from_game_data(&ongoing_games);
+        assert!(result, "Should return true when all games are ongoing");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_all_completed() {
+        // Test scenario with all completed games
+        let completed_games = vec![
+            GameData {
+                home_team: "HIFK".to_string(),
+                away_team: "Tappara".to_string(),
+                time: "18:30".to_string(),
+                result: "3-2".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: true,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3900,
+                start: "2024-01-15T18:30:00Z".to_string(),
+            },
+            GameData {
+                home_team: "Kärpät".to_string(),
+                away_team: "Lukko".to_string(),
+                time: "19:00".to_string(),
+                result: "1-4".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3600,
+                start: "2024-01-15T19:00:00Z".to_string(),
+            },
+            GameData {
+                home_team: "JYP".to_string(),
+                away_team: "Ilves".to_string(),
+                time: "19:30".to_string(),
+                result: "2-1".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: true,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3900,
+                start: "2024-01-15T19:30:00Z".to_string(),
+            },
+        ];
+
+        let result = has_live_games_from_game_data(&completed_games);
+        assert!(!result, "Should return false when all games are completed");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_all_scheduled() {
+        // Test scenario with all scheduled games
+        let scheduled_games = vec![
+            GameData {
+                home_team: "HIFK".to_string(),
+                away_team: "Tappara".to_string(),
+                time: "18:30".to_string(),
+                result: "-".to_string(),
+                score_type: ScoreType::Scheduled,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 0,
+                start: "2024-01-16T18:30:00Z".to_string(),
+            },
+            GameData {
+                home_team: "Kärpät".to_string(),
+                away_team: "Lukko".to_string(),
+                time: "19:00".to_string(),
+                result: "-".to_string(),
+                score_type: ScoreType::Scheduled,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 0,
+                start: "2024-01-16T19:00:00Z".to_string(),
+            },
+        ];
+
+        let result = has_live_games_from_game_data(&scheduled_games);
+        assert!(!result, "Should return false when all games are scheduled");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_mixed_with_ongoing() {
+        // Test scenario with mixed game states including ongoing games
+        let mixed_games = vec![
+            GameData {
+                home_team: "HIFK".to_string(),
+                away_team: "Tappara".to_string(),
+                time: "18:30".to_string(),
+                result: "3-2".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3600,
+                start: "2024-01-15T18:30:00Z".to_string(),
+            },
+            GameData {
+                home_team: "Kärpät".to_string(),
+                away_team: "Lukko".to_string(),
+                time: "19:00".to_string(),
+                result: "1-2".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 2100,
+                start: "2024-01-15T19:00:00Z".to_string(),
+            },
+            GameData {
+                home_team: "JYP".to_string(),
+                away_team: "Ilves".to_string(),
+                time: "20:00".to_string(),
+                result: "-".to_string(),
+                score_type: ScoreType::Scheduled,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 0,
+                start: "2024-01-15T20:00:00Z".to_string(),
+            },
+        ];
+
+        let result = has_live_games_from_game_data(&mixed_games);
+        assert!(
+            result,
+            "Should return true when at least one game is ongoing"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_mixed_without_ongoing() {
+        // Test scenario with mixed game states but no ongoing games
+        let mixed_games = vec![
+            GameData {
+                home_team: "HIFK".to_string(),
+                away_team: "Tappara".to_string(),
+                time: "18:30".to_string(),
+                result: "3-2".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: true,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3900,
+                start: "2024-01-15T18:30:00Z".to_string(),
+            },
+            GameData {
+                home_team: "Kärpät".to_string(),
+                away_team: "Lukko".to_string(),
+                time: "19:00".to_string(),
+                result: "1-4".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3600,
+                start: "2024-01-15T19:00:00Z".to_string(),
+            },
+            GameData {
+                home_team: "JYP".to_string(),
+                away_team: "Ilves".to_string(),
+                time: "20:00".to_string(),
+                result: "-".to_string(),
+                score_type: ScoreType::Scheduled,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 0,
+                start: "2024-01-15T20:00:00Z".to_string(),
+            },
+        ];
+
+        let result = has_live_games_from_game_data(&mixed_games);
+        assert!(!result, "Should return false when no games are ongoing");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_empty_list() {
+        // Test scenario with empty game list
+        let empty_games: Vec<GameData> = vec![];
+
+        let result = has_live_games_from_game_data(&empty_games);
+        assert!(!result, "Should return false when game list is empty");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_single_ongoing() {
+        // Test scenario with single ongoing game
+        let single_ongoing = vec![GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "18:30".to_string(),
+            result: "1-0".to_string(),
+            score_type: ScoreType::Ongoing,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 600,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        }];
+
+        let result = has_live_games_from_game_data(&single_ongoing);
+        assert!(result, "Should return true for single ongoing game");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_single_completed() {
+        // Test scenario with single completed game
+        let single_completed = vec![GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "18:30".to_string(),
+            result: "2-1".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        }];
+
+        let result = has_live_games_from_game_data(&single_completed);
+        assert!(!result, "Should return false for single completed game");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_single_scheduled() {
+        // Test scenario with single scheduled game
+        let single_scheduled = vec![GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "18:30".to_string(),
+            result: "-".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 0,
+            start: "2024-01-16T18:30:00Z".to_string(),
+        }];
+
+        let result = has_live_games_from_game_data(&single_scheduled);
+        assert!(!result, "Should return false for single scheduled game");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_multiple_ongoing() {
+        // Test scenario with multiple ongoing games to verify count logging
+        let multiple_ongoing = vec![
+            GameData {
+                home_team: "HIFK".to_string(),
+                away_team: "Tappara".to_string(),
+                time: "18:30".to_string(),
+                result: "2-1".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 1800,
+                start: "2024-01-15T18:30:00Z".to_string(),
+            },
+            GameData {
+                home_team: "Kärpät".to_string(),
+                away_team: "Lukko".to_string(),
+                time: "19:00".to_string(),
+                result: "0-1".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 1200,
+                start: "2024-01-15T19:00:00Z".to_string(),
+            },
+            GameData {
+                home_team: "JYP".to_string(),
+                away_team: "Ilves".to_string(),
+                time: "19:30".to_string(),
+                result: "3-2".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 2700,
+                start: "2024-01-15T19:30:00Z".to_string(),
+            },
+            GameData {
+                home_team: "TPS".to_string(),
+                away_team: "Sport".to_string(),
+                time: "20:00".to_string(),
+                result: "1-1".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3000,
+                start: "2024-01-15T20:00:00Z".to_string(),
+            },
+        ];
+
+        let result = has_live_games_from_game_data(&multiple_ongoing);
+        assert!(result, "Should return true when multiple games are ongoing");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_playoffs_ongoing() {
+        // Test scenario with ongoing playoff games
+        let playoff_ongoing = vec![
+            GameData {
+                home_team: "HIFK".to_string(),
+                away_team: "Tappara".to_string(),
+                time: "18:30".to_string(),
+                result: "2-1".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "playoffs".to_string(),
+                goal_events: vec![],
+                played_time: 2400,
+                start: "2024-03-15T18:30:00Z".to_string(),
+            },
+            GameData {
+                home_team: "Kärpät".to_string(),
+                away_team: "Lukko".to_string(),
+                time: "19:00".to_string(),
+                result: "0-0".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "playoffs".to_string(),
+                goal_events: vec![],
+                played_time: 600,
+                start: "2024-03-15T19:00:00Z".to_string(),
+            },
+        ];
+
+        let result = has_live_games_from_game_data(&playoff_ongoing);
+        assert!(result, "Should return true for ongoing playoff games");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_live_games_from_game_data_complex_mixed_scenario() {
+        // Test complex scenario with various game states and series
+        let complex_mixed = vec![
+            // Completed regular season game
+            GameData {
+                home_team: "HIFK".to_string(),
+                away_team: "Tappara".to_string(),
+                time: "18:30".to_string(),
+                result: "3-2".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: true,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3900,
+                start: "2024-01-15T18:30:00Z".to_string(),
+            },
+            // Ongoing regular season game
+            GameData {
+                home_team: "Kärpät".to_string(),
+                away_team: "Lukko".to_string(),
+                time: "19:00".to_string(),
+                result: "1-2".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 2100,
+                start: "2024-01-15T19:00:00Z".to_string(),
+            },
+            // Scheduled playoff game
+            GameData {
+                home_team: "JYP".to_string(),
+                away_team: "Ilves".to_string(),
+                time: "20:00".to_string(),
+                result: "-".to_string(),
+                score_type: ScoreType::Scheduled,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "playoffs".to_string(),
+                goal_events: vec![],
+                played_time: 0,
+                start: "2024-03-15T20:00:00Z".to_string(),
+            },
+            // Completed playoff game with shootout
+            GameData {
+                home_team: "TPS".to_string(),
+                away_team: "Sport".to_string(),
+                time: "18:00".to_string(),
+                result: "4-3".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: true,
+                serie: "playoffs".to_string(),
+                goal_events: vec![],
+                played_time: 3900,
+                start: "2024-03-14T18:00:00Z".to_string(),
+            },
+            // Another ongoing game
+            GameData {
+                home_team: "Pelicans".to_string(),
+                away_team: "KalPa".to_string(),
+                time: "19:30".to_string(),
+                result: "0-1".to_string(),
+                score_type: ScoreType::Ongoing,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 900,
+                start: "2024-01-15T19:30:00Z".to_string(),
+            },
+        ];
+
+        let result = has_live_games_from_game_data(&complex_mixed);
+        assert!(
+            result,
+            "Should return true when complex mixed scenario includes ongoing games"
+        );
     }
 
     #[tokio::test]
