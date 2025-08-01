@@ -13,8 +13,8 @@ pub const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 100;
 
 /// Cache TTL (Time To Live) values in seconds
 pub mod cache_ttl {
-    /// TTL for live games (15 seconds for maximum clock tracking)
-    pub const LIVE_GAMES_SECONDS: u64 = 15;
+    /// TTL for live games (10 seconds for maximum clock tracking)
+    pub const LIVE_GAMES_SECONDS: u64 = 10;
 
     /// TTL for completed games (1 hour)
     pub const COMPLETED_GAMES_SECONDS: u64 = 3600;
@@ -22,7 +22,7 @@ pub mod cache_ttl {
     /// TTL for player data (24 hours)
     pub const PLAYER_DATA_SECONDS: u64 = 86400;
 
-    /// TTL for HTTP responses (5 minutes for completed games, 15 seconds for live games)
+    /// TTL for HTTP responses (5 minutes for completed games, 10 seconds for live games)
     pub const HTTP_RESPONSE_SECONDS: u64 = 300;
 }
 

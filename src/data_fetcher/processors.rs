@@ -192,13 +192,30 @@ pub fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
         ScoreType::Final
     };
 
+    // Enhanced logging for better debugging of game state transitions
     tracing::debug!(
-        "Game {} status: started={}, ended={}, score_type={:?}",
+        "Game {} status: started={}, ended={}, score_type={:?}, game_time={}, home_goals={}, away_goals={}",
         game.id,
         game.started,
         game.ended,
-        score_type
+        score_type,
+        game.game_time,
+        game.home_team.goals,
+        game.away_team.goals
     );
+
+    // Log additional details for ongoing games
+    if score_type == ScoreType::Ongoing {
+        tracing::info!(
+            "Ongoing game detected: {} vs {} (ID: {}) - game_time: {}s, score: {}-{}",
+            game.home_team.team_name.as_deref().unwrap_or("Unknown"),
+            game.away_team.team_name.as_deref().unwrap_or("Unknown"),
+            game.id,
+            game.game_time,
+            game.home_team.goals,
+            game.away_team.goals
+        );
+    }
 
     (score_type, is_overtime, is_shootout)
 }
