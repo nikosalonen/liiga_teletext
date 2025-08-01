@@ -4,9 +4,6 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 
 <img width="886" height="658" alt="image" src="https://github.com/user-attachments/assets/4a7a3f7d-1766-4515-a61f-da96a29dcaeb" />
 
-
-
-
 ## Features
 
 - **Authentic teletext interface** with YLE Teksti-TV channel 221 appearance
@@ -31,6 +28,8 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 - **Version checking** and update notifications
 - **Debug mode** for development and troubleshooting
 - **Non-interactive mode** for scripting and automation
+- **Performance monitoring** with request deduplication and metrics collection
+- **Advanced caching** with intelligent cache management and emergency cache clearing
 
 ## Installation
 
@@ -73,6 +72,9 @@ liiga_teletext/
 │   ├── teletext_ui.rs     # UI components and rendering
 │   ├── config.rs          # Configuration handling
 │   ├── error.rs           # Error handling and custom error types
+│   ├── constants.rs       # Application constants and color definitions
+│   ├── performance.rs     # Performance monitoring and request deduplication
+│   ├── testing_utils.rs   # Test utilities and mock data builders
 │   ├── data_fetcher.rs    # Data fetching module entry point
 │   ├── data_fetcher/      # Data fetching related modules
 │   │   ├── api.rs         # API integration and HTTP requests
@@ -80,11 +82,15 @@ liiga_teletext/
 │   │   ├── processors.rs  # Data processing and transformation
 │   │   ├── cache.rs       # Caching functionality
 │   │   └── player_names.rs # Player name resolution
+│   ├── ui/                # UI-related modules
+│   │   ├── mod.rs         # UI module entry point
+│   │   └── interactive.rs # Interactive UI components
 │   └── schemas/           # JSON schema definitions
 │       ├── game_schema.json          # Game data structure schema
 │       └── game_schedule_schema.json # Game schedule data structure schema
 ├── tests/                 # Integration tests
-└── scripts/              # Build and utility scripts
+├── build.rs               # Build script for version embedding
+└── docs/                  # Documentation files
 ```
 
 ## Usage
@@ -159,10 +165,13 @@ During off-season periods, the app shows a countdown to the next regular season 
 The application includes several performance optimizations:
 
 - **HTTP Response Caching**: Intelligent caching with time-based expiration reduces API calls
+- **Request Deduplication**: Prevents multiple identical API calls from running simultaneously
+- **Performance Metrics**: Tracks API call counts, cache hit rates, and response times
 - **Connection Pooling**: Reuses HTTP connections for better performance
 - **Incremental Updates**: Only refreshes data when necessary based on game state
 - **Memory Management**: Efficient data structures and resource cleanup
 - **Async Architecture**: Non-blocking I/O operations for responsive UI
+- **Emergency Cache Management**: Automatic cache clearing when memory usage is high
 
 ## Features Status
 
@@ -182,8 +191,12 @@ The application includes several performance optimizations:
 - [x] Season countdown during off-season
 - [x] Historical game data support
 - [x] HTTP response caching for performance
+- [x] Request deduplication to prevent duplicate API calls
+- [x] Performance metrics collection and monitoring
+- [x] Emergency cache management for memory optimization
 - [x] Robust error handling with user-friendly messages
-- [x] Comprehensive test coverage
+- [x] Comprehensive test coverage with testing utilities
+- [x] Advanced UI components with interactive features
 
 ## Development
 
@@ -215,6 +228,8 @@ The application follows a modular architecture with clear separation of concerns
 - **Teletext UI** (`teletext_ui.rs`) - Authentic YLE Teksti-TV style rendering
 - **Configuration** (`config.rs`) - Platform-specific config management
 - **Error Handling** (`error.rs`) - Centralized error types with context
+- **Performance** (`performance.rs`) - Request deduplication and metrics collection
+- **Testing Utils** (`testing_utils.rs`) - Mock data builders and test utilities
 
 ## Contributing
 
