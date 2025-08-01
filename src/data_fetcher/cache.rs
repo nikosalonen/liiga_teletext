@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 
+use crate::constants::cache_ttl;
 use crate::data_fetcher::models::{
     DetailedGameResponse, GameData, GoalEventData, ScheduleResponse,
 };
@@ -86,23 +87,31 @@ impl CachedTournamentData {
         }
     }
 
-    /// Checks if the cached data is expired based on game state
+        /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
         let ttl = if self.has_live_games {
-            Duration::from_secs(30) // 30 seconds for live games
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 30 seconds for live games
         } else {
-            Duration::from_secs(3600) // 1 hour for completed games
+            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS) // 1 hour for completed games
         };
 
-        self.cached_at.elapsed() > ttl
+        let age = self.cached_at.elapsed();
+        let is_expired = age > ttl;
+
+        debug!(
+            "Cache expiration check: has_live_games={}, age={:?}, ttl={:?}, is_expired={}",
+            self.has_live_games, age, ttl, is_expired
+        );
+
+        is_expired
     }
 
     /// Gets the TTL duration for this cache entry
     pub fn get_ttl(&self) -> Duration {
         if self.has_live_games {
-            Duration::from_secs(30)
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS)
         } else {
-            Duration::from_secs(3600)
+            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
         }
     }
 
@@ -128,9 +137,9 @@ impl CachedDetailedGameData {
     /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
         let ttl = if self.is_live_game {
-            Duration::from_secs(15) // 15 seconds for live games
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 30 seconds for live games
         } else {
-            Duration::from_secs(1800) // 30 minutes for completed games
+            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS) // 1 hour for completed games
         };
 
         self.cached_at.elapsed() > ttl
@@ -139,9 +148,9 @@ impl CachedDetailedGameData {
     /// Gets the TTL duration for this cache entry
     pub fn get_ttl(&self) -> Duration {
         if self.is_live_game {
-            Duration::from_secs(15)
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS)
         } else {
-            Duration::from_secs(1800)
+            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
         }
     }
 }
@@ -211,9 +220,18 @@ pub fn has_live_games(response: &ScheduleResponse) -> bool {
 
 /// Determines if a list of GameData contains live games
 pub fn has_live_games_from_game_data(games: &[GameData]) -> bool {
-    games
+    let has_live = games
         .iter()
-        .any(|game| game.score_type == ScoreType::Ongoing)
+        .any(|game| game.score_type == ScoreType::Ongoing);
+
+    if has_live {
+        let ongoing_count = games.iter().filter(|g| g.score_type == ScoreType::Ongoing).count();
+        debug!("Live games detected: {} ongoing out of {} total games", ongoing_count, games.len());
+    } else {
+        debug!("No live games detected in {} games", games.len());
+    }
+
+    has_live
 }
 
 /// Caches tournament data with automatic live game detection
