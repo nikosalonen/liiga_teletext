@@ -20,6 +20,7 @@ use crate::data_fetcher::processors::{
     should_show_todays_games,
 };
 use crate::error::AppError;
+use crate::teletext_ui::ScoreType;
 use chrono::{Datelike, Local, Utc};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
@@ -414,23 +415,24 @@ async fn process_single_game(
         away_team_name
     );
 
-    let time = if !game.started {
-        let formatted_time = format_time(&game.start).unwrap_or_default();
-        info!("Game not started, formatted time: {}", formatted_time);
-        formatted_time
-    } else {
-        debug!("Game already started, no time to display");
-        String::new()
-    };
-
-    let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-    debug!("Game result: {}", result);
-
+    // Use enhanced game state detection for time formatting
     let (score_type, is_overtime, is_shootout) = determine_game_status(&game);
     debug!(
         "Game status: {:?}, overtime: {}, shootout: {}",
         score_type, is_overtime, is_shootout
     );
+
+    let time = if matches!(score_type, ScoreType::Scheduled) {
+        let formatted_time = format_time(&game.start).unwrap_or_default();
+        debug!("Game scheduled, formatted time: {}", formatted_time);
+        formatted_time
+    } else {
+        debug!("Game ongoing or finished, no time to display");
+        String::new()
+    };
+
+    let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
+    debug!("Game result: {}", result);
 
     let goal_events = if should_fetch_detailed_data(&game) {
         debug!("Fetching detailed game data");
