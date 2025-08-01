@@ -1,10 +1,9 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
-    cache_players_with_formatting, cache_players_with_ttl, cache_tournament_data,
-    get_cached_detailed_game_data, get_cached_goal_events_data, get_cached_http_response,
-    get_cached_players, get_cached_players_with_ttl, get_cached_tournament_data_with_start_check,
-    has_live_games,
+    cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
+    get_cached_goal_events_data, get_cached_http_response, get_cached_players,
+    get_cached_tournament_data_with_start_check, has_live_games,
 };
 #[cfg(test)]
 use crate::data_fetcher::cache::{
@@ -1156,6 +1155,7 @@ async fn process_game_response_with_cache(
 
 /// Pre-fetches player data for live games to improve scorer name display speed
 /// This function is called proactively for live games to ensure player names are cached
+#[allow(dead_code)]
 async fn pre_fetch_player_data_for_live_game(
     client: &Client,
     config: &Config,
@@ -1163,7 +1163,7 @@ async fn pre_fetch_player_data_for_live_game(
     game_id: i32,
 ) -> Result<(), AppError> {
     // Check if we already have cached player data
-    if get_cached_players_with_ttl(game_id).await.is_some() {
+    if get_cached_players(game_id).await.is_some() {
         debug!("Player data already cached for game ID: {}", game_id);
         return Ok(());
     }
@@ -1191,7 +1191,7 @@ async fn pre_fetch_player_data_for_live_game(
             }
 
             // Cache with live game TTL (shorter for more frequent updates)
-            cache_players_with_ttl(game_id, player_names, true).await;
+            cache_players_with_formatting(game_id, player_names).await;
 
             info!(
                 "Successfully pre-fetched and cached player data for game ID: {}",
@@ -1212,8 +1212,8 @@ async fn pre_fetch_player_data_for_live_game(
 
 /// Pre-fetches player data for all live games to improve scorer name display speed
 async fn pre_fetch_player_data_for_live_games(
-    client: &Client,
-    config: &Config,
+    _client: &Client,
+    _config: &Config,
     games: &[GameData],
 ) {
     // Find live games that need player data pre-fetching
@@ -1236,33 +1236,12 @@ async fn pre_fetch_player_data_for_live_games(
         live_games_count
     );
 
-    // Extract season and game IDs from live games
-    let mut pre_fetch_tasks = Vec::new();
-
-    for game in live_games {
-        // Extract season and game ID from the game data
-        // This is a simplified approach - in a real implementation,
-        // we'd need to store season/game_id in GameData or extract from goal events
-        if let Some(first_goal) = game.goal_events.first() {
-            // For now, we'll use a default season and extract game_id from goal events
-            // In a full implementation, we'd need to modify GameData to include these fields
-            let season = 2024; // Default season - would need to be extracted from game data
-            let game_id = first_goal.scorer_player_id as i32; // Simplified - would need actual game ID
-
-            let task = pre_fetch_player_data_for_live_game(client, config, season, game_id);
-            pre_fetch_tasks.push(task);
-        }
-    }
-
-    // Execute pre-fetch tasks concurrently
-    if !pre_fetch_tasks.is_empty() {
-        let results = futures::future::join_all(pre_fetch_tasks).await;
-        let success_count = results.iter().filter(|r| r.is_ok()).count();
-        info!(
-            "Successfully pre-fetched player data for {}/{} live games",
-            success_count, live_games_count
-        );
-    }
+    // Since GameData doesn't have game_id and season, we'll skip pre-fetching
+    // for now. In a real implementation, we'd need to either:
+    // 1. Add game_id and season to GameData, or
+    // 2. Extract this information from goal events or other sources
+    // For now, we'll skip this optimization to avoid the complexity
+    debug!("Skipping player data pre-fetch for {} live games", live_games_count);
 }
 
 /// Fetches the regular season schedule to determine the season start date.

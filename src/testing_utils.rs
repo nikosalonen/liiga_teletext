@@ -19,6 +19,7 @@ impl TestDataBuilder {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+
         }
     }
 
@@ -36,6 +37,7 @@ impl TestDataBuilder {
             goal_events: vec![],
             played_time: 3900, // 65 minutes
             start: "2024-01-15T18:30:00Z".to_string(),
+
         }
     }
 
@@ -53,6 +55,7 @@ impl TestDataBuilder {
             goal_events: vec![],
             played_time: 3900, // 65 minutes
             start: "2024-01-15T18:30:00Z".to_string(),
+
         }
     }
 
@@ -70,6 +73,7 @@ impl TestDataBuilder {
             goal_events: vec![],
             played_time: 2400, // 40 minutes
             start: "2024-01-15T18:30:00Z".to_string(),
+
         }
     }
 

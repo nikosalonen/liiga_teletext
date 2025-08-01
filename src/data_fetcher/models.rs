@@ -732,6 +732,7 @@ mod tests {
             goal_events: vec![],
             played_time: 3900,
             start: "2024-01-15T18:30:00Z".to_string(),
+
         };
 
         assert_eq!(game_data.home_team, "HIFK");

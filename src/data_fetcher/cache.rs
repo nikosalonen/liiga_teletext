@@ -78,6 +78,7 @@ pub struct CachedGoalEventsData {
 
 /// Cached player data with TTL support
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CachedPlayerData {
     pub players: HashMap<i64, String>,
     pub cached_at: Instant,
@@ -86,6 +87,7 @@ pub struct CachedPlayerData {
 
 impl CachedPlayerData {
     /// Creates a new cached player data entry
+    #[allow(dead_code)]
     pub fn new(players: HashMap<i64, String>, is_live_game: bool) -> Self {
         Self {
             players,
@@ -723,6 +725,7 @@ pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i6
 
 /// Caches player information with TTL support for live games
 /// This function caches player data with different TTL based on game state
+#[allow(dead_code)]
 pub async fn cache_players_with_ttl(
     game_id: i32,
     players: HashMap<i64, String>,
@@ -745,6 +748,7 @@ pub async fn cache_players_with_ttl(
 }
 
 /// Retrieves cached player data with TTL support
+#[allow(dead_code)]
 pub async fn get_cached_players_with_ttl(game_id: i32) -> Option<HashMap<i64, String>> {
     debug!(
         "Attempting to retrieve cached players with TTL for game_id: {}",
