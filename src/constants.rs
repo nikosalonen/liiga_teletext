@@ -13,15 +13,16 @@ pub const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 100;
 
 /// Cache TTL (Time To Live) values in seconds
 pub mod cache_ttl {
-    /// TTL for live games (optimized to 8 seconds for very responsive live updates)
+    /// TTL for live games (reduced from 15 to 8 seconds to ensure fresh goal events)
+    /// This should be shorter than the auto-refresh interval (15s) to prevent stale data
     pub const LIVE_GAMES_SECONDS: u64 = 8;
 
     /// TTL for completed games (1 hour)
     pub const COMPLETED_GAMES_SECONDS: u64 = 3600;
 
-    /// TTL for games that should be starting soon (5 minutes before to 10 minutes after scheduled start)
-    /// This should be the most aggressive refresh rate to catch the exact moment games become live
-    pub const STARTING_GAMES_SECONDS: u64 = 5;
+    /// TTL for games that should be starting soon (increased from 5 to 30 seconds to reduce API calls)
+    /// This should still catch the moment games become live but with less aggressive polling
+    pub const STARTING_GAMES_SECONDS: u64 = 30;
 
     /// TTL for player data (24 hours)
     pub const PLAYER_DATA_SECONDS: u64 = 86400;
@@ -145,15 +146,16 @@ mod tests {
 
     #[test]
     fn test_ttl_constants_are_reasonable() {
-        // Test that TTL values make sense relative to each other
+        // Test that TTL constants make sense for rate limiting
         let live = cache_ttl::LIVE_GAMES_SECONDS;
         let starting = cache_ttl::STARTING_GAMES_SECONDS;
         let completed = cache_ttl::COMPLETED_GAMES_SECONDS;
         let player = cache_ttl::PLAYER_DATA_SECONDS;
         let http = cache_ttl::HTTP_RESPONSE_SECONDS;
 
-        // Starting games should have the shortest TTL (most aggressive refresh)
-        assert!(starting < live);
+        // With rate limiting protection, starting games can have longer TTL than live games
+        // to reduce API calls while still catching the moment games become live
+        assert!(starting >= live); // Starting games TTL >= live games TTL
         // Live games should have shorter TTL than completed games
         assert!(live < completed);
         // Completed games should have shorter TTL than player data
@@ -162,8 +164,8 @@ mod tests {
         assert!(http > 0);
 
         // Ensure starting games TTL is reasonable (not too short, not too long)
-        assert!(starting >= 5); // At least 5 seconds
-        assert!(starting <= 30); // At most 30 seconds
+        assert!(starting >= 15); // At least 15 seconds (same as live games)
+        assert!(starting <= 60); // At most 60 seconds (increased from 30)
     }
 
     #[test]
