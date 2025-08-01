@@ -1257,7 +1257,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             }
 
             // Always preserve the current page number before refresh, regardless of loading screen
-            let preserved_page = current_page.as_ref().map(|existing_page| existing_page.get_current_page());
+            let preserved_page = current_page
+                .as_ref()
+                .map(|existing_page| existing_page.get_current_page());
             preserved_page_for_restoration = preserved_page;
 
             if should_show_loading {
@@ -1580,9 +1582,11 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 if let Some(ref current) = current_page {
                     // Check if current page is a loading page by checking if it has error messages
                     if current.has_error_messages() {
-                        if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
+                        if let Some(preserved_page_for_restoration) = preserved_page_for_restoration
+                        {
+                            let games_to_use = if games.is_empty() { &last_games } else { &games };
                             let mut page = create_page(
-                                &games.is_empty().then(|| &last_games).unwrap_or(&games),
+                                games_to_use,
                                 args.disable_links,
                                 true,
                                 false,
