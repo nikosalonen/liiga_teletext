@@ -13,14 +13,15 @@ pub const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 100;
 
 /// Cache TTL (Time To Live) values in seconds
 pub mod cache_ttl {
-    /// TTL for live games (reduced from 30 to 15 seconds for more responsive updates)
-    pub const LIVE_GAMES_SECONDS: u64 = 15;
+    /// TTL for live games (optimized to 8 seconds for very responsive live updates)
+    pub const LIVE_GAMES_SECONDS: u64 = 8;
 
     /// TTL for completed games (1 hour)
     pub const COMPLETED_GAMES_SECONDS: u64 = 3600;
 
     /// TTL for games that should be starting soon (5 minutes before to 10 minutes after scheduled start)
-    pub const STARTING_GAMES_SECONDS: u64 = 10;
+    /// This should be the most aggressive refresh rate to catch the exact moment games become live
+    pub const STARTING_GAMES_SECONDS: u64 = 5;
 
     /// TTL for player data (24 hours)
     pub const PLAYER_DATA_SECONDS: u64 = 86400;
