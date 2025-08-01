@@ -1431,7 +1431,12 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 },
                 Err(_) => {
                     // Timeout occurred during auto-refresh
-                    tracing::warn!("Auto-refresh timeout, continuing with existing data");
+                    tracing::warn!(
+                        "Auto-refresh timeout after {:?}, continuing with existing data ({} games, {} live games)",
+                        auto_refresh_interval,
+                        last_games.len(),
+                        last_games.iter().filter(|g| g.score_type == ScoreType::Ongoing).count()
+                    );
                     (Vec::new(), true, String::new(), true)
                 }
             };
