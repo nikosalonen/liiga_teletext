@@ -22,6 +22,9 @@ pub mod cache_ttl {
     /// TTL for player data (24 hours)
     pub const PLAYER_DATA_SECONDS: u64 = 86400;
 
+    /// TTL for player data in live games (1 hour - more frequent updates for live games)
+    pub const LIVE_PLAYER_DATA_SECONDS: u64 = 3600;
+
     /// Default TTL for HTTP responses (5 minutes). Note: Actual TTL is determined dynamically
     /// based on URL type and game state in the fetch function.
     pub const HTTP_RESPONSE_SECONDS: u64 = 300;

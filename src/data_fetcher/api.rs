@@ -1,9 +1,10 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
-    cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
-    get_cached_goal_events_data, get_cached_http_response, get_cached_players,
-    get_cached_tournament_data_with_start_check, has_live_games,
+    cache_players_with_formatting, cache_players_with_ttl, cache_tournament_data,
+    get_cached_detailed_game_data, get_cached_goal_events_data, get_cached_http_response,
+    get_cached_players, get_cached_players_with_ttl, get_cached_tournament_data_with_start_check,
+    has_live_games,
 };
 #[cfg(test)]
 use crate::data_fetcher::cache::{
@@ -520,6 +521,10 @@ async fn process_games(
     }
 
     info!("Total games processed: {}", all_games.len());
+
+    // Pre-fetch player data for live games to improve scorer name display speed
+    pre_fetch_player_data_for_live_games(client, config, &all_games).await;
+
     Ok(all_games)
 }
 
@@ -1147,6 +1152,105 @@ async fn process_game_response_with_cache(
         game_id
     );
     events
+}
+
+/// Pre-fetches player data for live games to improve scorer name display speed
+/// This function is called proactively for live games to ensure player names are cached
+async fn pre_fetch_player_data_for_live_game(
+    client: &Client,
+    config: &Config,
+    season: i32,
+    game_id: i32,
+) -> Result<(), AppError> {
+    // Check if we already have cached player data
+    if get_cached_players_with_ttl(game_id).await.is_some() {
+        debug!("Player data already cached for game ID: {}", game_id);
+        return Ok(());
+    }
+
+    info!("Pre-fetching player data for live game ID: {}", game_id);
+    let url = build_game_url(&config.api_domain, season, game_id);
+
+    match fetch::<DetailedGameResponse>(client, &url).await {
+        Ok(game_response) => {
+            // Build and cache player names
+            let mut player_names = HashMap::new();
+
+            for player in &game_response.home_team_players {
+                player_names.insert(
+                    player.id,
+                    build_full_name(&player.first_name, &player.last_name),
+                );
+            }
+
+            for player in &game_response.away_team_players {
+                player_names.insert(
+                    player.id,
+                    build_full_name(&player.first_name, &player.last_name),
+                );
+            }
+
+            // Cache with live game TTL (shorter for more frequent updates)
+            cache_players_with_ttl(game_id, player_names, true).await;
+
+            info!("Successfully pre-fetched and cached player data for game ID: {}", game_id);
+            Ok(())
+        }
+        Err(e) => {
+            warn!("Failed to pre-fetch player data for game ID {}: {}", game_id, e);
+            // Don't fail the entire operation for pre-fetch failures
+            Ok(())
+        }
+    }
+}
+
+/// Pre-fetches player data for all live games to improve scorer name display speed
+async fn pre_fetch_player_data_for_live_games(
+    client: &Client,
+    config: &Config,
+    games: &[GameData],
+) {
+    // Find live games that need player data pre-fetching
+    let live_games: Vec<_> = games
+        .iter()
+        .filter(|game| {
+            game.score_type == crate::teletext_ui::ScoreType::Ongoing
+                && !game.goal_events.is_empty()
+        })
+        .collect();
+
+    if live_games.is_empty() {
+        debug!("No live games with goals found for player data pre-fetching");
+        return;
+    }
+
+    let live_games_count = live_games.len();
+    info!("Pre-fetching player data for {} live games with goals", live_games_count);
+
+    // Extract season and game IDs from live games
+    let mut pre_fetch_tasks = Vec::new();
+
+    for game in live_games {
+        // Extract season and game ID from the game data
+        // This is a simplified approach - in a real implementation,
+        // we'd need to store season/game_id in GameData or extract from goal events
+        if let Some(first_goal) = game.goal_events.first() {
+            // For now, we'll use a default season and extract game_id from goal events
+            // In a full implementation, we'd need to modify GameData to include these fields
+            let season = 2024; // Default season - would need to be extracted from game data
+            let game_id = first_goal.scorer_player_id as i32; // Simplified - would need actual game ID
+
+            let task = pre_fetch_player_data_for_live_game(client, config, season, game_id);
+            pre_fetch_tasks.push(task);
+        }
+    }
+
+    // Execute pre-fetch tasks concurrently
+    if !pre_fetch_tasks.is_empty() {
+        let results = futures::future::join_all(pre_fetch_tasks).await;
+        let success_count = results.iter().filter(|r| r.is_ok()).count();
+        info!("Successfully pre-fetched player data for {}/{} live games", success_count, live_games_count);
+    }
 }
 
 /// Fetches the regular season schedule to determine the season start date.

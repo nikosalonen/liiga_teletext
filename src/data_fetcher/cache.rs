@@ -20,6 +20,12 @@ lazy_static! {
         RwLock::new(LruCache::new(NonZeroUsize::new(100).unwrap()));
 }
 
+// LRU cache structure for player data with TTL support
+lazy_static! {
+    pub static ref PLAYER_DATA_CACHE: RwLock<LruCache<i32, CachedPlayerData>> =
+        RwLock::new(LruCache::new(NonZeroUsize::new(100).unwrap()));
+}
+
 // LRU cache structure for tournament data with TTL support
 lazy_static! {
     pub static ref TOURNAMENT_CACHE: RwLock<LruCache<String, CachedTournamentData>> =
@@ -68,6 +74,68 @@ pub struct CachedGoalEventsData {
     pub game_id: i32,
     pub season: i32,
     pub is_live_game: bool,
+}
+
+/// Cached player data with TTL support
+#[derive(Debug, Clone)]
+pub struct CachedPlayerData {
+    pub players: HashMap<i64, String>,
+    pub cached_at: Instant,
+    pub is_live_game: bool,
+}
+
+impl CachedPlayerData {
+    /// Creates a new cached player data entry
+    pub fn new(players: HashMap<i64, String>, is_live_game: bool) -> Self {
+        Self {
+            players,
+            cached_at: Instant::now(),
+            is_live_game,
+        }
+    }
+
+    /// Checks if the cached data is expired based on game state
+    pub fn is_expired(&self) -> bool {
+        let ttl = if self.is_live_game {
+            Duration::from_secs(cache_ttl::LIVE_PLAYER_DATA_SECONDS) // 1 hour for live games
+        } else {
+            Duration::from_secs(cache_ttl::PLAYER_DATA_SECONDS) // 24 hours for completed games
+        };
+
+        let age = self.cached_at.elapsed();
+        let is_expired = age > ttl;
+
+        if is_expired {
+            debug!(
+                "Player data cache expired: age={:?}, ttl={:?}, is_live={}",
+                age, ttl, self.is_live_game
+            );
+        }
+
+        is_expired
+    }
+
+    /// Gets the TTL duration for this cache entry
+    #[allow(dead_code)]
+    pub fn get_ttl(&self) -> Duration {
+        if self.is_live_game {
+            Duration::from_secs(cache_ttl::LIVE_PLAYER_DATA_SECONDS)
+        } else {
+            Duration::from_secs(cache_ttl::PLAYER_DATA_SECONDS)
+        }
+    }
+
+    /// Gets the time until expiry
+    #[allow(dead_code)]
+    pub fn time_until_expiry(&self) -> Duration {
+        let ttl = self.get_ttl();
+        let age = self.cached_at.elapsed();
+        if age >= ttl {
+            Duration::ZERO
+        } else {
+            ttl - age
+        }
+    }
 }
 
 /// Cached HTTP response with TTL support
@@ -651,6 +719,54 @@ pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i6
         .map(|(id, full_name)| (id, format_for_display(&full_name)))
         .collect();
     cache_players(game_id, formatted_players).await;
+}
+
+/// Caches player information with TTL support for live games
+/// This function caches player data with different TTL based on game state
+pub async fn cache_players_with_ttl(
+    game_id: i32,
+    players: HashMap<i64, String>,
+    is_live_game: bool
+) {
+    let player_count = players.len();
+    debug!(
+        "Caching players with TTL: game_id={}, player_count={}, is_live={}",
+        game_id, player_count, is_live_game
+    );
+
+    let cached_data = CachedPlayerData::new(players, is_live_game);
+    let mut cache = PLAYER_DATA_CACHE.write().await;
+    cache.put(game_id, cached_data);
+
+    info!(
+        "Successfully cached players with TTL: game_id={}, player_count={}, is_live={}",
+        game_id, player_count, is_live_game
+    );
+}
+
+/// Retrieves cached player data with TTL support
+pub async fn get_cached_players_with_ttl(game_id: i32) -> Option<HashMap<i64, String>> {
+    debug!("Attempting to retrieve cached players with TTL for game_id: {}", game_id);
+
+    let mut cache = PLAYER_DATA_CACHE.write().await;
+
+    if let Some(cached_data) = cache.get(&game_id) {
+        if cached_data.is_expired() {
+            debug!("Cached player data expired for game_id: {}", game_id);
+            cache.pop(&game_id);
+            None
+        } else {
+            let player_count = cached_data.players.len();
+            debug!(
+                "Cache hit for players with TTL: game_id={}, player_count={}, is_live={}",
+                game_id, player_count, cached_data.is_live_game
+            );
+            Some(cached_data.players.clone())
+        }
+    } else {
+        debug!("Cache miss for players with TTL: game_id={}", game_id);
+        None
+    }
 }
 
 /// Gets the current cache size for monitoring purposes
