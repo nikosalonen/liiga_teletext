@@ -1113,7 +1113,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
     // Rate limiting protection
     let mut rate_limit_backoff = Duration::from_secs(0);
-    let mut last_rate_limit_hit = Instant::now().checked_sub(Duration::from_secs(60)).unwrap_or_else(Instant::now);
+    let mut last_rate_limit_hit = Instant::now()
+        .checked_sub(Duration::from_secs(60))
+        .unwrap_or_else(Instant::now);
 
     loop {
         // Adaptive polling interval based on activity
@@ -1137,7 +1139,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
         // Rate limiting protection: don't refresh too frequently if we have many games
         let game_count = last_games.len();
-        let min_interval_between_refreshes = if let Some(user_interval) = args.min_refresh_interval {
+        let min_interval_between_refreshes = if let Some(user_interval) = args.min_refresh_interval
+        {
             Duration::from_secs(user_interval) // Use user-specified interval
         } else if game_count >= 6 {
             Duration::from_secs(30) // Minimum 30 seconds between refreshes for 6+ games
@@ -1151,7 +1154,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             && !last_games.is_empty()
             && last_auto_refresh.elapsed() >= auto_refresh_interval
             && last_auto_refresh.elapsed() >= min_interval_between_refreshes
-            && last_rate_limit_hit.elapsed() >= rate_limit_backoff // Respect rate limit backoff
+            && last_rate_limit_hit.elapsed() >= rate_limit_backoff
+        // Respect rate limit backoff
         {
             // Check if there are ongoing games - if so, always refresh
             let has_ongoing_games = has_live_games_from_game_data(&last_games);
@@ -1390,7 +1394,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                     message,
                                     url
                                 );
-                                
+
                                 // Implement exponential backoff for rate limits
                                 last_rate_limit_hit = Instant::now();
                                 if rate_limit_backoff.is_zero() {
@@ -1399,7 +1403,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                     // Double the backoff time, but cap at 10 minutes
                                     rate_limit_backoff = std::cmp::min(
                                         rate_limit_backoff * 2,
-                                        Duration::from_secs(600)
+                                        Duration::from_secs(600),
                                     );
                                 }
                                 tracing::info!(
@@ -1435,10 +1439,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             // Reset rate limit backoff on successful refresh
             if !games.is_empty() && rate_limit_backoff > Duration::from_secs(0) {
                 // Gradually reduce backoff on successful requests
-                rate_limit_backoff = std::cmp::max(
-                    rate_limit_backoff / 2,
-                    Duration::from_secs(0)
-                );
+                rate_limit_backoff = std::cmp::max(rate_limit_backoff / 2, Duration::from_secs(0));
                 if rate_limit_backoff.is_zero() {
                     tracing::info!("Rate limit backoff reset to zero after successful request");
                 } else {
