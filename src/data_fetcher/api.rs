@@ -2,9 +2,9 @@ use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
     cache_players_with_formatting, cache_tournament_data, clear_goal_events_cache_for_game,
-    get_cached_detailed_game_data, get_cached_goal_events_data, get_cached_http_response,
-    get_cached_players, get_cached_tournament_data_with_start_check, has_live_games,
-    should_bypass_cache_for_starting_games,
+    get_cached_detailed_game_data, get_cached_goal_events_data, get_cached_goal_events_entry,
+    get_cached_http_response, get_cached_players, get_cached_tournament_data_with_start_check,
+    has_live_games, should_bypass_cache_for_starting_games,
 };
 #[cfg(test)]
 use crate::data_fetcher::cache::{
@@ -439,21 +439,35 @@ async fn process_single_game(
 
         // Check if score has changed since last fetch to force refresh goal events
         let current_score = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-        let score_changed =
-            if let Some(cached_events) = get_cached_goal_events_data(game.season, game.id).await {
-                // If we have cached events, check if the score has changed
-                let cached_score = if let Some(last_event) = cached_events.last() {
-                    format!(
-                        "{}-{}",
-                        last_event.home_team_score, last_event.away_team_score
-                    )
+        let score_changed = if let Some(cached_entry) = get_cached_goal_events_entry(game.season, game.id).await {
+            // If we have cached events, check if the score has changed
+            if cached_entry.was_cleared {
+                // Cache was intentionally cleared - use the last known score
+                if let Some(last_known_score) = &cached_entry.last_known_score {
+                    debug!("Comparing current score {} with last known score {} (from cleared cache)", current_score, last_known_score);
+                    current_score != *last_known_score
                 } else {
-                    "0-0".to_string()
-                };
-                current_score != cached_score
+                    // Cleared cache but no last known score - assume no change
+                    debug!("Cache was cleared but no last known score available, assuming no score change");
+                    false
+                }
             } else {
-                false
-            };
+                // Normal cache entry - check if the score has changed
+                if let Some(last_event) = cached_entry.data.last() {
+                    let cached_score = format!("{}-{}", last_event.home_team_score, last_event.away_team_score);
+                    debug!("Comparing current score {} with cached score {}", current_score, cached_score);
+                    current_score != cached_score
+                } else {
+                    // No goal events in cache - this means cache was never populated
+                    debug!("No goal events in cache, assuming no score change (never populated)");
+                    false
+                }
+            }
+        } else {
+            // No cache entry at all - this means cache was never populated
+            debug!("No cache entry found, assuming no score change (never populated)");
+            false
+        };
 
         if score_changed {
             debug!("Score changed from cached data, forcing fresh goal events fetch");
