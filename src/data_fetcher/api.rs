@@ -439,23 +439,36 @@ async fn process_single_game(
 
         // Check if score has changed since last fetch to force refresh goal events
         let current_score = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-        let score_changed = if let Some(cached_entry) = get_cached_goal_events_entry(game.season, game.id).await {
+        let score_changed = if let Some(cached_entry) =
+            get_cached_goal_events_entry(game.season, game.id).await
+        {
             // If we have cached events, check if the score has changed
             if cached_entry.was_cleared {
                 // Cache was intentionally cleared - use the last known score
                 if let Some(last_known_score) = &cached_entry.last_known_score {
-                    debug!("Comparing current score {} with last known score {} (from cleared cache)", current_score, last_known_score);
+                    debug!(
+                        "Comparing current score {} with last known score {} (from cleared cache)",
+                        current_score, last_known_score
+                    );
                     current_score != *last_known_score
                 } else {
                     // Cleared cache but no last known score - assume no change
-                    debug!("Cache was cleared but no last known score available, assuming no score change");
+                    debug!(
+                        "Cache was cleared but no last known score available, assuming no score change"
+                    );
                     false
                 }
             } else {
                 // Normal cache entry - check if the score has changed
                 if let Some(last_event) = cached_entry.data.last() {
-                    let cached_score = format!("{}-{}", last_event.home_team_score, last_event.away_team_score);
-                    debug!("Comparing current score {} with cached score {}", current_score, cached_score);
+                    let cached_score = format!(
+                        "{}-{}",
+                        last_event.home_team_score, last_event.away_team_score
+                    );
+                    debug!(
+                        "Comparing current score {} with cached score {}",
+                        current_score, cached_score
+                    );
                     current_score != cached_score
                 } else {
                     // No goal events in cache - this means cache was never populated
