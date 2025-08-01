@@ -91,7 +91,7 @@ impl CachedTournamentData {
     /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
         let ttl = if self.has_live_games {
-            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 30 seconds for live games
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 15 seconds for live games
         } else {
             Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS) // 1 hour for completed games
         };
@@ -470,9 +470,9 @@ pub async fn invalidate_tournament_cache_for_date(date: &str) {
     }
 }
 
-/// Invalidates tournament cache entries for games that might be starting
-/// This is called when we detect that games might be transitioning from scheduled to live
-pub async fn invalidate_cache_for_starting_games(date: &str) {
+/// Aggressively invalidates cache for games that should be starting soon
+/// This is called when we detect games are near their scheduled start time
+pub async fn invalidate_cache_for_games_near_start_time(date: &str) {
     let mut cache = TOURNAMENT_CACHE.write().await;
 
     // Find and remove cache entries for the given date
@@ -483,9 +483,50 @@ pub async fn invalidate_cache_for_starting_games(date: &str) {
         .collect();
 
     for key in keys_to_remove {
-        info!("Invalidating cache entry for starting games: {}", key);
+        info!("Aggressively invalidating cache for games near start time: {}", key);
         cache.pop(&key);
     }
+}
+
+/// Completely bypasses cache for games that should be starting soon
+/// This ensures fresh data is always fetched for games near their start time
+pub async fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> bool {
+    // Check if any games are near their start time
+    let has_starting_games = current_games.iter().any(|game| {
+        if game.score_type != crate::teletext_ui::ScoreType::Scheduled || game.start.is_empty() {
+            return false;
+        }
+
+        match chrono::DateTime::parse_from_rfc3339(&game.start) {
+            Ok(game_start) => {
+                let now = chrono::Utc::now();
+                let time_diff = now.signed_duration_since(game_start);
+
+                // Extended window: Check if game should start within the next 5 minutes or started within the last 10 minutes
+                let is_near_start = time_diff >= chrono::Duration::minutes(-5)
+                    && time_diff <= chrono::Duration::minutes(10);
+
+                if is_near_start {
+                    info!(
+                        "Cache bypass triggered for game near start time: {} vs {} - start: {}, time_diff: {:?}",
+                        game.home_team,
+                        game.away_team,
+                        game_start,
+                        time_diff
+                    );
+                }
+
+                is_near_start
+            }
+            Err(_) => false,
+        }
+    });
+
+    if has_starting_games {
+        info!("Cache bypass enabled for games near start time");
+    }
+
+    has_starting_games
 }
 
 /// Enhanced cache expiration check that considers games that might be starting
@@ -504,7 +545,7 @@ pub async fn get_cached_tournament_data_with_start_check(
         // If we have starting games, consider cache expired more aggressively
         if has_starting_games {
             let age = cached_entry.cached_at.elapsed();
-            let aggressive_ttl = Duration::from_secs(10); // Much shorter TTL for starting games
+            let aggressive_ttl = Duration::from_secs(crate::constants::cache_ttl::STARTING_GAMES_SECONDS); // 10 seconds for starting games
 
             if age > aggressive_ttl {
                 info!(

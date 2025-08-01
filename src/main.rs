@@ -14,7 +14,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use data_fetcher::cache::{has_live_games_from_game_data, invalidate_cache_for_starting_games};
+use data_fetcher::cache::{has_live_games_from_game_data, invalidate_cache_for_games_near_start_time};
 use data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
 use error::AppError;
 use semver::Version;
@@ -253,9 +253,10 @@ fn is_game_near_start_time(game: &GameData) -> bool {
             let now = chrono::Utc::now();
             let time_diff = now.signed_duration_since(game_start);
 
-            // Check if game should start within the next 5 minutes or started within the last 5 minutes
+            // Extended window: Check if game should start within the next 5 minutes or started within the last 10 minutes
+            // This is more aggressive to catch games that should have started but haven't updated their status yet
             let is_near_start = time_diff >= chrono::Duration::minutes(-5)
-                && time_diff <= chrono::Duration::minutes(5);
+                && time_diff <= chrono::Duration::minutes(10);
 
             if is_near_start {
                 tracing::debug!(
@@ -1108,7 +1109,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
         // Check for auto-refresh with better logic
         let auto_refresh_interval = if has_live_games_from_game_data(&last_games) {
-            Duration::from_secs(30) // More reasonable for ongoing games (increased from 10s)
+            Duration::from_secs(15) // More frequent for ongoing games (reduced from 30s)
+        } else if last_games.iter().any(is_game_near_start_time) {
+            Duration::from_secs(10) // Very frequent for games near start time
         } else {
             Duration::from_secs(60) // Standard interval for completed/scheduled games
         };
@@ -1164,9 +1167,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     let has_recently_started_games = last_games.iter().any(is_game_near_start_time);
 
                     if has_recently_started_games {
-                        // Invalidate cache for starting games to ensure fresh data
+                        // Aggressively invalidate cache for starting games to ensure fresh data
                         if let Some(ref date) = current_date {
-                            invalidate_cache_for_starting_games(date).await;
+                            invalidate_cache_for_games_near_start_time(date).await;
                         }
                         needs_refresh = true;
                         tracing::info!("Auto-refresh triggered for games that may have started");
@@ -1189,9 +1192,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 let has_recently_started_games = last_games.iter().any(is_game_near_start_time);
 
                 if has_recently_started_games {
-                    // Invalidate cache for starting games to ensure fresh data
+                    // Aggressively invalidate cache for starting games to ensure fresh data
                     if let Some(ref date) = current_date {
-                        invalidate_cache_for_starting_games(date).await;
+                        invalidate_cache_for_games_near_start_time(date).await;
                     }
                     needs_refresh = true;
                     tracing::info!("Auto-refresh triggered for games that may have started");
