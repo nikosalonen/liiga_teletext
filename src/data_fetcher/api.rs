@@ -4,6 +4,7 @@ use crate::data_fetcher::cache::{
     cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
     get_cached_goal_events_data, get_cached_http_response, get_cached_players,
     get_cached_tournament_data_with_start_check, has_live_games,
+    should_bypass_cache_for_starting_games,
 };
 #[cfg(test)]
 use crate::data_fetcher::cache::{
@@ -677,15 +678,20 @@ pub async fn fetch_tournament_data_with_cache_check(
     // Create cache key
     let cache_key = create_tournament_key(tournament, date);
 
-    // Check cache first with enhanced validation
-    if let Some(cached_response) =
-        get_cached_tournament_data_with_start_check(&cache_key, current_games).await
-    {
-        info!(
-            "Using cached tournament data for {} on {}",
-            tournament, date
-        );
-        return Ok(cached_response);
+    // Check if we should completely bypass cache for starting games
+    if should_bypass_cache_for_starting_games(current_games).await {
+        info!("Cache bypass enabled for starting games, fetching fresh data");
+    } else {
+        // Check cache first with enhanced validation
+        if let Some(cached_response) =
+            get_cached_tournament_data_with_start_check(&cache_key, current_games).await
+        {
+            info!(
+                "Using cached tournament data for {} on {}",
+                tournament, date
+            );
+            return Ok(cached_response);
+        }
     }
 
     info!(
