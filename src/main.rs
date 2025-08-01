@@ -1045,7 +1045,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     let mut current_page: Option<TeletextPage> = None;
     let mut pending_resize = false;
     let mut resize_timer = Instant::now();
-    let mut is_auto_refresh = false; // Track if this is an auto-refresh
 
     // Date navigation state - track the current date being displayed
     let mut current_date = args.date.clone();
@@ -1087,12 +1086,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     tracing::debug!("Auto-refresh skipped for historical date: {}", date);
                 } else if has_ongoing_games {
                     needs_refresh = true;
-                    is_auto_refresh = true;
                     tracing::debug!("Auto-refresh triggered for ongoing games");
                 } else if !all_games_scheduled {
                     // Only refresh if not all games are scheduled (i.e., some are finished)
                     needs_refresh = true;
-                    is_auto_refresh = true;
                     tracing::debug!("Auto-refresh triggered for non-scheduled games");
                 } else {
                     tracing::debug!("Auto-refresh skipped - all games are scheduled");
@@ -1116,12 +1113,12 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             let has_ongoing_games = has_live_games_from_game_data(&last_games);
 
             // Show loading indicator only in specific cases:
-            // 1. For historical dates (always show loading)
+            // 1. For historical dates (always show loading - these are slow)
             // 2. For initial load (when current_page is None)
-            // 3. For manual refresh (not auto-refresh)
+            // Skip loading for all current date refreshes (both auto and manual)
             let should_show_loading = if let Some(ref date) = current_date {
-                // Always show loading for historical dates
-                is_historical_date(date) || (!is_auto_refresh && !has_ongoing_games)
+                // Only show loading for historical dates
+                is_historical_date(date)
             } else {
                 // Show loading for initial load when no specific date is requested
                 current_page.is_none()
@@ -1298,7 +1295,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             }
 
             needs_refresh = false;
-            is_auto_refresh = false; // Reset the flag
             last_auto_refresh = Instant::now();
         }
 
@@ -1505,7 +1501,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                                 if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
                                     tracing::info!("Manual refresh requested");
                                     needs_refresh = true;
-                                    is_auto_refresh = false;
                                     last_manual_refresh = Instant::now();
                                 }
                             }
