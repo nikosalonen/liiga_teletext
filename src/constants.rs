@@ -80,6 +80,33 @@ pub mod ui {
     pub const MAX_LINES_PER_PAGE: usize = 20;
 }
 
+/// Dynamic UI constants for responsive layout
+pub mod dynamic_ui {
+    /// Minimum terminal width for proper display
+    pub const MIN_TERMINAL_WIDTH: u16 = 80;
+    
+    /// Minimum terminal height for proper display  
+    pub const MIN_TERMINAL_HEIGHT: u16 = 24;
+    
+    /// Width threshold for standard detail level
+    pub const STANDARD_DETAIL_WIDTH_THRESHOLD: u16 = 100;
+    
+    /// Width threshold for extended detail level
+    pub const EXTENDED_DETAIL_WIDTH_THRESHOLD: u16 = 120;
+    
+    /// Maximum horizontal padding as percentage of width
+    pub const MAX_HORIZONTAL_PADDING_PERCENT: f32 = 0.1;
+    
+    /// Debounce time for resize events (milliseconds)
+    pub const RESIZE_DEBOUNCE_MS: u64 = 100;
+    
+    /// Base height per game in minimal mode
+    pub const BASE_GAME_HEIGHT: u16 = 3;
+    
+    /// Additional height per game in extended mode
+    pub const EXTENDED_GAME_HEIGHT_BONUS: u16 = 2;
+}
+
 /// Environment variable names
 pub mod env_vars {
     /// Environment variable for API domain override
@@ -271,5 +298,28 @@ mod tests {
         assert!(!log_file.is_empty());
         assert!(!debug_mode.is_empty());
         assert!(!cache_size.is_empty());
+    }
+
+    #[test]
+    fn test_dynamic_ui_constants_are_reasonable() {
+        // Ensure dynamic UI constants make sense
+        let min_width = dynamic_ui::MIN_TERMINAL_WIDTH;
+        let min_height = dynamic_ui::MIN_TERMINAL_HEIGHT;
+        let standard_threshold = dynamic_ui::STANDARD_DETAIL_WIDTH_THRESHOLD;
+        let extended_threshold = dynamic_ui::EXTENDED_DETAIL_WIDTH_THRESHOLD;
+        let max_padding_percent = dynamic_ui::MAX_HORIZONTAL_PADDING_PERCENT;
+        let resize_debounce = dynamic_ui::RESIZE_DEBOUNCE_MS;
+        let base_height = dynamic_ui::BASE_GAME_HEIGHT;
+        let height_bonus = dynamic_ui::EXTENDED_GAME_HEIGHT_BONUS;
+
+        // Basic sanity checks
+        assert!(min_width > 0);
+        assert!(min_height > 0);
+        assert!(standard_threshold >= min_width);
+        assert!(extended_threshold > standard_threshold);
+        assert!(max_padding_percent > 0.0 && max_padding_percent < 1.0);
+        assert!(resize_debounce > 0);
+        assert!(base_height > 0);
+        assert!(height_bonus > 0);
     }
 }
