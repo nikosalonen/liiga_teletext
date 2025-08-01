@@ -14,7 +14,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use data_fetcher::cache::has_live_games_from_game_data;
+use data_fetcher::cache::{has_live_games_from_game_data, invalidate_cache_for_starting_games};
 use data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
 use error::AppError;
 use semver::Version;
@@ -1164,6 +1164,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     let has_recently_started_games = last_games.iter().any(is_game_near_start_time);
 
                     if has_recently_started_games {
+                        // Invalidate cache for starting games to ensure fresh data
+                        if let Some(ref date) = current_date {
+                            invalidate_cache_for_starting_games(date).await;
+                        }
                         needs_refresh = true;
                         tracing::info!("Auto-refresh triggered for games that may have started");
                     } else {
@@ -1185,6 +1189,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 let has_recently_started_games = last_games.iter().any(is_game_near_start_time);
 
                 if has_recently_started_games {
+                    // Invalidate cache for starting games to ensure fresh data
+                    if let Some(ref date) = current_date {
+                        invalidate_cache_for_starting_games(date).await;
+                    }
                     needs_refresh = true;
                     tracing::info!("Auto-refresh triggered for games that may have started");
                 } else {

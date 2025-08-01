@@ -3,7 +3,7 @@ use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
     cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
     get_cached_goal_events_data, get_cached_http_response, get_cached_players,
-    get_cached_tournament_data, has_live_games,
+    get_cached_tournament_data_with_start_check, has_live_games,
 };
 #[cfg(test)]
 use crate::data_fetcher::cache::{
@@ -339,7 +339,7 @@ async fn process_next_game_dates(
             // If we didn't find any games with direct fetching, try the regular fetch_day_data
             if response_data.is_empty() {
                 info!("No games found with direct tournament fetching, trying fetch_day_data");
-                match fetch_day_data(client, config, &tournaments_to_fetch, &next_date).await {
+                match fetch_day_data(client, config, &tournaments_to_fetch, &next_date, &[]).await {
                     Ok((next_games_option, _)) => {
                         if let Some(responses) = next_games_option {
                             info!("Found {} responses with fetch_day_data", responses.len());
@@ -661,13 +661,26 @@ pub async fn fetch_tournament_data(
     tournament: &str,
     date: &str,
 ) -> Result<ScheduleResponse, AppError> {
+    fetch_tournament_data_with_cache_check(client, config, tournament, date, &[]).await
+}
+
+/// Enhanced version of fetch_tournament_data that can use current games for cache validation
+pub async fn fetch_tournament_data_with_cache_check(
+    client: &Client,
+    config: &Config,
+    tournament: &str,
+    date: &str,
+    current_games: &[GameData],
+) -> Result<ScheduleResponse, AppError> {
     info!("Fetching tournament data for {} on {}", tournament, date);
 
     // Create cache key
     let cache_key = create_tournament_key(tournament, date);
 
-    // Check cache first
-    if let Some(cached_response) = get_cached_tournament_data(&cache_key).await {
+    // Check cache first with enhanced validation
+    if let Some(cached_response) =
+        get_cached_tournament_data_with_start_check(&cache_key, current_games).await
+    {
         info!(
             "Using cached tournament data for {} on {}",
             tournament, date
@@ -716,6 +729,7 @@ async fn fetch_day_data(
     config: &Config,
     tournaments: &[&str],
     date: &str,
+    current_games: &[GameData],
 ) -> Result<
     (
         Option<Vec<ScheduleResponse>>,
@@ -729,7 +743,10 @@ async fn fetch_day_data(
 
     // Process tournaments sequentially to respect priority order
     for tournament in tournaments {
-        if let Ok(response) = fetch_tournament_data(client, config, tournament, date).await {
+        if let Ok(response) =
+            fetch_tournament_data_with_cache_check(client, config, tournament, date, current_games)
+                .await
+        {
             // Store all responses in the HashMap for potential reuse
             let tournament_key = create_tournament_key(tournament, date);
             tournament_responses.insert(tournament_key, response.clone());
@@ -829,7 +846,7 @@ async fn find_future_games_fallback(
         info!("Checking for games on date: {}", date_str);
 
         // Try to fetch games for this date
-        match fetch_day_data(client, config, tournaments, &date_str).await {
+        match fetch_day_data(client, config, tournaments, &date_str, &[]).await {
             Ok((Some(responses), _)) => {
                 if !responses.is_empty() {
                     info!(
@@ -914,7 +931,7 @@ pub async fn fetch_liiga_data(
         date, tournaments
     );
     let (games_option, tournament_responses) =
-        fetch_day_data(&client, &config, &tournaments, &date).await?;
+        fetch_day_data(&client, &config, &tournaments, &date, &[]).await?;
 
     let (response_data, earliest_date) = if let Some(responses) = games_option {
         info!(
@@ -2188,7 +2205,7 @@ mod tests {
         test_config.api_domain = mock_server.uri();
 
         let tournaments = vec!["runkosarja"];
-        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15").await;
+        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15", &[]).await;
 
         assert!(result.is_ok());
         let (responses, _) = result.unwrap();
@@ -2220,7 +2237,7 @@ mod tests {
         test_config.api_domain = mock_server.uri();
 
         let tournaments = vec!["runkosarja"];
-        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15").await;
+        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15", &[]).await;
 
         assert!(result.is_ok());
         let (responses, _) = result.unwrap();
