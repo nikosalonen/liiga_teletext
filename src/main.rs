@@ -1584,7 +1584,11 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     if current.has_error_messages() {
                         if let Some(preserved_page_for_restoration) = preserved_page_for_restoration
                         {
-                            let games_to_use = if games.is_empty() { &last_games } else { &games };
+                            let games_to_use = if games.is_empty() {
+                                &last_games
+                            } else {
+                                &games
+                            };
                             let mut page = create_page(
                                 games_to_use,
                                 args.disable_links,
