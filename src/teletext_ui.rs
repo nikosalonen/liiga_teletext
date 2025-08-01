@@ -673,7 +673,7 @@ impl TeletextPage {
         (page_content, has_more)
     }
 
-    fn total_pages(&self) -> usize {
+    pub fn total_pages(&self) -> usize {
         let mut total_pages = 1;
         let mut current_height = 0u16;
         let available_height = self.screen_height.saturating_sub(5);
@@ -694,6 +694,22 @@ impl TeletextPage {
         }
 
         total_pages
+    }
+
+    /// Gets the current page number (0-based index)
+    pub fn get_current_page(&self) -> usize {
+        self.current_page
+    }
+
+    /// Sets the current page number (0-based index)
+    /// Ensures the page number is within valid bounds
+    pub fn set_current_page(&mut self, page: usize) {
+        let total_pages = self.total_pages();
+        if total_pages > 0 {
+            self.current_page = page.min(total_pages - 1);
+        } else {
+            self.current_page = 0;
+        }
     }
 
     /// Moves to the next page of content if available.
@@ -1783,5 +1799,56 @@ mod tests {
         assert_eq!(get_ansi_code(text_fg(), 231), 231); // Should be 231 (white)
         assert_eq!(get_ansi_code(header_bg(), 21), 21); // Should be 21 (blue)
         assert_eq!(get_ansi_code(result_fg(), 46), 46); // Should be 46 (green)
+    }
+
+    #[test]
+    fn test_page_preservation() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            false,
+            true,
+            false,
+        );
+
+        // Set a small screen height to ensure multiple pages
+        page.set_screen_height(10);
+
+        // Add enough content to create multiple pages
+        for i in 0..20 {
+            page.add_error_message(&format!("Test message {i}"));
+        }
+
+        // Navigate to page 2
+        page.next_page();
+        assert_eq!(page.get_current_page(), 1);
+
+        // Create a new page with the same content and preserved page number
+        let mut new_page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            false,
+            true,
+            false,
+        );
+
+        // Set the same small screen height
+        new_page.set_screen_height(10);
+
+        // Add the same content
+        for i in 0..20 {
+            new_page.add_error_message(&format!("Test message {i}"));
+        }
+
+        // Set the current page to match the original
+        new_page.set_current_page(1);
+        assert_eq!(new_page.get_current_page(), 1);
+
+        // Verify both pages show the same content
+        let (original_content, _) = page.get_page_content();
+        let (new_content, _) = new_page.get_page_content();
+        assert_eq!(original_content.len(), new_content.len());
     }
 }
