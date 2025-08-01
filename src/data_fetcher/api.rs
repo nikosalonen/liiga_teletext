@@ -1,9 +1,9 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
-    cache_players_with_formatting, cache_tournament_data, get_cached_detailed_game_data,
-    get_cached_goal_events_data, get_cached_http_response, get_cached_players,
-    get_cached_tournament_data_with_start_check, has_live_games,
+    cache_players_with_formatting, cache_tournament_data, clear_goal_events_cache_for_game,
+    get_cached_detailed_game_data, get_cached_goal_events_data, get_cached_http_response,
+    get_cached_players, get_cached_tournament_data_with_start_check, has_live_games,
     should_bypass_cache_for_starting_games,
 };
 #[cfg(test)]
@@ -436,6 +436,27 @@ async fn process_single_game(
 
     let goal_events = if should_fetch_detailed_data(&game) {
         debug!("Fetching detailed game data");
+        
+        // Check if score has changed since last fetch to force refresh goal events
+        let current_score = format!("{}-{}", game.home_team.goals, game.away_team.goals);
+        let score_changed = if let Some(cached_events) = get_cached_goal_events_data(game.season, game.id).await {
+            // If we have cached events, check if the score has changed
+            let cached_score = if let Some(last_event) = cached_events.last() {
+                format!("{}-{}", last_event.home_team_score, last_event.away_team_score)
+            } else {
+                "0-0".to_string()
+            };
+            current_score != cached_score
+        } else {
+            false
+        };
+        
+        if score_changed {
+            debug!("Score changed from cached data, forcing fresh goal events fetch");
+            // Clear the cache to force a fresh fetch
+            clear_goal_events_cache_for_game(game.season, game.id).await;
+        }
+        
         fetch_detailed_game_data(client, config, &game).await
     } else {
         // Fallback: process goal events from schedule response if available
