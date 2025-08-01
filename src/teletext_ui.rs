@@ -1195,9 +1195,9 @@ impl TeletextPage {
             };
 
             let controls = if total_pages > 1 {
-                "q=Lopeta ←→=Sivut r=Päivitä"
+                "q=Lopeta ←→=Sivut"
             } else {
-                "q=Lopeta r=Päivitä"
+                "q=Lopeta"
             };
 
             let controls = if self.auto_refresh_disabled {
