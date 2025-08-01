@@ -316,6 +316,7 @@ pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
 
 /// Retrieves cached tournament data if it's not expired
 #[instrument(skip(key), fields(cache_key = %key))]
+#[allow(dead_code)]
 pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
     debug!(
         "Attempting to retrieve tournament data from cache for key: {}",
@@ -467,6 +468,62 @@ pub async fn invalidate_tournament_cache_for_date(date: &str) {
     for key in keys_to_remove {
         cache.pop(&key);
     }
+}
+
+/// Invalidates tournament cache entries for games that might be starting
+/// This is called when we detect that games might be transitioning from scheduled to live
+pub async fn invalidate_cache_for_starting_games(date: &str) {
+    let mut cache = TOURNAMENT_CACHE.write().await;
+
+    // Find and remove cache entries for the given date
+    let keys_to_remove: Vec<String> = cache
+        .iter()
+        .filter(|(key, _)| key.contains(date))
+        .map(|(key, _)| key.clone())
+        .collect();
+
+    for key in keys_to_remove {
+        info!("Invalidating cache entry for starting games: {}", key);
+        cache.pop(&key);
+    }
+}
+
+/// Enhanced cache expiration check that considers games that might be starting
+pub async fn get_cached_tournament_data_with_start_check(
+    key: &str,
+    current_games: &[GameData],
+) -> Option<ScheduleResponse> {
+    let mut cache = TOURNAMENT_CACHE.write().await;
+
+    if let Some(cached_entry) = cache.get(key) {
+        // Check if we have any games that might be starting
+        let has_starting_games = current_games.iter().any(|game| {
+            game.score_type == crate::teletext_ui::ScoreType::Scheduled && !game.start.is_empty()
+        });
+
+        // If we have starting games, consider cache expired more aggressively
+        if has_starting_games {
+            let age = cached_entry.cached_at.elapsed();
+            let aggressive_ttl = Duration::from_secs(10); // Much shorter TTL for starting games
+
+            if age > aggressive_ttl {
+                info!(
+                    "Cache expired for starting games: key={}, age={:?}, aggressive_ttl={:?}",
+                    key, age, aggressive_ttl
+                );
+                cache.pop(key);
+                return None;
+            }
+        }
+
+        if !cached_entry.is_expired() {
+            return Some(cached_entry.data.clone());
+        } else {
+            cache.pop(key);
+        }
+    }
+
+    None
 }
 
 /// Gets the current tournament cache size for monitoring purposes
