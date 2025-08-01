@@ -227,6 +227,9 @@ impl GoalEventData {
         if self.goal_types.contains(&"YV".to_string()) {
             indicators.push("YV");
         }
+        if self.goal_types.contains(&"YV2".to_string()) {
+            indicators.push("YV2");
+        }
         if self.goal_types.contains(&"IM".to_string()) {
             indicators.push("IM");
         }
@@ -799,6 +802,20 @@ mod tests {
             video_clip_url: None,
         };
         assert_eq!(multiple_types.get_goal_type_display(), "YV IM VT");
+
+        // Test YV2 (2-man powerplay) goal type
+        let yv2_type = GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Player".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["YV2".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        };
+        assert_eq!(yv2_type.get_goal_type_display(), "YV2");
 
         // Test empty goal types
         let no_types = GoalEventData {
