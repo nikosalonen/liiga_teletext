@@ -84,25 +84,25 @@ pub mod ui {
 pub mod dynamic_ui {
     /// Minimum terminal width for proper display
     pub const MIN_TERMINAL_WIDTH: u16 = 80;
-    
+
     /// Minimum terminal height for proper display  
     pub const MIN_TERMINAL_HEIGHT: u16 = 24;
-    
+
     /// Width threshold for standard detail level
     pub const STANDARD_DETAIL_WIDTH_THRESHOLD: u16 = 100;
-    
+
     /// Width threshold for extended detail level
     pub const EXTENDED_DETAIL_WIDTH_THRESHOLD: u16 = 120;
-    
+
     /// Maximum horizontal padding as percentage of width
     pub const MAX_HORIZONTAL_PADDING_PERCENT: f32 = 0.1;
-    
+
     /// Debounce time for resize events (milliseconds)
     pub const RESIZE_DEBOUNCE_MS: u64 = 100;
-    
+
     /// Base height per game in minimal mode
     pub const BASE_GAME_HEIGHT: u16 = 3;
-    
+
     /// Additional height per game in extended mode
     pub const EXTENDED_GAME_HEIGHT_BONUS: u16 = 2;
 }
