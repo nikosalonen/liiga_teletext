@@ -1150,6 +1150,19 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             Duration::from_secs(10) // Minimum 10 seconds between refreshes for 1-3 games
         };
 
+        // Debug logging for rate limit backoff enforcement
+        if rate_limit_backoff > Duration::from_secs(0) {
+            let backoff_remaining = rate_limit_backoff.saturating_sub(last_rate_limit_hit.elapsed());
+            if backoff_remaining > Duration::from_secs(0) {
+                tracing::debug!(
+                    "Rate limit backoff active: {}s remaining (total backoff: {}s, elapsed since rate limit: {}s)",
+                    backoff_remaining.as_secs(),
+                    rate_limit_backoff.as_secs(),
+                    last_rate_limit_hit.elapsed().as_secs()
+                );
+            }
+        }
+
         if !needs_refresh
             && !last_games.is_empty()
             && last_auto_refresh.elapsed() >= auto_refresh_interval
@@ -1172,6 +1185,23 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 last_games.len(),
                 auto_refresh_interval
             );
+
+            // Log rate limit backoff status
+            if rate_limit_backoff > Duration::from_secs(0) {
+                let backoff_remaining = rate_limit_backoff.saturating_sub(last_rate_limit_hit.elapsed());
+                if backoff_remaining > Duration::from_secs(0) {
+                    tracing::debug!(
+                        "Auto-refresh skipped due to rate limit backoff: {}s remaining (total backoff: {}s)",
+                        backoff_remaining.as_secs(),
+                        rate_limit_backoff.as_secs()
+                    );
+                } else {
+                    tracing::debug!(
+                        "Rate limit backoff period completed: {}s elapsed since last rate limit hit",
+                        last_rate_limit_hit.elapsed().as_secs()
+                    );
+                }
+            }
 
             // Log individual game states for debugging
             for (i, game) in last_games.iter().enumerate() {
