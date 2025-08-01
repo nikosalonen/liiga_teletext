@@ -1081,6 +1081,16 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             let has_ongoing_games = has_live_games_from_game_data(&last_games);
             // Compute current state directly from last_games (don't rely on stale all_games_scheduled)
             let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
+            let time_elapsed = last_auto_refresh.elapsed();
+
+            // Log comprehensive auto-refresh condition state
+            tracing::debug!(
+                "Auto-refresh check: has_ongoing_games={}, all_scheduled={}, time_elapsed={:?}, games_count={}",
+                has_ongoing_games,
+                all_scheduled,
+                time_elapsed,
+                last_games.len()
+            );
 
             // Don't auto-refresh for historical dates
             if let Some(ref date) = current_date {
@@ -1088,22 +1098,26 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     tracing::debug!("Auto-refresh skipped for historical date: {}", date);
                 } else if has_ongoing_games {
                     needs_refresh = true;
-                    tracing::debug!("Auto-refresh triggered for ongoing games");
+                    tracing::info!("Auto-refresh triggered for ongoing games");
                 } else if !all_scheduled {
                     // Only refresh if not all games are scheduled (i.e., some are finished)
                     needs_refresh = true;
-                    tracing::debug!("Auto-refresh triggered for non-scheduled games");
+                    tracing::debug!(
+                        "Auto-refresh triggered for non-scheduled games (mixed game states)"
+                    );
                 } else {
-                    tracing::debug!("Auto-refresh skipped - all games are scheduled");
+                    tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
                 }
             } else if has_ongoing_games {
                 needs_refresh = true;
-                tracing::debug!("Auto-refresh triggered for ongoing games");
+                tracing::info!("Auto-refresh triggered for ongoing games");
             } else if !all_scheduled {
                 needs_refresh = true;
-                tracing::debug!("Auto-refresh triggered for non-scheduled games");
+                tracing::debug!(
+                    "Auto-refresh triggered for non-scheduled games (mixed game states)"
+                );
             } else {
-                tracing::debug!("Auto-refresh skipped - all games are scheduled");
+                tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
             }
         }
 
@@ -1183,25 +1197,114 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 tracing::debug!("Skipping loading screen due to ongoing games");
             }
 
-            let (games, had_error, fetched_date) =
-                match fetch_liiga_data(current_date.clone()).await {
-                    Ok((games, fetched_date)) => (games, false, fetched_date),
-                    Err(e) => {
-                        tracing::error!("Error fetching data: {}", e);
-                        let mut error_page = TeletextPage::new(
-                            221,
-                            "JÄÄKIEKKO".to_string(),
-                            "SM-LIIGA".to_string(),
-                            args.disable_links,
-                            true,
-                            false,
-                        );
-                        error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
-                        current_page = Some(error_page);
-                        needs_render = true;
-                        (Vec::new(), true, String::new())
+            // Add timeout for auto-refresh to prevent hanging
+            let fetch_future = fetch_liiga_data(current_date.clone());
+            let timeout_duration = tokio::time::Duration::from_secs(15); // Shorter timeout for auto-refresh
+
+            let (games, had_error, fetched_date, should_retry) = match tokio::time::timeout(
+                timeout_duration,
+                fetch_future,
+            )
+            .await
+            {
+                Ok(fetch_result) => match fetch_result {
+                    Ok((games, fetched_date)) => {
+                        // Log successful recovery if we had previous errors
+                        tracing::debug!("Auto-refresh successful: fetched {} games", games.len());
+                        (games, false, fetched_date, false)
                     }
-                };
+                    Err(e) => {
+                        // Enhanced error logging with detailed information
+                        tracing::error!("Auto-refresh failed: {}", e);
+                        tracing::error!(
+                            "Error details - Type: {}, Current date: {:?}, Has ongoing games: {}",
+                            std::any::type_name_of_val(&e),
+                            current_date,
+                            has_live_games_from_game_data(&last_games)
+                        );
+
+                        // Log specific error context for debugging
+                        match &e {
+                            crate::error::AppError::NetworkTimeout { url } => {
+                                tracing::warn!(
+                                    "Auto-refresh timeout for URL: {}, will retry on next cycle",
+                                    url
+                                );
+                            }
+                            crate::error::AppError::NetworkConnection { url, message } => {
+                                tracing::warn!(
+                                    "Auto-refresh connection error for URL: {}, details: {}, will retry on next cycle",
+                                    url,
+                                    message
+                                );
+                            }
+                            crate::error::AppError::ApiServerError {
+                                status,
+                                message,
+                                url,
+                            } => {
+                                tracing::warn!(
+                                    "Auto-refresh server error: HTTP {} - {} (URL: {}), will retry on next cycle",
+                                    status,
+                                    message,
+                                    url
+                                );
+                            }
+                            crate::error::AppError::ApiServiceUnavailable {
+                                status,
+                                message,
+                                url,
+                            } => {
+                                tracing::warn!(
+                                    "Auto-refresh service unavailable: HTTP {} - {} (URL: {}), will retry on next cycle",
+                                    status,
+                                    message,
+                                    url
+                                );
+                            }
+                            crate::error::AppError::ApiRateLimit { message, url } => {
+                                tracing::warn!(
+                                    "Auto-refresh rate limited: {} (URL: {}), will retry on next cycle",
+                                    message,
+                                    url
+                                );
+                            }
+                            _ => {
+                                tracing::warn!(
+                                    "Auto-refresh error: {}, will retry on next cycle",
+                                    e
+                                );
+                            }
+                        }
+
+                        // Graceful degradation: continue with existing data instead of showing error page
+                        tracing::info!(
+                            "Continuing with existing data ({} games) due to auto-refresh failure",
+                            last_games.len()
+                        );
+
+                        // Return empty games but indicate we should retry (don't update last_auto_refresh)
+                        (Vec::new(), true, String::new(), true)
+                    }
+                },
+                Err(_) => {
+                    // Timeout occurred during auto-refresh
+                    tracing::error!(
+                        "Auto-refresh timeout after {} seconds",
+                        timeout_duration.as_secs()
+                    );
+                    tracing::warn!(
+                        "Auto-refresh timed out, continuing with existing data and will retry on next cycle"
+                    );
+                    tracing::info!(
+                        "Continuing with existing data ({} games) due to auto-refresh timeout",
+                        last_games.len()
+                    );
+
+                    // Return empty games but indicate we should retry (don't update last_auto_refresh)
+                    (Vec::new(), true, String::new(), true)
+                }
+            };
 
             // Update current_date to track the actual date being displayed
             if !had_error && !fetched_date.is_empty() {
@@ -1294,6 +1397,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     current_page = Some(page);
                     needs_render = true;
                 }
+            } else if had_error {
+                tracing::debug!(
+                    "Auto-refresh failed but no data changes detected, continuing with existing UI"
+                );
             } else {
                 tracing::debug!("No data changes detected, skipping UI update");
             }
@@ -1305,7 +1412,17 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             }
 
             needs_refresh = false;
-            last_auto_refresh = Instant::now();
+
+            // Only update last_auto_refresh if we shouldn't retry
+            // This ensures that failed auto-refresh attempts will be retried on the next cycle
+            if !should_retry {
+                last_auto_refresh = Instant::now();
+                tracing::debug!("Auto-refresh cycle completed successfully");
+            } else {
+                tracing::debug!(
+                    "Auto-refresh failed, will retry on next cycle (not updating last_auto_refresh timer)"
+                );
+            }
         }
 
         // Handle pending resize with debouncing

@@ -3,6 +3,8 @@
 //! This module centralizes all magic numbers and configuration constants
 //! to improve maintainability and make the codebase more configurable.
 
+#![allow(dead_code)]
+
 /// Default timeout for HTTP requests in seconds
 pub const DEFAULT_HTTP_TIMEOUT_SECONDS: u64 = 30;
 

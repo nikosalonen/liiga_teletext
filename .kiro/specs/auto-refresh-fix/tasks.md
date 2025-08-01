@@ -18,27 +18,27 @@
   - Ensure 30-second TTL is properly applied for live games
   - _Requirements: 3.1, 3.4, 4.4_
 
-- [ ] 4. Enhance auto-refresh logic with comprehensive logging
+- [x] 4. Enhance auto-refresh logic with comprehensive logging
   - Add detailed logging to auto-refresh condition checking in main.rs
   - Log has_ongoing_games, all_scheduled status, and time_elapsed values
   - Add specific log messages for each auto-refresh decision path
   - Ensure "Auto-refresh triggered for ongoing games" message is logged when appropriate
   - _Requirements: 1.3, 4.1, 4.2_
 
-- [ ] 5. Improve cache invalidation for ongoing games
+- [x] 5. Improve cache invalidation for ongoing games
   - Ensure tournament cache entries are properly marked with has_live_games=true when ongoing games are present
   - Add logging to cache operations to track when live game cache entries are created
   - Verify cache bypass logic works correctly for expired entries during auto-refresh
   - _Requirements: 3.2, 3.3, 4.4_
 
-- [ ] 6. Add error handling and recovery for auto-refresh failures
+- [x] 6. Add error handling and recovery for auto-refresh failures
   - Enhance error handling in the auto-refresh data fetching logic
   - Log detailed error information when auto-refresh fails
   - Ensure graceful degradation when API calls fail during auto-refresh
   - Continue with existing data and retry on next cycle when errors occur
   - _Requirements: 1.4, 4.2_
 
-- [ ] 7. Create comprehensive unit tests for live game detection
+- [x] 7. Create comprehensive unit tests for live game detection
   - Write tests for `has_live_games_from_game_data` with various game state combinations
   - Test scenarios with all ongoing, all completed, all scheduled, and mixed game states
   - Verify correct boolean return values and logging output
