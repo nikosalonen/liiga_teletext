@@ -242,6 +242,39 @@ fn is_future_game(game: &GameData) -> bool {
     }
 }
 
+/// Checks if a game is scheduled to start within the next few minutes or has recently started
+fn is_game_near_start_time(game: &GameData) -> bool {
+    if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
+        return false;
+    }
+
+    match chrono::DateTime::parse_from_rfc3339(&game.start) {
+        Ok(game_start) => {
+            let now = chrono::Utc::now();
+            let time_diff = now.signed_duration_since(game_start);
+
+            // Check if game should start within the next 5 minutes or started within the last 5 minutes
+            let is_near_start = time_diff >= chrono::Duration::minutes(-5) && time_diff <= chrono::Duration::minutes(5);
+
+            if is_near_start {
+                tracing::debug!(
+                    "Game near start time: {} vs {} - start: {}, time_diff: {:?}",
+                    game.home_team,
+                    game.away_team,
+                    game_start,
+                    time_diff
+                );
+            }
+
+            is_near_start
+        }
+        Err(e) => {
+            tracing::warn!("Failed to parse game start time '{}': {}", game.start, e);
+            false
+        }
+    }
+}
+
 /// Creates a TeletextPage for future games if the games are scheduled.
 /// Returns Some(TeletextPage) if the games are future games, None otherwise.
 async fn create_future_games_page(
@@ -1074,7 +1107,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
         // Check for auto-refresh with better logic
         let auto_refresh_interval = if has_live_games_from_game_data(&last_games) {
-            Duration::from_secs(15) // More aggressive for ongoing games
+            Duration::from_secs(10) // More aggressive for ongoing games (reduced from 15s)
         } else {
             Duration::from_secs(60) // Standard interval for completed/scheduled games
         };
@@ -1089,14 +1122,28 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
             let time_elapsed = last_auto_refresh.elapsed();
 
-            // Log comprehensive auto-refresh condition state
+            // Enhanced logging for better debugging
             tracing::debug!(
-                "Auto-refresh check: has_ongoing_games={}, all_scheduled={}, time_elapsed={:?}, games_count={}",
+                "Auto-refresh check: has_ongoing_games={}, all_scheduled={}, time_elapsed={:?}, games_count={}, auto_refresh_interval={:?}",
                 has_ongoing_games,
                 all_scheduled,
                 time_elapsed,
-                last_games.len()
+                last_games.len(),
+                auto_refresh_interval
             );
+
+            // Log individual game states for debugging
+            for (i, game) in last_games.iter().enumerate() {
+                tracing::debug!(
+                    "Game {}: {} vs {} - score_type={:?}, time='{}', start='{}'",
+                    i + 1,
+                    game.home_team,
+                    game.away_team,
+                    game.score_type,
+                    game.time,
+                    game.start
+                );
+            }
 
             // Don't auto-refresh for historical dates
             if let Some(ref date) = current_date {
@@ -1112,7 +1159,15 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         "Auto-refresh triggered for non-scheduled games (mixed game states)"
                     );
                 } else {
-                    tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
+                    // Enhanced check for games that might have started
+                    let has_recently_started_games = last_games.iter().any(is_game_near_start_time);
+
+                    if has_recently_started_games {
+                        needs_refresh = true;
+                        tracing::info!("Auto-refresh triggered for games that may have started");
+                    } else {
+                        tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
+                    }
                 }
             } else if has_ongoing_games {
                 needs_refresh = true;
@@ -1123,7 +1178,15 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     "Auto-refresh triggered for non-scheduled games (mixed game states)"
                 );
             } else {
-                tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
+                // Enhanced check for games that might have started (same logic as above)
+                let has_recently_started_games = last_games.iter().any(is_game_near_start_time);
+
+                if has_recently_started_games {
+                    needs_refresh = true;
+                    tracing::info!("Auto-refresh triggered for games that may have started");
+                } else {
+                    tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
+                }
             }
         }
 
