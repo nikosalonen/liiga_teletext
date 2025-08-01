@@ -158,6 +158,7 @@ async fn create_base_page(
     ignore_height_limit: bool,
     future_games_header: Option<String>,
     fetched_date: Option<String>,
+    current_page: Option<usize>,
 ) -> TeletextPage {
     let subheader = get_subheader(games);
     let mut page = TeletextPage::new(
@@ -172,6 +173,11 @@ async fn create_base_page(
     // Set the fetched date if provided
     if let Some(date) = fetched_date {
         page.set_fetched_date(date);
+    }
+
+    // Set the current page if provided
+    if let Some(page_num) = current_page {
+        page.set_current_page(page_num);
     }
 
     // Add future games header first if provided
@@ -195,6 +201,7 @@ async fn create_page(
     show_footer: bool,
     ignore_height_limit: bool,
     fetched_date: Option<String>,
+    current_page: Option<usize>,
 ) -> TeletextPage {
     create_base_page(
         games,
@@ -203,6 +210,7 @@ async fn create_page(
         ignore_height_limit,
         None,
         fetched_date,
+        current_page,
     )
     .await
 }
@@ -288,6 +296,7 @@ async fn create_future_games_page(
     ignore_height_limit: bool,
     show_future_header: bool,
     fetched_date: Option<String>,
+    current_page: Option<usize>,
 ) -> Option<TeletextPage> {
     // Check if these are future games by validating both time and start fields
     if !games.is_empty() && is_future_game(&games[0]) {
@@ -314,6 +323,7 @@ async fn create_future_games_page(
             ignore_height_limit,
             future_games_header,
             fetched_date, // Pass the fetched date to show it in the header
+            current_page,
         )
         .await;
 
@@ -990,6 +1000,7 @@ async fn main() -> Result<(), AppError> {
                 true,
                 show_future_header,
                 Some(fetched_date.clone()),
+                None,
             )
             .await
             {
@@ -1001,6 +1012,7 @@ async fn main() -> Result<(), AppError> {
                         true,
                         true,
                         Some(fetched_date.clone()),
+                        None,
                     )
                     .await;
 
@@ -1083,6 +1095,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     let mut current_page: Option<TeletextPage> = None;
     let mut pending_resize = false;
     let mut resize_timer = Instant::now();
+    // Preserved page number for restoration after refresh - initially None for first run
+    #[allow(unused_assignments)]
+    let mut preserved_page_for_restoration: Option<usize> = None;
 
     // Date navigation state - track the current date being displayed
     let mut current_date = args.date.clone();
@@ -1240,6 +1255,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     needs_render = true;
                 }
             }
+
+            // Always preserve the current page number before refresh, regardless of loading screen
+            let preserved_page = current_page.as_ref().map(|existing_page| existing_page.get_current_page());
+            preserved_page_for_restoration = preserved_page;
 
             if should_show_loading {
                 let mut loading_page = TeletextPage::new(
@@ -1424,68 +1443,93 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
                 // Only create a new page if we didn't have an error and data changed
                 if !had_error {
-                    let page = if games.is_empty() {
-                        let mut error_page = TeletextPage::new(
-                            221,
-                            "JÄÄKIEKKO".to_string(),
-                            "SM-LIIGA".to_string(),
-                            args.disable_links,
-                            true,
-                            false,
-                        );
-                        // Use UTC internally, convert to local time for date formatting
-                        let today = Utc::now()
-                            .with_timezone(&Local)
-                            .format("%Y-%m-%d")
-                            .to_string();
-                        if fetched_date == today {
-                            error_page.add_error_message("Ei otteluita tänään");
-                        } else {
-                            error_page.add_error_message(&format!(
-                                "Ei otteluita {} päivälle",
-                                format_date_for_display(&fetched_date)
-                            ));
-                        }
-                        error_page
-                    } else {
-                        // Try to create a future games page, fall back to regular page if not future games
-                        let show_future_header = current_date.is_none();
-                        match create_future_games_page(
+                    // Restore the preserved page number
+                    if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
+                        let mut page = create_page(
                             &games,
                             args.disable_links,
                             true,
                             false,
-                            show_future_header,
                             Some(fetched_date.clone()),
+                            Some(preserved_page_for_restoration),
                         )
-                        .await
-                        {
-                            Some(page) => page,
-                            None => {
-                                {
-                                    let mut page = create_page(
-                                        &games,
-                                        args.disable_links,
-                                        true,
-                                        false,
-                                        Some(fetched_date.clone()),
-                                    )
-                                    .await;
+                        .await;
 
-                                    // Disable auto-refresh for historical dates
-                                    if let Some(ref date) = current_date {
-                                        if is_historical_date(date) {
-                                            page.set_auto_refresh_disabled(true);
-                                        }
-                                    }
-
-                                    page
-                                }
+                        // Disable auto-refresh for historical dates
+                        if let Some(ref date) = current_date {
+                            if is_historical_date(date) {
+                                page.set_auto_refresh_disabled(true);
                             }
                         }
-                    };
 
-                    current_page = Some(page);
+                        current_page = Some(page);
+                    } else {
+                        let page = if games.is_empty() {
+                            let mut error_page = TeletextPage::new(
+                                221,
+                                "JÄÄKIEKKO".to_string(),
+                                "SM-LIIGA".to_string(),
+                                args.disable_links,
+                                true,
+                                false,
+                            );
+                            // Use UTC internally, convert to local time for date formatting
+                            let today = Utc::now()
+                                .with_timezone(&Local)
+                                .format("%Y-%m-%d")
+                                .to_string();
+                            if fetched_date == today {
+                                error_page.add_error_message("Ei otteluita tänään");
+                            } else {
+                                error_page.add_error_message(&format!(
+                                    "Ei otteluita {} päivälle",
+                                    format_date_for_display(&fetched_date)
+                                ));
+                            }
+                            error_page
+                        } else {
+                            // Try to create a future games page, fall back to regular page if not future games
+                            let show_future_header = current_date.is_none();
+                            match create_future_games_page(
+                                &games,
+                                args.disable_links,
+                                true,
+                                false,
+                                show_future_header,
+                                Some(fetched_date.clone()),
+                                None,
+                            )
+                            .await
+                            {
+                                Some(page) => page,
+                                None => {
+                                    {
+                                        let mut page = create_page(
+                                            &games,
+                                            args.disable_links,
+                                            true,
+                                            false,
+                                            Some(fetched_date.clone()),
+                                            None,
+                                        )
+                                        .await;
+
+                                        // Disable auto-refresh for historical dates
+                                        if let Some(ref date) = current_date {
+                                            if is_historical_date(date) {
+                                                page.set_auto_refresh_disabled(true);
+                                            }
+                                        }
+
+                                        page
+                                    }
+                                }
+                            }
+                        };
+
+                        current_page = Some(page);
+                    }
+
                     needs_render = true;
                 }
             } else if had_error {
