@@ -446,12 +446,18 @@ async fn process_single_game(
             // For schedule response, we don't have detailed player data, so use fallback names
             for event in &game.home_team.goal_events {
                 if !event.goal_types.contains(&"RL0".to_string()) {
-                    player_names.insert(event.scorer_player_id, format!("Player {}", event.scorer_player_id));
+                    player_names.insert(
+                        event.scorer_player_id,
+                        format!("Player {}", event.scorer_player_id),
+                    );
                 }
             }
             for event in &game.away_team.goal_events {
                 if !event.goal_types.contains(&"RL0".to_string()) {
-                    player_names.insert(event.scorer_player_id, format!("Player {}", event.scorer_player_id));
+                    player_names.insert(
+                        event.scorer_player_id,
+                        format!("Player {}", event.scorer_player_id),
+                    );
                 }
             }
             crate::data_fetcher::processors::process_goal_events(&game, &player_names)
