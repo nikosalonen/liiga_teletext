@@ -1193,11 +1193,17 @@ async fn pre_fetch_player_data_for_live_game(
             // Cache with live game TTL (shorter for more frequent updates)
             cache_players_with_ttl(game_id, player_names, true).await;
 
-            info!("Successfully pre-fetched and cached player data for game ID: {}", game_id);
+            info!(
+                "Successfully pre-fetched and cached player data for game ID: {}",
+                game_id
+            );
             Ok(())
         }
         Err(e) => {
-            warn!("Failed to pre-fetch player data for game ID {}: {}", game_id, e);
+            warn!(
+                "Failed to pre-fetch player data for game ID {}: {}",
+                game_id, e
+            );
             // Don't fail the entire operation for pre-fetch failures
             Ok(())
         }
@@ -1225,7 +1231,10 @@ async fn pre_fetch_player_data_for_live_games(
     }
 
     let live_games_count = live_games.len();
-    info!("Pre-fetching player data for {} live games with goals", live_games_count);
+    info!(
+        "Pre-fetching player data for {} live games with goals",
+        live_games_count
+    );
 
     // Extract season and game IDs from live games
     let mut pre_fetch_tasks = Vec::new();
@@ -1249,7 +1258,10 @@ async fn pre_fetch_player_data_for_live_games(
     if !pre_fetch_tasks.is_empty() {
         let results = futures::future::join_all(pre_fetch_tasks).await;
         let success_count = results.iter().filter(|r| r.is_ok()).count();
-        info!("Successfully pre-fetched player data for {}/{} live games", success_count, live_games_count);
+        info!(
+            "Successfully pre-fetched player data for {}/{} live games",
+            success_count, live_games_count
+        );
     }
 }
 

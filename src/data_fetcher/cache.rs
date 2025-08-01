@@ -726,7 +726,7 @@ pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i6
 pub async fn cache_players_with_ttl(
     game_id: i32,
     players: HashMap<i64, String>,
-    is_live_game: bool
+    is_live_game: bool,
 ) {
     let player_count = players.len();
     debug!(
@@ -746,7 +746,10 @@ pub async fn cache_players_with_ttl(
 
 /// Retrieves cached player data with TTL support
 pub async fn get_cached_players_with_ttl(game_id: i32) -> Option<HashMap<i64, String>> {
-    debug!("Attempting to retrieve cached players with TTL for game_id: {}", game_id);
+    debug!(
+        "Attempting to retrieve cached players with TTL for game_id: {}",
+        game_id
+    );
 
     let mut cache = PLAYER_DATA_CACHE.write().await;
 
