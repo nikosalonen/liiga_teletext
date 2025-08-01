@@ -175,11 +175,6 @@ async fn create_base_page(
         page.set_fetched_date(date);
     }
 
-    // Set the current page if provided
-    if let Some(page_num) = current_page {
-        page.set_current_page(page_num);
-    }
-
     // Add future games header first if provided
     if let Some(header) = future_games_header {
         page.add_future_games_header(header);
@@ -191,6 +186,11 @@ async fn create_base_page(
 
     // Set season countdown if regular season hasn't started yet
     page.set_show_season_countdown(games).await;
+
+    // Set the current page AFTER content is added (so total_pages() is correct)
+    if let Some(page_num) = current_page {
+        page.set_current_page(page_num);
+    }
 
     page
 }
@@ -1259,7 +1259,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             // Always preserve the current page number before refresh, regardless of loading screen
             let preserved_page = current_page.as_ref().map(|existing_page| existing_page.get_current_page());
             preserved_page_for_restoration = preserved_page;
-            tracing::debug!("Preserved page number for restoration: {:?}", preserved_page_for_restoration);
 
             if should_show_loading {
                 let mut loading_page = TeletextPage::new(
@@ -1422,7 +1421,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             let data_changed = games_hash != last_games_hash;
 
             if data_changed {
-                tracing::debug!("Data changed (hash: {} -> {}), updating UI", last_games_hash, games_hash);
+                tracing::debug!("Data changed, updating UI");
                 // Log specific changes for live games to help debug game clock updates
                 if !last_games.is_empty() && games.len() == last_games.len() {
                     for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate()
@@ -1446,7 +1445,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 if !had_error {
                     // Restore the preserved page number
                     if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
-                        tracing::debug!("Restoring page to number: {}", preserved_page_for_restoration);
                         let mut page = create_page(
                             &games,
                             args.disable_links,
@@ -1466,7 +1464,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
                         current_page = Some(page);
                     } else {
-                        tracing::debug!("No preserved page number available, creating new page from scratch");
                         let page = if games.is_empty() {
                             let mut error_page = TeletextPage::new(
                                 221,
@@ -1583,9 +1580,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 if let Some(ref current) = current_page {
                     // Check if current page is a loading page by checking if it has error messages
                     if current.has_error_messages() {
-                        tracing::debug!("Data unchanged but loading screen was shown, restoring pagination");
                         if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
-                            tracing::debug!("Restoring page to number: {} (no data change case)", preserved_page_for_restoration);
                             let mut page = create_page(
                                 &games.is_empty().then(|| &last_games).unwrap_or(&games),
                                 args.disable_links,
