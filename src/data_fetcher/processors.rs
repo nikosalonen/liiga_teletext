@@ -184,7 +184,12 @@ pub fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
         Some("ENDED_DURING_WINNING_SHOT_COMPETITION")
     );
 
-    let score_type = if !game.started {
+    // Enhanced live game detection: Check multiple indicators, not just started field
+    let is_actually_live = game.started ||  // Official started flag
+        (game.game_time > 0 && is_game_likely_live(game)) || // Game clock + timing check
+        has_recent_events(game);             // Recent events indicate live play
+
+    let score_type = if !is_actually_live {
         ScoreType::Scheduled
     } else if !game.ended {
         ScoreType::Ongoing
@@ -194,15 +199,28 @@ pub fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
 
     // Enhanced logging for better debugging of game state transitions
     tracing::debug!(
-        "Game {} status: started={}, ended={}, score_type={:?}, game_time={}, home_goals={}, away_goals={}",
+        "Game {} status: started={}, ended={}, score_type={:?}, game_time={}, home_goals={}, away_goals={}, is_actually_live={}",
         game.id,
         game.started,
         game.ended,
         score_type,
         game.game_time,
         game.home_team.goals,
-        game.away_team.goals
+        game.away_team.goals,
+        is_actually_live
     );
+
+    // Log when enhanced detection detects live game that started=false doesn't
+    if is_actually_live && !game.started {
+        tracing::info!(
+            "Enhanced detection: Game {} ({} vs {}) detected as live despite started=false - game_time: {}s, recent_events: {}",
+            game.id,
+            game.home_team.team_name.as_deref().unwrap_or("Unknown"),
+            game.away_team.team_name.as_deref().unwrap_or("Unknown"),
+            game.game_time,
+            has_recent_events(game)
+        );
+    }
 
     // Log additional details for ongoing games
     if score_type == ScoreType::Ongoing {
@@ -226,6 +244,58 @@ pub fn format_time(timestamp: &str) -> Result<String, AppError> {
     })?;
     let local_time = utc_time.with_timezone(&Local);
     Ok(local_time.format("%H.%M").to_string())
+}
+
+/// Checks if a game has recent events indicating it's actually live
+/// even if the started field hasn't been updated yet
+fn has_recent_events(game: &ScheduleGame) -> bool {
+    let now = chrono::Utc::now();
+    let recent_threshold = chrono::Duration::minutes(5); // Events within 5 minutes
+
+    // Check for recent goal events from both teams
+    let has_recent_goals = [&game.home_team.goal_events, &game.away_team.goal_events]
+        .iter()
+        .flat_map(|events| events.iter())
+        .any(|event| {
+            if let Ok(event_time) = chrono::DateTime::parse_from_rfc3339(&event.log_time) {
+                let time_diff = now.signed_duration_since(event_time.with_timezone(&chrono::Utc));
+                time_diff >= chrono::Duration::zero() && time_diff <= recent_threshold
+            } else {
+                false
+            }
+        });
+
+    if has_recent_goals {
+        tracing::debug!("Recent goal events detected in game {}", game.id);
+        return true;
+    }
+
+    false
+}
+
+/// Determines if a game with game_time > 0 is likely actually live
+fn is_game_likely_live(game: &ScheduleGame) -> bool {
+    let now = chrono::Utc::now();
+
+    if let Ok(game_start) = chrono::DateTime::parse_from_rfc3339(&game.start) {
+        let time_since_start = now.signed_duration_since(game_start.with_timezone(&chrono::Utc));
+
+        // Only consider it live if:
+        // 1. Game was supposed to start within the last 3 hours (not old data)
+        // 2. Current time is not too far before the scheduled start (-15 min buffer)
+        // 3. We're not dealing with very old test data (more than 6 months old)
+        let is_recent_game = time_since_start <= chrono::Duration::hours(3)
+            && time_since_start >= chrono::Duration::minutes(-15);
+        let is_not_ancient = time_since_start <= chrono::Duration::days(180); // 6 months
+
+        if is_recent_game && is_not_ancient {
+            tracing::debug!("Game {} likely live: game_time={}, time_since_start={:?}",
+                          game.id, game.game_time, time_since_start);
+            return true;
+        }
+    }
+
+    false
 }
 
 pub fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
