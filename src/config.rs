@@ -806,8 +806,7 @@ another_extra = 123
         for config in valid_configs {
             assert!(
                 config.validate().is_ok(),
-                "Config should be valid: {:?}",
-                config
+                "Config should be valid: {config:?}"
             );
         }
     }
@@ -836,8 +835,7 @@ another_extra = 123
         for config in invalid_configs {
             assert!(
                 config.validate().is_err(),
-                "Config should be invalid: {:?}",
-                config
+                "Config should be invalid: {config:?}"
             );
         }
     }
