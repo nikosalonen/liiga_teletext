@@ -483,7 +483,10 @@ pub async fn invalidate_cache_for_games_near_start_time(date: &str) {
         .collect();
 
     for key in keys_to_remove {
-        info!("Aggressively invalidating cache for games near start time: {}", key);
+        info!(
+            "Aggressively invalidating cache for games near start time: {}",
+            key
+        );
         cache.pop(&key);
     }
 }
@@ -545,7 +548,8 @@ pub async fn get_cached_tournament_data_with_start_check(
         // If we have starting games, consider cache expired more aggressively
         if has_starting_games {
             let age = cached_entry.cached_at.elapsed();
-            let aggressive_ttl = Duration::from_secs(crate::constants::cache_ttl::STARTING_GAMES_SECONDS); // 10 seconds for starting games
+            let aggressive_ttl =
+                Duration::from_secs(crate::constants::cache_ttl::STARTING_GAMES_SECONDS); // 10 seconds for starting games
 
             if age > aggressive_ttl {
                 info!(
