@@ -1234,9 +1234,9 @@ impl TeletextPage {
                 "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
                 footer_y,
                 get_ansi_code(header_bg(), 21),
-                if total_pages > 1 { "<<<" } else { "   " },
+                "   ",
                 footer_text,
-                if total_pages > 1 { ">>>" } else { "   " },
+                "   ",
                 width = (width as usize).saturating_sub(6)
             ));
         }
