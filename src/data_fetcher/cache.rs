@@ -900,7 +900,10 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
 
 /// Retrieves the full cached goal events entry structure for metadata access
 #[instrument(skip(season, game_id), fields(season = season, game_id = game_id))]
-pub async fn get_cached_goal_events_entry(season: i32, game_id: i32) -> Option<CachedGoalEventsData> {
+pub async fn get_cached_goal_events_entry(
+    season: i32,
+    game_id: i32,
+) -> Option<CachedGoalEventsData> {
     let key = create_goal_events_key(season, game_id);
     debug!(
         "Attempting to retrieve goal events entry from cache: key={}",
@@ -962,22 +965,21 @@ pub async fn clear_goal_events_cache() {
 pub async fn clear_goal_events_cache_for_game(season: i32, game_id: i32) {
     let key = create_goal_events_key(season, game_id);
     let mut cache = GOAL_EVENTS_CACHE.write().await;
-    
+
     // Get the current cached data to extract the last known score
     let last_known_score = if let Some(cached_entry) = cache.get(&key) {
         // Extract the last known score from the cached goal events
-        if let Some(last_event) = cached_entry.data.last() {
-            Some(format!("{}-{}", last_event.home_team_score, last_event.away_team_score))
-        } else {
-            None
-        }
+        cached_entry.data.last().map(|last_event| format!(
+            "{}-{}",
+            last_event.home_team_score, last_event.away_team_score
+        ))
     } else {
         None
     };
-    
+
     // Remove the current entry
     cache.pop(&key);
-    
+
     // If we had a last known score, create a cleared cache entry with that score
     if let Some(score) = last_known_score {
         let cleared_entry = CachedGoalEventsData::new_cleared(game_id, season, score.clone());
