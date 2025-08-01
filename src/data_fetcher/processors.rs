@@ -2,8 +2,12 @@ use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, Schedu
 use crate::data_fetcher::player_names::create_fallback_name;
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
-use chrono::{DateTime, Local, NaiveTime, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveTime, Utc};
 use std::collections::HashMap;
+
+// Tournament season constants for month-based logic
+const PRESEASON_START_MONTH: u32 = 6; // June
+const PRESEASON_END_MONTH: u32 = 9; // September
 
 /// Processes goal events for both teams in a game, converting them into a standardized format
 /// with player names and additional metadata.
@@ -127,27 +131,21 @@ pub fn process_team_goals(
     }
 }
 
-/// Determines whether to show today's games based on the current time.
-///
-/// Games are shown for "today" if the current time is after 14:00 (2 PM).
-/// Before 14:00, yesterday's games are shown instead. This helps ensure that
-/// late-night games are still visible the next morning.
-/// Uses UTC internally for consistent calculations, converts to local time for comparison.
+/// Determines whether to show today's games or yesterday's games.
+/// During preseason (May-September), always shows today's games since practice games
+/// might be scheduled at any time of day. During regular season and playoffs,
+/// uses a 14:00 cutoff time.
 ///
 /// # Returns
-/// * `true` - Show today's games (current time is after 14:00)
-/// * `false` - Show yesterday's games (current time is before 14:00)
+///
+/// `true` if today's games should be shown, `false` if yesterday's games should be shown.
 ///
 /// # Examples
 ///
-/// ```rust
-/// use chrono::Local;
+/// ```
 /// use liiga_teletext::data_fetcher::processors::should_show_todays_games;
 ///
-/// // At 13:59, returns false (show yesterday's games)
-/// // At 14:00, returns true (show today's games)
 /// let show_today = should_show_todays_games();
-///
 /// if show_today {
 ///     println!("Showing today's games");
 /// } else {
@@ -157,9 +155,18 @@ pub fn process_team_goals(
 pub fn should_show_todays_games() -> bool {
     // Use UTC for internal calculations to avoid DST issues
     let now_utc = Utc::now();
-    // Convert to local time for the 14:00 cutoff comparison
+    // Convert to local time for date and time comparisons
     let now_local = now_utc.with_timezone(&Local);
 
+    // Check if we're in preseason (May-September)
+    let current_month = now_local.month();
+    if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&current_month) {
+        // During preseason, always show today's games since practice games
+        // might be scheduled at any time of day
+        return true;
+    }
+
+    // For regular season and playoffs, use the 14:00 cutoff time
     let cutoff_time = NaiveTime::from_hms_opt(14, 0, 0).unwrap();
     let today_cutoff = now_local.date_naive().and_time(cutoff_time);
     now_local.naive_local() >= today_cutoff
