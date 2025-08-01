@@ -13,8 +13,9 @@ pub const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 100;
 
 /// Cache TTL (Time To Live) values in seconds
 pub mod cache_ttl {
-    /// TTL for live games (increased from 8 to 15 seconds to reduce API calls)
-    pub const LIVE_GAMES_SECONDS: u64 = 15;
+    /// TTL for live games (reduced from 15 to 8 seconds to ensure fresh goal events)
+    /// This should be shorter than the auto-refresh interval (15s) to prevent stale data
+    pub const LIVE_GAMES_SECONDS: u64 = 8;
 
     /// TTL for completed games (1 hour)
     pub const COMPLETED_GAMES_SECONDS: u64 = 3600;
