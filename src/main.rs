@@ -25,11 +25,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::{
-    EnvFilter,
-    fmt::{self, format::FmtSpan},
-    prelude::*,
-};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
@@ -821,10 +817,9 @@ async fn main() -> Result<(), AppError> {
                     fmt::Layer::new()
                         .with_writer(non_blocking)
                         .with_ansi(false)
-                        .with_span_events(FmtSpan::CLOSE)
                         .with_filter(
                             EnvFilter::from_default_env()
-                                .add_directive("liiga_teletext=debug".parse().unwrap()),
+                                .add_directive("liiga_teletext=info".parse().unwrap()),
                         ),
                 )
                 .init();
@@ -844,10 +839,9 @@ async fn main() -> Result<(), AppError> {
                     fmt::Layer::new()
                         .with_writer(non_blocking)
                         .with_ansi(false)
-                        .with_span_events(FmtSpan::CLOSE)
                         .with_filter(
                             EnvFilter::from_default_env()
-                                .add_directive("liiga_teletext=debug".parse().unwrap()),
+                                .add_directive("liiga_teletext=info".parse().unwrap()),
                         ),
                 )
                 .init();
@@ -859,10 +853,9 @@ async fn main() -> Result<(), AppError> {
                 fmt::Layer::new()
                     .with_writer(non_blocking)
                     .with_ansi(false)
-                    .with_span_events(FmtSpan::CLOSE)
                     .with_filter(
                         EnvFilter::from_default_env()
-                            .add_directive("liiga_teletext=debug".parse().unwrap()),
+                            .add_directive("liiga_teletext=info".parse().unwrap()),
                     ),
             )
             .init();
@@ -1126,7 +1119,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
         // Check for auto-refresh with better logic
         let auto_refresh_interval = if has_live_games_from_game_data(&last_games) {
-            Duration::from_secs(15) // More frequent for ongoing games (reduced from 30s)
+            Duration::from_secs(8) // Very frequent for live games (optimized for responsiveness)
         } else if last_games.iter().any(is_game_near_start_time) {
             Duration::from_secs(10) // Very frequent for games near start time
         } else {

@@ -419,21 +419,21 @@ async fn process_single_game(
         info!("Game not started, formatted time: {}", formatted_time);
         formatted_time
     } else {
-        info!("Game already started, no time to display");
+        debug!("Game already started, no time to display");
         String::new()
     };
 
     let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-    info!("Game result: {}", result);
+    debug!("Game result: {}", result);
 
     let (score_type, is_overtime, is_shootout) = determine_game_status(&game);
-    info!(
+    debug!(
         "Game status: {:?}, overtime: {}, shootout: {}",
         score_type, is_overtime, is_shootout
     );
 
     let goal_events = if should_fetch_detailed_data(&game) {
-        info!("Fetching detailed game data");
+        debug!("Fetching detailed game data");
         fetch_detailed_game_data(client, config, &game).await
     } else {
         info!("No detailed data needed for this game");
@@ -446,7 +446,7 @@ async fn process_single_game(
         response_idx + 1
     );
 
-    info!("Game serie from API: '{}'", game.serie);
+    debug!("Game serie from API: '{}'", game.serie);
     Ok(GameData {
         home_team: home_team_name.to_string(),
         away_team: away_team_name.to_string(),
@@ -530,7 +530,7 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
 
     // Check HTTP response cache first
     if let Some(cached_response) = get_cached_http_response(url).await {
-        info!("Using cached HTTP response for URL: {}", url);
+        debug!("Using cached HTTP response for URL: {}", url);
         match serde_json::from_str::<T>(&cached_response) {
             Ok(parsed) => return Ok(parsed),
             Err(e) => {
@@ -561,7 +561,7 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
     let status = response.status();
     let headers = response.headers().clone();
 
-    info!("Response status: {}", status);
+    debug!("Response status: {}", status);
     debug!("Response headers: {:?}", headers);
 
     if !status.is_success() {
@@ -594,7 +594,7 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
         }
     };
 
-    info!("Response length: {} bytes", response_text.len());
+    debug!("Response length: {} bytes", response_text.len());
     debug!("Response text: {}", response_text);
 
     // Cache successful HTTP responses with appropriate TTL
@@ -689,7 +689,7 @@ pub async fn fetch_tournament_data_with_cache_check(
 
     // Check if we should completely bypass cache for starting games
     if should_bypass_cache_for_starting_games(current_games).await {
-        info!("Cache bypass enabled for starting games, fetching fresh data");
+        debug!("Cache bypass enabled for starting games, fetching fresh data");
     } else {
         // Check cache first with enhanced validation
         if let Some(cached_response) =
@@ -985,7 +985,7 @@ pub async fn fetch_liiga_data(
     Ok((all_games, return_date))
 }
 
-#[instrument(skip(client, config))]
+#[instrument(skip(client, config, game), fields(game_id = %game.id, season = %game.season))]
 async fn fetch_detailed_game_data(
     client: &Client,
     config: &Config,
@@ -1110,7 +1110,7 @@ async fn process_game_response_with_cache(
     }
 
     // Build player names map if not in cache
-    info!("No cached player data found, building player names map");
+    debug!("No cached player data found, building player names map");
     let mut player_names = HashMap::new();
     info!(
         "Processing {} home team players",
@@ -1136,7 +1136,7 @@ async fn process_game_response_with_cache(
     info!("Built player names map with {} players", player_names.len());
 
     // Update cache with formatted names
-    info!("Updating player cache for game ID: {}", game_id);
+    debug!("Updating player cache for game ID: {}", game_id);
     cache_players_with_formatting(game_id, player_names.clone()).await;
 
     // Get the formatted names from cache for processing

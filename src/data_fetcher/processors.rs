@@ -187,7 +187,7 @@ pub fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
     // Enhanced live game detection: Check multiple indicators, not just started field
     let is_actually_live = game.started ||  // Official started flag
         (game.game_time > 0 && is_game_likely_live(game)) || // Game clock + timing check
-        has_recent_events(game);             // Recent events indicate live play
+        has_recent_events(game); // Recent events indicate live play
 
     let score_type = if !is_actually_live {
         ScoreType::Scheduled
@@ -289,8 +289,12 @@ fn is_game_likely_live(game: &ScheduleGame) -> bool {
         let is_not_ancient = time_since_start <= chrono::Duration::days(180); // 6 months
 
         if is_recent_game && is_not_ancient {
-            tracing::debug!("Game {} likely live: game_time={}, time_since_start={:?}",
-                          game.id, game.game_time, time_since_start);
+            tracing::debug!(
+                "Game {} likely live: game_time={}, time_since_start={:?}",
+                game.id,
+                game.game_time,
+                time_since_start
+            );
             return true;
         }
     }

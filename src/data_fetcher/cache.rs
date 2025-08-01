@@ -526,7 +526,7 @@ pub async fn should_bypass_cache_for_starting_games(current_games: &[GameData]) 
     });
 
     if has_starting_games {
-        info!("Cache bypass enabled for games near start time");
+        debug!("Cache bypass enabled for games near start time");
     }
 
     has_starting_games
