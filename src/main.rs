@@ -1108,7 +1108,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
         // Check for auto-refresh with better logic
         let auto_refresh_interval = if has_live_games_from_game_data(&last_games) {
-            Duration::from_secs(10) // More aggressive for ongoing games (reduced from 15s)
+            Duration::from_secs(30) // More reasonable for ongoing games (increased from 10s)
         } else {
             Duration::from_secs(60) // Standard interval for completed/scheduled games
         };
@@ -1534,7 +1534,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             // This ensures that failed auto-refresh attempts will be retried on the next cycle
             if !should_retry {
                 last_auto_refresh = Instant::now();
-                tracing::debug!("Auto-refresh cycle completed successfully");
+                tracing::trace!("Auto-refresh cycle completed successfully");
             } else {
                 tracing::debug!(
                     "Auto-refresh failed, will retry on next cycle (not updating last_auto_refresh timer)"

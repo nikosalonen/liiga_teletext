@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument, trace, warn};
 
 use crate::constants::cache_ttl;
 use crate::data_fetcher::models::{
@@ -229,7 +229,7 @@ pub fn has_live_games_from_game_data(games: &[GameData]) -> bool {
             .iter()
             .filter(|g| g.score_type == ScoreType::Ongoing)
             .count();
-        debug!(
+        trace!(
             "Live games detected: {} ongoing out of {} total games",
             ongoing_count,
             games.len()
@@ -238,33 +238,18 @@ pub fn has_live_games_from_game_data(games: &[GameData]) -> bool {
         // Log details of ongoing games for debugging
         for (i, game) in games.iter().enumerate() {
             if game.score_type == ScoreType::Ongoing {
-                debug!(
-                    "Ongoing game {}: {} vs {} - time='{}', result='{}', played_time={}",
+                trace!(
+                    "Ongoing game {}: {} vs {} - Score: {}, Time: {}",
                     i + 1,
                     game.home_team,
                     game.away_team,
-                    game.time,
                     game.result,
-                    game.played_time
+                    game.time
                 );
             }
         }
     } else {
-        debug!("No live games detected in {} games", games.len());
-
-        // Log details of all games for debugging when no live games found
-        for (i, game) in games.iter().enumerate() {
-            debug!(
-                "Game {}: {} vs {} - score_type={:?}, time='{}', result='{}', played_time={}",
-                i + 1,
-                game.home_team,
-                game.away_team,
-                game.score_type,
-                game.time,
-                game.result,
-                game.played_time
-            );
-        }
+        trace!("No live games detected in {} games", games.len());
     }
 
     has_live
