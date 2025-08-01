@@ -146,16 +146,23 @@ mod tests {
     fn test_ttl_constants_are_reasonable() {
         // Test that TTL values make sense relative to each other
         let live = cache_ttl::LIVE_GAMES_SECONDS;
+        let starting = cache_ttl::STARTING_GAMES_SECONDS;
         let completed = cache_ttl::COMPLETED_GAMES_SECONDS;
         let player = cache_ttl::PLAYER_DATA_SECONDS;
         let http = cache_ttl::HTTP_RESPONSE_SECONDS;
 
+        // Starting games should have the shortest TTL (most aggressive refresh)
+        assert!(starting < live);
         // Live games should have shorter TTL than completed games
         assert!(live < completed);
         // Completed games should have shorter TTL than player data
         assert!(completed < player);
         // HTTP responses should have some reasonable TTL
         assert!(http > 0);
+
+        // Ensure starting games TTL is reasonable (not too short, not too long)
+        assert!(starting >= 5); // At least 5 seconds
+        assert!(starting <= 30); // At most 30 seconds
     }
 
     #[test]
