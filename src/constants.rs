@@ -13,11 +13,14 @@ pub const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 100;
 
 /// Cache TTL (Time To Live) values in seconds
 pub mod cache_ttl {
-    /// TTL for live games (30 seconds for reasonable clock tracking)
-    pub const LIVE_GAMES_SECONDS: u64 = 30;
+    /// TTL for live games (reduced from 30 to 15 seconds for more responsive updates)
+    pub const LIVE_GAMES_SECONDS: u64 = 15;
 
     /// TTL for completed games (1 hour)
     pub const COMPLETED_GAMES_SECONDS: u64 = 3600;
+
+    /// TTL for games that should be starting soon (5 minutes before to 10 minutes after scheduled start)
+    pub const STARTING_GAMES_SECONDS: u64 = 10;
 
     /// TTL for player data (24 hours)
     pub const PLAYER_DATA_SECONDS: u64 = 86400;
@@ -143,16 +146,23 @@ mod tests {
     fn test_ttl_constants_are_reasonable() {
         // Test that TTL values make sense relative to each other
         let live = cache_ttl::LIVE_GAMES_SECONDS;
+        let starting = cache_ttl::STARTING_GAMES_SECONDS;
         let completed = cache_ttl::COMPLETED_GAMES_SECONDS;
         let player = cache_ttl::PLAYER_DATA_SECONDS;
         let http = cache_ttl::HTTP_RESPONSE_SECONDS;
 
+        // Starting games should have the shortest TTL (most aggressive refresh)
+        assert!(starting < live);
         // Live games should have shorter TTL than completed games
         assert!(live < completed);
         // Completed games should have shorter TTL than player data
         assert!(completed < player);
         // HTTP responses should have some reasonable TTL
         assert!(http > 0);
+
+        // Ensure starting games TTL is reasonable (not too short, not too long)
+        assert!(starting >= 5); // At least 5 seconds
+        assert!(starting <= 30); // At most 30 seconds
     }
 
     #[test]
