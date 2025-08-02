@@ -217,7 +217,7 @@ impl ContentAdapter {
     /// Creates expanded goal detail from goal event data
     fn create_expanded_goal_detail(
         event: &GoalEventData,
-        detail_level: DetailLevel,
+        _detail_level: DetailLevel,
     ) -> ExpandedGoalDetail {
         let situation = if !event.goal_types.is_empty() {
             Some(Self::translate_goal_types(&event.goal_types))

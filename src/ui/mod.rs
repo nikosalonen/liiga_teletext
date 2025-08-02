@@ -8,5 +8,5 @@ pub use content_adapter::{
     ExtendedTeamInfo,
 };
 pub use interactive::run_interactive_ui;
-pub use layout::{DetailLevel, LayoutCalculator, LayoutConfig};
+pub use layout::{ContentPositioning, DetailLevel, LayoutCalculator, LayoutConfig};
 pub use resize::ResizeHandler;

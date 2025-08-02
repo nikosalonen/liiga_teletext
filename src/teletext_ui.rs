@@ -4,8 +4,7 @@ use crate::config::Config;
 use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::api::fetch_regular_season_start_date;
 use crate::error::AppError;
-use crate::ui::layout::{LayoutCalculator, LayoutConfig, ContentPositioning, DetailLevel};
-use crate::ui::content_adapter::{ContentAdapter, AdaptedGameContent};
+use crate::ui::{ContentAdapter, ContentPositioning, DetailLevel, LayoutCalculator, LayoutConfig};
 use chrono::{DateTime, Datelike, Local, Utc};
 use crossterm::{
     cursor::MoveTo,
@@ -910,7 +909,11 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `String` - Formatted game content as a string
-    pub fn render_game_with_detail_level(&self, game: &TeletextRow, detail_level: DetailLevel) -> String {
+    pub fn render_game_with_detail_level(
+        &self,
+        game: &TeletextRow,
+        detail_level: DetailLevel,
+    ) -> String {
         match game {
             TeletextRow::GameResult {
                 home_team,
@@ -966,7 +969,8 @@ impl TeletextPage {
     /// # Returns
     /// * `ContentPositioning` - Positioning information for UI elements
     pub fn calculate_content_positioning(&self) -> ContentPositioning {
-        self.layout_calculator.calculate_content_positioning(&self.layout_config)
+        self.layout_calculator
+            .calculate_content_positioning(&self.layout_config)
     }
 
     /// Renders the page content to the provided stdout.
@@ -1203,7 +1207,9 @@ impl TeletextPage {
 
                     // Format time display based on game state (preserve existing logic)
                     let (time_display, score_display) = match score_type {
-                        ScoreType::Scheduled => (adapted_content.time_display.clone(), String::new()),
+                        ScoreType::Scheduled => {
+                            (adapted_content.time_display.clone(), String::new())
+                        }
                         ScoreType::Ongoing => {
                             let formatted_time =
                                 format!("{:02}:{:02}", played_time / 60, played_time % 60);
@@ -1225,12 +1231,12 @@ impl TeletextPage {
                             current_line, positioning.left_margin + 1,
                             text_fg_code,
                             adapted_content.home_team.chars().take(20).collect::<String>(),
-                            current_line, SEPARATOR_OFFSET + positioning.left_margin + 1,
+                            current_line, SEPARATOR_OFFSET + positioning.left_margin as usize + 1,
                             text_fg_code,
-                            current_line, AWAY_TEAM_OFFSET + positioning.left_margin + 1,
+                            current_line, AWAY_TEAM_OFFSET + positioning.left_margin as usize + 1,
                             text_fg_code,
                             adapted_content.away_team.chars().take(20).collect::<String>(),
-                            current_line, 35 + positioning.left_margin + 1,
+                            current_line, 35 + positioning.left_margin as usize + 1,
                             text_fg_code,
                             time_display,
                             current_line, 45 + positioning.left_margin + 1,
@@ -1249,12 +1255,12 @@ impl TeletextPage {
                             current_line, positioning.left_margin + 1,
                             text_fg_code,
                             adapted_content.home_team.chars().take(20).collect::<String>(),
-                            current_line, SEPARATOR_OFFSET + positioning.left_margin + 1,
+                            current_line, SEPARATOR_OFFSET + positioning.left_margin as usize + 1,
                             text_fg_code,
-                            current_line, AWAY_TEAM_OFFSET + positioning.left_margin + 1,
+                            current_line, AWAY_TEAM_OFFSET + positioning.left_margin as usize + 1,
                             text_fg_code,
                             adapted_content.away_team.chars().take(20).collect::<String>(),
-                            current_line, 45 + positioning.left_margin + 1,
+                            current_line, 45 + positioning.left_margin as usize + 1,
                             result_color,
                             display_text
                         ));
@@ -1357,7 +1363,7 @@ impl TeletextPage {
                                 buffer.push_str(&format!(
                                     "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
                                     current_line,
-                                    AWAY_TEAM_OFFSET + positioning.left_margin + 1,
+                                    AWAY_TEAM_OFFSET + positioning.left_margin as usize + 1,
                                     scorer_color,
                                     event.minute
                                 ));

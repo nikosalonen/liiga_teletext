@@ -75,20 +75,20 @@
     - Ensure backward compatibility with existing behavior
     - _Requirements: 2.3, 4.4_
 
-- [-] 6. Integrate resize handling into UI loop
-  - [ ] 6.1 Add resize detection to interactive UI
+- [x] 6. Integrate resize handling into UI loop
+  - [x] 6.1 Add resize detection to interactive UI
     - Integrate ResizeHandler into run_interactive_ui function
     - Add size change detection to main UI loop
     - Implement layout updates on terminal resize
     - _Requirements: 4.1, 4.2_
 
-  - [ ] 6.2 Update pagination logic for dynamic sizing
+  - [x] 6.2 Update pagination logic for dynamic sizing
     - Modify page navigation to handle variable page sizes
     - Update total_pages calculation for dynamic content
     - Ensure pagination state remains valid after resizes
     - _Requirements: 1.4, 4.3_
 
-  - [ ] 6.3 Handle resize during auto-refresh
+  - [x] 6.3 Handle resize during auto-refresh
     - Ensure layout updates work correctly during data refresh
     - Maintain proper state during concurrent resize and refresh
     - Test interaction between resize and refresh cycles

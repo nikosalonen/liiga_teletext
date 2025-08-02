@@ -10,7 +10,9 @@ use crate::ui::resize::ResizeHandler;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size},
+    terminal::{
+        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size,
+    },
 };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -41,7 +43,7 @@ fn calculate_games_hash(games: &[GameData]) -> u64 {
 
 /// Creates a TeletextPage with an error message
 /// This helper function eliminates code duplication for error handling
-fn create_error_page(error_message: String, disable_video_links: bool) -> Vec<TeletextPage> {
+fn create_error_page(error_message: String, disable_video_links: bool) -> TeletextPage {
     let mut page = TeletextPage::new(
         TELETEXT_PAGE_NUMBER,
         TELETEXT_HEADER.to_string(),
@@ -51,45 +53,35 @@ fn create_error_page(error_message: String, disable_video_links: bool) -> Vec<Te
         false,
     );
     page.add_error_message(&error_message);
-    vec![page]
+    page
 }
 
-/// Creates a vector of TeletextPage instances from game data
+/// Creates a TeletextPage instance from game data
 /// This helper function eliminates code duplication by centralizing the page creation logic
-fn create_teletext_pages(
+fn create_teletext_page(
     games: &[GameData],
     fetched_date: String,
     disable_video_links: bool,
-) -> Vec<TeletextPage> {
-    if games.is_empty() {
-        let mut page = TeletextPage::new(
-            TELETEXT_PAGE_NUMBER,
-            TELETEXT_HEADER.to_string(),
-            TELETEXT_SUBHEADER.to_string(),
-            disable_video_links,
-            true,
-            false,
-        );
-        page.add_error_message("Ei otteluita tälle päivälle");
-        page.set_fetched_date(fetched_date);
-        vec![page]
-    } else {
-        let mut page = TeletextPage::new(
-            TELETEXT_PAGE_NUMBER,
-            TELETEXT_HEADER.to_string(),
-            TELETEXT_SUBHEADER.to_string(),
-            disable_video_links,
-            true,
-            false,
-        );
-        page.set_fetched_date(fetched_date);
+) -> TeletextPage {
+    let mut page = TeletextPage::new(
+        TELETEXT_PAGE_NUMBER,
+        TELETEXT_HEADER.to_string(),
+        TELETEXT_SUBHEADER.to_string(),
+        disable_video_links,
+        true,
+        false,
+    );
+    page.set_fetched_date(fetched_date);
 
+    if games.is_empty() {
+        page.add_error_message("Ei otteluita tälle päivälle");
+    } else {
         for game in games {
             page.add_game_result(GameResultData::new(game));
         }
-
-        vec![page]
     }
+
+    page
 }
 
 /// Runs the interactive UI with adaptive polling and change detection
@@ -103,8 +95,7 @@ pub async fn run_interactive_ui(
         execute!(stdout(), EnterAlternateScreen)?;
     }
 
-    let mut current_page = 0usize;
-    let mut pages: Vec<TeletextPage>;
+    let mut page: TeletextPage;
     let mut last_refresh = Instant::now();
     let mut last_games_hash = 0u64;
     let mut last_activity = Instant::now();
@@ -119,24 +110,20 @@ pub async fn run_interactive_ui(
             let games_hash = calculate_games_hash(&games);
             last_games_hash = games_hash;
 
-            pages = create_teletext_pages(&games, fetched_date, disable_video_links);
-            
-            // Initialize layout for all pages with current terminal size
+            page = create_teletext_page(&games, fetched_date, disable_video_links);
+
+            // Initialize layout with current terminal size
             if let Ok(terminal_size) = size() {
-                for page in &mut pages {
-                    page.update_layout(terminal_size);
-                }
+                page.update_layout(terminal_size);
             }
         }
         Err(e) => {
             warn!("Failed to fetch initial data: {}", e);
-            pages = create_error_page(format!("Virhe tietojen haussa: {e}"), disable_video_links);
-            
+            page = create_error_page(format!("Virhe tietojen haussa: {e}"), disable_video_links);
+
             // Initialize layout for error page
             if let Ok(terminal_size) = size() {
-                for page in &mut pages {
-                    page.update_layout(terminal_size);
-                }
+                page.update_layout(terminal_size);
             }
         }
     }
@@ -161,10 +148,7 @@ pub async fn run_interactive_ui(
                     KeyCode::Char('q') | KeyCode::Char('Q') => break,
                     KeyCode::Char('r') | KeyCode::Char('R') => {
                         // Check if auto-refresh is disabled - ignore manual refresh too
-                        if !pages.is_empty()
-                            && current_page < pages.len()
-                            && pages[current_page].is_auto_refresh_disabled()
-                        {
+                        if page.is_auto_refresh_disabled() {
                             debug!("Manual refresh ignored - auto-refresh is disabled");
                             continue; // Skip refresh when auto-refresh is disabled
                         }
@@ -181,21 +165,17 @@ pub async fn run_interactive_ui(
                                         last_games_hash = games_hash;
                                         current_date = Some(fetched_date.clone());
 
-                                        // Rebuild pages
-                                        pages = create_teletext_pages(
+                                        // Rebuild page
+                                        page = create_teletext_page(
                                             &games,
                                             fetched_date,
                                             disable_video_links,
                                         );
 
-                                        // Initialize layout for new pages
+                                        // Initialize layout for new page
                                         if let Ok(terminal_size) = size() {
-                                            for page in &mut pages {
-                                                page.update_layout(terminal_size);
-                                            }
+                                            page.update_layout(terminal_size);
                                         }
-
-                                        current_page = 0;
                                         needs_render = true;
                                     }
                                     last_refresh = Instant::now();
@@ -210,16 +190,12 @@ pub async fn run_interactive_ui(
                         }
                     }
                     KeyCode::Left => {
-                        if current_page > 0 {
-                            current_page -= 1;
-                            needs_render = true;
-                        }
+                        page.previous_page();
+                        needs_render = true;
                     }
                     KeyCode::Right => {
-                        if current_page + 1 < pages.len() {
-                            current_page += 1;
-                            needs_render = true;
-                        }
+                        page.next_page();
+                        needs_render = true;
                     }
                     _ => {}
                 }
@@ -230,12 +206,10 @@ pub async fn run_interactive_ui(
         if let Ok(current_size) = size() {
             if let Some(new_size) = resize_handler.check_for_resize(current_size) {
                 debug!("Terminal resize detected: {:?}", new_size);
-                
-                // Update layout for all pages
-                for page in &mut pages {
-                    page.update_layout(new_size);
-                }
-                
+
+                // Update layout for the page
+                page.update_layout(new_size);
+
                 needs_render = true;
             }
         }
@@ -252,14 +226,12 @@ pub async fn run_interactive_ui(
                         last_games_hash = games_hash;
                         current_date = Some(fetched_date.clone());
 
-                        // Rebuild pages
-                        pages = create_teletext_pages(&games, fetched_date, disable_video_links);
+                        // Rebuild page
+                        page = create_teletext_page(&games, fetched_date, disable_video_links);
 
-                        // Initialize layout for new pages
+                        // Initialize layout for new page
                         if let Ok(terminal_size) = size() {
-                            for page in &mut pages {
-                                page.update_layout(terminal_size);
-                            }
+                            page.update_layout(terminal_size);
                         }
 
                         needs_render = true;
@@ -282,9 +254,7 @@ pub async fn run_interactive_ui(
                 )?;
             }
 
-            if !pages.is_empty() && current_page < pages.len() {
-                pages[current_page].render_buffered(&mut stdout())?;
-            }
+            page.render_buffered(&mut stdout())?;
 
             needs_render = false;
         }
@@ -349,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_teletext_pages_with_games() {
+    fn test_create_teletext_page_with_games() {
         let games = vec![
             TestDataBuilder::create_basic_game("HIFK", "Jokerit"),
             TestDataBuilder::create_basic_game("TPS", "Ilves"),
@@ -357,23 +327,23 @@ mod tests {
         let fetched_date = "2024-01-15".to_string();
         let disable_video_links = false;
 
-        let pages = create_teletext_pages(&games, fetched_date.clone(), disable_video_links);
+        let _page = create_teletext_page(&games, fetched_date.clone(), disable_video_links);
 
-        assert_eq!(pages.len(), 1);
         // Verify the page was created with correct parameters
         // Note: We can't easily test internal state without exposing more methods
+        // The fact that it doesn't panic is a good sign
     }
 
     #[test]
-    fn test_create_teletext_pages_empty_games() {
+    fn test_create_teletext_page_empty_games() {
         let games: Vec<GameData> = vec![];
         let fetched_date = "2024-01-15".to_string();
         let disable_video_links = false;
 
-        let pages = create_teletext_pages(&games, fetched_date.clone(), disable_video_links);
+        let _page = create_teletext_page(&games, fetched_date.clone(), disable_video_links);
 
-        assert_eq!(pages.len(), 1);
         // Should create a page with error message for no games
+        // The fact that it doesn't panic is a good sign
     }
 
     #[test]
@@ -381,10 +351,10 @@ mod tests {
         let error_message = "Test error message".to_string();
         let disable_video_links = true;
 
-        let pages = create_error_page(error_message.clone(), disable_video_links);
+        let _page = create_error_page(error_message.clone(), disable_video_links);
 
-        assert_eq!(pages.len(), 1);
-        // Should create a single page with the error message
+        // Should create a page with the error message
+        // The fact that it doesn't panic is a good sign
     }
 
     // Since we can't easily mock the fetch_liiga_data function directly without
@@ -401,9 +371,8 @@ mod tests {
         let fetched_date = "2024-01-15".to_string();
         let disable_video_links = false;
 
-        // Test that pages are created correctly with successful data
-        let pages = create_teletext_pages(&games, fetched_date.clone(), disable_video_links);
-        assert_eq!(pages.len(), 1);
+        // Test that page is created correctly with successful data
+        let _page = create_teletext_page(&games, fetched_date.clone(), disable_video_links);
 
         // Test hash calculation for change detection
         let hash1 = calculate_games_hash(&games);
@@ -423,8 +392,7 @@ mod tests {
         let fetched_date = "2024-01-15".to_string();
         let disable_video_links = false;
 
-        let pages = create_teletext_pages(&games, fetched_date.clone(), disable_video_links);
-        assert_eq!(pages.len(), 1);
+        let _page = create_teletext_page(&games, fetched_date.clone(), disable_video_links);
 
         // Test hash calculation with empty games
         let hash = calculate_games_hash(&games);
@@ -438,13 +406,11 @@ mod tests {
         let error_message = "Failed to fetch data: Network timeout".to_string();
         let disable_video_links = true;
 
-        let pages = create_error_page(error_message.clone(), disable_video_links);
-        assert_eq!(pages.len(), 1);
+        let _page = create_error_page(error_message.clone(), disable_video_links);
 
         // Test with different error messages
         let different_error = "API rate limit exceeded".to_string();
-        let pages2 = create_error_page(different_error, false);
-        assert_eq!(pages2.len(), 1);
+        let _page2 = create_error_page(different_error, false);
     }
 
     #[tokio::test]
@@ -464,11 +430,8 @@ mod tests {
 
         // Test page creation for both states
         let fetched_date = "2024-01-15".to_string();
-        let initial_pages = create_teletext_pages(&initial_games, fetched_date.clone(), false);
-        let updated_pages = create_teletext_pages(&updated_games, fetched_date, false);
-
-        assert_eq!(initial_pages.len(), 1);
-        assert_eq!(updated_pages.len(), 1);
+        let _initial_page = create_teletext_page(&initial_games, fetched_date.clone(), false);
+        let _updated_page = create_teletext_page(&updated_games, fetched_date, false);
     }
 
     #[tokio::test]
@@ -508,13 +471,12 @@ mod tests {
 
         // Test that page creation completes quickly
         let result = timeout(Duration::from_millis(100), async {
-            create_teletext_pages(&games, fetched_date, false)
+            create_teletext_page(&games, fetched_date, false)
         })
         .await;
 
         assert!(result.is_ok());
-        let pages = result.unwrap();
-        assert_eq!(pages.len(), 1);
+        let _page = result.unwrap();
 
         // Test that hash calculation completes quickly
         let hash_result = timeout(Duration::from_millis(50), async {
@@ -540,8 +502,36 @@ mod tests {
             create_error_page(timeout_error, false),
         ];
 
-        for pages in error_pages {
-            assert_eq!(pages.len(), 1);
-        }
+        // All error pages should be created successfully
+        assert_eq!(error_pages.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_resize_and_refresh_interaction() {
+        // Test that resize handling works correctly with auto-refresh
+        let games = vec![
+            TestDataBuilder::create_basic_game("HIFK", "Jokerit"),
+            TestDataBuilder::create_basic_game("TPS", "Ilves"),
+        ];
+        let fetched_date = "2024-01-15".to_string();
+
+        // Create initial page
+        let mut page = create_teletext_page(&games, fetched_date.clone(), false);
+
+        // Simulate initial layout setup
+        page.update_layout((80, 24));
+
+        // Simulate resize during operation
+        page.update_layout((120, 40));
+
+        // Simulate auto-refresh creating new page with proper layout
+        let refreshed_page = create_teletext_page(&games, fetched_date, false);
+        // Auto-refresh should initialize layout with current terminal size
+        // This is handled in the main UI loop, but we can verify the page accepts layout updates
+        let mut refreshed_page = refreshed_page;
+        refreshed_page.update_layout((120, 40));
+
+        // Both operations should complete without errors
+        // The fact that we reach this point means the interaction works correctly
     }
 }

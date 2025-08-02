@@ -4,6 +4,8 @@ mod constants;
 mod data_fetcher;
 mod error;
 mod teletext_ui;
+mod testing_utils;
+mod ui;
 
 use chrono::{Datelike, Local, NaiveDate, Utc};
 use clap::Parser;
