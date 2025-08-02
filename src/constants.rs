@@ -85,7 +85,7 @@ pub mod dynamic_ui {
     /// Minimum terminal width for proper display
     pub const MIN_TERMINAL_WIDTH: u16 = 80;
 
-    /// Minimum terminal height for proper display  
+    /// Minimum terminal height for proper display
     pub const MIN_TERMINAL_HEIGHT: u16 = 24;
 
     /// Width threshold for standard detail level
@@ -105,6 +105,48 @@ pub mod dynamic_ui {
 
     /// Additional height per game in extended mode
     pub const EXTENDED_GAME_HEIGHT_BONUS: u16 = 2;
+
+    /// Absolute minimum terminal width for emergency fallback
+    pub const EMERGENCY_MIN_WIDTH: u16 = 40;
+
+    /// Absolute minimum terminal height for emergency fallback
+    pub const EMERGENCY_MIN_HEIGHT: u16 = 10;
+
+    /// Maximum team name length for emergency fallback
+    pub const EMERGENCY_MAX_TEAM_NAME_LENGTH: usize = 6;
+
+    /// Truncation indicator for content that doesn't fit
+    pub const TRUNCATION_INDICATOR: &str = "…";
+
+    /// Error message for insufficient terminal size
+    pub const SIZE_ERROR_MESSAGE: &str = "Terminal too small";
+
+    /// Minimum content width after accounting for padding and margins
+    pub const MIN_CONTENT_WIDTH: u16 = 30;
+
+    /// Minimum content height after accounting for header and footer
+    pub const MIN_CONTENT_HEIGHT: u16 = 3;
+
+    /// Layout cache TTL in milliseconds
+    pub const LAYOUT_CACHE_TTL_MS: u64 = 500;
+
+    /// Maximum number of cached layout entries
+    pub const MAX_LAYOUT_CACHE_ENTRIES: usize = 50;
+
+    /// Cache cleanup interval in seconds
+    pub const CACHE_CLEANUP_INTERVAL_SECONDS: u64 = 30;
+
+    /// Maximum string buffer pool size
+    pub const MAX_STRING_BUFFER_POOL_SIZE: usize = 8;
+
+    /// Maximum string buffer capacity to keep in pool
+    pub const MAX_STRING_BUFFER_CAPACITY: usize = 8192;
+
+    /// Incremental update threshold for width changes
+    pub const INCREMENTAL_WIDTH_THRESHOLD: i32 = 5;
+
+    /// Incremental update threshold for height changes
+    pub const INCREMENTAL_HEIGHT_THRESHOLD: i32 = 3;
 }
 
 /// Environment variable names

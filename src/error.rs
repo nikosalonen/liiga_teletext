@@ -63,6 +63,24 @@ pub enum AppError {
     #[error("Tournament not found: {tournament} for date {date}")]
     ApiTournamentNotFound { tournament: String, date: String },
 
+    // Layout and UI errors
+    #[error("Terminal size too small: {width}x{height} (minimum: {min_width}x{min_height})")]
+    TerminalTooSmall {
+        width: u16,
+        height: u16,
+        min_width: u16,
+        min_height: u16,
+    },
+
+    #[error("Layout calculation failed: {message}")]
+    LayoutCalculationFailed { message: String },
+
+    #[error("Content truncation required: {reason}")]
+    ContentTruncationRequired { reason: String },
+
+    #[error("Resize operation failed: {message}")]
+    ResizeOperationFailed { message: String },
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -212,6 +230,37 @@ impl AppError {
         Self::ApiTournamentNotFound {
             tournament: tournament.into(),
             date: date.into(),
+        }
+    }
+
+    /// Create a terminal too small error
+    pub fn terminal_too_small(width: u16, height: u16, min_width: u16, min_height: u16) -> Self {
+        Self::TerminalTooSmall {
+            width,
+            height,
+            min_width,
+            min_height,
+        }
+    }
+
+    /// Create a layout calculation failed error
+    pub fn layout_calculation_failed(message: impl Into<String>) -> Self {
+        Self::LayoutCalculationFailed {
+            message: message.into(),
+        }
+    }
+
+    /// Create a content truncation required error
+    pub fn content_truncation_required(reason: impl Into<String>) -> Self {
+        Self::ContentTruncationRequired {
+            reason: reason.into(),
+        }
+    }
+
+    /// Create a resize operation failed error
+    pub fn resize_operation_failed(message: impl Into<String>) -> Self {
+        Self::ResizeOperationFailed {
+            message: message.into(),
         }
     }
 
@@ -721,6 +770,10 @@ mod tests {
             AppError::api_season_not_found(2024),
             AppError::api_game_not_found(123, 2024),
             AppError::api_tournament_not_found("tournament", "2024-01-15"),
+            AppError::terminal_too_small(60, 20, 80, 24),
+            AppError::layout_calculation_failed("test layout error"),
+            AppError::content_truncation_required("test truncation"),
+            AppError::resize_operation_failed("test resize error"),
             AppError::Custom("custom message".to_string()),
         ];
 
@@ -736,5 +789,25 @@ mod tests {
                 "Error display should be descriptive: {error:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_layout_error_helpers() {
+        // Test terminal too small error
+        let error = AppError::terminal_too_small(60, 20, 80, 24);
+        assert!(error.to_string().contains("60x20"));
+        assert!(error.to_string().contains("80x24"));
+
+        // Test layout calculation failed error
+        let error = AppError::layout_calculation_failed("Test calculation error");
+        assert!(error.to_string().contains("Test calculation error"));
+
+        // Test content truncation required error
+        let error = AppError::content_truncation_required("Content too wide");
+        assert!(error.to_string().contains("Content too wide"));
+
+        // Test resize operation failed error
+        let error = AppError::resize_operation_failed("Terminal detection failed");
+        assert!(error.to_string().contains("Terminal detection failed"));
     }
 }

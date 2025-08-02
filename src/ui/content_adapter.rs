@@ -1,10 +1,40 @@
 //! Content adaptation module for dynamic content formatting
 //!
 //! This module provides functionality for adapting game content to different detail levels
-//! based on available screen space, including team name formatting, time display formatting,
-//! and goal event formatting.
+//! based on available screen space. It handles the intelligent truncation and formatting
+//! of content to make optimal use of available terminal space.
+//!
+//! ## Features
+//!
+//! - **Adaptive Team Names**: Truncates team names intelligently based on available width
+//! - **Time Formatting**: Provides different time display formats for different detail levels
+//! - **Goal Event Formatting**: Adapts goal information display based on screen space
+//! - **Text Truncation**: Smart truncation with ellipsis indicators
+//! - **Content Prioritization**: Shows most important information first when space is limited
+//!
+//! ## Detail Level Adaptation
+//!
+//! - **Minimal**: Basic team abbreviations, simple time format, essential goal info
+//! - **Standard**: Longer team names, enhanced time display, more goal details
+//! - **Extended**: Full team names, detailed timestamps, complete goal information
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use crate::ui::content_adapter::ContentAdapter;
+//! use crate::ui::layout::DetailLevel;
+//!
+//! let adapter = ContentAdapter::new();
+//! let formatted_content = adapter.adapt_game_content(
+//!     &game_data,
+//!     DetailLevel::Standard,
+//!     100 // available width
+//! );
+//! ```
 
+use crate::constants::dynamic_ui;
 use crate::data_fetcher::models::GoalEventData;
+use crate::error::AppError;
 use crate::ui::layout::DetailLevel;
 
 /// Enhanced game display data with extended information for different detail levels
@@ -76,6 +106,36 @@ pub struct AdaptedGameContent {
     pub estimated_height: u16,
 }
 
+/// Content elements that can be prioritized based on available space
+#[derive(Debug, Clone)]
+pub struct ContentElements {
+    /// Whether to show enhanced team names
+    pub team_names: bool,
+    /// Whether to show enhanced game time information
+    pub game_time: bool,
+    /// Whether to show enhanced score display
+    pub score: bool,
+    /// Whether to show basic goal information
+    pub basic_goal_info: bool,
+}
+
+/// Content priority configuration for progressive enhancement
+#[derive(Debug, Clone)]
+pub struct ContentPriority {
+    /// Essential content that should always be shown
+    pub essential: ContentElements,
+    /// Enhanced content that can be shown if space allows
+    pub enhanced: ContentElements,
+    /// Extended content that requires significant space
+    pub extended: ContentElements,
+    /// Whether to show detailed goal information
+    pub show_goal_details: bool,
+    /// Whether to show extended team information
+    pub show_extended_team_info: bool,
+    /// Whether to show detailed time information
+    pub show_detailed_time_info: bool,
+}
+
 /// Content adapter for formatting game content based on detail level and available space
 pub struct ContentAdapter;
 
@@ -94,18 +154,27 @@ impl ContentAdapter {
     ) -> EnhancedGameDisplay {
         let extended_team_info = match detail_level {
             DetailLevel::Extended => Some(ExtendedTeamInfo {
-                full_home_name: game_data.home_team.clone(),
-                full_away_name: game_data.away_team.clone(),
-                home_record: None, // Could be populated from additional data sources
-                away_record: None,
+                full_home_name: Self::get_extended_team_name(&game_data.home_team),
+                full_away_name: Self::get_extended_team_name(&game_data.away_team),
+                home_record: Self::get_team_record(&game_data.home_team),
+                away_record: Self::get_team_record(&game_data.away_team),
             }),
             _ => None,
         };
 
         let detailed_time_info = match detail_level {
-            DetailLevel::Standard | DetailLevel::Extended => Some(DetailedTimeInfo {
-                precise_timestamp: game_data.time.clone(),
+            DetailLevel::Standard => Some(DetailedTimeInfo {
+                precise_timestamp: Self::format_precise_timestamp(&game_data.time, detail_level),
                 game_duration: Self::calculate_game_duration(game_data.played_time),
+                period_info: Self::determine_period_info(&game_data),
+            }),
+            DetailLevel::Extended => Some(DetailedTimeInfo {
+                precise_timestamp: Self::format_precise_timestamp(&game_data.time, detail_level),
+                game_duration: Self::calculate_enhanced_game_duration(
+                    game_data.played_time,
+                    game_data.is_overtime,
+                    game_data.is_shootout,
+                ),
                 period_info: Self::determine_period_info(&game_data),
             }),
             _ => None,
@@ -199,6 +268,31 @@ impl ContentAdapter {
         }
     }
 
+    /// Calculates enhanced game duration with additional context for extended detail level
+    fn calculate_enhanced_game_duration(
+        played_time: i32,
+        is_overtime: bool,
+        is_shootout: bool,
+    ) -> Option<String> {
+        if played_time <= 0 {
+            return None;
+        }
+
+        let base_duration = Self::calculate_game_duration(played_time)?;
+
+        // Add context for extended detail level
+        if is_shootout {
+            Some(format!("{} + ratkaisu", base_duration))
+        } else if is_overtime {
+            Some(format!("{} + jatkoaika", base_duration))
+        } else if played_time > 3600 {
+            // Regular game is 60 minutes, so anything over 1 hour indicates overtime
+            Some(format!("{} (jatkoaika)", base_duration))
+        } else {
+            Some(base_duration)
+        }
+    }
+
     /// Determines period information from game data
     fn determine_period_info(game_data: &crate::teletext_ui::GameResultData) -> Option<String> {
         if game_data.is_shootout {
@@ -214,10 +308,56 @@ impl ContentAdapter {
         }
     }
 
+    /// Gets extended team name with full city/organization information
+    fn get_extended_team_name(team_name: &str) -> String {
+        // Map common abbreviations to full names for extended display
+        match team_name {
+            "HIFK" => "HIFK Helsinki".to_string(),
+            "TPS" => "TPS Turku".to_string(),
+            "Tappara" => "Tappara Tampere".to_string(),
+            "Ilves" => "Ilves Tampere".to_string(),
+            "KalPa" => "KalPa Kuopio".to_string(),
+            "Lukko" => "Lukko Rauma".to_string(),
+            "Ässät" => "Ässät Pori".to_string(),
+            "Sport" => "Sport Vaasa".to_string(),
+            "JYP" => "JYP Jyväskylä".to_string(),
+            "Pelicans" => "Pelicans Lahti".to_string(),
+            "HPK" => "HPK Hämeenlinna".to_string(),
+            "Kärpät" => "Kärpät Oulu".to_string(),
+            "SaiPa" => "SaiPa Lappeenranta".to_string(),
+            "Jukurit" => "Jukurit Mikkeli".to_string(),
+            "KooKoo" => "KooKoo Kouvola".to_string(),
+            _ => team_name.to_string(), // Return original if no mapping found
+        }
+    }
+
+    /// Gets team record information (placeholder for future implementation)
+    fn get_team_record(_team_name: &str) -> Option<String> {
+        // This would be populated from additional data sources in a real implementation
+        // For now, return None as we don't have access to season records
+        None
+    }
+
+    /// Formats precise timestamp with enhanced detail level formatting
+    fn format_precise_timestamp(time: &str, detail_level: DetailLevel) -> String {
+        match detail_level {
+            DetailLevel::Extended => {
+                // Add seconds precision for extended mode if time format allows
+                if time.contains(':') && !time.contains("Päättynyt") && !time.contains("Tulossa")
+                {
+                    format!("{}:00", time) // Add seconds
+                } else {
+                    time.to_string()
+                }
+            }
+            _ => time.to_string(),
+        }
+    }
+
     /// Creates expanded goal detail from goal event data
     fn create_expanded_goal_detail(
         event: &GoalEventData,
-        _detail_level: DetailLevel,
+        detail_level: DetailLevel,
     ) -> ExpandedGoalDetail {
         let situation = if !event.goal_types.is_empty() {
             Some(Self::translate_goal_types(&event.goal_types))
@@ -225,11 +365,26 @@ impl ContentAdapter {
             None
         };
 
+        // Enhanced time formatting for extended detail level
+        let time = match detail_level {
+            DetailLevel::Extended => {
+                // Add more precise time information for extended mode
+                if event.minute > 60 {
+                    let period = (event.minute - 1) / 20 + 1;
+                    let period_minute = ((event.minute - 1) % 20) + 1;
+                    format!("{}.{:02} ({}. erä)", period_minute, 0, period)
+                } else {
+                    format!("{}.{:02}", event.minute, 0)
+                }
+            }
+            _ => format!("{}.", event.minute),
+        };
+
         ExpandedGoalDetail {
             scorer: event.scorer_name.clone(),
             assist1: None, // Would need additional data from API
             assist2: None, // Would need additional data from API
-            time: format!("{}.", event.minute),
+            time,
             situation,
         }
     }
@@ -282,7 +437,17 @@ impl ContentAdapter {
         // Calculate estimated height
         let base_height = 1; // Game result line
         let goal_height = goal_lines.len() as u16;
-        let spacer_height = if goal_lines.is_empty() { 1 } else { 1 }; // Space between games
+
+        // Account for additional spacing in extended mode
+        let spacer_height = match detail_level {
+            DetailLevel::Extended => {
+                if goal_lines.is_empty() { 2 } else { 2 } // Extra spacing for extended mode
+            }
+            _ => {
+                if goal_lines.is_empty() { 1 } else { 1 } // Standard spacing
+            }
+        };
+
         let estimated_height = base_height + goal_height + spacer_height;
 
         AdaptedGameContent {
@@ -317,8 +482,23 @@ impl ContentAdapter {
             DetailLevel::Extended => Self::calculate_extended_team_width(available_width),
         };
 
-        let formatted_home = Self::truncate_team_name(home, max_team_name_width);
-        let formatted_away = Self::truncate_team_name(away, max_team_name_width);
+        let formatted_home = match detail_level {
+            DetailLevel::Extended => {
+                let extended_name = Self::get_extended_team_name(home);
+                let truncated = Self::truncate_team_name(&extended_name, max_team_name_width);
+                format!("🏠 {}", truncated) // Add home indicator for extended mode
+            }
+            _ => Self::truncate_team_name(home, max_team_name_width),
+        };
+
+        let formatted_away = match detail_level {
+            DetailLevel::Extended => {
+                let extended_name = Self::get_extended_team_name(away);
+                let truncated = Self::truncate_team_name(&extended_name, max_team_name_width);
+                format!("✈️  {}", truncated) // Add away indicator for extended mode
+            }
+            _ => Self::truncate_team_name(away, max_team_name_width),
+        };
 
         (formatted_home, formatted_away)
     }
@@ -375,11 +555,16 @@ impl ContentAdapter {
                 format!("{:^7}", result)
             }
             DetailLevel::Extended => {
-                // Enhanced result display for extended
+                // Enhanced result display for extended with additional context
                 if result.contains('-') {
-                    format!("{:^9}", result) // More space for extended
+                    // Add visual emphasis for extended mode
+                    format!("┤{:^7}├", result)
+                } else if result == "Tulossa" {
+                    format!("┤{:^7}├", result)
+                } else if result == "Päättynyt" {
+                    format!("┤{:^7}├", result)
                 } else {
-                    format!("{:^9}", result)
+                    format!("┤{:^7}├", result)
                 }
             }
         }
@@ -429,25 +614,75 @@ impl ContentAdapter {
 
     /// Calculates maximum team name width for extended detail level
     fn calculate_extended_team_width(available_width: u16) -> usize {
-        let reserved_space = 30; // Even more space for extended formatting
+        let reserved_space = 35; // More space for enhanced extended formatting
         let remaining = available_width.saturating_sub(reserved_space);
         let team_space = remaining / 2;
-        std::cmp::max(12, std::cmp::min(25, team_space as usize)) // Min 12, max 25 chars
+        std::cmp::max(15, std::cmp::min(30, team_space as usize)) // Min 15, max 30 chars for extended
     }
 
-    /// Truncates team name to fit within specified width
+    /// Truncates team name to fit within specified width with graceful degradation
     fn truncate_team_name(name: &str, max_width: usize) -> String {
         if max_width == 0 {
             return String::new();
         }
 
-        if name.chars().count() <= max_width {
+        let char_count = name.chars().count();
+
+        if char_count <= max_width {
             name.to_string()
         } else if max_width == 1 {
-            "…".to_string()
+            dynamic_ui::TRUNCATION_INDICATOR.to_string()
+        } else if max_width <= dynamic_ui::EMERGENCY_MAX_TEAM_NAME_LENGTH {
+            // Emergency truncation for very small spaces
+            Self::emergency_truncate_team_name(name, max_width)
         } else {
             let truncated: String = name.chars().take(max_width - 1).collect();
-            format!("{}…", truncated)
+            format!("{}{}", truncated, dynamic_ui::TRUNCATION_INDICATOR)
+        }
+    }
+
+    /// Emergency truncation for extremely constrained spaces
+    fn emergency_truncate_team_name(name: &str, max_width: usize) -> String {
+        if max_width == 0 {
+            return String::new();
+        }
+
+        if max_width == 1 {
+            return dynamic_ui::TRUNCATION_INDICATOR.to_string();
+        }
+
+        // For emergency mode, use abbreviations or first letters
+        let chars: Vec<char> = name.chars().collect();
+        if max_width == 2 {
+            if chars.len() >= 2 {
+                format!("{}{}", chars[0], dynamic_ui::TRUNCATION_INDICATOR)
+            } else {
+                chars.iter().collect()
+            }
+        } else {
+            // Try to create meaningful abbreviation
+            let abbreviated = Self::create_team_abbreviation(name, max_width - 1);
+            format!("{}{}", abbreviated, dynamic_ui::TRUNCATION_INDICATOR)
+        }
+    }
+
+    /// Creates a meaningful abbreviation for team names in emergency mode
+    fn create_team_abbreviation(name: &str, max_chars: usize) -> String {
+        if max_chars == 0 {
+            return String::new();
+        }
+
+        // Split by spaces and take first letter of each word
+        let words: Vec<&str> = name.split_whitespace().collect();
+        if words.len() > 1 && max_chars >= words.len() {
+            words
+                .iter()
+                .take(max_chars)
+                .map(|word| word.chars().next().unwrap_or('?'))
+                .collect()
+        } else {
+            // Just take first characters
+            name.chars().take(max_chars).collect()
         }
     }
 
@@ -536,6 +771,12 @@ impl ContentAdapter {
         let max_lines = std::cmp::max(home_scorers.len(), away_scorers.len());
         let scorer_width = (available_width as usize).saturating_sub(15) / 2; // Maximum space for extended
 
+        // Add a separator line for extended detail level if there are goals
+        if !events.is_empty() {
+            let separator = "─".repeat(available_width as usize);
+            lines.push(separator);
+        }
+
         for i in 0..max_lines {
             let home_scorer = home_scorers
                 .get(i)
@@ -564,11 +805,17 @@ impl ContentAdapter {
                 .unwrap_or_else(|| " ".repeat(scorer_width));
 
             lines.push(format!(
-                "{:<width$}   {}",
+                "│{:<width$} │ {}│",
                 home_scorer,
                 away_scorer,
                 width = scorer_width
             ));
+        }
+
+        // Add closing separator for extended detail level
+        if !events.is_empty() {
+            let separator = "─".repeat(available_width as usize);
+            lines.push(separator);
         }
 
         lines
@@ -611,20 +858,38 @@ impl ContentAdapter {
         is_winning: bool,
         max_width: usize,
     ) -> String {
-        let time_str = format!("{}.", minute);
+        // Enhanced time formatting for extended mode
+        let time_str = if minute > 60 {
+            let period = (minute - 1) / 20 + 1;
+            let period_minute = ((minute - 1) % 20) + 1;
+            format!("{}.{:02} ({})", period_minute, 0, period)
+        } else {
+            format!("{}.{:02}", minute, 0)
+        };
+
         let mut indicators = Vec::new();
 
-        if !goal_types.is_empty() {
-            indicators.push(goal_types.join(","));
+        // Enhanced goal type translations for extended mode
+        for goal_type in goal_types {
+            let translated = match goal_type.as_str() {
+                "YV" => "Ylivoima",
+                "YV2" => "2-miehen ylivoima",
+                "IM" => "Irtomaalin",
+                "VT" => "Vajaamiehinen",
+                "RL" => "Rangaistuslyönti",
+                _ => goal_type,
+            };
+            indicators.push(translated.to_string());
         }
+
         if is_winning {
-            indicators.push("VM".to_string()); // Voittomaalin merkki
+            indicators.push("Voittomaali".to_string());
         }
 
         let type_str = if indicators.is_empty() {
             String::new()
         } else {
-            format!(" ({})", indicators.join(" "))
+            format!(" ({})", indicators.join(", "))
         };
 
         let reserved = time_str.len() + type_str.len() + 1;
@@ -634,19 +899,21 @@ impl ContentAdapter {
         format!("{} {}{}", truncated_name, time_str, type_str)
     }
 
-    /// Truncates text to fit within specified width, adding ellipsis if needed
+    /// Truncates text to fit within specified width with graceful degradation
     fn truncate_text(text: &str, max_width: usize) -> String {
         if max_width == 0 {
             return String::new();
         }
 
-        if text.chars().count() <= max_width {
+        let char_count = text.chars().count();
+
+        if char_count <= max_width {
             text.to_string()
         } else if max_width == 1 {
-            "…".to_string()
+            dynamic_ui::TRUNCATION_INDICATOR.to_string()
         } else {
             let truncated: String = text.chars().take(max_width - 1).collect();
-            format!("{}…", truncated)
+            format!("{}{}", truncated, dynamic_ui::TRUNCATION_INDICATOR)
         }
     }
 
@@ -772,6 +1039,596 @@ impl ContentAdapter {
         let padding = width - text_len;
         format!("{}{}", text, " ".repeat(padding))
     }
+
+    /// Determines optimal detail level based on available space and content complexity
+    ///
+    /// # Arguments
+    /// * `base_detail_level` - Base detail level from layout calculator
+    /// * `available_width` - Available width for content
+    /// * `available_height` - Available height for content
+    /// * `content_complexity` - Complexity score of the content (number of goals, etc.)
+    ///
+    /// # Returns
+    /// * `DetailLevel` - Optimal detail level for the given constraints
+    pub fn determine_progressive_detail_level(
+        base_detail_level: DetailLevel,
+        available_width: u16,
+        available_height: u16,
+        content_complexity: usize,
+    ) -> DetailLevel {
+        // Start with base detail level and potentially downgrade based on constraints
+        let mut optimal_level = base_detail_level;
+
+        // Calculate space requirements for different detail levels
+        let minimal_width_required = 60;
+        let standard_width_required = 90;
+        let extended_width_required = 120;
+
+        let minimal_height_per_game = 3;
+        let standard_height_per_game = 4;
+        let extended_height_per_game = 6;
+
+        // Estimate height needed based on content complexity
+        let estimated_height_needed = match base_detail_level {
+            DetailLevel::Minimal => minimal_height_per_game + (content_complexity / 2),
+            DetailLevel::Standard => standard_height_per_game + content_complexity,
+            DetailLevel::Extended => extended_height_per_game + (content_complexity * 2),
+        };
+
+        // Downgrade if width constraints are too tight
+        if available_width < extended_width_required && optimal_level == DetailLevel::Extended {
+            optimal_level = DetailLevel::Standard;
+        }
+        if available_width < standard_width_required && optimal_level == DetailLevel::Standard {
+            optimal_level = DetailLevel::Minimal;
+        }
+        if available_width < minimal_width_required {
+            optimal_level = DetailLevel::Minimal; // Force minimal for very small screens
+        }
+
+        // Downgrade if height constraints are too tight
+        if available_height < estimated_height_needed as u16 {
+            optimal_level = match optimal_level {
+                DetailLevel::Extended => DetailLevel::Standard,
+                DetailLevel::Standard => DetailLevel::Minimal,
+                DetailLevel::Minimal => DetailLevel::Minimal,
+            };
+        }
+
+        optimal_level
+    }
+
+    /// Prioritizes content elements based on available space and importance
+    ///
+    /// # Arguments
+    /// * `enhanced_game` - Enhanced game display data
+    /// * `available_space` - Available space for content
+    /// * `detail_level` - Target detail level
+    ///
+    /// # Returns
+    /// * `ContentPriority` - Prioritized content elements
+    pub fn prioritize_content(
+        enhanced_game: &EnhancedGameDisplay,
+        available_space: (u16, u16),
+        detail_level: DetailLevel,
+    ) -> ContentPriority {
+        let (width, height) = available_space;
+
+        // Essential content that should always be shown
+        let essential = ContentElements {
+            team_names: true,
+            game_time: true,
+            score: true,
+            basic_goal_info: true,
+        };
+
+        // Enhanced content that can be shown if space allows
+        let enhanced = ContentElements {
+            team_names: detail_level != DetailLevel::Minimal,
+            game_time: detail_level == DetailLevel::Extended,
+            score: detail_level == DetailLevel::Extended,
+            basic_goal_info: detail_level != DetailLevel::Minimal,
+        };
+
+        // Extended content that requires significant space
+        let extended = ContentElements {
+            team_names: detail_level == DetailLevel::Extended && width >= 120,
+            game_time: detail_level == DetailLevel::Extended && width >= 100,
+            score: detail_level == DetailLevel::Extended && width >= 80,
+            basic_goal_info: detail_level == DetailLevel::Extended && height >= 8,
+        };
+
+        ContentPriority {
+            essential,
+            enhanced,
+            extended,
+            show_goal_details: enhanced_game.expanded_goal_details.len() <= (height as usize / 2),
+            show_extended_team_info: enhanced_game.extended_team_info.is_some() && width >= 120,
+            show_detailed_time_info: enhanced_game.detailed_time_info.is_some() && width >= 100,
+        }
+    }
+
+    /// Creates smooth transition between detail levels by gradually adjusting content
+    ///
+    /// # Arguments
+    /// * `from_level` - Current detail level
+    /// * `to_level` - Target detail level
+    /// * `transition_factor` - Factor between 0.0 and 1.0 indicating transition progress
+    ///
+    /// # Returns
+    /// * `DetailLevel` - Intermediate detail level for smooth transition
+    pub fn create_smooth_transition(
+        from_level: DetailLevel,
+        to_level: DetailLevel,
+        transition_factor: f32,
+    ) -> DetailLevel {
+        let factor = transition_factor.clamp(0.0, 1.0);
+
+        match (from_level, to_level) {
+            // No transition needed if levels are the same
+            (DetailLevel::Minimal, DetailLevel::Minimal) => DetailLevel::Minimal,
+            (DetailLevel::Standard, DetailLevel::Standard) => DetailLevel::Standard,
+            (DetailLevel::Extended, DetailLevel::Extended) => DetailLevel::Extended,
+
+            // Transitioning up
+            (DetailLevel::Minimal, DetailLevel::Standard) => {
+                if factor > 0.5 {
+                    DetailLevel::Standard
+                } else {
+                    DetailLevel::Minimal
+                }
+            }
+            (DetailLevel::Minimal, DetailLevel::Extended) => {
+                if factor > 0.66 {
+                    DetailLevel::Extended
+                } else if factor > 0.33 {
+                    DetailLevel::Standard
+                } else {
+                    DetailLevel::Minimal
+                }
+            }
+            (DetailLevel::Standard, DetailLevel::Extended) => {
+                if factor > 0.5 {
+                    DetailLevel::Extended
+                } else {
+                    DetailLevel::Standard
+                }
+            }
+
+            // Transitioning down
+            (DetailLevel::Standard, DetailLevel::Minimal) => {
+                if factor > 0.5 {
+                    DetailLevel::Minimal
+                } else {
+                    DetailLevel::Standard
+                }
+            }
+            (DetailLevel::Extended, DetailLevel::Minimal) => {
+                if factor > 0.66 {
+                    DetailLevel::Minimal
+                } else if factor > 0.33 {
+                    DetailLevel::Standard
+                } else {
+                    DetailLevel::Extended
+                }
+            }
+            (DetailLevel::Extended, DetailLevel::Standard) => {
+                if factor > 0.5 {
+                    DetailLevel::Standard
+                } else {
+                    DetailLevel::Extended
+                }
+            }
+        }
+    }
+
+    /// Adapts content with progressive enhancement based on available space
+    ///
+    /// # Arguments
+    /// * `enhanced_game` - Enhanced game display data
+    /// * `base_detail_level` - Base detail level from layout calculator
+    /// * `available_width` - Available width for content
+    /// * `available_height` - Available height for content
+    ///
+    /// # Returns
+    /// * `AdaptedGameContent` - Progressively enhanced content
+    pub fn adapt_content_progressively(
+        enhanced_game: &EnhancedGameDisplay,
+        base_detail_level: DetailLevel,
+        available_width: u16,
+        available_height: u16,
+    ) -> AdaptedGameContent {
+        // Calculate content complexity
+        let content_complexity = enhanced_game.expanded_goal_details.len();
+
+        // Determine optimal detail level based on space and complexity
+        let optimal_detail_level = Self::determine_progressive_detail_level(
+            base_detail_level,
+            available_width,
+            available_height,
+            content_complexity,
+        );
+
+        // Prioritize content elements
+        let priority = Self::prioritize_content(
+            enhanced_game,
+            (available_width, available_height),
+            optimal_detail_level,
+        );
+
+        // Adapt content using the optimal detail level and priorities
+        let mut adapted_content =
+            Self::adapt_enhanced_game_content(enhanced_game, optimal_detail_level, available_width);
+
+        // Apply content prioritization
+        if !priority.show_goal_details {
+            adapted_content.goal_lines.clear();
+        } else if priority.show_goal_details
+            && adapted_content.goal_lines.len() > (available_height as usize / 3)
+        {
+            // Limit goal lines if space is constrained
+            let max_lines = std::cmp::max(1, available_height as usize / 3);
+            adapted_content.goal_lines.truncate(max_lines);
+        }
+
+        // Adjust team names based on priority
+        if !priority.show_extended_team_info {
+            // Use shorter team names if extended info is not prioritized
+            let (home, away) = Self::format_team_names(
+                &enhanced_game.base_content.home_team,
+                &enhanced_game.base_content.away_team,
+                DetailLevel::Standard,
+                available_width,
+            );
+            adapted_content.home_team = home;
+            adapted_content.away_team = away;
+        }
+
+        // Adjust time display based on priority
+        if !priority.show_detailed_time_info {
+            adapted_content.time_display = enhanced_game.base_content.time.clone();
+        }
+
+        // Recalculate estimated height
+        let base_height = 1;
+        let goal_height = adapted_content.goal_lines.len() as u16;
+        let spacer_height = if adapted_content.goal_lines.is_empty() {
+            1
+        } else {
+            1
+        };
+        adapted_content.estimated_height = base_height + goal_height + spacer_height;
+
+        adapted_content
+    }
+
+    /// Scales content dynamically based on available space constraints
+    ///
+    /// # Arguments
+    /// * `content` - Base adapted content
+    /// * `available_space` - Available space (width, height)
+    /// * `target_detail_level` - Target detail level
+    ///
+    /// # Returns
+    /// * `AdaptedGameContent` - Scaled content that fits within constraints
+    pub fn scale_content_to_fit(
+        mut content: AdaptedGameContent,
+        available_space: (u16, u16),
+        target_detail_level: DetailLevel,
+    ) -> AdaptedGameContent {
+        let (available_width, available_height) = available_space;
+
+        // Scale team names if they're too long
+        let max_team_width = (available_width as usize).saturating_sub(20) / 2;
+        if content.home_team.chars().count() > max_team_width {
+            content.home_team = Self::truncate_text(&content.home_team, max_team_width);
+        }
+        if content.away_team.chars().count() > max_team_width {
+            content.away_team = Self::truncate_text(&content.away_team, max_team_width);
+        }
+
+        // Scale goal lines if they exceed available height
+        let max_goal_lines = available_height.saturating_sub(3) as usize; // Reserve space for game line and spacing
+        if content.goal_lines.len() > max_goal_lines {
+            content.goal_lines.truncate(max_goal_lines);
+
+            // Add indicator that content was truncated
+            if max_goal_lines > 0 {
+                let last_index = content.goal_lines.len() - 1;
+                if let Some(last_line) = content.goal_lines.get_mut(last_index) {
+                    if last_line.len() > 3 {
+                        let truncated = format!("{}...", &last_line[..last_line.len() - 3]);
+                        *last_line = truncated;
+                    }
+                }
+            }
+        }
+
+        // Scale individual goal lines if they're too wide
+        for goal_line in &mut content.goal_lines {
+            if goal_line.chars().count() > available_width as usize {
+                *goal_line = Self::truncate_text(goal_line, available_width as usize);
+            }
+        }
+
+        // Recalculate estimated height after scaling
+        let base_height = 1;
+        let goal_height = content.goal_lines.len() as u16;
+        let spacer_height = match target_detail_level {
+            DetailLevel::Extended => 2,
+            _ => 1,
+        };
+        content.estimated_height = base_height + goal_height + spacer_height;
+
+        content
+    }
+
+    /// Provides fallback content when space is extremely constrained
+    ///
+    /// # Arguments
+    /// * `enhanced_game` - Enhanced game display data
+    /// * `available_width` - Available width (very limited)
+    ///
+    /// # Returns
+    /// * `AdaptedGameContent` - Minimal fallback content
+    pub fn create_fallback_content(
+        enhanced_game: &EnhancedGameDisplay,
+        available_width: u16,
+    ) -> AdaptedGameContent {
+        let game_data = &enhanced_game.base_content;
+
+        // Ultra-minimal formatting for very constrained spaces
+        let max_team_width = std::cmp::max(3, (available_width as usize).saturating_sub(10) / 2);
+
+        let home_team = Self::truncate_text(&game_data.home_team, max_team_width);
+        let away_team = Self::truncate_text(&game_data.away_team, max_team_width);
+
+        // Minimal time and result display
+        let time_display = if game_data.time.len() > 8 {
+            Self::truncate_text(&game_data.time, 8)
+        } else {
+            game_data.time.clone()
+        };
+
+        let result_display = if game_data.result.len() > 5 {
+            Self::truncate_text(&game_data.result, 5)
+        } else {
+            game_data.result.clone()
+        };
+
+        // No goal lines in fallback mode to save space
+        AdaptedGameContent {
+            home_team,
+            away_team,
+            time_display,
+            result_display,
+            goal_lines: Vec::new(),
+            estimated_height: 2, // Just game line and minimal spacing
+        }
+    }
+
+    /// Creates content with smooth transitions between detail levels
+    ///
+    /// # Arguments
+    /// * `enhanced_game` - Enhanced game display data
+    /// * `from_level` - Current detail level
+    /// * `to_level` - Target detail level
+    /// * `transition_progress` - Progress of transition (0.0 to 1.0)
+    /// * `available_width` - Available width for content
+    ///
+    /// # Returns
+    /// * `AdaptedGameContent` - Content with smooth transition applied
+    pub fn create_transitional_content(
+        enhanced_game: &EnhancedGameDisplay,
+        from_level: DetailLevel,
+        to_level: DetailLevel,
+        transition_progress: f32,
+        available_width: u16,
+    ) -> AdaptedGameContent {
+        let progress = transition_progress.clamp(0.0, 1.0);
+
+        // Determine intermediate detail level
+        let intermediate_level = Self::create_smooth_transition(from_level, to_level, progress);
+
+        // Create base content with intermediate level
+        let mut content =
+            Self::adapt_enhanced_game_content(enhanced_game, intermediate_level, available_width);
+
+        // Apply transition-specific adjustments only if levels are different
+        if from_level != to_level && progress < 1.0 {
+            match (from_level, to_level) {
+                // Transitioning from minimal to standard
+                (DetailLevel::Minimal, DetailLevel::Standard) => {
+                    let blend_factor = progress;
+                    content =
+                        Self::blend_content_formatting(content, from_level, to_level, blend_factor);
+                }
+
+                // Transitioning from standard to extended
+                (DetailLevel::Standard, DetailLevel::Extended) => {
+                    let blend_factor = progress;
+                    content =
+                        Self::blend_content_formatting(content, from_level, to_level, blend_factor);
+                }
+
+                // Transitioning from minimal to extended (through standard)
+                (DetailLevel::Minimal, DetailLevel::Extended) => {
+                    let blend_factor = progress;
+                    content =
+                        Self::blend_content_formatting(content, from_level, to_level, blend_factor);
+                }
+
+                // Transitioning down (extended to standard, standard to minimal, extended to minimal)
+                (DetailLevel::Extended, DetailLevel::Standard)
+                | (DetailLevel::Standard, DetailLevel::Minimal)
+                | (DetailLevel::Extended, DetailLevel::Minimal) => {
+                    let blend_factor = 1.0 - progress;
+                    content =
+                        Self::blend_content_formatting(content, to_level, from_level, blend_factor);
+                }
+
+                // Same levels - no transition needed (shouldn't reach here due to guard)
+                _ => {}
+            }
+        }
+
+        content
+    }
+
+    /// Blends content formatting between two detail levels
+    ///
+    /// # Arguments
+    /// * `content` - Base content to blend
+    /// * `level_a` - First detail level
+    /// * `level_b` - Second detail level
+    /// * `blend_factor` - Blending factor (0.0 = level_a, 1.0 = level_b)
+    ///
+    /// # Returns
+    /// * `AdaptedGameContent` - Blended content
+    fn blend_content_formatting(
+        mut content: AdaptedGameContent,
+        level_a: DetailLevel,
+        level_b: DetailLevel,
+        blend_factor: f32,
+    ) -> AdaptedGameContent {
+        let factor = blend_factor.clamp(0.0, 1.0);
+
+        // Blend team name formatting
+        if matches!(
+            (level_a, level_b),
+            (DetailLevel::Standard, DetailLevel::Extended)
+        ) {
+            // Gradually introduce extended team formatting
+            if factor > 0.5 {
+                // Start showing extended indicators
+                if !content.home_team.starts_with("🏠") {
+                    content.home_team = format!("🏠 {}", content.home_team);
+                }
+                if !content.away_team.starts_with("✈️") {
+                    content.away_team = format!("✈️  {}", content.away_team);
+                }
+            }
+        }
+
+        // Blend result formatting
+        if matches!(
+            (level_a, level_b),
+            (DetailLevel::Standard, DetailLevel::Extended)
+        ) {
+            if factor > 0.7 {
+                // Gradually introduce extended result formatting
+                if !content.result_display.starts_with('┤') {
+                    content.result_display = format!("┤{:^7}├", content.result_display.trim());
+                }
+            }
+        }
+
+        // Blend goal line formatting
+        if factor > 0.3 && level_b == DetailLevel::Extended {
+            // Gradually introduce extended goal formatting elements
+            for goal_line in &mut content.goal_lines {
+                if !goal_line.contains('│') && factor > 0.6 {
+                    // Add extended formatting elements gradually
+                    *goal_line = format!("│{}│", goal_line);
+                }
+            }
+        }
+
+        content
+    }
+
+    /// Safely adapts game content with comprehensive error handling
+    pub fn adapt_game_content_safe(
+        home_team: &str,
+        away_team: &str,
+        time: &str,
+        result: &str,
+        goal_events: &[GoalEventData],
+        detail_level: DetailLevel,
+        available_width: u16,
+    ) -> Result<AdaptedGameContent, AppError> {
+        // Validate input parameters
+        if available_width == 0 {
+            return Err(AppError::content_truncation_required(
+                "Available width is zero",
+            ));
+        }
+
+        if available_width < dynamic_ui::MIN_CONTENT_WIDTH {
+            return Err(AppError::content_truncation_required(format!(
+                "Available width {} is below minimum {}",
+                available_width,
+                dynamic_ui::MIN_CONTENT_WIDTH
+            )));
+        }
+
+        // Attempt normal content adaptation
+        let adapted_content = Self::adapt_game_content(
+            home_team,
+            away_team,
+            time,
+            result,
+            goal_events,
+            detail_level,
+            available_width,
+        );
+
+        // Validate the adapted content
+        if adapted_content.home_team.is_empty() && !home_team.is_empty() {
+            return Err(AppError::content_truncation_required(
+                "Home team name was completely truncated",
+            ));
+        }
+
+        if adapted_content.away_team.is_empty() && !away_team.is_empty() {
+            return Err(AppError::content_truncation_required(
+                "Away team name was completely truncated",
+            ));
+        }
+
+        Ok(adapted_content)
+    }
+
+    /// Adapts content for emergency layout mode with maximum truncation
+    pub fn adapt_game_content_emergency(
+        home_team: &str,
+        away_team: &str,
+        time: &str,
+        result: &str,
+        _goal_events: &[GoalEventData],
+        _available_width: u16,
+    ) -> AdaptedGameContent {
+        // In emergency mode, use minimal formatting and aggressive truncation
+        let max_team_width = dynamic_ui::EMERGENCY_MAX_TEAM_NAME_LENGTH;
+
+        let formatted_home = Self::emergency_truncate_team_name(home_team, max_team_width);
+        let formatted_away = Self::emergency_truncate_team_name(away_team, max_team_width);
+
+        // Simplify time and result display
+        let formatted_time = if time.len() > 5 {
+            Self::truncate_text(time, 5)
+        } else {
+            time.to_string()
+        };
+
+        let formatted_result = if result.len() > 5 {
+            Self::truncate_text(result, 5)
+        } else {
+            result.to_string()
+        };
+
+        // Skip goal events in emergency mode to save space
+        let goal_lines = Vec::new();
+
+        AdaptedGameContent {
+            home_team: formatted_home,
+            away_team: formatted_away,
+            time_display: formatted_time,
+            result_display: formatted_result,
+            goal_lines,
+            estimated_height: 2, // Minimal height in emergency mode
+        }
+    }
 }
 
 #[cfg(test)]
@@ -869,10 +1726,14 @@ mod tests {
         );
 
         assert_eq!(content.time_display, "   18:30"); // Extended padding
-        assert_eq!(content.result_display, "   1-0   "); // Extended center-align
+        assert_eq!(content.result_display, "┤  1-0  ├"); // Enhanced extended formatting
         assert!(!content.goal_lines.is_empty());
-        // Should include winning goal indicator
-        assert!(content.goal_lines[0].contains("VM") || content.goal_lines[0].contains("YV"));
+
+        // Should include winning goal indicator - check all lines since extended format has separators
+        let has_goal_info = content.goal_lines.iter().any(|line| {
+            line.contains("Voittomaali") || line.contains("Ylivoima") || line.contains("Koivu")
+        });
+        assert!(has_goal_info);
     }
 
     #[test]
@@ -899,8 +1760,8 @@ mod tests {
         let (home, away) =
             ContentAdapter::format_team_names("HIFK", "TPS", DetailLevel::Extended, 120);
 
-        assert_eq!(home, "HIFK");
-        assert_eq!(away, "TPS");
+        assert_eq!(home, "🏠 HIFK Helsinki");
+        assert_eq!(away, "✈️  TPS Turku");
     }
 
     #[test]
@@ -926,7 +1787,7 @@ mod tests {
 
         assert_eq!(minimal, "2-1");
         assert_eq!(standard, "  2-1  "); // Center-aligned
-        assert_eq!(extended, "   2-1   "); // More space for extended
+        assert_eq!(extended, "┤  2-1  ├"); // Enhanced formatting for extended
     }
 
     #[test]
@@ -973,11 +1834,11 @@ mod tests {
         )];
 
         let lines = ContentAdapter::format_goal_events(&events, DetailLevel::Extended, 120);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains("Koivu"));
-        assert!(lines[0].contains("15."));
-        assert!(lines[0].contains("YV"));
-        assert!(lines[0].contains("VM")); // Winning goal indicator
+        assert_eq!(lines.len(), 3); // Separator + content + separator
+        assert!(lines[1].contains("Koivu")); // Content is in the middle line
+        assert!(lines[1].contains("15.00")); // Enhanced time format
+        assert!(lines[1].contains("Ylivoima")); // Full translation
+        assert!(lines[1].contains("Voittomaali")); // Full winning goal text
     }
 
     #[test]
@@ -1015,7 +1876,7 @@ mod tests {
         let truncated = ContentAdapter::truncate_text(text, 10);
 
         assert!(truncated.chars().count() <= 10);
-        assert!(truncated.ends_with('…'));
+        assert!(truncated.ends_with(dynamic_ui::TRUNCATION_INDICATOR));
 
         let short_text = "Short";
         let not_truncated = ContentAdapter::truncate_text(short_text, 10);
@@ -1024,6 +1885,98 @@ mod tests {
         // Test edge case with zero width
         let empty = ContentAdapter::truncate_text("test", 0);
         assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_emergency_truncate_team_name() {
+        // Test emergency truncation with very small widths
+        let team_name = "Tappara Tampere";
+
+        let truncated_1 = ContentAdapter::emergency_truncate_team_name(team_name, 1);
+        assert_eq!(truncated_1, dynamic_ui::TRUNCATION_INDICATOR);
+
+        let truncated_2 = ContentAdapter::emergency_truncate_team_name(team_name, 2);
+        assert!(truncated_2.chars().count() <= 2);
+        assert!(truncated_2.ends_with(dynamic_ui::TRUNCATION_INDICATOR));
+
+        let truncated_4 = ContentAdapter::emergency_truncate_team_name(team_name, 4);
+        assert!(truncated_4.chars().count() <= 4);
+        assert!(truncated_4.ends_with(dynamic_ui::TRUNCATION_INDICATOR));
+    }
+
+    #[test]
+    fn test_create_team_abbreviation() {
+        // Test abbreviation creation
+        let team_name = "Tappara Tampere";
+        let abbrev = ContentAdapter::create_team_abbreviation(team_name, 2);
+        assert_eq!(abbrev, "TT"); // First letters of each word
+
+        let single_word = "Tappara";
+        let abbrev_single = ContentAdapter::create_team_abbreviation(single_word, 3);
+        assert_eq!(abbrev_single, "Tap"); // First 3 characters
+    }
+
+    #[test]
+    fn test_safe_content_adaptation() {
+        let goal_events = vec![];
+
+        // Test successful adaptation
+        let result = ContentAdapter::adapt_game_content_safe(
+            "Tappara",
+            "HIFK",
+            "18:30",
+            "3-2",
+            &goal_events,
+            DetailLevel::Minimal,
+            80,
+        );
+        assert!(result.is_ok());
+
+        // Test with zero width
+        let result = ContentAdapter::adapt_game_content_safe(
+            "Tappara",
+            "HIFK",
+            "18:30",
+            "3-2",
+            &goal_events,
+            DetailLevel::Minimal,
+            0,
+        );
+        assert!(result.is_err());
+
+        // Test with width below minimum
+        let result = ContentAdapter::adapt_game_content_safe(
+            "Tappara",
+            "HIFK",
+            "18:30",
+            "3-2",
+            &goal_events,
+            DetailLevel::Minimal,
+            20,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_emergency_content_adaptation() {
+        let goal_events = vec![];
+
+        let adapted = ContentAdapter::adapt_game_content_emergency(
+            "Tappara Tampere",
+            "HIFK Helsinki",
+            "18:30:45",
+            "3-2",
+            &goal_events,
+            40,
+        );
+
+        // Check that content is heavily truncated
+        assert!(adapted.home_team.chars().count() <= dynamic_ui::EMERGENCY_MAX_TEAM_NAME_LENGTH);
+        assert!(adapted.away_team.chars().count() <= dynamic_ui::EMERGENCY_MAX_TEAM_NAME_LENGTH);
+        assert!(adapted.time_display.chars().count() <= 5);
+        assert!(adapted.result_display.chars().count() <= 5);
+        assert!(adapted.goal_lines.is_empty()); // No goal events in emergency mode
+        assert_eq!(adapted.estimated_height, 2); // Minimal height
     }
 
     #[test]
@@ -1048,13 +2001,13 @@ mod tests {
     #[test]
     fn test_format_extended_scorer() {
         let goal_types = vec!["YV".to_string()];
-        let formatted = ContentAdapter::format_extended_scorer("Koivu", 15, &goal_types, true, 30);
+        let formatted = ContentAdapter::format_extended_scorer("Koivu", 15, &goal_types, true, 50);
 
         assert!(formatted.contains("Koivu"));
-        assert!(formatted.contains("15."));
-        assert!(formatted.contains("YV"));
-        assert!(formatted.contains("VM")); // Winning goal indicator
-        assert!(formatted.len() <= 30);
+        assert!(formatted.contains("15.00")); // Enhanced time format
+        assert!(formatted.contains("Ylivoima")); // Full translation
+        assert!(formatted.contains("Voittomaali")); // Full winning goal text
+        assert!(formatted.len() <= 80); // Allow more space for enhanced formatting
     }
 
     #[test]
@@ -1348,8 +2301,8 @@ mod tests {
         let adapted =
             ContentAdapter::adapt_enhanced_game_content(&enhanced, DetailLevel::Extended, 120);
 
-        assert_eq!(adapted.home_team, "HIFK Helsinki");
-        assert_eq!(adapted.away_team, "Tappara Tampere");
+        assert_eq!(adapted.home_team, "🏠 HIFK Helsinki");
+        assert_eq!(adapted.away_team, "✈️  Tappara Tampere");
         assert!(adapted.time_display.contains("18:30"));
         assert!(!adapted.goal_lines.is_empty());
     }

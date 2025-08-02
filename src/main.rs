@@ -28,6 +28,10 @@ use std::time::{Duration, Instant};
 use teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use ui::{
+    layout::LayoutCalculator,
+    resize::ResizeHandler,
+};
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
@@ -1093,8 +1097,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     let mut needs_refresh = true;
     let mut needs_render = false;
     let mut current_page: Option<TeletextPage> = None;
-    let mut pending_resize = false;
-    let mut resize_timer = Instant::now();
     // Preserved page number for restoration after refresh - initially None for first run
     #[allow(unused_assignments)]
     let mut preserved_page_for_restoration: Option<usize> = None;
@@ -1118,6 +1120,11 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
     let mut last_rate_limit_hit = Instant::now()
         .checked_sub(Duration::from_secs(60))
         .unwrap_or_else(Instant::now);
+
+    // Dynamic UI components for responsive layout
+    let mut resize_handler = ResizeHandler::new();
+    let mut layout_calculator = LayoutCalculator::new();
+    let mut last_terminal_size = crossterm::terminal::size().unwrap_or((80, 24));
 
     loop {
         // Adaptive polling interval based on activity
@@ -1344,6 +1351,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                     loading_page.add_error_message("Haetaan päivän otteluita...");
                 }
 
+                // Initialize loading page with current layout
+                loading_page.update_layout(last_terminal_size);
                 current_page = Some(loading_page);
                 needs_render = true;
 
@@ -1549,7 +1558,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         current_page = Some(page);
                     } else {
                         tracing::debug!("No preserved page number available, creating new page from scratch");
-                        let page = if games.is_empty() {
+                        let mut page = if games.is_empty() {
                             let mut error_page = TeletextPage::new(
                                 221,
                                 "JÄÄKIEKKO".to_string(),
@@ -1612,6 +1621,8 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                             }
                         };
 
+                        // Initialize the page with current terminal size and layout
+                        page.update_layout(last_terminal_size);
                         current_page = Some(page);
                     }
 
@@ -1716,15 +1727,7 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             }
         }
 
-        // Handle pending resize with debouncing
-        if pending_resize && resize_timer.elapsed() >= Duration::from_millis(500) {
-            tracing::debug!("Handling resize");
-            if let Some(page) = &mut current_page {
-                page.handle_resize();
-                needs_render = true;
-            }
-            pending_resize = false;
-        }
+
 
         // Update auto-refresh indicator animation (only when active)
         if let Some(page) = &mut current_page {
@@ -1944,12 +1947,24 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                         }
                     }
                 }
-                Event::Resize(_, _) => {
-                    tracing::debug!("Resize event");
-                    // Debounce resize events
-                    if last_resize.elapsed() >= Duration::from_millis(500) {
-                        resize_timer = Instant::now();
-                        pending_resize = true;
+                Event::Resize(width, height) => {
+                    tracing::debug!("Resize event detected: {}x{}", width, height);
+                    // Use ResizeHandler for proper debouncing and size validation
+                    if let Some(new_size) = resize_handler.check_for_resize((width, height)) {
+                        tracing::info!("Terminal resized to: {}x{}", new_size.0, new_size.1);
+
+                        // Calculate new layout
+                        let layout_config = layout_calculator.calculate_layout(new_size);
+                        tracing::debug!("New layout: detail_level={:?}, content={}x{}, games_per_page={}",
+                            layout_config.detail_level, layout_config.content_width, layout_config.content_height, layout_config.games_per_page);
+
+                        // Update page layout if we have one
+                        if let Some(page) = &mut current_page {
+                            page.update_layout(new_size);
+                            needs_render = true;
+                        }
+
+                        last_terminal_size = new_size;
                         last_resize = Instant::now();
                     }
                 }
@@ -1962,6 +1977,34 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             tracing::debug!("Monitoring cache usage");
             monitor_cache_usage().await;
             cache_monitor_timer = Instant::now();
+        }
+
+        // Periodic terminal size check as fallback (in case resize events are missed)
+        if last_resize.elapsed() >= Duration::from_secs(2) {
+            if let Ok(current_size) = crossterm::terminal::size() {
+                if current_size != last_terminal_size {
+                    tracing::debug!("Terminal size change detected via polling: {:?} -> {:?}", last_terminal_size, current_size);
+
+                    // Use ResizeHandler for consistency
+                    if let Some(new_size) = resize_handler.check_for_resize(current_size) {
+                        tracing::info!("Terminal resized (via polling) to: {}x{}", new_size.0, new_size.1);
+
+                        // Calculate new layout
+                        let layout_config = layout_calculator.calculate_layout(new_size);
+                        tracing::debug!("New layout (via polling): detail_level={:?}, content={}x{}, games_per_page={}",
+                            layout_config.detail_level, layout_config.content_width, layout_config.content_height, layout_config.games_per_page);
+
+                        // Update page layout if we have one
+                        if let Some(page) = &mut current_page {
+                            page.update_layout(new_size);
+                            needs_render = true;
+                        }
+
+                        last_terminal_size = new_size;
+                    }
+                    last_resize = Instant::now();
+                }
+            }
         }
 
         // Only sleep if we're in idle mode to avoid unnecessary delays

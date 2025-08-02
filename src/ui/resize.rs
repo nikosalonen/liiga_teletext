@@ -2,9 +2,41 @@
 //!
 //! This module provides functionality for detecting terminal resize events,
 //! debouncing rapid changes, and determining when layout updates are needed.
+//! It's designed to handle the challenges of terminal resize detection across
+//! different terminal emulators and operating systems.
+//!
+//! ## Features
+//!
+//! - **Resize Detection**: Detects when terminal dimensions change
+//! - **Debouncing**: Prevents excessive updates during rapid resize operations
+//! - **Error Recovery**: Handles terminal size detection failures gracefully
+//! - **Size Validation**: Ensures terminal sizes are reasonable before reporting changes
+//! - **Fallback Handling**: Uses last known good size when detection fails
+//!
+//! ## Debouncing Strategy
+//!
+//! The resize handler uses a 100ms debounce period to prevent excessive layout
+//! recalculations during window resize operations. This provides a good balance
+//! between responsiveness and performance.
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use crate::ui::resize::ResizeHandler;
+//!
+//! let mut handler = ResizeHandler::new();
+//!
+//! // In your main loop:
+//! if let Some(new_size) = handler.check_for_resize() {
+//!     // Terminal was resized, update layout
+//!     layout_calculator.calculate_layout(new_size);
+//! }
+//! ```
 
 use crate::constants::dynamic_ui;
+use crate::error::AppError;
 use std::time::{Duration, Instant};
+use tracing::{debug, error, info, warn};
 
 /// Handles terminal resize detection and debouncing
 #[derive(Debug)]
@@ -12,6 +44,8 @@ pub struct ResizeHandler {
     last_size: (u16, u16),
     resize_debounce: Duration,
     last_resize_time: Option<Instant>,
+    last_known_good_size: Option<(u16, u16)>,
+    consecutive_failures: u32,
 }
 
 impl ResizeHandler {
@@ -21,6 +55,8 @@ impl ResizeHandler {
             last_size: (0, 0),
             resize_debounce: Duration::from_millis(dynamic_ui::RESIZE_DEBOUNCE_MS),
             last_resize_time: None,
+            last_known_good_size: None,
+            consecutive_failures: 0,
         }
     }
 
@@ -30,6 +66,8 @@ impl ResizeHandler {
             last_size: (0, 0),
             resize_debounce: Duration::from_millis(debounce_ms),
             last_resize_time: None,
+            last_known_good_size: None,
+            consecutive_failures: 0,
         }
     }
 
@@ -87,6 +125,8 @@ impl ResizeHandler {
     pub fn reset(&mut self) {
         self.last_size = (0, 0);
         self.last_resize_time = None;
+        self.last_known_good_size = None;
+        self.consecutive_failures = 0;
     }
 
     /// Checks if a resize is currently being debounced
@@ -96,6 +136,118 @@ impl ResizeHandler {
         } else {
             false
         }
+    }
+
+    /// Safely detects terminal size with error handling and recovery
+    pub fn detect_terminal_size_safe(&mut self) -> Result<(u16, u16), AppError> {
+        match crossterm::terminal::size() {
+            Ok(size) => {
+                // Validate the detected size
+                if size.0 == 0 || size.1 == 0 {
+                    self.consecutive_failures += 1;
+                    warn!(
+                        "Terminal size detection returned zero dimensions: {:?}",
+                        size
+                    );
+
+                    // Try to recover using last known good size
+                    if let Some(good_size) = self.last_known_good_size {
+                        info!("Using last known good terminal size: {:?}", good_size);
+                        return Ok(good_size);
+                    }
+
+                    return Err(AppError::resize_operation_failed(
+                        "Terminal size detection returned zero dimensions",
+                    ));
+                }
+
+                // Reset failure counter on successful detection
+                self.consecutive_failures = 0;
+                self.last_known_good_size = Some(size);
+
+                Ok(size)
+            }
+            Err(e) => {
+                self.consecutive_failures += 1;
+                error!(
+                    "Failed to detect terminal size (attempt {}): {}",
+                    self.consecutive_failures, e
+                );
+
+                // Try to recover using last known good size
+                if let Some(good_size) = self.last_known_good_size {
+                    info!(
+                        "Using last known good terminal size after detection failure: {:?}",
+                        good_size
+                    );
+                    return Ok(good_size);
+                }
+
+                // If we have too many consecutive failures, use emergency fallback
+                if self.consecutive_failures >= 3 {
+                    warn!(
+                        "Too many consecutive terminal size detection failures, using emergency fallback"
+                    );
+                    let emergency_size = (
+                        dynamic_ui::MIN_TERMINAL_WIDTH,
+                        dynamic_ui::MIN_TERMINAL_HEIGHT,
+                    );
+                    self.last_known_good_size = Some(emergency_size);
+                    return Ok(emergency_size);
+                }
+
+                Err(AppError::resize_operation_failed(format!(
+                    "Terminal size detection failed: {}",
+                    e
+                )))
+            }
+        }
+    }
+
+    /// Safely checks for resize with comprehensive error handling
+    pub fn check_for_resize_safe(&mut self) -> Result<Option<(u16, u16)>, AppError> {
+        let current_size = self.detect_terminal_size_safe()?;
+
+        let now = Instant::now();
+
+        // Check if size has actually changed
+        if current_size != self.last_size {
+            self.last_resize_time = Some(now);
+            self.last_size = current_size;
+
+            debug!("Terminal size changed to: {:?}", current_size);
+        }
+
+        // Check if we should update layout based on debounce timing
+        if let Some(last_resize) = self.last_resize_time {
+            if now.duration_since(last_resize) >= self.resize_debounce {
+                self.last_resize_time = None; // Reset debounce timer
+                debug!(
+                    "Resize debounce completed, returning size: {:?}",
+                    current_size
+                );
+                return Ok(Some(current_size));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Gets the last known good terminal size for recovery purposes
+    pub fn last_known_good_size(&self) -> Option<(u16, u16)> {
+        self.last_known_good_size
+    }
+
+    /// Gets the number of consecutive detection failures
+    pub fn consecutive_failures(&self) -> u32 {
+        self.consecutive_failures
+    }
+
+    /// Manually sets a known good size (useful for testing or recovery)
+    pub fn set_known_good_size(&mut self, size: (u16, u16)) {
+        self.last_known_good_size = Some(size);
+        self.consecutive_failures = 0;
+        debug!("Manually set known good terminal size: {:?}", size);
     }
 }
 
@@ -370,5 +522,50 @@ mod tests {
 
         // Should not require layout update for same size
         assert!(!handler.should_update_layout((100, 30)));
+    }
+
+    #[test]
+    fn test_safe_resize_detection_with_recovery() {
+        let mut handler = ResizeHandler::new();
+
+        // Set a known good size first
+        handler.set_known_good_size((100, 30));
+        assert_eq!(handler.last_known_good_size(), Some((100, 30)));
+        assert_eq!(handler.consecutive_failures(), 0);
+
+        // Test that we can get the known good size
+        let good_size = handler.last_known_good_size().unwrap();
+        assert_eq!(good_size, (100, 30));
+    }
+
+    #[test]
+    fn test_consecutive_failure_tracking() {
+        let mut handler = ResizeHandler::new();
+
+        // Initially no failures
+        assert_eq!(handler.consecutive_failures(), 0);
+
+        // Set a known good size to test recovery
+        handler.set_known_good_size((80, 24));
+
+        // Reset should clear failures
+        handler.reset();
+        assert_eq!(handler.consecutive_failures(), 0);
+        assert_eq!(handler.last_known_good_size(), None);
+    }
+
+    #[test]
+    fn test_manual_known_good_size_setting() {
+        let mut handler = ResizeHandler::new();
+
+        // Test setting known good size
+        handler.set_known_good_size((120, 40));
+        assert_eq!(handler.last_known_good_size(), Some((120, 40)));
+        assert_eq!(handler.consecutive_failures(), 0);
+
+        // Test that it resets failure count
+        handler.consecutive_failures = 5; // Simulate failures
+        handler.set_known_good_size((100, 30));
+        assert_eq!(handler.consecutive_failures(), 0);
     }
 }

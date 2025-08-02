@@ -30,6 +30,12 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 - **Non-interactive mode** for scripting and automation
 - **Performance monitoring** with request deduplication and metrics collection
 - **Advanced caching** with intelligent cache management and emergency cache clearing
+- **Dynamic UI adaptation** that automatically adjusts to terminal size:
+  - **Minimal detail** for small terminals (< 100 chars wide)
+  - **Standard detail** for medium terminals (100-119 chars wide)  
+  - **Extended detail** for large terminals (≥ 120 chars wide)
+  - **Real-time resize handling** with smooth transitions
+  - **Performance optimizations** including layout caching and string buffer pooling
 
 ## Installation
 

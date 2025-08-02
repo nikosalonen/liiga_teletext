@@ -1,6 +1,7 @@
 // src/teletext_ui.rs - Updated with better display formatting
 
 use crate::config::Config;
+use crate::constants::dynamic_ui;
 use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::api::fetch_regular_season_start_date;
 use crate::error::AppError;
@@ -408,8 +409,14 @@ impl TeletextPage {
         // Update screen height from terminal size
         self.screen_height = terminal_size.1;
 
-        // Recalculate layout configuration using the layout calculator
-        self.layout_config = self.layout_calculator.calculate_layout(terminal_size);
+        // Recalculate layout configuration using the layout calculator with error handling
+        self.layout_config = match self.layout_calculator.calculate_layout_safe(terminal_size) {
+            Ok(config) => config,
+            Err(_) => {
+                // Fallback to emergency layout if safe calculation fails
+                self.layout_calculator.calculate_layout(terminal_size)
+            }
+        };
 
         // Recalculate current page to ensure content fits with new layout
         if !self.ignore_height_limit {
@@ -435,6 +442,48 @@ impl TeletextPage {
             let total_pages = std::cmp::max(1, current_page + 1);
             self.current_page = self.current_page.min(total_pages - 1);
         }
+    }
+
+    /// Safely updates layout with comprehensive error handling
+    pub fn update_layout_safe(&mut self, terminal_size: (u16, u16)) -> Result<(), AppError> {
+        // Validate terminal size first
+        self.layout_calculator
+            .validate_terminal_size(terminal_size)?;
+
+        // Update screen height from terminal size
+        self.screen_height = terminal_size.1;
+
+        // Safely recalculate layout configuration
+        self.layout_config = self
+            .layout_calculator
+            .calculate_layout_safe(terminal_size)?;
+
+        // Recalculate current page to ensure content fits with new layout
+        if !self.ignore_height_limit {
+            let available_height = self.layout_config.content_height;
+            let mut current_height = 0u16;
+            let mut current_page = 0;
+            let mut items_in_current_page = 0;
+
+            for game in &self.content_rows {
+                let game_height = Self::calculate_game_height(game);
+
+                if current_height + game_height > available_height && items_in_current_page > 0 {
+                    current_page += 1;
+                    current_height = game_height;
+                    items_in_current_page = 1;
+                } else {
+                    current_height += game_height;
+                    items_in_current_page += 1;
+                }
+            }
+
+            // Ensure current_page is within bounds
+            let total_pages = std::cmp::max(1, current_page + 1);
+            self.current_page = self.current_page.min(total_pages - 1);
+        }
+
+        Ok(())
     }
 
     /// Adds a game result to the page content.
@@ -614,6 +663,76 @@ impl TeletextPage {
     /// Checks if the auto-refresh indicator is active
     pub fn is_auto_refresh_indicator_active(&self) -> bool {
         self.auto_refresh_indicator.is_some()
+    }
+
+    /// Checks if the current layout has degradation warnings
+    pub fn has_layout_warnings(&self) -> bool {
+        self.layout_config.degradation_warning.is_some() || self.layout_config.is_emergency_mode
+    }
+
+    /// Gets the current layout degradation warning message
+    pub fn get_layout_warning(&self) -> Option<&str> {
+        self.layout_config.degradation_warning.as_deref()
+    }
+
+    /// Checks if the layout is in emergency mode
+    pub fn is_emergency_mode(&self) -> bool {
+        self.layout_config.is_emergency_mode
+    }
+
+    /// Attempts to recover from layout calculation errors
+    pub fn recover_from_layout_error(&mut self, error: &AppError) -> bool {
+        use tracing::{info, warn};
+
+        match error {
+            AppError::TerminalTooSmall { width, height, .. } => {
+                warn!(
+                    "Terminal too small ({}x{}), attempting emergency layout recovery",
+                    width, height
+                );
+
+                // Try to use emergency layout
+                self.layout_config = self.layout_calculator.calculate_layout((*width, *height));
+
+                if self.layout_config.is_emergency_mode {
+                    info!("Successfully recovered using emergency layout mode");
+                    return true;
+                }
+            }
+            AppError::LayoutCalculationFailed { message } => {
+                warn!(
+                    "Layout calculation failed: {}, attempting fallback",
+                    message
+                );
+
+                // Try to use last known good dimensions or fallback to minimum
+                let fallback_size = (
+                    dynamic_ui::MIN_TERMINAL_WIDTH,
+                    dynamic_ui::MIN_TERMINAL_HEIGHT,
+                );
+
+                self.layout_config = self.layout_calculator.calculate_layout(fallback_size);
+                info!(
+                    "Layout recovery attempted with fallback size: {:?}",
+                    fallback_size
+                );
+                return true;
+            }
+            AppError::ResizeOperationFailed { message } => {
+                warn!(
+                    "Resize operation failed: {}, maintaining current layout",
+                    message
+                );
+                // Keep current layout, no changes needed
+                return true;
+            }
+            _ => {
+                warn!("Unhandled layout error: {}", error);
+                return false;
+            }
+        }
+
+        false
     }
 
     /// Renders only the loading indicator area without redrawing the entire screen
