@@ -576,7 +576,7 @@ async fn test_resize_handler_integration() {
     // Different size should eventually trigger
     let result4 = resize_handler.check_for_resize(size2);
     assert!(result4.is_none(), "New size change should be debounced initially");
-    
+
     tokio::time::sleep(tokio::time::Duration::from_millis(150)).await; // Wait for debounce
     let result5 = resize_handler.check_for_resize(size2);
     assert!(
