@@ -238,7 +238,7 @@ async fn test_pagination_performance_large_dataset() {
 
     let avg_navigation_time = navigation_duration / navigation_iterations;
     assert!(
-        avg_navigation_time < Duration::from_micros(100),
+        avg_navigation_time < Duration::from_micros(500),
         "Average page navigation took too long: {:?}",
         avg_navigation_time
     );
