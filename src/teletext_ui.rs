@@ -566,7 +566,7 @@ impl TeletextPage {
             execute!(
                 stdout,
                 MoveTo(0, empty_y),
-                SetForegroundColor(Color::AnsiValue(226)), // Authentic teletext yellow
+                SetForegroundColor(goal_type_fg()), // Use existing color function for consistency
                 Print(format!(
                     "{space:>pad$}{text}",
                     space = "",
