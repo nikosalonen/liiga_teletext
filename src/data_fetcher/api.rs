@@ -440,7 +440,8 @@ async fn process_single_game(
         // Check if score has changed since last fetch to force refresh goal events
         // Use atomic compare-and-clear operation to prevent race conditions
         let current_score = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-        let score_changed = compare_and_clear_on_score_change(game.season, game.id, &current_score).await;
+        let score_changed =
+            compare_and_clear_on_score_change(game.season, game.id, &current_score).await;
 
         if score_changed {
             debug!("Score changed from cached data, cache was atomically cleared for fresh fetch");

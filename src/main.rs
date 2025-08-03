@@ -28,10 +28,7 @@ use std::time::{Duration, Instant};
 use teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
-use ui::{
-    layout::LayoutCalculator,
-    resize::ResizeHandler,
-};
+use ui::{layout::LayoutCalculator, resize::ResizeHandler};
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
@@ -1322,7 +1319,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 .as_ref()
                 .map(|existing_page| existing_page.get_current_page());
             preserved_page_for_restoration = preserved_page;
-            tracing::debug!("Preserved page number for restoration: {:?}", preserved_page_for_restoration);
+            tracing::debug!(
+                "Preserved page number for restoration: {:?}",
+                preserved_page_for_restoration
+            );
 
             if should_show_loading {
                 let mut loading_page = TeletextPage::new(
@@ -1513,7 +1513,11 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
             let data_changed = games_hash != last_games_hash;
 
             if data_changed {
-                tracing::debug!("Data changed (hash: {} -> {}), updating UI", last_games_hash, games_hash);
+                tracing::debug!(
+                    "Data changed (hash: {} -> {}), updating UI",
+                    last_games_hash,
+                    games_hash
+                );
                 // Log specific changes for live games to help debug game clock updates
                 if !last_games.is_empty() && games.len() == last_games.len() {
                     for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate()
@@ -1537,7 +1541,10 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 if !had_error {
                     // Restore the preserved page number
                     if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
-                        tracing::debug!("Restoring page to number: {}", preserved_page_for_restoration);
+                        tracing::debug!(
+                            "Restoring page to number: {}",
+                            preserved_page_for_restoration
+                        );
                         let mut page = create_page(
                             &games,
                             args.disable_links,
@@ -1557,7 +1564,9 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
                         current_page = Some(page);
                     } else {
-                        tracing::debug!("No preserved page number available, creating new page from scratch");
+                        tracing::debug!(
+                            "No preserved page number available, creating new page from scratch"
+                        );
                         let mut page = if games.is_empty() {
                             let mut error_page = TeletextPage::new(
                                 221,
@@ -1676,11 +1685,17 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 if let Some(ref current) = current_page {
                     // Check if current page is a loading page by checking if it has error messages
                     if current.has_error_messages() {
-                        tracing::debug!("Data unchanged but loading screen was shown, restoring pagination");
-                        if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
-                            tracing::debug!("Restoring page to number: {} (no data change case)", preserved_page_for_restoration);
+                        tracing::debug!(
+                            "Data unchanged but loading screen was shown, restoring pagination"
+                        );
+                        if let Some(preserved_page_for_restoration) = preserved_page_for_restoration
+                        {
+                            tracing::debug!(
+                                "Restoring page to number: {} (no data change case)",
+                                preserved_page_for_restoration
+                            );
                             let mut page = create_page(
-                                &games.is_empty().then(|| &last_games).unwrap_or(&games),
+                                if games.is_empty() { &last_games } else { &games },
                                 args.disable_links,
                                 true,
                                 false,
@@ -1726,8 +1741,6 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
                 );
             }
         }
-
-
 
         // Update auto-refresh indicator animation (only when active)
         if let Some(page) = &mut current_page {
@@ -1955,8 +1968,13 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
 
                         // Calculate new layout
                         let layout_config = layout_calculator.calculate_layout(new_size);
-                        tracing::debug!("New layout: detail_level={:?}, content={}x{}, games_per_page={}",
-                            layout_config.detail_level, layout_config.content_width, layout_config.content_height, layout_config.games_per_page);
+                        tracing::debug!(
+                            "New layout: detail_level={:?}, content={}x{}, games_per_page={}",
+                            layout_config.detail_level,
+                            layout_config.content_width,
+                            layout_config.content_height,
+                            layout_config.games_per_page
+                        );
 
                         // Update page layout if we have one
                         if let Some(page) = &mut current_page {
@@ -1983,16 +2001,29 @@ async fn run_interactive_ui(stdout: &mut std::io::Stdout, args: &Args) -> Result
         if last_resize.elapsed() >= Duration::from_secs(2) {
             if let Ok(current_size) = crossterm::terminal::size() {
                 if current_size != last_terminal_size {
-                    tracing::debug!("Terminal size change detected via polling: {:?} -> {:?}", last_terminal_size, current_size);
+                    tracing::debug!(
+                        "Terminal size change detected via polling: {:?} -> {:?}",
+                        last_terminal_size,
+                        current_size
+                    );
 
                     // Use ResizeHandler for consistency
                     if let Some(new_size) = resize_handler.check_for_resize(current_size) {
-                        tracing::info!("Terminal resized (via polling) to: {}x{}", new_size.0, new_size.1);
+                        tracing::info!(
+                            "Terminal resized (via polling) to: {}x{}",
+                            new_size.0,
+                            new_size.1
+                        );
 
                         // Calculate new layout
                         let layout_config = layout_calculator.calculate_layout(new_size);
-                        tracing::debug!("New layout (via polling): detail_level={:?}, content={}x{}, games_per_page={}",
-                            layout_config.detail_level, layout_config.content_width, layout_config.content_height, layout_config.games_per_page);
+                        tracing::debug!(
+                            "New layout (via polling): detail_level={:?}, content={}x{}, games_per_page={}",
+                            layout_config.detail_level,
+                            layout_config.content_width,
+                            layout_config.content_height,
+                            layout_config.games_per_page
+                        );
 
                         // Update page layout if we have one
                         if let Some(page) = &mut current_page {

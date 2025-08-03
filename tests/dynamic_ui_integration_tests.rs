@@ -571,11 +571,17 @@ async fn test_resize_handler_integration() {
     // After debounce period, should detect the resize
     tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
     let result3 = resize_handler.check_for_resize(size1);
-    assert!(result3.is_some(), "After debounce period, resize should be detected");
+    assert!(
+        result3.is_some(),
+        "After debounce period, resize should be detected"
+    );
 
     // Different size should eventually trigger
     let result4 = resize_handler.check_for_resize(size2);
-    assert!(result4.is_none(), "New size change should be debounced initially");
+    assert!(
+        result4.is_none(),
+        "New size change should be debounced initially"
+    );
 
     tokio::time::sleep(tokio::time::Duration::from_millis(150)).await; // Wait for debounce
     let result5 = resize_handler.check_for_resize(size2);
@@ -610,18 +616,15 @@ async fn test_content_adapter_integration() {
 
         assert!(
             !adapted.home_team.is_empty(),
-            "Home team should not be empty for {:?}",
-            detail_level
+            "Home team should not be empty for {detail_level:?}"
         );
         assert!(
             !adapted.away_team.is_empty(),
-            "Away team should not be empty for {:?}",
-            detail_level
+            "Away team should not be empty for {detail_level:?}"
         );
         assert!(
             !adapted.result_display.is_empty(),
-            "Result should not be empty for {:?}",
-            detail_level
+            "Result should not be empty for {detail_level:?}"
         );
 
         // Extended detail should have more goal information

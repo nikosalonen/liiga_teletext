@@ -381,8 +381,7 @@ mod tests {
         let detection_time = start.elapsed();
         assert!(
             detection_time < Duration::from_millis(10),
-            "Resize detection took too long: {:?}",
-            detection_time
+            "Resize detection took too long: {detection_time:?}"
         );
 
         // Should be debouncing

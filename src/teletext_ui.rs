@@ -49,7 +49,7 @@ fn title_bg() -> Color {
 
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
-const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
+// Removed unused constant
 
 /// Helper function to extract ANSI color code from crossterm Color enum.
 /// Provides a fallback value for non-ANSI colors.
@@ -1074,10 +1074,10 @@ impl TeletextPage {
                 output
             }
             TeletextRow::ErrorMessage(message) => {
-                format!("{}\n", message)
+                format!("{message}\n")
             }
             TeletextRow::FutureGamesHeader(header) => {
-                format!("{}\n", header)
+                format!("{header}\n")
             }
         }
     }

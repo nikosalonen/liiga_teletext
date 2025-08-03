@@ -201,10 +201,7 @@ impl StringBufferPool {
 /// Each UI instance should have its own `LayoutCalculator`.
 #[derive(Debug)]
 pub struct LayoutCalculator {
-    /// Minimum terminal width for normal operation
-    min_width: u16,
-    /// Minimum terminal height for normal operation
-    min_height: u16,
+    // Removed unused fields
     /// Current terminal dimensions (width, height)
     current_dimensions: (u16, u16),
     /// Cache of calculated layouts indexed by terminal size
@@ -219,8 +216,6 @@ impl LayoutCalculator {
     /// Creates a new LayoutCalculator with default minimum dimensions
     pub fn new() -> Self {
         Self {
-            min_width: dynamic_ui::MIN_TERMINAL_WIDTH,
-            min_height: dynamic_ui::MIN_TERMINAL_HEIGHT,
             current_dimensions: (
                 dynamic_ui::MIN_TERMINAL_WIDTH,
                 dynamic_ui::MIN_TERMINAL_HEIGHT,
@@ -377,8 +372,7 @@ impl LayoutCalculator {
         }
 
         // Check if we're forced to use minimal detail level due to width constraints
-        if width < dynamic_ui::STANDARD_DETAIL_WIDTH_THRESHOLD
-            && width >= dynamic_ui::MIN_TERMINAL_WIDTH
+        if (dynamic_ui::MIN_TERMINAL_WIDTH..dynamic_ui::STANDARD_DETAIL_WIDTH_THRESHOLD).contains(&width)
         {
             let warning = "Using minimal detail level due to width constraints.".to_string();
             warnings.push(warning.clone());
@@ -698,8 +692,9 @@ mod tests {
     #[test]
     fn test_layout_calculator_creation() {
         let calculator = LayoutCalculator::new();
-        assert_eq!(calculator.min_width, dynamic_ui::MIN_TERMINAL_WIDTH);
-        assert_eq!(calculator.min_height, dynamic_ui::MIN_TERMINAL_HEIGHT);
+        let (width, height) = calculator.current_dimensions();
+        assert_eq!(width, dynamic_ui::MIN_TERMINAL_WIDTH);
+        assert_eq!(height, dynamic_ui::MIN_TERMINAL_HEIGHT);
     }
 
     #[test]

@@ -274,9 +274,9 @@ impl ContentAdapter {
         if minutes >= 60 {
             let hours = minutes / 60;
             let remaining_minutes = minutes % 60;
-            Some(format!("{}:{:02}:{:02}", hours, remaining_minutes, seconds))
+            Some(format!("{hours}:{remaining_minutes:02}:{seconds:02}"))
         } else {
-            Some(format!("{}:{:02}", minutes, seconds))
+            Some(format!("{minutes}:{seconds:02}"))
         }
     }
 
@@ -294,12 +294,12 @@ impl ContentAdapter {
 
         // Add context for extended detail level
         if is_shootout {
-            Some(format!("{} + ratkaisu", base_duration))
+            Some(format!("{base_duration} + ratkaisu"))
         } else if is_overtime {
-            Some(format!("{} + jatkoaika", base_duration))
+            Some(format!("{base_duration} + jatkoaika"))
         } else if played_time > 3600 {
             // Regular game is 60 minutes, so anything over 1 hour indicates overtime
-            Some(format!("{} (jatkoaika)", base_duration))
+            Some(format!("{base_duration} (jatkoaika)"))
         } else {
             Some(base_duration)
         }
@@ -357,7 +357,7 @@ impl ContentAdapter {
                 // Add seconds precision for extended mode if time format allows
                 if time.contains(':') && !time.contains("Päättynyt") && !time.contains("Tulossa")
                 {
-                    format!("{}:00", time) // Add seconds
+                    format!("{time}:00") // Add seconds
                 } else {
                     time.to_string()
                 }
@@ -453,7 +453,7 @@ impl ContentAdapter {
         // Account for additional spacing in extended mode
         let spacer_height = match detail_level {
             DetailLevel::Extended => 2, // Extra spacing for extended mode
-            _ => 1, // Standard spacing
+            _ => 1,                     // Standard spacing
         };
 
         let estimated_height = base_height + goal_height + spacer_height;
@@ -494,7 +494,7 @@ impl ContentAdapter {
             DetailLevel::Extended => {
                 let extended_name = Self::get_extended_team_name(home);
                 let truncated = Self::truncate_team_name(&extended_name, max_team_name_width);
-                format!("🏠 {}", truncated) // Add home indicator for extended mode
+                format!("🏠 {truncated}") // Add home indicator for extended mode
             }
             _ => Self::truncate_team_name(home, max_team_name_width),
         };
@@ -503,7 +503,7 @@ impl ContentAdapter {
             DetailLevel::Extended => {
                 let extended_name = Self::get_extended_team_name(away);
                 let truncated = Self::truncate_team_name(&extended_name, max_team_name_width);
-                format!("✈️  {}", truncated) // Add away indicator for extended mode
+                format!("✈️  {truncated}") // Add away indicator for extended mode
             }
             _ => Self::truncate_team_name(away, max_team_name_width),
         };
@@ -528,18 +528,14 @@ impl ContentAdapter {
             DetailLevel::Standard => {
                 // Add slight enhancement for standard
                 if time.len() <= 5 {
-                    format!("{:>6}", time) // Right-align with padding
+                    format!("{time:>6}") // Right-align with padding
                 } else {
                     time.to_string()
                 }
             }
             DetailLevel::Extended => {
                 // Enhanced format for extended
-                if time.contains(':') {
-                    format!("{:>8}", time) // More padding for extended
-                } else {
-                    format!("{:>8}", time)
-                }
+                                format!("{time:>8}") // More padding for extended
             }
         }
     }
@@ -560,19 +556,15 @@ impl ContentAdapter {
             }
             DetailLevel::Standard => {
                 // Center-align result for standard
-                format!("{:^7}", result)
+                format!("{result:^7}")
             }
             DetailLevel::Extended => {
                 // Enhanced result display for extended with additional context
                 if result.contains('-') {
                     // Add visual emphasis for extended mode
-                    format!("┤{:^7}├", result)
-                } else if result == "Tulossa" {
-                    format!("┤{:^7}├", result)
-                } else if result == "Päättynyt" {
-                    format!("┤{:^7}├", result)
+                    format!("┤{result:^7}├")
                 } else {
-                    format!("┤{:^7}├", result)
+                    format!("┤{result:^7}├")
                 }
             }
         }
@@ -609,7 +601,7 @@ impl ContentAdapter {
         let reserved_space = 20; // Approximate space for " 18:30  2-1 "
         let remaining = available_width.saturating_sub(reserved_space);
         let team_space = remaining / 2; // Split between home and away
-        std::cmp::max(8, std::cmp::min(15, team_space as usize)) // Min 8, max 15 chars
+        (team_space as usize).clamp(8, 15) // Min 8, max 15 chars
     }
 
     /// Calculates maximum team name width for standard detail level
@@ -617,7 +609,7 @@ impl ContentAdapter {
         let reserved_space = 25; // More space for enhanced formatting
         let remaining = available_width.saturating_sub(reserved_space);
         let team_space = remaining / 2;
-        std::cmp::max(10, std::cmp::min(20, team_space as usize)) // Min 10, max 20 chars
+        (team_space as usize).clamp(10, 20) // Min 10, max 20 chars
     }
 
     /// Calculates maximum team name width for extended detail level
@@ -625,7 +617,7 @@ impl ContentAdapter {
         let reserved_space = 35; // More space for enhanced extended formatting
         let remaining = available_width.saturating_sub(reserved_space);
         let team_space = remaining / 2;
-        std::cmp::max(15, std::cmp::min(30, team_space as usize)) // Min 15, max 30 chars for extended
+        (team_space as usize).clamp(15, 30) // Min 15, max 30 chars for extended
     }
 
     /// Truncates team name to fit within specified width with graceful degradation
@@ -714,11 +706,10 @@ impl ContentAdapter {
                 .map(|e| Self::format_minimal_scorer(&e.scorer_name, e.minute, scorer_width))
                 .unwrap_or_else(|| " ".repeat(scorer_width));
 
+            #[allow(clippy::uninlined_format_args)]
             lines.push(format!(
-                "{:<width$} {}",
-                home_scorer,
-                away_scorer,
-                width = scorer_width
+                "{home_scorer:<scorer_width$} {away_scorer}",
+                scorer_width = scorer_width
             ));
         }
 
@@ -759,11 +750,10 @@ impl ContentAdapter {
                 })
                 .unwrap_or_else(|| " ".repeat(scorer_width));
 
+            #[allow(clippy::uninlined_format_args)]
             lines.push(format!(
-                "{:<width$}  {}",
-                home_scorer,
-                away_scorer,
-                width = scorer_width
+                "{home_scorer:<scorer_width$}  {away_scorer}",
+                scorer_width = scorer_width
             ));
         }
 
@@ -812,11 +802,10 @@ impl ContentAdapter {
                 })
                 .unwrap_or_else(|| " ".repeat(scorer_width));
 
+            #[allow(clippy::uninlined_format_args)]
             lines.push(format!(
-                "│{:<width$} │ {}│",
-                home_scorer,
-                away_scorer,
-                width = scorer_width
+                "│{home_scorer:<scorer_width$} │ {away_scorer}│",
+                scorer_width = scorer_width
             ));
         }
 
@@ -831,10 +820,10 @@ impl ContentAdapter {
 
     /// Formats a single scorer for minimal detail level
     fn format_minimal_scorer(name: &str, minute: i32, max_width: usize) -> String {
-        let time_str = format!("{}.", minute);
+        let time_str = format!("{minute}.");
         let name_width = max_width.saturating_sub(time_str.len() + 1);
         let truncated_name = Self::truncate_text(name, name_width);
-        format!("{} {}", truncated_name, time_str)
+        format!("{truncated_name} {time_str}")
     }
 
     /// Formats a single scorer for standard detail level
@@ -844,7 +833,7 @@ impl ContentAdapter {
         goal_types: &[String],
         max_width: usize,
     ) -> String {
-        let time_str = format!("{}.", minute);
+        let time_str = format!("{minute}.");
         let type_str = if goal_types.is_empty() {
             String::new()
         } else {
@@ -855,7 +844,7 @@ impl ContentAdapter {
         let name_width = max_width.saturating_sub(reserved);
         let truncated_name = Self::truncate_text(name, name_width);
 
-        format!("{} {}{}", truncated_name, time_str, type_str)
+        format!("{truncated_name} {time_str}{type_str}")
     }
 
     /// Formats a single scorer for extended detail level
@@ -870,9 +859,9 @@ impl ContentAdapter {
         let time_str = if minute > 60 {
             let period = (minute - 1) / 20 + 1;
             let period_minute = ((minute - 1) % 20) + 1;
-            format!("{}.{:02} ({})", period_minute, 0, period)
+            format!("{period_minute}.{:02} ({period})", 0)
         } else {
-            format!("{}.{:02}", minute, 0)
+            format!("{minute}.{:02}", 0)
         };
 
         let mut indicators = Vec::new();
@@ -904,7 +893,7 @@ impl ContentAdapter {
         let name_width = max_width.saturating_sub(reserved);
         let truncated_name = Self::truncate_text(name, name_width);
 
-        format!("{} {}{}", truncated_name, time_str, type_str)
+        format!("{truncated_name} {time_str}{type_str}")
     }
 
     /// Truncates text to fit within specified width with graceful degradation
@@ -1300,11 +1289,7 @@ impl ContentAdapter {
         // Recalculate estimated height
         let base_height = 1;
         let goal_height = adapted_content.goal_lines.len() as u16;
-        let spacer_height = if adapted_content.goal_lines.is_empty() {
-            1
-        } else {
-            1
-        };
+        let spacer_height = 1;
         adapted_content.estimated_height = base_height + goal_height + spacer_height;
 
         adapted_content
@@ -1522,22 +1507,20 @@ impl ContentAdapter {
         if matches!(
             (level_a, level_b),
             (DetailLevel::Standard, DetailLevel::Extended)
-        ) {
-            if factor > 0.7 {
-                // Gradually introduce extended result formatting
-                if !content.result_display.starts_with('┤') {
-                    content.result_display = format!("┤{:^7}├", content.result_display.trim());
-                }
+        ) && factor > 0.7 {
+            // Gradually introduce extended result formatting
+            if !content.result_display.starts_with('┤') {
+                content.result_display = format!("┤{result:^7}├", result = content.result_display.trim());
             }
         }
 
         // Blend goal line formatting
-        if factor > 0.3 && level_b == DetailLevel::Extended {
+        if factor > 0.3 && level_b == DetailLevel::Extended && factor > 0.6 {
             // Gradually introduce extended goal formatting elements
             for goal_line in &mut content.goal_lines {
-                if !goal_line.contains('│') && factor > 0.6 {
+                if !goal_line.contains('│') {
                     // Add extended formatting elements gradually
-                    *goal_line = format!("│{}│", goal_line);
+                    *goal_line = format!("│{goal_line}│");
                 }
             }
         }
@@ -2058,20 +2041,26 @@ mod tests {
             let reserved_space = 20; // Same as calculate_minimal_team_width
             let remaining = available_width.saturating_sub(reserved_space);
             let team_space = remaining / 2;
-            std::cmp::max(8, std::cmp::min(15, team_space as usize))
+            (team_space as usize).clamp(8, 15)
         };
-
-
 
         // Should still produce valid content
         assert!(!content.home_team.is_empty());
         assert!(!content.away_team.is_empty());
-        assert!(content.home_team.chars().count() <= expected_max_width,
+        assert!(
+            content.home_team.chars().count() <= expected_max_width,
             "Home team name '{}' (char count {}) exceeds expected max width {}",
-            content.home_team, content.home_team.chars().count(), expected_max_width);
-        assert!(content.away_team.chars().count() <= expected_max_width,
+            content.home_team,
+            content.home_team.chars().count(),
+            expected_max_width
+        );
+        assert!(
+            content.away_team.chars().count() <= expected_max_width,
             "Away team name '{}' (char count {}) exceeds expected max width {}",
-            content.away_team, content.away_team.chars().count(), expected_max_width);
+            content.away_team,
+            content.away_team.chars().count(),
+            expected_max_width
+        );
     }
 
     #[test]

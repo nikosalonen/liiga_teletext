@@ -1095,7 +1095,8 @@ pub async fn compare_and_clear_on_score_change(
 
             // If we had a last known score, create a cleared cache entry with that score
             if let Some(score) = last_known_score {
-                let cleared_entry = CachedGoalEventsData::new_cleared(game_id, season, score.clone());
+                let cleared_entry =
+                    CachedGoalEventsData::new_cleared(game_id, season, score.clone());
                 cache.put(key.clone(), cleared_entry);
                 debug!(
                     "Atomically cleared goal events cache for game: season={}, game_id={}, last_known_score={}",
@@ -2789,7 +2790,10 @@ mod tests {
 
         // Verify cache wasn't cleared
         let cached_data = get_cached_goal_events_data(season, game_id).await;
-        assert!(cached_data.is_some(), "Cache should still exist after no score change");
+        assert!(
+            cached_data.is_some(),
+            "Cache should still exist after no score change"
+        );
         assert_eq!(cached_data.unwrap().len(), 2, "Should have 2 goal events");
 
         // Test 4: Different score - should return true and clear cache
@@ -2801,16 +2805,26 @@ mod tests {
         assert!(cached_entry.is_some(), "Should have a cleared cache entry");
         let entry = cached_entry.unwrap();
         assert!(entry.was_cleared, "Entry should be marked as cleared");
-        assert_eq!(entry.last_known_score, Some("2-1".to_string()), "Should preserve last known score");
+        assert_eq!(
+            entry.last_known_score,
+            Some("2-1".to_string()),
+            "Should preserve last known score"
+        );
         assert!(entry.data.is_empty(), "Data should be empty after clearing");
 
         // Test 5: Compare with same score again - should return true since current score differs from last known score in cleared cache
         let result = compare_and_clear_on_score_change(season, game_id, "3-1").await;
-        assert!(result, "Should return true when current score differs from last known score in cleared cache");
+        assert!(
+            result,
+            "Should return true when current score differs from last known score in cleared cache"
+        );
 
         // Test 6: Different score from cleared cache - should return true
         let result = compare_and_clear_on_score_change(season, game_id, "4-1").await;
-        assert!(result, "Should return true when score differs from last known score in cleared cache");
+        assert!(
+            result,
+            "Should return true when score differs from last known score in cleared cache"
+        );
 
         // Test 7: Test with expired cache entry
         // Wait for cache to expire and then test
@@ -2839,7 +2853,10 @@ mod tests {
 
         // Verify expired entry was removed
         let cached_data = get_cached_goal_events_data(season, game_id).await;
-        assert!(cached_data.is_none(), "Expired cache entry should be removed");
+        assert!(
+            cached_data.is_none(),
+            "Expired cache entry should be removed"
+        );
 
         // Clear cache after test
         clear_goal_events_cache().await;

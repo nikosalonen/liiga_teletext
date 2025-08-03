@@ -16,16 +16,20 @@ where
             if let Some(i) = n.as_i64() {
                 Ok(Some(i as i32))
             } else {
-                Err(serde::de::Error::custom("Invalid number format for timeOut"))
+                Err(serde::de::Error::custom(
+                    "Invalid number format for timeOut",
+                ))
             }
         }
-        Value::String(s) => {
-            match s.parse::<i32>() {
-                Ok(i) => Ok(Some(i)),
-                Err(_) => Err(serde::de::Error::custom(format!("Cannot parse timeOut string '{}' as integer", s)))
-            }
-        }
-        _ => Err(serde::de::Error::custom("timeOut must be null, number, or string"))
+        Value::String(s) => match s.parse::<i32>() {
+            Ok(i) => Ok(Some(i)),
+                          Err(_) => Err(serde::de::Error::custom(format!(
+                "Cannot parse timeOut string '{s}' as integer"
+              ))),
+        },
+        _ => Err(serde::de::Error::custom(
+            "timeOut must be null, number, or string",
+        )),
     }
 }
 

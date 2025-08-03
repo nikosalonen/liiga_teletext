@@ -12,8 +12,8 @@ use liiga_teletext::{
         resize::ResizeHandler,
     },
 };
-use std::time::{Duration, Instant};
 use std::env;
+use std::time::{Duration, Instant};
 
 /// Helper function to create a large dataset of mock games for performance testing
 fn create_large_game_dataset(count: usize) -> Vec<GameData> {
@@ -138,12 +138,20 @@ impl PerformanceConfig {
             if self.strict_mode {
                 panic!(
                     "{} took too long: {:?} (threshold: {:?}, base: {:?}, multiplier: {:.1}x)",
-                    operation_name, actual_duration, adjusted_threshold, base_threshold, self.timing_multiplier
+                    operation_name,
+                    actual_duration,
+                    adjusted_threshold,
+                    base_threshold,
+                    self.timing_multiplier
                 );
             } else {
                 eprintln!(
                     "WARNING: {} took longer than expected: {:?} (threshold: {:?}, base: {:?}, multiplier: {:.1}x)",
-                    operation_name, actual_duration, adjusted_threshold, base_threshold, self.timing_multiplier
+                    operation_name,
+                    actual_duration,
+                    adjusted_threshold,
+                    base_threshold,
+                    self.timing_multiplier
                 );
             }
         }
@@ -175,10 +183,9 @@ impl PerformanceConfig {
                     operation_name, actual_ratio, expected_ratio
                 );
             } else {
-                eprintln!(
-                    "WARNING: {} cache performance ratio higher than expected: {:.2} (expected: {:.2})",
-                    operation_name, actual_ratio, expected_ratio
-                );
+                        eprintln!(
+            "WARNING: {operation_name} cache performance ratio higher than expected: {actual_ratio:.2} (expected: {expected_ratio:.2})"
+        );
             }
         }
     }
@@ -199,17 +206,21 @@ async fn test_layout_calculation_performance_small_dataset() {
 
     // Measure layout calculation time for various sizes
     for (width, height) in terminal_sizes {
-        let (layout_config, duration) = measure_time(|| calculator.calculate_layout((width, height)));
+        let (layout_config, duration) =
+            measure_time(|| calculator.calculate_layout((width, height)));
 
         // Use environment-aware performance assertion
         config.assert_performance(
             duration,
             Duration::from_millis(1),
-            &format!("Layout calculation for {}x{}", width, height),
+            &format!("Layout calculation for {width}x{height}"),
         );
 
         // Verify the result is valid
-        assert!(layout_config.content_width > 0, "Content width should be positive");
+        assert!(
+            layout_config.content_width > 0,
+            "Content width should be positive"
+        );
         assert!(
             layout_config.horizontal_padding < width,
             "Padding should be reasonable"
@@ -239,7 +250,7 @@ async fn test_layout_calculation_performance_repeated() {
         "Average layout calculation",
     );
 
-    println!("Average layout calculation time: {:?}", avg_duration);
+    println!("Average layout calculation time: {avg_duration:?}");
 }
 
 #[tokio::test]
@@ -269,12 +280,11 @@ async fn test_page_creation_performance_large_dataset() {
     config.assert_performance(
         creation_duration,
         Duration::from_secs(5),
-        &format!("Page creation with {} games", game_count),
+        &format!("Page creation with {game_count} games"),
     );
 
     println!(
-        "Page creation with {} games took: {:?}",
-        game_count, creation_duration
+        "Page creation with {game_count} games took: {creation_duration:?}"
     );
 
     // Test layout update performance
@@ -282,19 +292,14 @@ async fn test_page_creation_performance_large_dataset() {
         page.update_layout((140, 40));
     });
 
-    config.assert_performance(
-        layout_duration,
-        Duration::from_millis(100),
-        "Layout update",
-    );
+    config.assert_performance(layout_duration, Duration::from_millis(100), "Layout update");
 
     // Verify the page is functional
     let total_pages = page.total_pages();
     assert!(total_pages > 0, "Should have pages with large dataset");
 
     println!(
-        "Layout update with {} games took: {:?}",
-        game_count, layout_duration
+        "Layout update with {game_count} games took: {layout_duration:?}"
     );
 }
 
@@ -348,10 +353,9 @@ async fn test_pagination_performance_large_dataset() {
     );
 
     println!(
-        "Pagination with {} games: {} pages, calculation took: {:?}",
-        game_count, total_pages, pagination_duration
+        "Pagination with {game_count} games: {total_pages} pages, calculation took: {pagination_duration:?}"
     );
-    println!("Average navigation time: {:?}", avg_navigation_time);
+    println!("Average navigation time: {avg_navigation_time:?}");
 }
 
 #[tokio::test]
@@ -390,7 +394,9 @@ async fn test_content_adaptation_performance() {
             config.assert_performance(
                 avg_adaptation_time,
                 Duration::from_micros(500),
-                &format!("Content adaptation for {:?} at width {}", detail_level, width),
+                                  &format!(
+                    "Content adaptation for {detail_level:?} at width {width}"
+                ),
             );
         }
     }
@@ -447,9 +453,7 @@ async fn test_rapid_resize_scenarios() {
             let total_pages = page.total_pages();
             assert!(
                 total_pages > 0,
-                "Should maintain valid pagination after resize to {}x{}",
-                width,
-                height
+                "Should maintain valid pagination after resize to {width}x{height}"
             );
 
             let current_page = page.get_current_page();
@@ -469,7 +473,7 @@ async fn test_rapid_resize_scenarios() {
         "Average resize handling",
     );
 
-    println!("Average resize handling time: {:?}", avg_resize_time);
+    println!("Average resize handling time: {avg_resize_time:?}");
 }
 
 #[tokio::test]
@@ -505,8 +509,7 @@ async fn test_resize_debouncing_performance() {
     // Debouncing should prevent most rapid resizes from being processed
     assert!(
         detected_resizes <= 2,
-        "Too many rapid resizes were processed: {}",
-        detected_resizes
+        "Too many rapid resizes were processed: {detected_resizes}"
     );
 
     // Use environment-aware performance assertion
@@ -517,10 +520,7 @@ async fn test_resize_debouncing_performance() {
     );
 
     println!(
-        "Debouncing processed {} out of {} rapid resizes in {:?}",
-        detected_resizes,
-        rapid_resize_count,
-        debounce_duration
+        "Debouncing processed {detected_resizes} out of {rapid_resize_count} rapid resizes in {debounce_duration:?}"
     );
 }
 
@@ -547,7 +547,7 @@ async fn test_memory_usage_with_large_datasets() {
 
     // Test multiple layout updates (simulating window resizes)
     let layout_updates = 100;
-    let terminal_sizes = vec![(80, 24), (100, 30), (140, 40), (200, 60)];
+    let terminal_sizes = [(80, 24), (100, 30), (140, 40), (200, 60)];
 
     let (_, memory_test_duration) = measure_time(|| {
         for i in 0..layout_updates {
@@ -558,8 +558,7 @@ async fn test_memory_usage_with_large_datasets() {
             let total_pages = page.total_pages();
             assert!(
                 total_pages > 0,
-                "Should maintain pages after layout update {}",
-                i
+                "Should maintain pages after layout update {i}"
             );
 
             // Navigate through pages to test pagination
@@ -589,8 +588,7 @@ async fn test_memory_usage_with_large_datasets() {
     );
 
     println!(
-        "Memory test with {} layout updates took: {:?}",
-        layout_updates, memory_test_duration
+        "Memory test with {layout_updates} layout updates took: {memory_test_duration:?}"
     );
 }
 
@@ -623,7 +621,7 @@ async fn test_concurrent_resize_and_content_updates() {
             // Content operation (simulate adding new game)
             if i % 10 == 0 {
                 let new_game = GameData {
-                    home_team: format!("NewTeam {}", i),
+                    home_team: format!("NewTeam {i}"),
                     away_team: format!("NewTeam {}", i + 1),
                     time: "19:00".to_string(),
                     result: "1-0".to_string(),
@@ -661,8 +659,7 @@ async fn test_concurrent_resize_and_content_updates() {
     );
 
     println!(
-        "Concurrent resize and content updates took: {:?}",
-        concurrent_duration
+        "Concurrent resize and content updates took: {concurrent_duration:?}"
     );
 }
 
@@ -704,7 +701,7 @@ async fn test_extreme_terminal_sizes_performance() {
         config.assert_performance(
             calc_duration,
             Duration::from_millis(10),
-            &format!("Layout calculation for extreme size {}x{}", width, height),
+            &format!("Layout calculation for extreme size {width}x{height}"),
         );
 
         // Test page layout update
@@ -715,21 +712,18 @@ async fn test_extreme_terminal_sizes_performance() {
         config.assert_performance(
             update_duration,
             Duration::from_millis(50),
-            &format!("Page layout update for extreme size {}x{}", width, height),
+            &format!("Page layout update for extreme size {width}x{height}"),
         );
 
         // Verify page remains functional
         let total_pages = page.total_pages();
         assert!(
             total_pages > 0,
-            "Should have pages even with extreme size {}x{}",
-            width,
-            height
+            "Should have pages even with extreme size {width}x{height}"
         );
 
         println!(
-            "Extreme size {}x{}: calc={:?}, update={:?}, pages={}",
-            width, height, calc_duration, update_duration, total_pages
+            "Extreme size {width}x{height}: calc={calc_duration:?}, update={update_duration:?}, pages={total_pages}"
         );
     }
 }
@@ -825,7 +819,6 @@ async fn test_stress_test_combined_operations() {
     );
 
     println!(
-        "Stress test: {} iterations in {:?} (avg: {:?})",
-        stress_iterations, stress_duration, avg_operation_time
+        "Stress test: {stress_iterations} iterations in {stress_duration:?} (avg: {avg_operation_time:?})"
     );
 }
