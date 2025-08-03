@@ -655,7 +655,7 @@ fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
     // Print top border
     execute!(
         stdout(),
-        SetForegroundColor(Color::White),
+        SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
         Print(format!("{border}\n"))
     )
     .ok();
@@ -671,11 +671,11 @@ fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
                     let pad = max_content_width - (pre.chars().count() - 2 + col.chars().count());
                     execute!(
                         stdout(),
-                        SetForegroundColor(Color::White),
+                        SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
                         Print(pre),
                         SetForegroundColor(*c),
                         Print(col),
-                        SetForegroundColor(Color::White),
+                        SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
                         Print(format!("{:pad$} ║\n", "", pad = pad)),
                     )
                     .ok();
@@ -684,7 +684,7 @@ fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
                         stdout(),
                         SetForegroundColor(*c),
                         Print(padded),
-                        SetForegroundColor(Color::White),
+                        SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
                         Print("\n")
                     )
                     .ok();
@@ -693,7 +693,7 @@ fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
             None => {
                 execute!(
                     stdout(),
-                    SetForegroundColor(Color::White),
+                    SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
                     Print(padded),
                     Print("\n")
                 )
@@ -733,17 +733,17 @@ fn print_version_info(latest_version: &str) {
             ("".to_string(), None),
             (
                 format!("Current Version: {CURRENT_VERSION}"),
-                Some(Color::White),
+                Some(Color::AnsiValue(231)), // Authentic teletext white
             ),
             (
                 format!("Latest Version:  {latest_version}"),
-                Some(Color::Cyan),
+                Some(Color::AnsiValue(51)), // Authentic teletext cyan
             ),
             ("".to_string(), None),
             ("Update available! Run:".to_string(), None),
             (
                 "cargo install liiga_teletext".to_string(),
-                Some(Color::Cyan),
+                Some(Color::AnsiValue(51)), // Authentic teletext cyan
             ),
         ]);
     }
@@ -752,7 +752,7 @@ fn print_version_info(latest_version: &str) {
 fn print_logo() {
     execute!(
         stdout(),
-        SetForegroundColor(Color::Cyan),
+        SetForegroundColor(Color::AnsiValue(51)), // Authentic teletext cyan
         Print(format!(
             "\n{}",
             r#"
@@ -889,7 +889,10 @@ async fn main() -> Result<(), AppError> {
                 print_version_status_box(vec![
                     ("Liiga Teletext Status".to_string(), None),
                     ("".to_string(), None),
-                    (format!("Version: {CURRENT_VERSION}"), Some(Color::White)),
+                    (
+                        format!("Version: {CURRENT_VERSION}"),
+                        Some(Color::AnsiValue(231)),
+                    ), // Authentic teletext white
                     ("You're running the latest version!".to_string(), None),
                 ]);
             }
