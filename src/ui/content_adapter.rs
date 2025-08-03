@@ -21,12 +21,24 @@
 //! ## Usage
 //!
 //! ```rust
-//! use crate::ui::content_adapter::ContentAdapter;
-//! use crate::ui::layout::DetailLevel;
+//! use liiga_teletext::ui::content_adapter::ContentAdapter;
+//! use liiga_teletext::ui::layout::DetailLevel;
+//! use liiga_teletext::data_fetcher::models::GoalEventData;
 //!
-//! let adapter = ContentAdapter::new();
-//! let formatted_content = adapter.adapt_game_content(
-//!     &game_data,
+//! // Create sample data
+//! let home_team = "HIFK";
+//! let away_team = "Tappara";
+//! let time = "18:30";
+//! let result = "3-2";
+//! let goal_events = vec![];
+//!
+//! // Adapt content for display
+//! let formatted_content = ContentAdapter::adapt_game_content(
+//!     home_team,
+//!     away_team,
+//!     time,
+//!     result,
+//!     &goal_events,
 //!     DetailLevel::Standard,
 //!     100 // available width
 //! );
@@ -440,12 +452,8 @@ impl ContentAdapter {
 
         // Account for additional spacing in extended mode
         let spacer_height = match detail_level {
-            DetailLevel::Extended => {
-                if goal_lines.is_empty() { 2 } else { 2 } // Extra spacing for extended mode
-            }
-            _ => {
-                if goal_lines.is_empty() { 1 } else { 1 } // Standard spacing
-            }
+            DetailLevel::Extended => 2, // Extra spacing for extended mode
+            _ => 1, // Standard spacing
         };
 
         let estimated_height = base_height + goal_height + spacer_height;
@@ -2034,6 +2042,7 @@ mod tests {
     #[test]
     fn test_width_constraints() {
         // Test with very narrow width
+        let available_width = 40; // Very narrow
         let content = ContentAdapter::adapt_game_content(
             "Very Long Team Name",
             "Another Long Name",
@@ -2041,14 +2050,28 @@ mod tests {
             "2-1",
             &[],
             DetailLevel::Minimal,
-            40, // Very narrow
+            available_width,
         );
+
+        // Calculate expected maximum width using the same logic as implementation
+        let expected_max_width = {
+            let reserved_space = 20; // Same as calculate_minimal_team_width
+            let remaining = available_width.saturating_sub(reserved_space);
+            let team_space = remaining / 2;
+            std::cmp::max(8, std::cmp::min(15, team_space as usize))
+        };
+
+
 
         // Should still produce valid content
         assert!(!content.home_team.is_empty());
         assert!(!content.away_team.is_empty());
-        assert!(content.home_team.len() <= 15); // Should be truncated
-        assert!(content.away_team.len() <= 15);
+        assert!(content.home_team.chars().count() <= expected_max_width,
+            "Home team name '{}' (char count {}) exceeds expected max width {}",
+            content.home_team, content.home_team.chars().count(), expected_max_width);
+        assert!(content.away_team.chars().count() <= expected_max_width,
+            "Away team name '{}' (char count {}) exceeds expected max width {}",
+            content.away_team, content.away_team.chars().count(), expected_max_width);
     }
 
     #[test]

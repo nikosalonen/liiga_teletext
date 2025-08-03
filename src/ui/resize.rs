@@ -22,12 +22,15 @@
 //! ## Usage
 //!
 //! ```rust
-//! use crate::ui::resize::ResizeHandler;
+//! use liiga_teletext::ui::resize::ResizeHandler;
+//! use liiga_teletext::ui::layout::LayoutCalculator;
 //!
 //! let mut handler = ResizeHandler::new();
+//! let mut layout_calculator = LayoutCalculator::new();
 //!
 //! // In your main loop:
-//! if let Some(new_size) = handler.check_for_resize() {
+//! let current_size = (100, 30);
+//! if let Some(new_size) = handler.check_for_resize(current_size) {
 //!     // Terminal was resized, update layout
 //!     layout_calculator.calculate_layout(new_size);
 //! }
@@ -197,8 +200,7 @@ impl ResizeHandler {
                 }
 
                 Err(AppError::resize_operation_failed(format!(
-                    "Terminal size detection failed: {}",
-                    e
+                    "Terminal size detection failed: {e}"
                 )))
             }
         }

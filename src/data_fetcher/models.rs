@@ -1,5 +1,33 @@
 use crate::teletext_ui::ScoreType;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
+
+/// Custom deserializer that can handle both integer and string values for timeOut
+/// Attempts to deserialize as integer first, then as string, then converts string to integer
+fn de_string_or_int<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+
+    match value {
+        Value::Null => Ok(None),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Some(i as i32))
+            } else {
+                Err(serde::de::Error::custom("Invalid number format for timeOut"))
+            }
+        }
+        Value::String(s) => {
+            match s.parse::<i32>() {
+                Ok(i) => Ok(Some(i)),
+                Err(_) => Err(serde::de::Error::custom(format!("Cannot parse timeOut string '{}' as integer", s)))
+            }
+        }
+        _ => Err(serde::de::Error::custom("timeOut must be null, number, or string"))
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct GoalEvent {
@@ -35,7 +63,7 @@ pub struct ScheduleTeam {
     #[serde(rename = "teamName")]
     pub team_name: Option<String>,
     pub goals: i32,
-    #[serde(rename = "timeOut", default)]
+    #[serde(rename = "timeOut", default, deserialize_with = "de_string_or_int")]
     pub time_out: Option<i32>,
     #[serde(rename = "powerplayInstances", default)]
     pub powerplay_instances: i32,
@@ -968,5 +996,102 @@ mod tests {
         let debug_string = format!("{game:?}");
         assert!(debug_string.contains("ScheduleGame"));
         assert!(debug_string.contains("12345"));
+    }
+
+    #[test]
+    fn test_time_out_deserialization() {
+        // Test with integer value
+        let json_with_int = r#"{
+            "teamId": "HIFK",
+            "teamName": "HIFK Helsinki",
+            "goals": 2,
+            "timeOut": 120,
+            "powerplayInstances": 3,
+            "powerplayGoals": 1,
+            "shortHandedInstances": 1,
+            "shortHandedGoals": 0,
+            "ranking": 5,
+            "gameStartDateTime": "2024-01-15T18:30:00Z",
+            "goalEvents": []
+        }"#;
+
+        let team_with_int: ScheduleTeam = serde_json::from_str(json_with_int).unwrap();
+        assert_eq!(team_with_int.time_out, Some(120));
+
+        // Test with string value
+        let json_with_string = r#"{
+            "teamId": "Tappara",
+            "teamName": "Tappara Tampere",
+            "goals": 1,
+            "timeOut": "90",
+            "powerplayInstances": 2,
+            "powerplayGoals": 0,
+            "shortHandedInstances": 0,
+            "shortHandedGoals": 0,
+            "ranking": 8,
+            "gameStartDateTime": "2024-01-15T19:00:00Z",
+            "goalEvents": []
+        }"#;
+
+        let team_with_string: ScheduleTeam = serde_json::from_str(json_with_string).unwrap();
+        assert_eq!(team_with_string.time_out, Some(90));
+
+        // Test with null value
+        let json_with_null = r#"{
+            "teamId": "Kärpät",
+            "teamName": "Kärpät Oulu",
+            "goals": 0,
+            "timeOut": null,
+            "powerplayInstances": 0,
+            "powerplayGoals": 0,
+            "shortHandedInstances": 0,
+            "shortHandedGoals": 0,
+            "ranking": 12,
+            "gameStartDateTime": "2024-01-15T20:00:00Z",
+            "goalEvents": []
+        }"#;
+
+        let team_with_null: ScheduleTeam = serde_json::from_str(json_with_null).unwrap();
+        assert_eq!(team_with_null.time_out, None);
+
+        // Test with missing field (should default to None)
+        let json_without_field = r#"{
+            "teamId": "Lukko",
+            "teamName": "Lukko Rauma",
+            "goals": 3,
+            "powerplayInstances": 4,
+            "powerplayGoals": 2,
+            "shortHandedInstances": 1,
+            "shortHandedGoals": 1,
+            "ranking": 3,
+            "gameStartDateTime": "2024-01-15T21:00:00Z",
+            "goalEvents": []
+        }"#;
+
+        let team_without_field: ScheduleTeam = serde_json::from_str(json_without_field).unwrap();
+        assert_eq!(team_without_field.time_out, None);
+
+        // Test round-trip serialization
+        let original_team = ScheduleTeam {
+            team_id: Some("HIFK".to_string()),
+            team_placeholder: None,
+            team_name: Some("HIFK Helsinki".to_string()),
+            goals: 2,
+            time_out: Some(120),
+            powerplay_instances: 3,
+            powerplay_goals: 1,
+            short_handed_instances: 1,
+            short_handed_goals: 0,
+            ranking: Some(5),
+            game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+            goal_events: vec![],
+        };
+
+        let serialized = serde_json::to_string(&original_team).unwrap();
+        let deserialized: ScheduleTeam = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(original_team.time_out, deserialized.time_out);
+        assert_eq!(original_team.goals, deserialized.goals);
+        assert_eq!(original_team.team_id, deserialized.team_id);
     }
 }

@@ -15,7 +15,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use crate::ui::layout::LayoutCalculator;
+//! use liiga_teletext::ui::layout::LayoutCalculator;
 //!
 //! let mut calculator = LayoutCalculator::new();
 //! let layout = calculator.calculate_layout((100, 30));

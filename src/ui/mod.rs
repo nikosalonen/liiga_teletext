@@ -28,15 +28,30 @@
 //! ## Usage Example
 //!
 //! ```rust
-//! use crate::ui::{LayoutCalculator, DetailLevel, ContentAdapter};
+//! use liiga_teletext::ui::{LayoutCalculator, DetailLevel, ContentAdapter};
+//! use liiga_teletext::data_fetcher::models::GoalEventData;
 //!
 //! // Create layout calculator
 //! let mut calculator = LayoutCalculator::new();
 //! let layout = calculator.calculate_layout((120, 40));
 //!
+//! // Create sample game data
+//! let home_team = "HIFK";
+//! let away_team = "Tappara";
+//! let time = "18:30";
+//! let result = "3-2";
+//! let goal_events = vec![];
+//!
 //! // Adapt content based on layout
-//! let adapter = ContentAdapter::new();
-//! let content = adapter.adapt_game_content(&game_data, layout.detail_level, layout.content_width);
+//! let content = ContentAdapter::adapt_game_content(
+//!     home_team,
+//!     away_team,
+//!     time,
+//!     result,
+//!     &goal_events,
+//!     layout.detail_level,
+//!     layout.content_width
+//! );
 //! ```
 
 pub mod content_adapter;

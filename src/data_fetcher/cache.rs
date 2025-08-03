@@ -93,7 +93,7 @@ impl CachedTournamentData {
     /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
         let ttl = if self.has_live_games {
-            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 15 seconds for live games
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 8 seconds for live games
         } else {
             Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS) // 1 hour for completed games
         };
@@ -566,7 +566,7 @@ pub async fn get_cached_tournament_data_with_start_check(
         if has_starting_games {
             let age = cached_entry.cached_at.elapsed();
             let aggressive_ttl =
-                Duration::from_secs(crate::constants::cache_ttl::STARTING_GAMES_SECONDS); // 10 seconds for starting games
+                Duration::from_secs(crate::constants::cache_ttl::STARTING_GAMES_SECONDS); // 30 seconds for starting games
 
             if age > aggressive_ttl {
                 info!(
@@ -859,7 +859,7 @@ pub async fn cache_goal_events_data(
 }
 
 /// Retrieves cached goal events data if it's not expired
-#[instrument(skip(season, game_id), fields(season = season, game_id = game_id))]
+#[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
 pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Vec<GoalEventData>> {
     let key = create_goal_events_key(season, game_id);
     debug!(
@@ -899,7 +899,7 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
 }
 
 /// Retrieves the full cached goal events entry structure for metadata access
-#[instrument(skip(season, game_id), fields(season = season, game_id = game_id))]
+#[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
 pub async fn get_cached_goal_events_entry(
     season: i32,
     game_id: i32,
@@ -995,6 +995,128 @@ pub async fn clear_goal_events_cache_for_game(season: i32, game_id: i32) {
             "Cleared goal events cache for game: season={}, game_id={} (no previous score)",
             season, game_id
         );
+    }
+}
+
+/// Atomically compares the current score with cached data and clears cache if changed
+///
+/// This function acquires a write lock once, compares the current score with cached data,
+/// and clears the cache atomically if the score has changed. This prevents race conditions
+/// that could occur when separately reading and clearing the cache.
+///
+/// # Arguments
+/// * `season` - The game season
+/// * `game_id` - The game ID
+/// * `current_score` - The current score in format "home_goals-away_goals"
+///
+/// # Returns
+/// * `true` if the score changed and cache was cleared
+/// * `false` if the score remained the same or no cache entry existed
+#[instrument(skip(season, game_id, current_score), fields(season = season, game_id = game_id, current_score = %current_score))]
+pub async fn compare_and_clear_on_score_change(
+    season: i32,
+    game_id: i32,
+    current_score: &str,
+) -> bool {
+    let key = create_goal_events_key(season, game_id);
+    let mut cache = GOAL_EVENTS_CACHE.write().await;
+
+    debug!(
+        "Atomically checking for score change: key={}, current_score={}",
+        key, current_score
+    );
+
+    if let Some(cached_entry) = cache.get(&key) {
+        if cached_entry.is_expired() {
+            // Remove expired entry
+            warn!(
+                "Removing expired goal events cache entry during score comparison: key={}, age={:?}",
+                key,
+                cached_entry.cached_at.elapsed()
+            );
+            cache.pop(&key);
+            debug!("No score change detected (cache was expired)");
+            return false;
+        }
+
+        let score_changed = if cached_entry.was_cleared {
+            // Cache was intentionally cleared - use the last known score
+            if let Some(last_known_score) = &cached_entry.last_known_score {
+                debug!(
+                    "Comparing current score {} with last known score {} (from cleared cache)",
+                    current_score, last_known_score
+                );
+                current_score != *last_known_score
+            } else {
+                // Cleared cache but no last known score - assume no change
+                debug!(
+                    "Cache was cleared but no last known score available, assuming no score change"
+                );
+                false
+            }
+        } else {
+            // Normal cache entry - check if the score has changed
+            if let Some(last_event) = cached_entry.data.last() {
+                let cached_score = format!(
+                    "{}-{}",
+                    last_event.home_team_score, last_event.away_team_score
+                );
+                debug!(
+                    "Comparing current score {} with cached score {}",
+                    current_score, cached_score
+                );
+                current_score != cached_score
+            } else {
+                // No goal events in cache - this means cache was never populated
+                debug!("No goal events in cache, assuming no score change (never populated)");
+                false
+            }
+        };
+
+        if score_changed {
+            debug!("Score changed detected, clearing cache atomically");
+
+            // Extract the last known score before clearing
+            let last_known_score = if !cached_entry.was_cleared {
+                // Extract from the actual cached goal events
+                cached_entry.data.last().map(|last_event| {
+                    format!(
+                        "{}-{}",
+                        last_event.home_team_score, last_event.away_team_score
+                    )
+                })
+            } else {
+                // Use the existing last known score
+                cached_entry.last_known_score.clone()
+            };
+
+            // Remove the current entry
+            cache.pop(&key);
+
+            // If we had a last known score, create a cleared cache entry with that score
+            if let Some(score) = last_known_score {
+                let cleared_entry = CachedGoalEventsData::new_cleared(game_id, season, score.clone());
+                cache.put(key.clone(), cleared_entry);
+                debug!(
+                    "Atomically cleared goal events cache for game: season={}, game_id={}, last_known_score={}",
+                    season, game_id, score
+                );
+            } else {
+                debug!(
+                    "Atomically cleared goal events cache for game: season={}, game_id={} (no previous score)",
+                    season, game_id
+                );
+            }
+
+            true
+        } else {
+            debug!("No score change detected, cache unchanged");
+            false
+        }
+    } else {
+        // No cache entry at all - this means cache was never populated
+        debug!("No cache entry found, assuming no score change (never populated)");
+        false
     }
 }
 
@@ -2616,5 +2738,110 @@ mod tests {
         let stats_after_reset = get_all_cache_stats().await;
         assert_eq!(stats_after_reset.player_cache.size, 0);
         assert_eq!(stats_after_reset.goal_events_cache.size, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_compare_and_clear_on_score_change() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 80000 + test_id as i32;
+        let season = 2024;
+
+        // Clear cache to ensure clean state
+        clear_goal_events_cache().await;
+
+        // Test 1: No cache entry - should return false
+        let result = compare_and_clear_on_score_change(season, game_id, "2-1").await;
+        assert!(!result, "Should return false when no cache entry exists");
+
+        // Test 2: Create cache entry with initial score
+        let initial_events = vec![
+            GoalEventData {
+                scorer_player_id: 12345,
+                scorer_name: "Player 1".to_string(),
+                minute: 15,
+                home_team_score: 1,
+                away_team_score: 0,
+                is_winning_goal: false,
+                goal_types: vec!["normal".to_string()],
+                is_home_team: true,
+                video_clip_url: None,
+            },
+            GoalEventData {
+                scorer_player_id: 67890,
+                scorer_name: "Player 3".to_string(),
+                minute: 25,
+                home_team_score: 2,
+                away_team_score: 1,
+                is_winning_goal: false,
+                goal_types: vec!["normal".to_string()],
+                is_home_team: false,
+                video_clip_url: None,
+            },
+        ];
+
+        cache_goal_events_data(season, game_id, initial_events.clone(), true).await;
+
+        // Test 3: Same score - should return false
+        let result = compare_and_clear_on_score_change(season, game_id, "2-1").await;
+        assert!(!result, "Should return false when score hasn't changed");
+
+        // Verify cache wasn't cleared
+        let cached_data = get_cached_goal_events_data(season, game_id).await;
+        assert!(cached_data.is_some(), "Cache should still exist after no score change");
+        assert_eq!(cached_data.unwrap().len(), 2, "Should have 2 goal events");
+
+        // Test 4: Different score - should return true and clear cache
+        let result = compare_and_clear_on_score_change(season, game_id, "3-1").await;
+        assert!(result, "Should return true when score has changed");
+
+        // Verify cache was cleared but has a cleared entry with last known score
+        let cached_entry = get_cached_goal_events_entry(season, game_id).await;
+        assert!(cached_entry.is_some(), "Should have a cleared cache entry");
+        let entry = cached_entry.unwrap();
+        assert!(entry.was_cleared, "Entry should be marked as cleared");
+        assert_eq!(entry.last_known_score, Some("2-1".to_string()), "Should preserve last known score");
+        assert!(entry.data.is_empty(), "Data should be empty after clearing");
+
+        // Test 5: Compare with same score again - should return true since current score differs from last known score in cleared cache
+        let result = compare_and_clear_on_score_change(season, game_id, "3-1").await;
+        assert!(result, "Should return true when current score differs from last known score in cleared cache");
+
+        // Test 6: Different score from cleared cache - should return true
+        let result = compare_and_clear_on_score_change(season, game_id, "4-1").await;
+        assert!(result, "Should return true when score differs from last known score in cleared cache");
+
+        // Test 7: Test with expired cache entry
+        // Wait for cache to expire and then test
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Create a cache entry that would be expired
+        let expired_entry = CachedGoalEventsData {
+            data: vec![],
+            cached_at: std::time::Instant::now() - std::time::Duration::from_secs(7200), // 2 hours ago
+            game_id,
+            season,
+            is_live_game: false, // This will make it expire after 1 hour
+            last_known_score: Some("5-1".to_string()),
+            was_cleared: false,
+        };
+
+        {
+            let mut cache = GOAL_EVENTS_CACHE.write().await;
+            let key = create_goal_events_key(season, game_id);
+            cache.put(key, expired_entry);
+        }
+
+        // Should return false for expired entry (and remove it)
+        let result = compare_and_clear_on_score_change(season, game_id, "6-1").await;
+        assert!(!result, "Should return false for expired cache entry");
+
+        // Verify expired entry was removed
+        let cached_data = get_cached_goal_events_data(season, game_id).await;
+        assert!(cached_data.is_none(), "Expired cache entry should be removed");
+
+        // Clear cache after test
+        clear_goal_events_cache().await;
     }
 }
