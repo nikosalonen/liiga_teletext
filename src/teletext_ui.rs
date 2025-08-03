@@ -558,6 +558,12 @@ impl TeletextPage {
         &mut self.layout_calculator
     }
 
+    /// Checks if this page contains any error messages.
+    /// Used to identify loading pages or error pages that need restoration.
+    pub fn has_error_messages(&self) -> bool {
+        self.content_rows.iter().any(|row| matches!(row, TeletextRow::ErrorMessage(_)))
+    }
+
     /// Sets the screen height for testing purposes.
     /// This method is primarily used in tests to avoid terminal size detection issues.
     #[allow(dead_code)]
@@ -1227,7 +1233,7 @@ impl TeletextPage {
                     if !time_display.is_empty() && !score_display.is_empty() {
                         // For ongoing games: show time on the left, score on the right
                         buffer.push_str(&format!(
-                            "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{:<10}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                            "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:>18}\x1b[{};{}H\x1b[38;5;{}m{:<10}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                             current_line, positioning.left_margin + 1,
                             text_fg_code,
                             adapted_content.home_team.chars().take(20).collect::<String>(),
@@ -1235,7 +1241,7 @@ impl TeletextPage {
                             text_fg_code,
                             current_line, AWAY_TEAM_OFFSET + positioning.left_margin as usize + 1,
                             text_fg_code,
-                            adapted_content.away_team.chars().take(20).collect::<String>(),
+                            adapted_content.away_team.chars().take(18).collect::<String>(),
                             current_line, 35 + positioning.left_margin as usize + 1,
                             text_fg_code,
                             time_display,
@@ -1251,7 +1257,7 @@ impl TeletextPage {
                             score_display
                         };
                         buffer.push_str(&format!(
-                            "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                            "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:>18}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                             current_line, positioning.left_margin + 1,
                             text_fg_code,
                             adapted_content.home_team.chars().take(20).collect::<String>(),
@@ -1259,7 +1265,7 @@ impl TeletextPage {
                             text_fg_code,
                             current_line, AWAY_TEAM_OFFSET + positioning.left_margin as usize + 1,
                             text_fg_code,
-                            adapted_content.away_team.chars().take(20).collect::<String>(),
+                            adapted_content.away_team.chars().take(18).collect::<String>(),
                             current_line, 45 + positioning.left_margin as usize + 1,
                             result_color,
                             display_text
