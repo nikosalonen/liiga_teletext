@@ -607,12 +607,6 @@ impl TeletextPage {
         &mut self.layout_calculator
     }
 
-    /// Checks if this page contains any error messages.
-    /// Used to identify loading pages or error pages that need restoration.
-    pub fn has_error_messages(&self) -> bool {
-        self.content_rows.iter().any(|row| matches!(row, TeletextRow::ErrorMessage(_)))
-    }
-
     /// Sets the screen height for testing purposes.
     /// This method is primarily used in tests to avoid terminal size detection issues.
     #[allow(dead_code)]
