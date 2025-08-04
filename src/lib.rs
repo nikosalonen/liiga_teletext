@@ -23,6 +23,7 @@
 //!         false,
 //!         true,
 //!         false,
+//!         false,
 //!     );
 //!
 //!     // Add games to the page

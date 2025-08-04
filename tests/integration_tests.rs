@@ -45,6 +45,7 @@ async fn test_error_handling() {
         false,
         true,
         false,
+        false,
     );
 
     // Add error message
@@ -69,6 +70,7 @@ async fn test_page_navigation() {
         "RUNKOSARJA".to_string(),
         false,
         true,
+        false,
         false,
     );
 
@@ -183,6 +185,7 @@ async fn test_teletext_ui_generation() {
         false, // disable_video_links
         true,  // show_footer
         false, // ignore_height_limit
+        false, // compact_mode
     );
 
     // Add game result
@@ -265,6 +268,7 @@ async fn test_end_to_end_multiple_games() {
         false,
         true,
         false,
+        false,
     );
 
     // Add all game results
@@ -302,6 +306,7 @@ async fn test_different_tournament_types() {
         "PLAYOFFS".to_string(),
         false,
         true,
+        false,
         false,
     );
 

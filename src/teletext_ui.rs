@@ -88,9 +88,9 @@ pub fn get_team_abbreviation(team_name: &str) -> &str {
         "Jukurit" => "JUK",
         "Ässät" => "ÄSS",
         "KooKoo" => "KOO",
+        "K-Espoo" => "KES",
 
         // Alternative team name formats that might appear in API
-        "K-Espoo" => "BLU",
         "HIFK Helsinki" => "HIFK",
         "TPS Turku" => "TPS",
         "Tampereen Tappara" => "TAP",
@@ -443,13 +443,14 @@ impl TeletextPage {
     /// use liiga_teletext::TeletextPage;
     ///
     /// let page = TeletextPage::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    ///     false,
-    ///     true,
-    ///     false
-    /// );
+///     221,
+///     "JÄÄKIEKKO".to_string(),
+///     "SM-LIIGA".to_string(),
+///     false,
+///     true,
+///     false,
+///     false,
+/// );
     /// ```
     pub fn new(
         page_number: u16,
@@ -700,6 +701,22 @@ impl TeletextPage {
     /// Checks if the auto-refresh indicator is active
     pub fn is_auto_refresh_indicator_active(&self) -> bool {
         self.auto_refresh_indicator.is_some()
+    }
+
+    /// Returns whether compact mode is enabled.
+    ///
+    /// # Returns
+    /// * `bool` - True if compact mode is enabled, false otherwise
+    pub fn is_compact_mode(&self) -> bool {
+        self.compact_mode
+    }
+
+    /// Sets the compact mode state.
+    ///
+    /// # Arguments
+    /// * `compact` - Whether to enable compact mode
+    pub fn set_compact_mode(&mut self, compact: bool) {
+        self.compact_mode = compact;
     }
 
     /// Renders only the loading indicator area without redrawing the entire screen
@@ -1969,6 +1986,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
 
         // Test with empty content
@@ -2071,6 +2089,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
 
         // Set a small screen height to ensure multiple pages
@@ -2093,6 +2112,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
 
         // Set the same small screen height
@@ -2111,5 +2131,29 @@ mod tests {
         let (original_content, _) = page.get_page_content();
         let (new_content, _) = new_page.get_page_content();
         assert_eq!(original_content.len(), new_content.len());
+    }
+
+    #[test]
+    fn test_compact_mode_getter_setter() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            false, // compact_mode = false initially
+        );
+
+        // Test initial state
+        assert!(!page.is_compact_mode());
+
+        // Test setting compact mode to true
+        page.set_compact_mode(true);
+        assert!(page.is_compact_mode());
+
+        // Test setting compact mode to false
+        page.set_compact_mode(false);
+        assert!(!page.is_compact_mode());
     }
 }
