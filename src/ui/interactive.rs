@@ -338,12 +338,18 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
     let mut needs_render = false;
 
     // If we showed a loading screen but data didn't change, we still need to restore pagination
-    if !params.data_changed && !params.had_error && params.preserved_page_for_restoration.is_some() {
+    if !params.data_changed && !params.had_error && params.preserved_page_for_restoration.is_some()
+    {
         if let Some(current) = params.current_page {
             // Check if current page is a loading page by checking if it has error messages
             if current.has_error_messages() {
-                if let Some(preserved_page_for_restoration) = params.preserved_page_for_restoration {
-                    let games_to_use = if params.games.is_empty() { params.last_games } else { params.games };
+                if let Some(preserved_page_for_restoration) = params.preserved_page_for_restoration
+                {
+                    let games_to_use = if params.games.is_empty() {
+                        params.last_games
+                    } else {
+                        params.games
+                    };
                     let mut page = create_page(
                         games_to_use,
                         params.disable_links,
@@ -1214,7 +1220,9 @@ async fn handle_data_fetching(
             preserved_page_for_restoration,
             current_date,
             &updated_current_date,
-        ).await {
+        )
+        .await
+        {
             current_page = Some(page);
             needs_render = true;
         }
@@ -1235,7 +1243,8 @@ async fn handle_data_fetching(
         disable_links,
         fetched_date: &fetched_date,
         updated_current_date: &updated_current_date,
-    }).await;
+    })
+    .await;
     needs_render = needs_render || restoration_render;
 
     // Hide auto-refresh indicator after data is fetched
