@@ -1,0 +1,14 @@
+{
+  "name": "Task Completion Quality Check",
+  "description": "When a task is complete, run cargo clippy, cargo fmt and tests to ensure all is passing",
+  "trigger": {
+    "type": "manual",
+    "label": "Run Quality Checks"
+  },
+  "actions": [
+    {
+      "type": "agent",
+      "request": "Run the following quality checks in sequence:\n1. Run `cargo fmt` to format the code\n2. Run `cargo clippy --all-features --all-targets -- -D warnings` to check for clippy warnings\n3. Run `cargo test --all-features` to run all tests\n\nEnsure all commands pass successfully. If any fail, report the issues and suggest fixes."
+    }
+  ]
+}
