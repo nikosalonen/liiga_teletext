@@ -1379,6 +1379,27 @@ async fn handle_cache_monitoring(cache_monitor_timer: &mut Instant) {
     }
 }
 
+/// Setup terminal for interactive mode
+fn setup_terminal(debug_mode: bool) -> Result<std::io::Stdout, AppError> {
+    let mut stdout = stdout();
+
+    if !debug_mode {
+        enable_raw_mode()?;
+        execute!(stdout, EnterAlternateScreen)?;
+    }
+
+    Ok(stdout)
+}
+
+/// Cleanup terminal after interactive mode
+fn cleanup_terminal(debug_mode: bool, mut stdout: std::io::Stdout) -> Result<(), AppError> {
+    if !debug_mode {
+        disable_raw_mode()?;
+        execute!(stdout, LeaveAlternateScreen)?;
+    }
+    Ok(())
+}
+
 /// Runs the interactive UI with adaptive polling and change detection
 pub async fn run_interactive_ui(
     date: Option<String>,
@@ -1386,12 +1407,8 @@ pub async fn run_interactive_ui(
     debug_mode: bool,
     min_refresh_interval: Option<u64>,
 ) -> Result<(), AppError> {
-    let mut stdout = stdout();
-
-    if !debug_mode {
-        enable_raw_mode()?;
-        execute!(stdout, EnterAlternateScreen)?;
-    }
+    // Setup terminal for interactive mode
+    let mut stdout = setup_terminal(debug_mode)?;
     // Timer management with adaptive intervals
     let (
         mut last_manual_refresh,
@@ -1646,10 +1663,8 @@ pub async fn run_interactive_ui(
         }
     }
 
-    if !debug_mode {
-        disable_raw_mode()?;
-        execute!(stdout, LeaveAlternateScreen)?;
-    }
+    // Cleanup terminal
+    cleanup_terminal(debug_mode, stdout)?;
     Ok(())
 }
 
@@ -1762,10 +1777,19 @@ mod tests {
         assert_eq!(SeriesType::from("PLAYOFFS"), SeriesType::Playoffs);
         assert_eq!(SeriesType::from("playout"), SeriesType::Playout);
         assert_eq!(SeriesType::from("PLAYOUT"), SeriesType::Playout);
-        assert_eq!(SeriesType::from("qualifications"), SeriesType::Qualifications);
-        assert_eq!(SeriesType::from("QUALIFICATIONS"), SeriesType::Qualifications);
+        assert_eq!(
+            SeriesType::from("qualifications"),
+            SeriesType::Qualifications
+        );
+        assert_eq!(
+            SeriesType::from("QUALIFICATIONS"),
+            SeriesType::Qualifications
+        );
         assert_eq!(SeriesType::from("practice"), SeriesType::Practice);
-        assert_eq!(SeriesType::from("valmistavat_ottelut"), SeriesType::Practice);
+        assert_eq!(
+            SeriesType::from("valmistavat_ottelut"),
+            SeriesType::Practice
+        );
         assert_eq!(SeriesType::from("PRACTICE"), SeriesType::Practice);
 
         // Test default fallback to RegularSeason
