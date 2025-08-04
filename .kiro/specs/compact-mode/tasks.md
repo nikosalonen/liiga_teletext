@@ -96,20 +96,20 @@
     - Add error messages for invalid combinations if needed
     - _Requirements: 2.3, 4.4_
 
-- [ ] 8. Create comprehensive test suite
-  - [ ] 8.1 Write unit tests for compact functionality
+- [x] 8. Create comprehensive test suite
+  - [x] 8.1 Write unit tests for compact functionality
     - Test team abbreviation mapping with various inputs
     - Test compact formatting logic with different game data
     - Test terminal width adaptation algorithms
     - _Requirements: 5.1_
 
-  - [ ] 8.2 Add integration tests for compact mode
+  - [x] 8.2 Add integration tests for compact mode
     - Test end-to-end compact mode in non-interactive mode
     - Test compact mode with interactive navigation
     - Test compact mode with different date selections
     - _Requirements: 2.1, 2.2, 2.3, 5.1_
 
-  - [ ] 8.3 Add visual regression tests
+  - [x] 8.3 Add visual regression tests
     - Verify compact mode preserves teletext styling
     - Test compact layout with various terminal sizes
     - Ensure consistent formatting across different game states
