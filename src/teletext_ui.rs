@@ -1384,6 +1384,54 @@ impl TeletextPage {
     /// Preserves all game details while constraining output to column width.
     ///
     /// # Arguments
+    /// * `text` - String that may contain ANSI escape sequences
+    ///
+    /// # Returns
+    /// * `usize` - Number of visible characters (excluding ANSI sequences)
+    fn count_visible_chars(text: &str) -> usize {
+        let mut visible_len = 0;
+        let mut in_ansi = false;
+        for c in text.chars() {
+            if c == '\x1b' {
+                in_ansi = true;
+            } else if in_ansi && c == 'm' {
+                in_ansi = false;
+            } else if !in_ansi {
+                visible_len += 1;
+            }
+        }
+        visible_len
+    }
+
+    /// Truncates team names gracefully, preferring word boundaries when possible.
+    ///
+    /// # Arguments
+    /// * `team_name` - Original team name
+    /// * `max_length` - Maximum allowed length
+    ///
+    /// # Returns
+    /// * `String` - Truncated team name
+    fn truncate_team_name_gracefully(team_name: &str, max_length: usize) -> String {
+        if team_name.len() <= max_length {
+            return team_name.to_string();
+        }
+
+        // Try to find a good truncation point (space, hyphen, or vowel)
+        let mut best_pos = max_length;
+        for (i, c) in team_name.char_indices().take(max_length) {
+            if c == ' ' || c == '-' {
+                best_pos = i;
+                break;
+            }
+        }
+
+        team_name.chars().take(best_pos).collect()
+    }
+
+    /// Formats a game for display in a wide column with specified width constraints.
+    /// Optimized for performance with pre-allocated buffers and reasonable goal limits.
+    ///
+    /// # Arguments
     /// * `game` - The game result to format
     /// * `column_width` - Maximum width for the column
     ///
@@ -1411,7 +1459,9 @@ impl TeletextPage {
                 let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
 
                 // Format the main game line
-                let mut lines = Vec::new();
+                // Pre-allocate lines vector with estimated capacity (1 team line + potential goal lines)
+                let estimated_goals = goal_events.len().min(30); // Cap estimate at 30 total goals
+                let mut lines = Vec::with_capacity(1 + estimated_goals);
 
                 // Team names and score line using proper teletext layout within column
                 let team_score_line = {
@@ -1453,15 +1503,15 @@ impl TeletextPage {
                     // Format with fixed character positions - away team always starts at position 27
                     let mut line = String::new();
 
-                    // Position 0-19: Home team (up to 20 chars)
-                    let home_text = home_team.chars().take(20).collect::<String>();
+                    // Position 0-19: Home team (up to 20 chars) - use graceful truncation
+                    let home_text = Self::truncate_team_name_gracefully(home_team, 20);
                     line.push_str(&format!("{home_text:<20}"));
 
                     // Position 20-26: Spacing and dash (7 chars total)
                     line.push_str("    - ");
 
-                    // Position 27+: Away team (up to 17 chars)
-                    let away_text = away_team.chars().take(17).collect::<String>();
+                    // Position 27+: Away team (up to 17 chars) - use graceful truncation
+                    let away_text = Self::truncate_team_name_gracefully(away_team, 17);
                     line.push_str(&format!("{away_text:<20}"));
 
                     // Score section
@@ -1473,12 +1523,24 @@ impl TeletextPage {
                 lines.push(team_score_line);
 
                 // Goal events - position scorers under their respective teams like normal mode
+                // Limit goal scorers for performance (max 15 per team to prevent excessive rendering)
                 if !goal_events.is_empty() {
-                    let home_scorers: Vec<_> =
-                        goal_events.iter().filter(|e| e.is_home_team).collect();
-                    let away_scorers: Vec<_> =
-                        goal_events.iter().filter(|e| !e.is_home_team).collect();
+                    const MAX_SCORERS_PER_TEAM: usize = 15;
+
+                    let home_scorers: Vec<_> = goal_events
+                        .iter()
+                        .filter(|e| e.is_home_team)
+                        .take(MAX_SCORERS_PER_TEAM)
+                        .collect();
+                    let away_scorers: Vec<_> = goal_events
+                        .iter()
+                        .filter(|e| !e.is_home_team)
+                        .take(MAX_SCORERS_PER_TEAM)
+                        .collect();
                     let max_scorers = home_scorers.len().max(away_scorers.len());
+
+                    // Pre-allocate lines vector with estimated capacity
+                    lines.reserve(max_scorers + 1);
 
                     for i in 0..max_scorers {
                         let mut scorer_line = String::new();
@@ -1541,19 +1603,11 @@ impl TeletextPage {
                             String::new()
                         };
 
-                        // Format complete line with ANSI-aware padding
-                        // Count visible characters in home_side (excluding ANSI escape codes)
-                        let mut visible_len = 0;
-                        let mut in_ansi = false;
-                        for c in home_side.chars() {
-                            if c == '\x1b' {
-                                in_ansi = true;
-                            } else if in_ansi && c == 'm' {
-                                in_ansi = false;
-                            } else if !in_ansi {
-                                visible_len += 1;
-                            }
-                        }
+                        // Format complete line with ANSI-aware padding using optimized helper
+                        let visible_len = Self::count_visible_chars(&home_side);
+
+                        // Pre-allocate scorer_line with estimated capacity
+                        scorer_line.reserve(60);
 
                         // Build line: home_side + padding to reach 27 chars + away_content
                         scorer_line.push_str(&home_side);
