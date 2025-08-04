@@ -250,6 +250,7 @@ fn detect_and_log_changes(games: &[GameData], last_games: &[GameData]) -> bool {
 async fn create_or_restore_page(
     games: &[GameData],
     disable_links: bool,
+    compact_mode: bool,
     fetched_date: &str,
     preserved_page_for_restoration: Option<usize>,
     current_date: &Option<String>,
@@ -262,7 +263,7 @@ async fn create_or_restore_page(
             disable_links,
             true,
             false,
-            false, // compact_mode - will be passed from main later
+            compact_mode,
             Some(fetched_date.to_string()),
             Some(preserved_page_for_restoration),
         )
@@ -287,7 +288,7 @@ async fn create_or_restore_page(
                 disable_links,
                 true,
                 false,
-                false, // compact_mode - will be passed from main later
+                compact_mode,
                 show_future_header,
                 Some(fetched_date.to_string()),
                 None,
@@ -301,7 +302,7 @@ async fn create_or_restore_page(
                         disable_links,
                         true,
                         false,
-                        false, // compact_mode - will be passed from main later
+                        compact_mode,
                         Some(fetched_date.to_string()),
                         None,
                     )
@@ -1182,6 +1183,7 @@ async fn handle_data_fetching(
     current_date: &Option<String>,
     last_games: &[GameData],
     disable_links: bool,
+    compact_mode: bool,
     preserved_page_for_restoration: Option<usize>,
 ) -> Result<
     (
@@ -1228,6 +1230,7 @@ async fn handle_data_fetching(
         if let Some(page) = create_or_restore_page(
             &games,
             disable_links,
+            compact_mode,
             &fetched_date,
             preserved_page_for_restoration,
             current_date,
@@ -1523,6 +1526,7 @@ pub async fn run_interactive_ui(
     disable_links: bool,
     debug_mode: bool,
     min_refresh_interval: Option<u64>,
+    compact_mode: bool,
 ) -> Result<(), AppError> {
     // Setup terminal for interactive mode
     let mut stdout = setup_terminal(debug_mode)?;
@@ -1618,6 +1622,7 @@ pub async fn run_interactive_ui(
                     &current_date,
                     &last_games,
                     disable_links,
+                    compact_mode,
                     preserved_page_for_restoration,
                 )
                 .await?;

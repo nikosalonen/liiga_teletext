@@ -575,6 +575,7 @@ async fn main() -> Result<(), AppError> {
         args.disable_links,
         args.debug,
         args.min_refresh_interval,
+        args.compact,
     )
     .await;
 
