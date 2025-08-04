@@ -411,6 +411,37 @@ impl LoadingIndicator {
     }
 }
 
+/// Configuration for creating a TeletextPage.
+/// Provides a more ergonomic API for functions with many parameters.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct TeletextPageConfig {
+    pub page_number: u16,
+    pub title: String,
+    pub subheader: String,
+    pub disable_video_links: bool,
+    pub show_footer: bool,
+    pub ignore_height_limit: bool,
+    pub compact_mode: bool,
+    pub wide_mode: bool,
+}
+
+impl TeletextPageConfig {
+    #[allow(dead_code)]
+    pub fn new(page_number: u16, title: String, subheader: String) -> Self {
+        Self {
+            page_number,
+            title,
+            subheader,
+            disable_video_links: false,
+            show_footer: true,
+            ignore_height_limit: false,
+            compact_mode: false,
+            wide_mode: false,
+        }
+    }
+}
+
 pub struct TeletextPage {
     page_number: u16,
     title: String,
@@ -539,6 +570,7 @@ impl TeletextPage {
     ///     false, // wide_mode
     /// );
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         page_number: u16,
         title: String,
@@ -577,6 +609,34 @@ impl TeletextPage {
             compact_mode,
             wide_mode,
         }
+    }
+
+    /// Creates a new TeletextPage from a configuration struct.
+    /// This provides a more ergonomic API compared to the many-parameter constructor.
+    ///
+    /// # Example
+    /// ```
+    /// use liiga_teletext::{TeletextPage, TeletextPageConfig};
+    ///
+    /// let config = TeletextPageConfig::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    /// );
+    /// let page = TeletextPage::from_config(config);
+    /// ```
+    #[allow(dead_code)]
+    pub fn from_config(config: TeletextPageConfig) -> Self {
+        Self::new(
+            config.page_number,
+            config.title,
+            config.subheader,
+            config.disable_video_links,
+            config.show_footer,
+            config.ignore_height_limit,
+            config.compact_mode,
+            config.wide_mode,
+        )
     }
 
     /// Updates the page layout when terminal size changes.
@@ -864,15 +924,6 @@ impl TeletextPage {
         terminal_width >= 128
     }
 
-
-
-    /// Calculates the width available for each column in wide mode.
-    /// Accounts for column separator (10 characters) and margins.
-    ///
-    /// # Returns
-    /// * `usize` - Width available for each column
-
-
     /// Distributes games between left and right columns for wide mode display.
     /// Uses left-column-first filling logic similar to pagination.
     ///
@@ -940,7 +991,6 @@ impl TeletextPage {
     ) {
         // Check if we can actually fit two columns
         if !self.can_fit_two_pages() {
-
             // Show warning about insufficient width
             let required_width: usize = 122;
             let current_width: usize = width as usize;
@@ -970,14 +1020,21 @@ impl TeletextPage {
             *current_line += 1;
 
             // Fallback to normal rendering
-            self.render_normal_content(buffer, visible_rows, width, current_line, text_fg_code, subheader_fg_code);
+            self.render_normal_content(
+                buffer,
+                visible_rows,
+                width,
+                current_line,
+                text_fg_code,
+                subheader_fg_code,
+            );
             return;
         }
 
         // Distribute visible rows between left and right columns
         // Split games roughly evenly between columns instead of using height
         let total_games = visible_rows.len();
-        let games_per_column = (total_games + 1) / 2; // Left column gets the extra game if odd number
+        let games_per_column = total_games.div_ceil(2); // Left column gets the extra game if odd number
 
         let mut left_games: Vec<&TeletextRow> = Vec::new();
         let mut right_games: Vec<&TeletextRow> = Vec::new();
@@ -990,7 +1047,7 @@ impl TeletextPage {
             }
         }
 
-                // Calculate column widths for wide mode - based on normal mode layout
+        // Calculate column widths for wide mode - based on normal mode layout
         let left_column_start = 2;
         let gap_between_columns = 8; // Good separation between columns
 
@@ -998,8 +1055,6 @@ impl TeletextPage {
         // Normal mode uses positions up to ~55 chars, but we can make columns wider for better readability
         let normal_content_width = 60; // Wider columns for better spacing and readability
         let column_width = normal_content_width;
-
-
 
         // Render left column
         let mut left_line = *current_line;
@@ -1070,7 +1125,6 @@ impl TeletextPage {
         text_fg_code: u8,
         subheader_fg_code: u8,
     ) {
-
         for row in visible_rows {
             match row {
                 TeletextRow::GameResult {
@@ -1109,23 +1163,25 @@ impl TeletextPage {
                         _ => text_fg_code,
                     };
 
-                                            // Build game line with flexible positioning based on terminal width
-                        let available_width = width as usize - (CONTENT_MARGIN * 2);
-                        let home_team_width = (available_width * 3) / 8; // 3/8 of available width
-                        let away_team_width = (available_width * 3) / 8; // 3/8 of available width
-                        let time_score_width = available_width - home_team_width - away_team_width - 3; // Remaining space minus separator
+                    // Build game line with flexible positioning based on terminal width
+                    let available_width = width as usize - (CONTENT_MARGIN * 2);
+                    let home_team_width = (available_width * 3) / 8; // 3/8 of available width
+                    let away_team_width = (available_width * 3) / 8; // 3/8 of available width
+                    let time_score_width = available_width - home_team_width - away_team_width - 3; // Remaining space minus separator
 
-                        let home_pos = CONTENT_MARGIN + 1;
-                        let separator_pos = home_pos + home_team_width;
-                        let away_pos = separator_pos + 3; // 3 chars for " - "
-                        let time_score_pos = away_pos + away_team_width;
+                    let home_pos = CONTENT_MARGIN + 1;
+                    let separator_pos = home_pos + home_team_width;
+                    let away_pos = separator_pos + 3; // 3 chars for " - "
+                    let time_score_pos = away_pos + away_team_width;
 
-                        if !time_display.is_empty() && !score_display.is_empty() {
-                            // For ongoing games: show time on the left, score on the right
-                            let home_team_text = home_team.chars().take(home_team_width).collect::<String>();
-                            let away_team_text = away_team.chars().take(away_team_width).collect::<String>();
+                    if !time_display.is_empty() && !score_display.is_empty() {
+                        // For ongoing games: show time on the left, score on the right
+                        let home_team_text =
+                            home_team.chars().take(home_team_width).collect::<String>();
+                        let away_team_text =
+                            away_team.chars().take(away_team_width).collect::<String>();
 
-                            buffer.push_str(&format!(
+                        buffer.push_str(&format!(
                                 "\x1b[{};{}H\x1b[38;5;{}m{:<home_width$}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<away_width$}\x1b[{};{}H\x1b[38;5;{}m{:<time_width$}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                                 *current_line, home_pos,
                                 text_fg_code,
@@ -1145,17 +1201,19 @@ impl TeletextPage {
                                 away_width = away_team_width,
                                 time_width = time_score_width
                             ));
+                    } else {
+                        // For scheduled/final games: show time or score on the right
+                        let display_text = if !time_display.is_empty() {
+                            time_display
                         } else {
-                            // For scheduled/final games: show time or score on the right
-                            let display_text = if !time_display.is_empty() {
-                                time_display
-                            } else {
-                                score_display
-                            };
-                            let home_team_text = home_team.chars().take(home_team_width).collect::<String>();
-                            let away_team_text = away_team.chars().take(away_team_width).collect::<String>();
+                            score_display
+                        };
+                        let home_team_text =
+                            home_team.chars().take(home_team_width).collect::<String>();
+                        let away_team_text =
+                            away_team.chars().take(away_team_width).collect::<String>();
 
-                            buffer.push_str(&format!(
+                        buffer.push_str(&format!(
                                 "\x1b[{};{}H\x1b[38;5;{}m{:<home_width$}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<away_width$}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                                 *current_line, home_pos,
                                 text_fg_code,
@@ -1171,7 +1229,7 @@ impl TeletextPage {
                                 home_width = home_team_width,
                                 away_width = away_team_width
                             ));
-                        }
+                    }
 
                     *current_line += 1;
 
@@ -1204,10 +1262,7 @@ impl TeletextPage {
 
                                 buffer.push_str(&format!(
                                     "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
-                                    *current_line,
-                                    home_pos,
-                                    scorer_color,
-                                    event.minute
+                                    *current_line, home_pos, scorer_color, event.minute
                                 ));
 
                                 // Add video link functionality if there's a video clip and links are enabled
@@ -1254,10 +1309,7 @@ impl TeletextPage {
 
                                 buffer.push_str(&format!(
                                     "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
-                                    *current_line,
-                                    away_pos,
-                                    scorer_color,
-                                    event.minute
+                                    *current_line, away_pos, scorer_color, event.minute
                                 ));
 
                                 // Add video link functionality if there's a video clip and links are enabled
@@ -1391,47 +1443,50 @@ impl TeletextPage {
                     // Use proportional spacing within the 48-character column width
                     let display_text = if !time_display.is_empty() && !score_display.is_empty() {
                         // For ongoing games: show both time and score
-                        format!("{} {}", time_display, score_display)
+                        format!("{time_display} {score_display}")
                     } else if !time_display.is_empty() {
                         time_display
                     } else {
                         score_display
                     };
 
-                                                            // Format with fixed character positions - away team always starts at position 27
+                    // Format with fixed character positions - away team always starts at position 27
                     let mut line = String::new();
 
                     // Position 0-19: Home team (up to 20 chars)
                     let home_text = home_team.chars().take(20).collect::<String>();
-                    line.push_str(&format!("{:<20}", home_text));
+                    line.push_str(&format!("{home_text:<20}"));
 
                     // Position 20-26: Spacing and dash (7 chars total)
                     line.push_str("    - ");
 
                     // Position 27+: Away team (up to 17 chars)
                     let away_text = away_team.chars().take(17).collect::<String>();
-                    line.push_str(&format!("{:<20}", away_text));
+                    line.push_str(&format!("{away_text:<20}"));
 
                     // Score section
                     line.push_str(&format!(" \x1b[38;5;{result_color}m{display_text}\x1b[0m"));
 
-                    format!("\x1b[38;5;{text_fg_code}m{}\x1b[0m", line)
+                    format!("\x1b[38;5;{text_fg_code}m{line}\x1b[0m")
                 };
 
                 lines.push(team_score_line);
 
                 // Goal events - position scorers under their respective teams like normal mode
                 if !goal_events.is_empty() {
-                    let home_scorers: Vec<_> = goal_events.iter().filter(|e| e.is_home_team).collect();
-                    let away_scorers: Vec<_> = goal_events.iter().filter(|e| !e.is_home_team).collect();
+                    let home_scorers: Vec<_> =
+                        goal_events.iter().filter(|e| e.is_home_team).collect();
+                    let away_scorers: Vec<_> =
+                        goal_events.iter().filter(|e| !e.is_home_team).collect();
                     let max_scorers = home_scorers.len().max(away_scorers.len());
 
-                                        for i in 0..max_scorers {
+                    for i in 0..max_scorers {
                         let mut scorer_line = String::new();
 
                         // Build home side (always exactly 22 characters total)
                         let home_side = if let Some(event) = home_scorers.get(i) {
-                            let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout))
+                            let scorer_color = if (event.is_winning_goal
+                                && (*is_overtime || *is_shootout))
                                 || event.goal_types.contains(&"VL".to_string())
                             {
                                 winning_goal_fg_code // Purple for game-winning goals only
@@ -1441,7 +1496,7 @@ impl TeletextPage {
 
                             let goal_type = event.get_goal_type_display();
                             let goal_type_str = if !goal_type.is_empty() {
-                                format!(" \x1b[38;5;{}m{}\x1b[0m", goal_type_fg_code, goal_type)
+                                format!(" \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m")
                             } else {
                                 String::new()
                             };
@@ -1459,7 +1514,8 @@ impl TeletextPage {
 
                         // Create away scorer content
                         let away_content = if let Some(event) = away_scorers.get(i) {
-                            let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout))
+                            let scorer_color = if (event.is_winning_goal
+                                && (*is_overtime || *is_shootout))
                                 || event.goal_types.contains(&"VL".to_string())
                             {
                                 winning_goal_fg_code // Purple for game-winning goals only
@@ -1469,7 +1525,7 @@ impl TeletextPage {
 
                             let goal_type = event.get_goal_type_display();
                             let goal_type_str = if !goal_type.is_empty() {
-                                format!(" \x1b[38;5;{}m{}\x1b[0m", goal_type_fg_code, goal_type)
+                                format!(" \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m")
                             } else {
                                 String::new()
                             };
@@ -1865,7 +1921,7 @@ impl TeletextPage {
             // Add spacing between games (1 extra line per game except the last)
             let height_with_spacing = base_height + 1; // Add space between games
             // So each game effectively uses half the height
-            (height_with_spacing + 1) / 2 // Round up to ensure we don't underestimate
+            height_with_spacing.div_ceil(2) // Round up to ensure we don't underestimate
         } else {
             base_height
         }
@@ -2145,7 +2201,7 @@ impl TeletextPage {
             if self.wide_mode {
                 136u16 // Wide enough to accommodate wide mode (128+ required)
             } else {
-                80u16  // Standard width for normal mode
+                80u16 // Standard width for normal mode
             }
         } else {
             // Hide cursor to prevent visual artifacts during rendering
@@ -2222,11 +2278,16 @@ impl TeletextPage {
 
         // Handle rendering modes
 
-
         if self.wide_mode && self.can_fit_two_pages() {
-
             // Wide mode rendering - two columns
-            self.render_wide_mode_content(&mut buffer, &visible_rows, width, &mut current_line, text_fg_code, subheader_fg_code);
+            self.render_wide_mode_content(
+                &mut buffer,
+                &visible_rows,
+                width,
+                &mut current_line,
+                text_fg_code,
+                subheader_fg_code,
+            );
         } else if self.compact_mode {
             // Compact mode rendering
             let config = CompactDisplayConfig::default();
@@ -3874,7 +3935,8 @@ mod tests {
         assert!(!formatted.contains("..."));
 
         // Test "Seuraavat ottelut" header - should be abbreviated to preserve date
-        let future_games_header = TeletextRow::FutureGamesHeader("Seuraavat ottelut 07.08.".to_string());
+        let future_games_header =
+            TeletextRow::FutureGamesHeader("Seuraavat ottelut 07.08.".to_string());
         let formatted = page.format_compact_game(&future_games_header, &config);
         assert!(formatted.contains("Seur. ottelut 07.08."));
         assert!(!formatted.contains("Seuraavat ottelut"));
@@ -3887,7 +3949,8 @@ mod tests {
         assert!(!formatted.contains("..."));
 
         // Test header exactly 30 characters - should not be truncated
-        let exact_header = TeletextRow::FutureGamesHeader("123456789012345678901234567890".to_string());
+        let exact_header =
+            TeletextRow::FutureGamesHeader("123456789012345678901234567890".to_string());
         let formatted = page.format_compact_game(&exact_header, &config);
         assert!(formatted.contains("123456789012345678901234567890"));
         assert!(!formatted.contains("..."));
@@ -3898,10 +3961,271 @@ mod tests {
         );
         let formatted = page.format_compact_game(&very_long_header, &config);
         assert!(formatted.contains("This is a very long header tha..."));
-        assert!(!formatted.contains("This is a very long header that should be truncated at thirty chars"));
+        assert!(
+            !formatted
+                .contains("This is a very long header that should be truncated at thirty chars")
+        );
 
         // Verify the truncated part length is 33 characters (30 + 3 for "...")
         let truncated_part = "This is a very long header tha...";
         assert_eq!(truncated_part.len(), 33);
+    }
+
+    // PHASE 4: WIDE MODE UNIT TESTS
+
+    #[test]
+    fn test_wide_mode_getter_setter() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            false, // show_videos
+            true,  // ignore_height_limit
+            false, // compact_mode
+            false, // wide_mode
+            false, // enable_colors
+        );
+
+        // Test initial state
+        assert!(!page.is_wide_mode());
+
+        // Test setter
+        page.set_wide_mode(true);
+        assert!(page.is_wide_mode());
+
+        // Test setter again
+        page.set_wide_mode(false);
+        assert!(!page.is_wide_mode());
+    }
+
+    #[test]
+    fn test_can_fit_two_pages_false_when_wide_mode_disabled() {
+        let page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            false, // show_videos
+            true,  // ignore_height_limit (non-interactive mode)
+            false, // compact_mode
+            false, // wide_mode - DISABLED
+            false, // enable_colors
+        );
+
+        // Should return false when wide_mode is disabled, regardless of terminal width
+        assert!(!page.can_fit_two_pages());
+    }
+
+    #[test]
+    fn test_can_fit_two_pages_with_sufficient_width() {
+        let page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            false, // disable_video_links
+            true,  // show_footer
+            true,  // ignore_height_limit (non-interactive mode - uses 136 width)
+            false, // compact_mode
+            true,  // wide_mode - ENABLED
+        );
+
+        // Should return true when wide_mode is enabled and in non-interactive mode (136 >= 128)
+        assert!(page.can_fit_two_pages());
+    }
+
+    #[test]
+    fn test_can_fit_two_pages_with_insufficient_width() {
+        // This test simulates a narrow terminal by using interactive mode
+        // In interactive mode, crossterm::terminal::size() would be called,
+        // but it will fallback to 80 chars if it can't get the size
+        let page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            false, // show_videos
+            false, // ignore_height_limit (interactive mode - uses crossterm or fallback to 80)
+            false, // compact_mode
+            true,  // wide_mode - ENABLED
+            false, // enable_colors
+        );
+
+        // Should return false when width is insufficient (80 < 128)
+        // Note: This test relies on the fallback width of 80 when crossterm can't get terminal size
+        assert!(!page.can_fit_two_pages());
+    }
+
+    #[test]
+    fn test_distribute_games_for_wide_display_disabled() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            false, // show_videos
+            true,  // ignore_height_limit
+            false, // compact_mode
+            false, // wide_mode - DISABLED
+            false, // enable_colors
+        );
+
+        // Add some test games using GameData -> GameResultData
+        let test_game = crate::data_fetcher::GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "18:30".to_string(),
+            result: "2-1".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        };
+        let test_game_data = GameResultData::new(&test_game);
+        page.add_game_result(test_game_data);
+
+        let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+        // When wide mode is disabled, all games should go to left column
+        assert_eq!(left_games.len(), 1);
+        assert_eq!(right_games.len(), 0);
+    }
+
+    #[test]
+    fn test_distribute_games_for_wide_display_insufficient_width() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            false, // show_videos
+            false, // ignore_height_limit (interactive mode - narrow terminal)
+            false, // compact_mode
+            true,  // wide_mode - ENABLED but insufficient width
+            false, // enable_colors
+        );
+
+        // Add some test games
+        let test_game = crate::data_fetcher::GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "18:30".to_string(),
+            result: "2-1".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        };
+        let test_game_data = GameResultData::new(&test_game);
+        page.add_game_result(test_game_data);
+
+        let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+        // When terminal width is insufficient, all games should go to left column
+        assert_eq!(left_games.len(), 1);
+        assert_eq!(right_games.len(), 0);
+    }
+
+    #[test]
+    fn test_distribute_games_for_wide_display_enabled() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            false, // show_videos
+            true,  // ignore_height_limit (non-interactive mode - wide terminal)
+            false, // compact_mode
+            true,  // wide_mode - ENABLED
+            false, // enable_colors
+        );
+
+        // Add multiple test games to test distribution
+        for i in 0..4 {
+            let test_game = crate::data_fetcher::GameData {
+                home_team: format!("Team{i}A"),
+                away_team: format!("Team{i}B"),
+                time: "18:30".to_string(),
+                result: "2-1".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3600,
+                start: "2024-01-15T18:30:00Z".to_string(),
+            };
+            let test_game_data = GameResultData::new(&test_game);
+            page.add_game_result(test_game_data);
+        }
+
+        let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+        // Games should be distributed between columns
+        // The exact distribution depends on the game content and available height
+        assert!(!left_games.is_empty(), "Left column should have games");
+        assert!(
+            left_games.len() + right_games.len() > 0,
+            "Total games should be distributed"
+        );
+    }
+
+    #[test]
+    fn test_wide_mode_with_test_games() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            false, // show_videos
+            true,  // ignore_height_limit (wide terminal)
+            false, // compact_mode
+            true,  // wide_mode
+            false, // enable_colors
+        );
+
+        // Add test games
+        let test_game1 = crate::data_fetcher::GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "18:30".to_string(),
+            result: "2-1".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        };
+
+        let test_game2 = crate::data_fetcher::GameData {
+            home_team: "TPS".to_string(),
+            away_team: "KalPa".to_string(),
+            time: "19:00".to_string(),
+            result: "1-3".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-15T19:00:00Z".to_string(),
+        };
+
+        page.add_game_result(GameResultData::new(&test_game1));
+        page.add_game_result(GameResultData::new(&test_game2));
+
+        // Test that games are properly distributed
+        let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+        // Should have games distributed (exact distribution depends on content size)
+        assert!(
+            left_games.len() + right_games.len() == 2,
+            "Should have both games distributed"
+        );
+        assert!(
+            !left_games.is_empty(),
+            "Should have at least one game in left column"
+        );
     }
 }

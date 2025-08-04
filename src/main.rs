@@ -297,7 +297,7 @@ async fn main() -> Result<(), AppError> {
     // Validate argument combinations
     if args.compact && args.wide {
         return Err(AppError::config_error(
-            "Cannot use both compact (-c) and wide (-w) modes simultaneously"
+            "Cannot use both compact (-c) and wide (-w) modes simultaneously",
         ));
     }
 

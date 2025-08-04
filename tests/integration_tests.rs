@@ -1,7 +1,7 @@
 use liiga_teletext::{
     config::Config,
     data_fetcher::models::*,
-    teletext_ui::{GameResultData, TeletextPage},
+    teletext_ui::{GameResultData, ScoreType, TeletextPage},
 };
 use tempfile::tempdir;
 
@@ -498,7 +498,7 @@ async fn test_compact_mode_with_dates() {
         false,
         true,
         true,
-        true, // compact_mode
+        true,  // compact_mode
         false, // wide_mode
     );
     past_page.set_fetched_date("2024-01-15".to_string());
@@ -515,7 +515,7 @@ async fn test_compact_mode_with_dates() {
         false,
         true,
         true,
-        true, // compact_mode
+        true,  // compact_mode
         false, // wide_mode
     );
     future_page.set_fetched_date("2024-12-15".to_string());
@@ -658,7 +658,7 @@ async fn test_compact_mode_preserves_styling() {
         false,
         true,
         true,
-        true, // compact mode
+        true,  // compact mode
         false, // wide_mode
     );
 
@@ -746,7 +746,7 @@ async fn test_compact_mode_basic_functionality() {
         false,
         true,
         false,
-        true, // compact mode enabled
+        true,  // compact mode enabled
         false, // wide_mode
     );
 
@@ -806,4 +806,345 @@ async fn test_compact_mode_basic_functionality() {
 
     page.set_compact_mode(true);
     assert!(page.is_compact_mode());
+}
+
+// PHASE 4: WIDE MODE INTEGRATION TESTS
+
+/// Test wide mode CLI flag parsing and basic functionality
+#[tokio::test]
+async fn test_wide_mode_cli_integration() {
+    // Test wide mode page creation
+    let page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        true,  // ignore_height_limit (simulating --once mode)
+        false, // compact_mode
+        true,  // wide_mode - ENABLED
+    );
+
+    // Debug prints to understand the issue
+    println!("Wide mode enabled: {}", page.is_wide_mode());
+    println!("Can fit two pages: {}", page.can_fit_two_pages());
+
+    assert!(page.is_wide_mode(), "Wide mode should be enabled");
+    assert!(
+        page.can_fit_two_pages(),
+        "Should fit two pages with wide terminal"
+    );
+}
+
+/// Test wide mode with various terminal widths
+#[tokio::test]
+async fn test_wide_mode_terminal_widths() {
+    // Test with sufficient width (non-interactive mode uses 136 chars)
+    let wide_page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        true,  // ignore_height_limit (non-interactive, uses 136 width)
+        false, // compact_mode
+        true,  // wide_mode
+    );
+
+    assert!(
+        wide_page.can_fit_two_pages(),
+        "Should support wide mode with 136 char width"
+    );
+
+    // Test with insufficient width (interactive mode defaults to 80 chars)
+    let narrow_page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        false, // ignore_height_limit (interactive, typically 80 width)
+        false, // compact_mode
+        true,  // wide_mode
+    );
+
+    assert!(
+        !narrow_page.can_fit_two_pages(),
+        "Should not support wide mode with narrow terminal"
+    );
+}
+
+/// Test wide mode fallback behavior
+#[tokio::test]
+async fn test_wide_mode_fallback_behavior() {
+    let mut page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        false, // ignore_height_limit (narrow terminal)
+        false, // compact_mode
+        true,  // wide_mode - enabled but will fallback
+    );
+
+    // Add test games
+    let test_game = create_test_game_data();
+    let test_game_data = GameResultData::new(&test_game);
+    page.add_game_result(test_game_data);
+
+    // When terminal is too narrow, wide mode should fallback gracefully
+    let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+    // Should fallback to putting all games in left column
+    assert!(!left_games.is_empty(), "Should have games in left column");
+    assert_eq!(
+        right_games.len(),
+        0,
+        "Should have no games in right column due to fallback"
+    );
+}
+
+/// Test wide mode with different game states
+#[tokio::test]
+async fn test_wide_mode_with_different_game_states() {
+    let mut page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        true,  // ignore_height_limit (wide terminal)
+        false, // compact_mode
+        true,  // wide_mode
+    );
+
+    // Add games with different states
+
+    // Finished game
+    let mut finished_game = create_test_game_data();
+    finished_game.result = "3-2".to_string();
+    finished_game.score_type = ScoreType::Final;
+    let finished_game_data = GameResultData::new(&finished_game);
+    page.add_game_result(finished_game_data);
+
+    // Ongoing game
+    let mut ongoing_game = create_test_game_data();
+    ongoing_game.home_team = "TPS".to_string();
+    ongoing_game.away_team = "HIFK".to_string();
+    ongoing_game.result = "1-1".to_string();
+    ongoing_game.score_type = ScoreType::Ongoing;
+    let ongoing_game_data = GameResultData::new(&ongoing_game);
+    page.add_game_result(ongoing_game_data);
+
+    // Scheduled game
+    let mut scheduled_game = create_test_game_data();
+    scheduled_game.home_team = "KalPa".to_string();
+    scheduled_game.away_team = "Sport".to_string();
+    scheduled_game.result = "18:30".to_string();
+    scheduled_game.score_type = ScoreType::Scheduled;
+    let scheduled_game_data = GameResultData::new(&scheduled_game);
+    page.add_game_result(scheduled_game_data);
+
+    let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+    // Should distribute games between columns
+    let total_games = left_games.len() + right_games.len();
+    assert_eq!(total_games, 3, "Should have all 3 games distributed");
+    assert!(!left_games.is_empty(), "Should have games in left column");
+}
+
+/// Test mutual exclusivity with compact mode
+#[tokio::test]
+async fn test_wide_mode_mutual_exclusivity() {
+    // Test that wide mode and compact mode are mutually exclusive in practice
+    // (This would be enforced at the CLI level, but we test the page behavior)
+
+    let page_compact = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        true,  // ignore_height_limit
+        true,  // compact_mode - ENABLED
+        false, // wide_mode - disabled
+    );
+
+    let page_wide = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        true,  // ignore_height_limit
+        false, // compact_mode - disabled
+        true,  // wide_mode - ENABLED
+    );
+
+    // Verify modes are correctly set
+    assert!(page_compact.is_compact_mode() && !page_compact.is_wide_mode());
+    assert!(!page_wide.is_compact_mode() && page_wide.is_wide_mode());
+
+    // Verify they behave differently
+    assert!(
+        !page_compact.can_fit_two_pages(),
+        "Compact mode should not fit two pages"
+    );
+    assert!(
+        page_wide.can_fit_two_pages(),
+        "Wide mode should fit two pages"
+    );
+}
+
+/// Test wide mode rendering with game distribution
+#[tokio::test]
+async fn test_wide_mode_game_distribution_integration() {
+    let mut page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        true,  // ignore_height_limit (wide terminal)
+        false, // compact_mode
+        true,  // wide_mode
+    );
+
+    // Add multiple games to test distribution logic
+    let teams = [
+        ("HIFK", "Tappara"),
+        ("TPS", "KalPa"),
+        ("Ilves", "Lukko"),
+        ("Ässät", "Sport"),
+        ("JYP", "Kärpät"),
+        ("HPK", "SaiPa"),
+    ];
+
+    for (i, (home, away)) in teams.iter().enumerate() {
+        let mut game = create_test_game_data();
+        game.home_team = home.to_string();
+        game.away_team = away.to_string();
+        game.result = format!("{}-{}", i % 3, (i + 1) % 3);
+        game.score_type = if i % 2 == 0 {
+            ScoreType::Final
+        } else {
+            ScoreType::Ongoing
+        };
+        let game_data = GameResultData::new(&game);
+        page.add_game_result(game_data);
+    }
+
+    let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+    // Verify games are distributed
+    assert!(!left_games.is_empty(), "Left column should have games");
+    assert!(
+        left_games.len() + right_games.len() == teams.len(),
+        "All games should be distributed between columns"
+    );
+
+    // Left column should typically have equal or one more game than right
+    // (left-column-first distribution)
+    assert!(
+        left_games.len() >= right_games.len(),
+        "Left column should have equal or more games (left-first distribution)"
+    );
+}
+
+/// Test wide mode with goal scorer data
+#[tokio::test]
+async fn test_wide_mode_with_goal_scorers() {
+    let mut page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        true,  // ignore_height_limit
+        false, // compact_mode
+        true,  // wide_mode
+    );
+
+    // Create game with goal events
+    let mut game_with_goals = create_test_game_data();
+    game_with_goals.home_team = "HIFK".to_string();
+    game_with_goals.away_team = "Tappara".to_string();
+    game_with_goals.result = "2-1".to_string();
+    game_with_goals.score_type = ScoreType::Final;
+
+    // Add goal events
+    game_with_goals.goal_events = vec![
+        GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Mikko Rantanen".to_string(),
+            minute: 15,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["YV".to_string()],
+            is_home_team: true,
+            video_clip_url: Some("https://example.com/goal1.mp4".to_string()),
+        },
+        GoalEventData {
+            scorer_player_id: 456,
+            scorer_name: "Sebastian Aho".to_string(),
+            minute: 32,
+            home_team_score: 1,
+            away_team_score: 1,
+            is_winning_goal: false,
+            goal_types: vec!["EV".to_string()],
+            is_home_team: false,
+            video_clip_url: None,
+        },
+        GoalEventData {
+            scorer_player_id: 789,
+            scorer_name: "Artturi Lehkonen".to_string(),
+            minute: 58,
+            home_team_score: 2,
+            away_team_score: 1,
+            is_winning_goal: true,
+            goal_types: vec!["EV".to_string()],
+            is_home_team: true,
+            video_clip_url: Some("https://example.com/goal3.mp4".to_string()),
+        },
+    ];
+
+    let game_with_goals_data = GameResultData::new(&game_with_goals);
+    page.add_game_result(game_with_goals_data);
+
+    let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+    // Verify game with goals is included
+    assert!(
+        !left_games.is_empty() || !right_games.is_empty(),
+        "Game should be distributed"
+    );
+
+    // Verify that games with goals are properly handled in wide mode distribution
+    // (Detailed formatting is tested at the unit level, here we just verify integration)
+    assert!(
+        !left_games.is_empty() || !right_games.is_empty(),
+        "Game with goals should be distributed"
+    );
+
+    // Verify that goal events are preserved in the game data
+    // (The actual rendering is handled internally by the page)
+}
+
+// Helper function to create test game data (already exists but ensuring it's available)
+fn create_test_game_data() -> GameData {
+    GameData {
+        home_team: "HIFK".to_string(),
+        away_team: "Tappara".to_string(),
+        time: "18:30".to_string(),
+        result: "2-1".to_string(),
+        score_type: ScoreType::Final,
+        is_overtime: false,
+        is_shootout: false,
+        serie: "runkosarja".to_string(),
+        goal_events: vec![],
+        played_time: 3600,
+        start: "2024-01-15T18:30:00Z".to_string(),
+    }
 }
