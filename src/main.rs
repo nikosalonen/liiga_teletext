@@ -66,8 +66,13 @@ struct Args {
     #[arg(long = "plain", short = 'p', help_heading = "Display Options")]
     disable_links: bool,
 
+    /// Display games in compact format showing only team identifiers and scores.
+    /// Removes goal scorer details, timestamps, and video links for a condensed view.
+    #[arg(short = 'c', long = "compact", help_heading = "Display Options")]
+    compact: bool,
+
     /// Update API domain in config. Will prompt for new domain if not provided.
-    #[arg(long = "config", short = 'c', help_heading = "Configuration")]
+    #[arg(long = "config", help_heading = "Configuration")]
     new_api_domain: Option<String>,
 
     /// Update log file path in config. This sets a persistent custom log file location.
@@ -465,6 +470,7 @@ async fn main() -> Result<(), AppError> {
                     args.disable_links,
                     true,
                     false,
+                    args.compact,
                 );
                 error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
                 // Set terminal title for non-interactive mode (error case)
@@ -484,6 +490,7 @@ async fn main() -> Result<(), AppError> {
                 args.disable_links,
                 false, // Don't show footer in quick view mode
                 true,  // Ignore height limit in quick view mode
+                args.compact,
             );
             // Use UTC internally, convert to local time for date formatting
             let today = Utc::now()
@@ -508,6 +515,8 @@ async fn main() -> Result<(), AppError> {
                 args.disable_links,
                 true,
                 true,
+                args.compact,
+                args.once || args.compact, // suppress_countdown when once or compact mode
                 show_future_header,
                 Some(fetched_date.clone()),
                 None,
@@ -521,6 +530,8 @@ async fn main() -> Result<(), AppError> {
                         args.disable_links,
                         true,
                         true,
+                        args.compact,
+                        args.once || args.compact, // suppress_countdown when once or compact mode
                         Some(fetched_date.clone()),
                         None,
                     )
@@ -566,6 +577,7 @@ async fn main() -> Result<(), AppError> {
         args.disable_links,
         args.debug,
         args.min_refresh_interval,
+        args.compact,
     )
     .await;
 

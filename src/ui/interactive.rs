@@ -123,6 +123,7 @@ fn manage_loading_indicators(
     should_show_indicator: bool,
     current_date: &Option<String>,
     disable_links: bool,
+    compact_mode: bool,
 ) -> bool {
     let mut needs_render = false;
 
@@ -134,7 +135,11 @@ fn manage_loading_indicators(
     }
 
     if should_show_loading {
-        *current_page = Some(create_loading_page(current_date, disable_links));
+        *current_page = Some(create_loading_page(
+            current_date,
+            disable_links,
+            compact_mode,
+        ));
         needs_render = true;
     } else {
         tracing::debug!("Skipping loading screen due to ongoing games");
@@ -250,6 +255,7 @@ fn detect_and_log_changes(games: &[GameData], last_games: &[GameData]) -> bool {
 async fn create_or_restore_page(
     games: &[GameData],
     disable_links: bool,
+    compact_mode: bool,
     fetched_date: &str,
     preserved_page_for_restoration: Option<usize>,
     current_date: &Option<String>,
@@ -262,6 +268,8 @@ async fn create_or_restore_page(
             disable_links,
             true,
             false,
+            compact_mode,
+            false, // suppress_countdown - false for interactive mode
             Some(fetched_date.to_string()),
             Some(preserved_page_for_restoration),
         )
@@ -277,7 +285,7 @@ async fn create_or_restore_page(
         Some(page)
     } else {
         let page = if games.is_empty() {
-            create_error_page(fetched_date, disable_links)
+            create_error_page(fetched_date, disable_links, compact_mode)
         } else {
             // Try to create a future games page, fall back to regular page if not future games
             let show_future_header = current_date.is_none();
@@ -286,6 +294,8 @@ async fn create_or_restore_page(
                 disable_links,
                 true,
                 false,
+                compact_mode,
+                false, // suppress_countdown - false for interactive mode
                 show_future_header,
                 Some(fetched_date.to_string()),
                 None,
@@ -299,6 +309,8 @@ async fn create_or_restore_page(
                         disable_links,
                         true,
                         false,
+                        compact_mode,
+                        false, // suppress_countdown - false for interactive mode
                         Some(fetched_date.to_string()),
                         None,
                     )
@@ -331,6 +343,7 @@ struct PageRestorationParams<'a> {
     disable_links: bool,
     fetched_date: &'a str,
     updated_current_date: &'a Option<String>,
+    compact_mode: bool,
 }
 
 /// Handles page restoration when loading screen was shown but data didn't change
@@ -355,6 +368,8 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
                         params.disable_links,
                         true,
                         false,
+                        params.compact_mode,
+                        false, // suppress_countdown - false for interactive mode
                         Some(params.fetched_date.to_string()),
                         Some(preserved_page_for_restoration),
                     )
@@ -379,11 +394,14 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
 
 /// Creates a base TeletextPage with common initialization logic.
 /// This helper function reduces code duplication between create_page and create_future_games_page.
+#[allow(clippy::too_many_arguments)]
 async fn create_base_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    compact_mode: bool,
+    suppress_countdown: bool,
     future_games_header: Option<String>,
     fetched_date: Option<String>,
     current_page: Option<usize>,
@@ -396,6 +414,7 @@ async fn create_base_page(
         disable_video_links,
         show_footer,
         ignore_height_limit,
+        compact_mode,
     );
 
     // Set the fetched date if provided
@@ -412,8 +431,10 @@ async fn create_base_page(
         page.add_game_result(GameResultData::new(game));
     }
 
-    // Set season countdown if regular season hasn't started yet
-    page.set_show_season_countdown(games).await;
+    // Set season countdown if regular season hasn't started yet (unless suppressed)
+    if !suppress_countdown {
+        page.set_show_season_countdown(games).await;
+    }
 
     // Set the current page AFTER content is added (so total_pages() is correct)
     if let Some(page_num) = current_page {
@@ -424,11 +445,14 @@ async fn create_base_page(
 }
 
 /// Creates a TeletextPage for regular games
+#[allow(clippy::too_many_arguments)]
 pub async fn create_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    compact_mode: bool,
+    suppress_countdown: bool,
     fetched_date: Option<String>,
     current_page: Option<usize>,
 ) -> TeletextPage {
@@ -437,6 +461,8 @@ pub async fn create_page(
         disable_video_links,
         show_footer,
         ignore_height_limit,
+        compact_mode,
+        suppress_countdown,
         None,
         fetched_date,
         current_page,
@@ -518,11 +544,14 @@ fn is_game_near_start_time(game: &GameData) -> bool {
 
 /// Creates a TeletextPage for future games if the games are scheduled.
 /// Returns Some(TeletextPage) if the games are future games, None otherwise.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_future_games_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    compact_mode: bool,
+    suppress_countdown: bool,
     show_future_header: bool,
     fetched_date: Option<String>,
     current_page: Option<usize>,
@@ -550,6 +579,8 @@ pub async fn create_future_games_page(
             disable_video_links,
             show_footer,
             ignore_height_limit,
+            compact_mode,
+            suppress_countdown,
             future_games_header,
             fetched_date, // Pass the fetched date to show it in the header
             current_page,
@@ -1106,7 +1137,11 @@ async fn fetch_data_with_timeout(
 }
 
 /// Create loading page for data fetching
-fn create_loading_page(current_date: &Option<String>, disable_links: bool) -> TeletextPage {
+fn create_loading_page(
+    current_date: &Option<String>,
+    disable_links: bool,
+    compact_mode: bool,
+) -> TeletextPage {
     let mut loading_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
@@ -1114,6 +1149,7 @@ fn create_loading_page(current_date: &Option<String>, disable_links: bool) -> Te
         disable_links,
         true,
         false,
+        compact_mode,
     );
 
     if let Some(date) = current_date {
@@ -1137,7 +1173,7 @@ fn create_loading_page(current_date: &Option<String>, disable_links: bool) -> Te
 }
 
 /// Create error page for empty games
-fn create_error_page(fetched_date: &str, disable_links: bool) -> TeletextPage {
+fn create_error_page(fetched_date: &str, disable_links: bool, compact_mode: bool) -> TeletextPage {
     let mut error_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
@@ -1145,6 +1181,7 @@ fn create_error_page(fetched_date: &str, disable_links: bool) -> TeletextPage {
         disable_links,
         true,
         false,
+        compact_mode,
     );
 
     // Use UTC internally, convert to local time for date formatting
@@ -1170,6 +1207,7 @@ async fn handle_data_fetching(
     current_date: &Option<String>,
     last_games: &[GameData],
     disable_links: bool,
+    compact_mode: bool,
     preserved_page_for_restoration: Option<usize>,
 ) -> Result<
     (
@@ -1194,6 +1232,7 @@ async fn handle_data_fetching(
         should_show_indicator,
         current_date,
         disable_links,
+        compact_mode,
     );
 
     // Fetch data with timeout
@@ -1216,6 +1255,7 @@ async fn handle_data_fetching(
         if let Some(page) = create_or_restore_page(
             &games,
             disable_links,
+            compact_mode,
             &fetched_date,
             preserved_page_for_restoration,
             current_date,
@@ -1243,6 +1283,7 @@ async fn handle_data_fetching(
         disable_links,
         fetched_date: &fetched_date,
         updated_current_date: &updated_current_date,
+        compact_mode,
     })
     .await;
     needs_render = needs_render || restoration_render;
@@ -1511,6 +1552,7 @@ pub async fn run_interactive_ui(
     disable_links: bool,
     debug_mode: bool,
     min_refresh_interval: Option<u64>,
+    compact_mode: bool,
 ) -> Result<(), AppError> {
     // Setup terminal for interactive mode
     let mut stdout = setup_terminal(debug_mode)?;
@@ -1606,6 +1648,7 @@ pub async fn run_interactive_ui(
                     &current_date,
                     &last_games,
                     disable_links,
+                    compact_mode,
                     preserved_page_for_restoration,
                 )
                 .await?;
