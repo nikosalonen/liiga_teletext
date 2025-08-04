@@ -550,9 +550,14 @@ impl TeletextPage {
         wide_mode: bool,
     ) -> Self {
         // Get terminal size, fallback to reasonable default if can't get size
-        let screen_height = crossterm::terminal::size()
-            .map(|(_, height)| height)
-            .unwrap_or(24);
+        let screen_height = if ignore_height_limit {
+            // Use a reasonable default for non-interactive mode
+            24
+        } else {
+            crossterm::terminal::size()
+                .map(|(_, height)| height)
+                .unwrap_or(24)
+        };
 
         TeletextPage {
             page_number,
@@ -832,6 +837,698 @@ impl TeletextPage {
     #[allow(dead_code)]
     pub fn set_wide_mode(&mut self, wide: bool) {
         self.wide_mode = wide;
+    }
+
+    /// Checks if the terminal width is sufficient for wide mode display.
+    /// Wide mode requires at least 100 characters to display two full-width columns effectively.
+    ///
+    /// # Returns
+    /// * `bool` - True if terminal width supports wide mode, false otherwise
+    pub fn can_fit_two_pages(&self) -> bool {
+        if !self.wide_mode {
+            return false;
+        }
+
+        // Get terminal width, fallback to reasonable default if can't get size
+        let terminal_width = if self.ignore_height_limit {
+            // In non-interactive mode, use appropriate width for wide mode
+            if self.wide_mode { 136 } else { 80 }
+        } else {
+            crossterm::terminal::size()
+                .map(|(width, _)| width as usize)
+                .unwrap_or(80)
+        };
+
+        // Wide mode requires minimum width for two normal-width columns plus gap
+        // Each column: 60 chars, gap: 8 chars, margins: 4 chars = 128 chars total
+        terminal_width >= 128
+    }
+
+
+
+    /// Calculates the width available for each column in wide mode.
+    /// Accounts for column separator (10 characters) and margins.
+    ///
+    /// # Returns
+    /// * `usize` - Width available for each column
+
+
+    /// Distributes games between left and right columns for wide mode display.
+    /// Uses left-column-first filling logic similar to pagination.
+    ///
+    /// # Returns
+    /// * `(Vec<&TeletextRow>, Vec<&TeletextRow>)` - Left and right column games
+    #[allow(dead_code)]
+    pub fn distribute_games_for_wide_display(&self) -> (Vec<&TeletextRow>, Vec<&TeletextRow>) {
+        if !self.wide_mode || !self.can_fit_two_pages() {
+            // If not in wide mode or can't fit two columns, return all games in left column
+            let all_games: Vec<&TeletextRow> = self.content_rows.iter().collect();
+            return (all_games, Vec::new());
+        }
+
+        let (visible_rows, _) = self.get_page_content();
+        if visible_rows.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+
+        let available_height = self.screen_height.saturating_sub(5); // Reserve space for header, subheader, and footer
+
+        // Calculate how many games can fit in the left column
+        let mut left_column_height = 0u16;
+        let mut games_for_left: Vec<&TeletextRow> = Vec::new();
+
+        for game in &visible_rows {
+            let game_height = Self::calculate_game_height(game);
+
+            if left_column_height + game_height <= available_height {
+                left_column_height += game_height;
+                games_for_left.push(*game);
+            } else {
+                break;
+            }
+        }
+
+        // Remaining games go to the right column
+        let games_for_right: Vec<&TeletextRow> = visible_rows
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index >= games_for_left.len())
+            .map(|(_, game)| *game)
+            .collect();
+
+        (games_for_left, games_for_right)
+    }
+
+    /// Renders content in wide mode with two columns.
+    /// Handles header/footer spanning full width and two-column layout rendering.
+    ///
+    /// # Arguments
+    /// * `buffer` - The string buffer to append rendered content to
+    /// * `visible_rows` - The rows to render
+    /// * `width` - Terminal width
+    /// * `current_line` - Current line position (mutable reference)
+    /// * `text_fg_code` - Text foreground color code
+    /// * `subheader_fg_code` - Subheader foreground color code
+    fn render_wide_mode_content(
+        &self,
+        buffer: &mut String,
+        visible_rows: &[&TeletextRow],
+        width: u16,
+        current_line: &mut usize,
+        text_fg_code: u8,
+        subheader_fg_code: u8,
+    ) {
+        // Check if we can actually fit two columns
+        if !self.can_fit_two_pages() {
+
+            // Show warning about insufficient width
+            let required_width: usize = 122;
+            let current_width: usize = width as usize;
+            let shortfall = required_width.saturating_sub(current_width);
+
+            let warning_message = format!(
+                "Terminal too narrow for wide mode ({current_width} chars, need {required_width} chars, short {shortfall} chars)"
+            );
+
+            buffer.push_str(&format!(
+                "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                *current_line,
+                CONTENT_MARGIN + 1,
+                text_fg_code,
+                warning_message
+            ));
+            *current_line += 1;
+
+            // Add suggestion for minimum terminal width
+            buffer.push_str(&format!(
+                "\x1b[{};{}H\x1b[38;5;{}mResize terminal to at least {} characters wide for wide mode\x1b[0m",
+                *current_line,
+                CONTENT_MARGIN + 1,
+                text_fg_code,
+                required_width
+            ));
+            *current_line += 1;
+
+            // Fallback to normal rendering
+            self.render_normal_content(buffer, visible_rows, width, current_line, text_fg_code, subheader_fg_code);
+            return;
+        }
+
+        // Distribute visible rows between left and right columns
+        // Split games roughly evenly between columns instead of using height
+        let total_games = visible_rows.len();
+        let games_per_column = (total_games + 1) / 2; // Left column gets the extra game if odd number
+
+        let mut left_games: Vec<&TeletextRow> = Vec::new();
+        let mut right_games: Vec<&TeletextRow> = Vec::new();
+
+        for (i, game) in visible_rows.iter().enumerate() {
+            if i < games_per_column {
+                left_games.push(game);
+            } else {
+                right_games.push(game);
+            }
+        }
+
+                // Calculate column widths for wide mode - based on normal mode layout
+        let left_column_start = 2;
+        let gap_between_columns = 8; // Good separation between columns
+
+        // Each column should accommodate the normal teletext layout with extra width
+        // Normal mode uses positions up to ~55 chars, but we can make columns wider for better readability
+        let normal_content_width = 60; // Wider columns for better spacing and readability
+        let column_width = normal_content_width;
+
+
+
+        // Render left column
+        let mut left_line = *current_line;
+
+        for (game_index, game) in left_games.iter().enumerate() {
+            let formatted_game = self.format_game_for_wide_column(game, column_width);
+            let lines: Vec<&str> = formatted_game.lines().collect();
+
+            for (line_index, line) in lines.iter().enumerate() {
+                buffer.push_str(&format!(
+                    "\x1b[{};{}H{}",
+                    left_line + line_index,
+                    left_column_start,
+                    line
+                ));
+            }
+            left_line += lines.len();
+
+            // Add spacing between games (except after the last game)
+            if game_index < left_games.len() - 1 {
+                left_line += 1; // Extra blank line between games
+            }
+        }
+
+        // Render right column
+        let right_column_start = left_column_start + column_width + gap_between_columns;
+        let mut right_line = *current_line;
+
+        for (game_index, game) in right_games.iter().enumerate() {
+            let formatted_game = self.format_game_for_wide_column(game, column_width);
+            let lines: Vec<&str> = formatted_game.lines().collect();
+
+            for (line_index, line) in lines.iter().enumerate() {
+                buffer.push_str(&format!(
+                    "\x1b[{};{}H{}",
+                    right_line + line_index,
+                    right_column_start,
+                    line
+                ));
+            }
+            right_line += lines.len();
+
+            // Add spacing between games (except after the last game)
+            if game_index < right_games.len() - 1 {
+                right_line += 1; // Extra blank line between games
+            }
+        }
+
+        // Update current line to the maximum of left and right column heights
+        *current_line = left_line.max(right_line);
+    }
+
+    /// Renders content in normal mode (fallback for wide mode when width insufficient).
+    ///
+    /// # Arguments
+    /// * `buffer` - The string buffer to append rendered content to
+    /// * `visible_rows` - The rows to render
+    /// * `width` - Terminal width
+    /// * `current_line` - Current line position (mutable reference)
+    /// * `text_fg_code` - Text foreground color code
+    /// * `subheader_fg_code` - Subheader foreground color code
+    fn render_normal_content(
+        &self,
+        buffer: &mut String,
+        visible_rows: &[&TeletextRow],
+        width: u16,
+        current_line: &mut usize,
+        text_fg_code: u8,
+        subheader_fg_code: u8,
+    ) {
+
+        for row in visible_rows {
+            match row {
+                TeletextRow::GameResult {
+                    home_team,
+                    away_team,
+                    time,
+                    result,
+                    score_type,
+                    is_overtime,
+                    is_shootout,
+                    goal_events,
+                    played_time,
+                } => {
+                    // Format result with overtime/shootout indicator
+                    let result_text = if *is_shootout {
+                        format!("{result} rl")
+                    } else if *is_overtime {
+                        format!("{result} ja")
+                    } else {
+                        result.clone()
+                    };
+
+                    // Format time display based on game state
+                    let (time_display, score_display) = match score_type {
+                        ScoreType::Scheduled => (time.clone(), String::new()),
+                        ScoreType::Ongoing => {
+                            let formatted_time =
+                                format!("{:02}:{:02}", played_time / 60, played_time % 60);
+                            (formatted_time, result_text.clone())
+                        }
+                        ScoreType::Final => (String::new(), result_text.clone()),
+                    };
+
+                    let result_color = match score_type {
+                        ScoreType::Final => get_ansi_code(result_fg(), 46),
+                        _ => text_fg_code,
+                    };
+
+                                            // Build game line with flexible positioning based on terminal width
+                        let available_width = width as usize - (CONTENT_MARGIN * 2);
+                        let home_team_width = (available_width * 3) / 8; // 3/8 of available width
+                        let away_team_width = (available_width * 3) / 8; // 3/8 of available width
+                        let time_score_width = available_width - home_team_width - away_team_width - 3; // Remaining space minus separator
+
+                        let home_pos = CONTENT_MARGIN + 1;
+                        let separator_pos = home_pos + home_team_width;
+                        let away_pos = separator_pos + 3; // 3 chars for " - "
+                        let time_score_pos = away_pos + away_team_width;
+
+                        if !time_display.is_empty() && !score_display.is_empty() {
+                            // For ongoing games: show time on the left, score on the right
+                            let home_team_text = home_team.chars().take(home_team_width).collect::<String>();
+                            let away_team_text = away_team.chars().take(away_team_width).collect::<String>();
+
+                            buffer.push_str(&format!(
+                                "\x1b[{};{}H\x1b[38;5;{}m{:<home_width$}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<away_width$}\x1b[{};{}H\x1b[38;5;{}m{:<time_width$}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                                *current_line, home_pos,
+                                text_fg_code,
+                                home_team_text,
+                                *current_line, separator_pos,
+                                text_fg_code,
+                                *current_line, away_pos,
+                                text_fg_code,
+                                away_team_text,
+                                *current_line, time_score_pos,
+                                text_fg_code,
+                                time_display,
+                                *current_line, time_score_pos + time_display.len(),
+                                result_color,
+                                score_display,
+                                home_width = home_team_width,
+                                away_width = away_team_width,
+                                time_width = time_score_width
+                            ));
+                        } else {
+                            // For scheduled/final games: show time or score on the right
+                            let display_text = if !time_display.is_empty() {
+                                time_display
+                            } else {
+                                score_display
+                            };
+                            let home_team_text = home_team.chars().take(home_team_width).collect::<String>();
+                            let away_team_text = away_team.chars().take(away_team_width).collect::<String>();
+
+                            buffer.push_str(&format!(
+                                "\x1b[{};{}H\x1b[38;5;{}m{:<home_width$}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<away_width$}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                                *current_line, home_pos,
+                                text_fg_code,
+                                home_team_text,
+                                *current_line, separator_pos,
+                                text_fg_code,
+                                *current_line, away_pos,
+                                text_fg_code,
+                                away_team_text,
+                                *current_line, time_score_pos,
+                                result_color,
+                                display_text,
+                                home_width = home_team_width,
+                                away_width = away_team_width
+                            ));
+                        }
+
+                    *current_line += 1;
+
+                    // Add goal events for finished/ongoing games
+                    if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
+                        && !goal_events.is_empty()
+                    {
+                        let home_scorer_fg_code = get_ansi_code(home_scorer_fg(), 51);
+                        let away_scorer_fg_code = get_ansi_code(away_scorer_fg(), 51);
+                        let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
+                        let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
+
+                        let home_scorers: Vec<_> =
+                            goal_events.iter().filter(|e| e.is_home_team).collect();
+                        let away_scorers: Vec<_> =
+                            goal_events.iter().filter(|e| !e.is_home_team).collect();
+                        let max_scorers = home_scorers.len().max(away_scorers.len());
+
+                        for i in 0..max_scorers {
+                            // Home team scorer
+                            if let Some(event) = home_scorers.get(i) {
+                                let scorer_color = if (event.is_winning_goal
+                                    && (*is_overtime || *is_shootout))
+                                    || event.goal_types.contains(&"VL".to_string())
+                                {
+                                    winning_goal_fg_code
+                                } else {
+                                    home_scorer_fg_code
+                                };
+
+                                buffer.push_str(&format!(
+                                    "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
+                                    *current_line,
+                                    home_pos,
+                                    scorer_color,
+                                    event.minute
+                                ));
+
+                                // Add video link functionality if there's a video clip and links are enabled
+                                if let Some(url) = &event.video_clip_url {
+                                    if !self.disable_video_links {
+                                        buffer.push_str(&format!(
+                                            "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
+                                            scorer_color, event.scorer_name, url
+                                        ));
+                                    } else {
+                                        buffer.push_str(&format!(
+                                            "\x1b[38;5;{}m{:<12}",
+                                            scorer_color, event.scorer_name
+                                        ));
+                                    }
+                                } else {
+                                    buffer.push_str(&format!(
+                                        "\x1b[38;5;{}m{:<12}",
+                                        scorer_color, event.scorer_name
+                                    ));
+                                }
+
+                                // Add goal type indicators
+                                let goal_type = event.get_goal_type_display();
+                                if !goal_type.is_empty() {
+                                    buffer.push_str(&format!(
+                                        " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
+                                    ));
+                                } else {
+                                    buffer.push_str("\x1b[0m");
+                                }
+                            }
+
+                            // Away team scorer
+                            if let Some(event) = away_scorers.get(i) {
+                                let scorer_color = if (event.is_winning_goal
+                                    && (*is_overtime || *is_shootout))
+                                    || event.goal_types.contains(&"VL".to_string())
+                                {
+                                    winning_goal_fg_code
+                                } else {
+                                    away_scorer_fg_code
+                                };
+
+                                buffer.push_str(&format!(
+                                    "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
+                                    *current_line,
+                                    away_pos,
+                                    scorer_color,
+                                    event.minute
+                                ));
+
+                                // Add video link functionality if there's a video clip and links are enabled
+                                if let Some(url) = &event.video_clip_url {
+                                    if !self.disable_video_links {
+                                        buffer.push_str(&format!(
+                                            "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
+                                            scorer_color, event.scorer_name, url
+                                        ));
+                                    } else {
+                                        buffer.push_str(&format!(
+                                            "\x1b[38;5;{}m{:<12}",
+                                            scorer_color, event.scorer_name
+                                        ));
+                                    }
+                                } else {
+                                    buffer.push_str(&format!(
+                                        "\x1b[38;5;{}m{:<12}",
+                                        scorer_color, event.scorer_name
+                                    ));
+                                }
+
+                                // Add goal type indicators
+                                let goal_type = event.get_goal_type_display();
+                                if !goal_type.is_empty() {
+                                    buffer.push_str(&format!(
+                                        " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
+                                    ));
+                                } else {
+                                    buffer.push_str("\x1b[0m");
+                                }
+                            }
+
+                            if home_scorers.get(i).is_some() || away_scorers.get(i).is_some() {
+                                *current_line += 1;
+                            }
+                        }
+                    }
+
+                    // Add spacing between games in interactive mode
+                    if !self.ignore_height_limit {
+                        *current_line += 1;
+                    }
+                }
+                TeletextRow::ErrorMessage(message) => {
+                    for line in message.lines() {
+                        buffer.push_str(&format!(
+                            "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                            *current_line,
+                            CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            line
+                        ));
+                        *current_line += 1;
+                    }
+                }
+                TeletextRow::FutureGamesHeader(header_text) => {
+                    buffer.push_str(&format!(
+                        "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                        *current_line,
+                        CONTENT_MARGIN + 1,
+                        subheader_fg_code,
+                        header_text
+                    ));
+                    *current_line += 1;
+                }
+            }
+        }
+    }
+
+    /// Formats a single game for wide column display.
+    /// Preserves all game details while constraining output to column width.
+    ///
+    /// # Arguments
+    /// * `game` - The game result to format
+    /// * `column_width` - Maximum width for the column
+    ///
+    /// # Returns
+    /// * `String` - Formatted game string for wide column display with ANSI color codes
+    fn format_game_for_wide_column(&self, game: &TeletextRow, column_width: usize) -> String {
+        match game {
+            TeletextRow::GameResult {
+                home_team,
+                away_team,
+                time,
+                result,
+                score_type,
+                is_overtime,
+                is_shootout,
+                goal_events,
+                played_time,
+                ..
+            } => {
+                let text_fg_code = get_ansi_code(text_fg(), 231);
+                let result_fg_code = get_ansi_code(result_fg(), 46);
+                let home_scorer_fg_code = get_ansi_code(home_scorer_fg(), 51);
+                let away_scorer_fg_code = get_ansi_code(away_scorer_fg(), 51);
+                let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
+                let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
+
+                // Format the main game line
+                let mut lines = Vec::new();
+
+                // Team names and score line using proper teletext layout within column
+                let team_score_line = {
+                    // Format result with overtime/shootout indicator
+                    let result_text = if *is_shootout {
+                        format!("{result} rl")
+                    } else if *is_overtime {
+                        format!("{result} ja")
+                    } else {
+                        result.clone()
+                    };
+
+                    // Format time display based on game state
+                    let (time_display, score_display) = match score_type {
+                        ScoreType::Scheduled => (time.clone(), String::new()),
+                        ScoreType::Ongoing => {
+                            let formatted_time =
+                                format!("{:02}:{:02}", played_time / 60, played_time % 60);
+                            (formatted_time, result_text.clone())
+                        }
+                        ScoreType::Final => (String::new(), result_text.clone()),
+                    };
+
+                    let result_color = match score_type {
+                        ScoreType::Final => result_fg_code,
+                        _ => text_fg_code,
+                    };
+
+                    // Use proportional spacing within the 48-character column width
+                    let display_text = if !time_display.is_empty() && !score_display.is_empty() {
+                        // For ongoing games: show both time and score
+                        format!("{} {}", time_display, score_display)
+                    } else if !time_display.is_empty() {
+                        time_display
+                    } else {
+                        score_display
+                    };
+
+                                                            // Format with fixed character positions - away team always starts at position 27
+                    let mut line = String::new();
+
+                    // Position 0-19: Home team (up to 20 chars)
+                    let home_text = home_team.chars().take(20).collect::<String>();
+                    line.push_str(&format!("{:<20}", home_text));
+
+                    // Position 20-26: Spacing and dash (7 chars total)
+                    line.push_str("    - ");
+
+                    // Position 27+: Away team (up to 17 chars)
+                    let away_text = away_team.chars().take(17).collect::<String>();
+                    line.push_str(&format!("{:<20}", away_text));
+
+                    // Score section
+                    line.push_str(&format!(" \x1b[38;5;{result_color}m{display_text}\x1b[0m"));
+
+                    format!("\x1b[38;5;{text_fg_code}m{}\x1b[0m", line)
+                };
+
+                lines.push(team_score_line);
+
+                // Goal events - position scorers under their respective teams like normal mode
+                if !goal_events.is_empty() {
+                    let home_scorers: Vec<_> = goal_events.iter().filter(|e| e.is_home_team).collect();
+                    let away_scorers: Vec<_> = goal_events.iter().filter(|e| !e.is_home_team).collect();
+                    let max_scorers = home_scorers.len().max(away_scorers.len());
+
+                                        for i in 0..max_scorers {
+                        let mut scorer_line = String::new();
+
+                        // Build home side (always exactly 22 characters total)
+                        let home_side = if let Some(event) = home_scorers.get(i) {
+                            let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout))
+                                || event.goal_types.contains(&"VL".to_string())
+                            {
+                                winning_goal_fg_code // Purple for game-winning goals only
+                            } else {
+                                home_scorer_fg_code // Regular home team color
+                            };
+
+                            let goal_type = event.get_goal_type_display();
+                            let goal_type_str = if !goal_type.is_empty() {
+                                format!(" \x1b[38;5;{}m{}\x1b[0m", goal_type_fg_code, goal_type)
+                            } else {
+                                String::new()
+                            };
+
+                            format!(
+                                " \x1b[38;5;{}m{:2} {:<12}\x1b[0m{}",
+                                scorer_color,
+                                event.minute,
+                                event.scorer_name.chars().take(12).collect::<String>(),
+                                goal_type_str
+                            )
+                        } else {
+                            String::new()
+                        };
+
+                        // Create away scorer content
+                        let away_content = if let Some(event) = away_scorers.get(i) {
+                            let scorer_color = if (event.is_winning_goal && (*is_overtime || *is_shootout))
+                                || event.goal_types.contains(&"VL".to_string())
+                            {
+                                winning_goal_fg_code // Purple for game-winning goals only
+                            } else {
+                                away_scorer_fg_code // Regular away team color
+                            };
+
+                            let goal_type = event.get_goal_type_display();
+                            let goal_type_str = if !goal_type.is_empty() {
+                                format!(" \x1b[38;5;{}m{}\x1b[0m", goal_type_fg_code, goal_type)
+                            } else {
+                                String::new()
+                            };
+
+                            format!(
+                                "\x1b[38;5;{}m{:2} {:<12}\x1b[0m{}",
+                                scorer_color,
+                                event.minute,
+                                event.scorer_name.chars().take(12).collect::<String>(),
+                                goal_type_str
+                            )
+                        } else {
+                            String::new()
+                        };
+
+                        // Format complete line with ANSI-aware padding
+                        // Count visible characters in home_side (excluding ANSI escape codes)
+                        let mut visible_len = 0;
+                        let mut in_ansi = false;
+                        for c in home_side.chars() {
+                            if c == '\x1b' {
+                                in_ansi = true;
+                            } else if in_ansi && c == 'm' {
+                                in_ansi = false;
+                            } else if !in_ansi {
+                                visible_len += 1;
+                            }
+                        }
+
+                        // Build line: home_side + padding to reach 27 chars + away_content
+                        scorer_line.push_str(&home_side);
+                        for _ in visible_len..27 {
+                            scorer_line.push(' ');
+                        }
+                        scorer_line.push_str(&away_content);
+
+                        lines.push(scorer_line);
+                    }
+                }
+
+                // Join lines
+                lines.join("\n")
+            }
+            TeletextRow::ErrorMessage(message) => {
+                let text_fg_code = get_ansi_code(text_fg(), 231);
+                format!("\x1b[38;5;{text_fg_code}m{message}\x1b[0m")
+            }
+            TeletextRow::FutureGamesHeader(header_text) => {
+                let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
+                let formatted = format!("\x1b[38;5;{subheader_fg_code}m{header_text}\x1b[0m");
+
+                if formatted.len() > column_width {
+                    let truncated = &formatted[..column_width];
+                    format!("{truncated}...")
+                } else {
+                    formatted
+                }
+            }
+        }
     }
 
     /// Formats a single game in compact mode with proper teletext colors.
@@ -1159,6 +1856,21 @@ impl TeletextPage {
         }
     }
 
+    /// Calculates the effective game height considering wide mode.
+    /// In wide mode, we can fit two games side by side, effectively halving the height usage.
+    fn calculate_effective_game_height(&self, game: &TeletextRow) -> u16 {
+        let base_height = Self::calculate_game_height(game);
+        if self.wide_mode && self.can_fit_two_pages() {
+            // In wide mode, we can fit two games in the same vertical space
+            // Add spacing between games (1 extra line per game except the last)
+            let height_with_spacing = base_height + 1; // Add space between games
+            // So each game effectively uses half the height
+            (height_with_spacing + 1) / 2 // Round up to ensure we don't underestimate
+        } else {
+            base_height
+        }
+    }
+
     /// Calculates and returns the content that should be displayed on the current page.
     /// Handles pagination based on available screen height and content size.
     ///
@@ -1187,7 +1899,7 @@ impl TeletextPage {
 
         // First, calculate how many items fit on each page
         for game in self.content_rows.iter() {
-            let game_height = Self::calculate_game_height(game);
+            let game_height = self.calculate_effective_game_height(game);
 
             if current_height + game_height <= available_height {
                 current_page_items.push(game);
@@ -1228,7 +1940,7 @@ impl TeletextPage {
         let mut current_page_items = 0;
 
         for game in &self.content_rows {
-            let game_height = Self::calculate_game_height(game);
+            let game_height = self.calculate_effective_game_height(game);
             if current_height + game_height > available_height {
                 if current_page_items > 0 {
                     total_pages += 1;
@@ -1427,10 +2139,14 @@ impl TeletextPage {
     /// This method builds all terminal escape sequences and content in a buffer first,
     /// then writes everything in a single operation.
     pub fn render_buffered(&self, stdout: &mut Stdout) -> Result<(), AppError> {
-        // Get terminal dimensions - use default width in non-interactive mode
+        // Get terminal dimensions - use appropriate width in non-interactive mode
         let width = if self.ignore_height_limit {
-            // Use default width for non-interactive mode to avoid TTY calls in CI
-            80u16
+            // Use wider default width for non-interactive mode when wide mode is enabled
+            if self.wide_mode {
+                136u16 // Wide enough to accommodate wide mode (128+ required)
+            } else {
+                80u16  // Standard width for normal mode
+            }
         } else {
             // Hide cursor to prevent visual artifacts during rendering
             execute!(stdout, crossterm::cursor::Hide)?;
@@ -1504,8 +2220,15 @@ impl TeletextPage {
         let text_fg_code = get_ansi_code(text_fg(), 231);
         let result_fg_code = get_ansi_code(result_fg(), 46);
 
-        // Handle compact mode rendering
-        if self.compact_mode {
+        // Handle rendering modes
+
+
+        if self.wide_mode && self.can_fit_two_pages() {
+
+            // Wide mode rendering - two columns
+            self.render_wide_mode_content(&mut buffer, &visible_rows, width, &mut current_line, text_fg_code, subheader_fg_code);
+        } else if self.compact_mode {
+            // Compact mode rendering
             let config = CompactDisplayConfig::default();
             let validation = config.validate_terminal_width(width as usize);
 
