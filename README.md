@@ -151,7 +151,7 @@ liiga_teletext --compact --date 2024-01-15  # Compact view for specific date
 ```
 
 #### Layout Examples
-```
+```text
 # Wide terminal (3 columns):
 KalPa 2-1 HIFK    Tappara 3-2 JYP    Blues 1-0 Lukko
 
