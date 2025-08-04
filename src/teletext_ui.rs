@@ -945,15 +945,8 @@ impl TeletextPage {
             warnings.push("Compact mode may not display error messages optimally".to_string());
         }
 
-        // Check if we have loading indicators (compact mode might interfere)
-        if self.loading_indicator.is_some() {
-            warnings.push("Loading indicators may not display optimally in compact mode".to_string());
-        }
-
-        // Check if we have auto-refresh indicators (compact mode might interfere)
-        if self.auto_refresh_indicator.is_some() {
-            warnings.push("Auto-refresh indicators may not display optimally in compact mode".to_string());
-        }
+        // Loading indicators and auto-refresh indicators work fine in compact mode
+        // No need for warnings anymore
 
         // Season countdown is now properly handled - suppressed when compact mode is enabled
         // No need for warning anymore
