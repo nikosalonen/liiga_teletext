@@ -26,13 +26,13 @@
     - Add getter and setter methods for compact mode
     - _Requirements: 1.1, 1.2_
 
-  - [ ] 3.2 Implement compact game result rendering
+  - [x] 3.2 Implement compact game result rendering
     - Modify `render_game_result()` method to support compact format
     - Implement multi-game-per-line layout logic
     - Preserve teletext colors and styling in compact format
     - _Requirements: 1.4, 3.1, 3.2, 3.4_
 
-  - [ ] 3.3 Add terminal width adaptation logic
+  - [x] 3.3 Add terminal width adaptation logic
     - Calculate optimal games per line based on terminal width
     - Implement graceful fallback for narrow terminals
     - Add responsive layout adjustments
