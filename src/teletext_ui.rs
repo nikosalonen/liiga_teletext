@@ -1397,11 +1397,18 @@ impl TeletextPage {
     /// This method builds all terminal escape sequences and content in a buffer first,
     /// then writes everything in a single operation.
     pub fn render_buffered(&self, stdout: &mut Stdout) -> Result<(), AppError> {
-        // Hide cursor to prevent visual artifacts during rendering
-        execute!(stdout, crossterm::cursor::Hide)?;
-
-        // Get terminal dimensions
-        let (width, _) = crossterm::terminal::size()?;
+        // Get terminal dimensions - use default width in non-interactive mode
+        let width = if self.ignore_height_limit {
+            // Use default width for non-interactive mode to avoid TTY calls in CI
+            80u16
+        } else {
+            // Hide cursor to prevent visual artifacts during rendering
+            execute!(stdout, crossterm::cursor::Hide)?;
+            
+            // Get terminal dimensions
+            let (width, _) = crossterm::terminal::size()?;
+            width
+        };
 
         // Get content for current page to calculate buffer size
         let (visible_rows, _) = self.get_page_content();
