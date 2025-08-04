@@ -338,6 +338,7 @@ struct PageRestorationParams<'a> {
     disable_links: bool,
     fetched_date: &'a str,
     updated_current_date: &'a Option<String>,
+    compact_mode: bool,
 }
 
 /// Handles page restoration when loading screen was shown but data didn't change
@@ -362,7 +363,7 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
                         params.disable_links,
                         true,
                         false,
-                        false, // compact_mode - will be passed from main later
+                        params.compact_mode,
                         false, // suppress_countdown - false for interactive mode
                         Some(params.fetched_date.to_string()),
                         Some(preserved_page_for_restoration),
@@ -1272,6 +1273,7 @@ async fn handle_data_fetching(
         disable_links,
         fetched_date: &fetched_date,
         updated_current_date: &updated_current_date,
+        compact_mode,
     })
     .await;
     needs_render = needs_render || restoration_render;

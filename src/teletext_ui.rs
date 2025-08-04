@@ -3103,7 +3103,7 @@ mod tests {
         let very_long_header = TeletextRow::FutureGamesHeader("This is a very long header that should be truncated".to_string());
         let formatted = page.format_compact_game(&very_long_header, &config);
         assert!(formatted.contains("This is a very long he..."));
-        
+
         // Verify the final length is 25 characters (22 + 3 for "...")
         let truncated_part = "This is a very long he...";
         assert_eq!(truncated_part.len(), 25);
