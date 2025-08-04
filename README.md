@@ -29,6 +29,7 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 - **Debug mode** for development and troubleshooting
 - **Non-interactive mode** for scripting and automation
 - **Compact mode** with multi-column layout for space-efficient display
+- **Wide mode** with two-column side-by-side layout for wide terminals (128+ characters)
 - **Performance monitoring** with request deduplication and metrics collection
 - **Advanced caching** with intelligent cache management and emergency cache clearing
 
@@ -113,11 +114,12 @@ liiga_teletext/
 - `-d, --date <DATE>` - Show games for a specific date in YYYY-MM-DD format
 - `-o, --once` - Show scores once and exit immediately (useful for scripts)
 - `-p, --plain` - Disable clickable video links in the output
-- `--compact` - Enable compact mode with space-efficient multi-column layout
+- `-c, --compact` - Enable compact mode with space-efficient multi-column layout
+- `-w, --wide` - Enable wide mode with two-column side-by-side layout (requires 128+ character wide terminal)
 - `--min-refresh-interval <SECONDS>` - Set minimum refresh interval in seconds (default: auto-detect based on game count). Higher values reduce API calls but may miss updates. Use with caution.
 
 #### Configuration
-- `-c, --config [DOMAIN]` - Update API domain in config (prompts if not provided)
+- `--config [DOMAIN]` - Update API domain in config (prompts if not provided)
 - `--set-log-file <PATH>` - Set a persistent custom log file location
 - `--clear-log-file` - Clear custom log file path and revert to default location
 - `-l, --list-config` - List current configuration settings
@@ -169,6 +171,66 @@ Blues 1-0 Lukko
 - **Minimum terminal width**: 18 characters for basic compact mode
 - **Optimal width**: 60+ characters for multi-column layout
 - **Terminal compatibility**: Works with all terminal types that support ANSI colors
+
+### Wide Mode
+
+The application features a wide display mode that provides a side-by-side two-column layout for viewing games on wide terminals:
+
+#### Features
+- **Two-column layout**: Displays games in two columns side by side, maximizing wide terminal usage
+- **Full game details**: Each column shows complete game information including goal scorers, timestamps, and video links
+- **Authentic teletext layout**: Each column maintains the full 60-character teletext format for authentic appearance
+- **Intelligent distribution**: Games are distributed evenly between columns (left column gets extra if odd number)
+- **Goal scorer positioning**: Home team scorers appear under home team, away team scorers under away team
+- **Automatic fallback**: Falls back gracefully to normal single-column mode on narrow terminals
+- **Header/footer spanning**: Page headers and footers span the full terminal width
+
+#### Usage
+```bash
+# Enable wide mode
+liiga_teletext --wide
+
+# Combine with other options
+liiga_teletext --wide --once        # Single wide view
+liiga_teletext --wide --date 2024-01-15  # Wide view for specific date
+liiga_teletext --wide --plain       # Wide mode without video links
+```
+
+#### Layout Example
+```text
+# Wide terminal (128+ characters):
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Liiga 221 - Finnish Hockey League Results                                                    Page 1/2         │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                                 │
+│ HIFK      3-2  KalPa                    Tappara   2-1  JYP                                                     │
+│ ■ 18:30 Loppu (jatkoaika)               ■ 18:30 Loppu                                                          │
+│ Maalit:                                  Maalit:                                                                │
+│   1-0 05:23 Virtanen (YV)                 1-0 12:15 Hakala                                                     │
+│   1-1 12:45    Korhonen                   1-1 25:30    Nieminen                                                │
+│   2-1 33:12 Laine                         2-1 45:20 Saarinen (YV)                                             │
+│   2-2 58:01    Koskinen                                                                                         │
+│   3-2 62:30 Virtanen (RL)                                                                                      │
+│                                                                                                                 │
+│ Blues     1-0  Lukko                     Ässät    4-3  Pelicans                                                │
+│ ■ 18:30 Loppu                           ■ 18:30 Loppu (jatkoaika)                                             │
+│ Maalit:                                  Maalit:                                                                │
+│   1-0 25:15 Mattila                       1-0 08:30 Lehtonen                                                   │
+│                                           1-1 15:20    Koivisto                                                │
+│                                           2-1 28:45 Rantala                                                    │
+│                                           2-2 35:15    Heikkinen                                               │
+│                                           3-2 42:20 Salminen                                                   │
+│                                           3-3 56:40    Latvala                                                 │
+│                                           4-3 63:15 Lehtonen (RL)                                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Requirements
+- **Minimum terminal width**: 128 characters for wide mode activation
+- **Column width**: Each column uses 60 characters for full teletext layout
+- **Column separation**: 8 characters of spacing between columns
+- **Terminal compatibility**: Works with all terminal types that support ANSI colors and cursor positioning
+- **Mutual exclusivity**: Cannot be used together with compact mode (`-c`)
 
 ## Configuration
 
@@ -246,6 +308,7 @@ The application includes several performance optimizations:
 - [x] Comprehensive test coverage with testing utilities
 - [x] Advanced UI components with interactive features
 - [x] Compact mode with multi-column layout and team abbreviations
+- [x] Wide mode with two-column side-by-side layout for wide terminals (128+ characters)
 
 ## Development
 

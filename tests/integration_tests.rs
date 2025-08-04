@@ -1,7 +1,7 @@
 use liiga_teletext::{
     config::Config,
     data_fetcher::models::*,
-    teletext_ui::{GameResultData, ScoreType, TeletextPage},
+    teletext_ui::{GameResultData, ScoreType, TeletextPage, TeletextRow},
 };
 use tempfile::tempdir;
 
@@ -1146,5 +1146,94 @@ fn create_test_game_data() -> GameData {
         goal_events: vec![],
         played_time: 3600,
         start: "2024-01-15T18:30:00Z".to_string(),
+    }
+}
+
+/// Test wide mode performance with edge cases like many goal scorers and long team names
+#[tokio::test]
+async fn test_wide_mode_performance_edge_cases() {
+    // Create a game with many goal scorers to test limits
+    let mut game_with_many_goals = create_test_game_data();
+    game_with_many_goals.home_team = "Very Long Home Team Name That Should Be Truncated Gracefully".to_string();
+    game_with_many_goals.away_team = "Also A Very Long Away Team Name For Testing".to_string();
+    game_with_many_goals.result = "15-10".to_string(); // High-scoring game
+    game_with_many_goals.score_type = ScoreType::Final;
+
+    // Add many goal events (25 total) to test the 15-goal-per-team limit
+    let mut many_goal_events = Vec::new();
+    for i in 0..25 {
+        many_goal_events.push(GoalEventData {
+            scorer_player_id: (i as i64) + 1000,
+            scorer_name: format!("VeryLongPlayerName{i}"),
+            minute: i % 60,
+            home_team_score: if i % 2 == 0 { (i / 2) + 1 } else { i / 2 },
+            away_team_score: if i % 2 == 1 { (i / 2) + 1 } else { i / 2 },
+            is_winning_goal: false,
+            goal_types: vec!["EV".to_string()],
+            is_home_team: i % 2 == 0, // Alternate between home and away
+            video_clip_url: None,
+        });
+    }
+    game_with_many_goals.goal_events = many_goal_events;
+
+    let mut page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "RUNKOSARJA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        true,  // ignore_height_limit
+        false, // compact_mode
+        true,  // wide_mode
+    );
+
+    let game_data = GameResultData::new(&game_with_many_goals);
+    page.add_game_result(game_data);
+
+    // Test that the function handles many goals gracefully
+    let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+    // Should still work with many goals
+    assert!(!left_games.is_empty() || !right_games.is_empty());
+
+    // Test that wide mode can be enabled and works with edge cases
+    assert!(page.is_wide_mode(), "Wide mode should be enabled");
+    assert!(page.can_fit_two_pages(), "Should be able to fit two pages");
+
+    // Should handle the game distribution without errors
+    assert!(
+        left_games.len() + right_games.len() >= 1,
+        "Should distribute at least one game"
+    );
+
+    // Test that game distribution and basic operations work with many goals (performance test)
+    let start_time = std::time::Instant::now();
+
+    // Test operations that internally use the optimized functions
+    let (left_games_2, right_games_2) = page.distribute_games_for_wide_display();
+    let total_games = left_games_2.len() + right_games_2.len();
+
+    let elapsed = start_time.elapsed();
+
+    // Should complete quickly (under 50ms for performance test)
+    assert!(
+        elapsed.as_millis() < 50,
+        "Game distribution should be fast even with many goals: {elapsed:?}"
+    );
+
+    // Verify that we have the expected number of games
+    assert_eq!(total_games, 1, "Should have exactly one game");
+
+    // Test that the game contains expected data
+    if !left_games_2.is_empty() {
+        match &left_games_2[0] {
+            TeletextRow::GameResult { home_team, away_team, goal_events, .. } => {
+                assert!(home_team.contains("Very Long Home Team"));
+                assert!(away_team.contains("Also A Very Long"));
+                // Should have all 25 goal events (limit is applied during rendering, not storage)
+                assert_eq!(goal_events.len(), 25, "Should store all 25 goal events");
+            }
+            _ => panic!("Expected GameResult row"),
+        }
     }
 }

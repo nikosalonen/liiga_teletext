@@ -72,7 +72,8 @@ struct Args {
     compact: bool,
 
     /// Display games in wide format with two columns side by side.
-    /// Shows full game details in a two-column layout when terminal width permits.
+    /// Shows full game details in a two-column layout when terminal width is 128+ characters.
+    /// Each column displays 60 characters width with full teletext layout.
     /// Falls back to normal single-column display on narrow terminals.
     #[arg(short = 'w', long = "wide", help_heading = "Display Options")]
     wide: bool,
