@@ -955,10 +955,8 @@ impl TeletextPage {
             warnings.push("Auto-refresh indicators may not display optimally in compact mode".to_string());
         }
 
-        // Check if we have season countdown (compact mode might not display it well)
-        if self.season_countdown.is_some() {
-            warnings.push("Season countdown may not display optimally in compact mode".to_string());
-        }
+        // Season countdown is now properly handled - suppressed when compact mode is enabled
+        // No need for warning anymore
 
         // Future games headers are now properly supported in compact mode
         // No need for warning anymore
