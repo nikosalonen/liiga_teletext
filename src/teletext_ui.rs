@@ -212,6 +212,62 @@ impl CompactDisplayConfig {
         let min_width = self.team_name_width + self.score_width;
         terminal_width >= min_width
     }
+
+    /// Gets the minimum terminal width required for compact mode
+    pub fn get_minimum_terminal_width(&self) -> usize {
+        self.team_name_width + self.score_width
+    }
+
+    /// Validates terminal width and returns detailed error information
+    pub fn validate_terminal_width(&self, terminal_width: usize) -> TerminalWidthValidation {
+        let min_width = self.get_minimum_terminal_width();
+        
+        if terminal_width < min_width {
+            TerminalWidthValidation::Insufficient {
+                current_width: terminal_width,
+                required_width: min_width,
+                shortfall: min_width - terminal_width,
+            }
+        } else {
+            TerminalWidthValidation::Sufficient {
+                current_width: terminal_width,
+                required_width: min_width,
+                excess: terminal_width - min_width,
+            }
+        }
+    }
+}
+
+/// Terminal width validation result
+#[derive(Debug, Clone)]
+pub enum TerminalWidthValidation {
+    /// Terminal width is sufficient for compact mode
+    Sufficient {
+        current_width: usize,
+        required_width: usize,
+        excess: usize,
+    },
+    /// Terminal width is insufficient for compact mode
+    Insufficient {
+        current_width: usize,
+        required_width: usize,
+        shortfall: usize,
+    },
+}
+
+/// Compact mode compatibility validation result
+#[derive(Debug, Clone)]
+pub enum CompactModeValidation {
+    /// Compact mode is fully compatible
+    Compatible,
+    /// Compact mode is compatible but with warnings
+    CompatibleWithWarnings {
+        warnings: Vec<String>,
+    },
+    /// Compact mode is incompatible
+    Incompatible {
+        issues: Vec<String>,
+    },
 }
 
 /// Helper function to extract ANSI color code from crossterm Color enum.
@@ -833,6 +889,58 @@ impl TeletextPage {
         config.is_terminal_width_sufficient(terminal_width)
     }
 
+    /// Validates compact mode compatibility with current page settings
+    ///
+    /// # Returns
+    /// * `CompactModeValidation` - Validation result with any issues found
+    pub fn validate_compact_mode_compatibility(&self) -> CompactModeValidation {
+        let mut issues: Vec<String> = Vec::new();
+        let mut warnings: Vec<String> = Vec::new();
+
+        // Check if we have error messages (compact mode might not display them well)
+        if self.has_error_messages() {
+            warnings.push("Compact mode may not display error messages optimally".to_string());
+        }
+
+        // Check if we have loading indicators (compact mode might interfere)
+        if self.loading_indicator.is_some() {
+            warnings.push("Loading indicators may not display optimally in compact mode".to_string());
+        }
+
+        // Check if we have auto-refresh indicators (compact mode might interfere)
+        if self.auto_refresh_indicator.is_some() {
+            warnings.push("Auto-refresh indicators may not display optimally in compact mode".to_string());
+        }
+
+        // Check if we have season countdown (compact mode might not display it well)
+        if self.season_countdown.is_some() {
+            warnings.push("Season countdown may not display optimally in compact mode".to_string());
+        }
+
+        // Check if we have future games header (compact mode might not display it well)
+        let has_future_games_header = self.content_rows.iter().any(|row| {
+            matches!(row, TeletextRow::FutureGamesHeader(_))
+        });
+        if has_future_games_header {
+            warnings.push("Future games headers may not display optimally in compact mode".to_string());
+        }
+
+        // Check if we have many games (compact mode might be crowded)
+        let game_count = self.content_rows.iter().filter(|row| {
+            matches!(row, TeletextRow::GameResult { .. })
+        }).count();
+        
+        if game_count > 20 {
+            warnings.push("Many games detected - compact mode may be crowded".to_string());
+        }
+
+        if issues.is_empty() && warnings.is_empty() {
+            CompactModeValidation::Compatible
+        } else {
+            CompactModeValidation::CompatibleWithWarnings { warnings }
+        }
+    }
+
     /// Renders only the loading indicator area without redrawing the entire screen
     #[allow(dead_code)]
     pub fn render_loading_indicator_only(&self, stdout: &mut Stdout) -> Result<(), AppError> {
@@ -1259,30 +1367,67 @@ impl TeletextPage {
 
         // Handle compact mode rendering
         if self.compact_mode {
-            // Check if terminal is suitable for compact mode
-            if self.is_terminal_suitable_for_compact(width as usize) {
-                let config = CompactDisplayConfig::default();
-                let compact_lines = self.group_games_for_compact_display(&visible_rows, &config, width as usize);
+            let config = CompactDisplayConfig::default();
+            let validation = config.validate_terminal_width(width as usize);
+            
+            match validation {
+                TerminalWidthValidation::Sufficient { current_width, required_width, excess } => {
+                    // Terminal is wide enough for compact mode
+                    let compact_lines = self.group_games_for_compact_display(&visible_rows, &config, width as usize);
 
-                for (line_index, compact_line) in compact_lines.iter().enumerate() {
+                    // Check for compatibility warnings
+                    let compatibility = self.validate_compact_mode_compatibility();
+                    if let CompactModeValidation::CompatibleWithWarnings { warnings } = compatibility {
+                        // Display warnings at the top of compact content
+                        for (warning_index, warning) in warnings.iter().enumerate() {
+                            buffer.push_str(&format!(
+                                "\x1b[{};{}H\x1b[38;5;{}m⚠ {} (compact mode)\x1b[0m",
+                                current_line + warning_index,
+                                CONTENT_MARGIN + 1,
+                                text_fg_code,
+                                warning
+                            ));
+                        }
+                        current_line += warnings.len();
+                    }
+
+                    for (line_index, compact_line) in compact_lines.iter().enumerate() {
+                        buffer.push_str(&format!(
+                            "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                            current_line + line_index,
+                            CONTENT_MARGIN + 1,
+                            text_fg_code,
+                            compact_line
+                        ));
+                    }
+                    current_line += compact_lines.len();
+                }
+                TerminalWidthValidation::Insufficient { current_width, required_width, shortfall } => {
+                    // Terminal is too narrow for compact mode - show detailed error message
+                    let error_message = format!(
+                        "Terminal too narrow for compact mode ({} chars, need {} chars, short {} chars)",
+                        current_width, required_width, shortfall
+                    );
+                    
                     buffer.push_str(&format!(
                         "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                        current_line + line_index,
+                        current_line,
                         CONTENT_MARGIN + 1,
                         text_fg_code,
-                        compact_line
+                        error_message
                     ));
+                    current_line += 1;
+                    
+                    // Add suggestion for minimum terminal width
+                    buffer.push_str(&format!(
+                        "\x1b[{};{}H\x1b[38;5;{}mResize terminal to at least {} characters wide\x1b[0m",
+                        current_line,
+                        CONTENT_MARGIN + 1,
+                        text_fg_code,
+                        required_width
+                    ));
+                    current_line += 1;
                 }
-                current_line += compact_lines.len();
-            } else {
-                // Fallback to normal mode if terminal is too narrow
-                buffer.push_str(&format!(
-                    "\x1b[{};{}H\x1b[38;5;{}mTerminal too narrow for compact mode\x1b[0m",
-                    current_line,
-                    CONTENT_MARGIN + 1,
-                    text_fg_code
-                ));
-                current_line += 1;
             }
         } else {
             // Normal rendering mode
@@ -2429,5 +2574,81 @@ mod tests {
         let custom_config = CompactDisplayConfig::new(3, 8, 6, "  ");
         assert_eq!(custom_config.calculate_games_per_line(120), 3);
         assert_eq!(custom_config.calculate_games_per_line(30), 1);
+    }
+
+    #[test]
+    fn test_terminal_width_validation() {
+        let config = CompactDisplayConfig::default();
+        
+        // Test sufficient width
+        let validation = config.validate_terminal_width(80);
+        match validation {
+            TerminalWidthValidation::Sufficient { current_width, required_width, excess } => {
+                assert_eq!(current_width, 80);
+                assert_eq!(required_width, 14); // team_name_width + score_width
+                assert_eq!(excess, 66);
+            }
+            _ => panic!("Expected sufficient validation"),
+        }
+        
+        // Test insufficient width
+        let validation = config.validate_terminal_width(10);
+        match validation {
+            TerminalWidthValidation::Insufficient { current_width, required_width, shortfall } => {
+                assert_eq!(current_width, 10);
+                assert_eq!(required_width, 14);
+                assert_eq!(shortfall, 4);
+            }
+            _ => panic!("Expected insufficient validation"),
+        }
+    }
+
+    #[test]
+    fn test_compact_mode_compatibility_validation() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "Test".to_string(),
+            false,
+            true,
+            false,
+            true, // compact mode
+        );
+        
+        // Test compatible page (no warnings)
+        let validation = page.validate_compact_mode_compatibility();
+        match validation {
+            CompactModeValidation::Compatible => {
+                // Expected for empty page
+            }
+            _ => panic!("Expected compatible validation for empty page"),
+        }
+        
+        // Test page with error messages
+        page.add_error_message("Test error");
+        let validation = page.validate_compact_mode_compatibility();
+        match validation {
+            CompactModeValidation::CompatibleWithWarnings { warnings } => {
+                assert!(warnings.iter().any(|w| w.contains("error messages")));
+            }
+            _ => panic!("Expected warnings for page with error messages"),
+        }
+        
+        // Test page with many games
+        for i in 0..25 {
+            let game_data = GameResultData::new(&crate::testing_utils::TestDataBuilder::create_basic_game(
+                &format!("Team{}", i),
+                &format!("Team{}", i + 1),
+            ));
+            page.add_game_result(game_data);
+        }
+        
+        let validation = page.validate_compact_mode_compatibility();
+        match validation {
+            CompactModeValidation::CompatibleWithWarnings { warnings } => {
+                assert!(warnings.iter().any(|w| w.contains("Many games detected")));
+            }
+            _ => panic!("Expected warnings for page with many games"),
+        }
     }
 }
