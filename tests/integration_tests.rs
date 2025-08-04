@@ -801,10 +801,10 @@ async fn test_compact_mode_basic_functionality() {
     );
 
     // Test toggling compact mode
-    page.set_compact_mode(false);
+    assert!(page.set_compact_mode(false).is_ok());
     assert!(!page.is_compact_mode());
 
-    page.set_compact_mode(true);
+    assert!(page.set_compact_mode(true).is_ok());
     assert!(page.is_compact_mode());
 }
 
