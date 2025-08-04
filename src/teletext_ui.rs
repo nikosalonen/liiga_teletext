@@ -128,6 +128,7 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
 /// Simple ASCII loading indicator with rotating animation
 #[derive(Debug, Clone)]
 pub struct LoadingIndicator {
+    #[allow(dead_code)]
     message: String,
     frame: usize,
     frames: Vec<&'static str>,
@@ -149,6 +150,7 @@ impl LoadingIndicator {
     }
 
     /// Gets the loading message
+    #[allow(dead_code)]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -503,6 +505,7 @@ impl TeletextPage {
     }
 
     /// Updates the loading indicator animation frame
+    #[allow(dead_code)]
     pub fn update_loading_animation(&mut self) {
         if let Some(ref mut indicator) = self.loading_indicator {
             indicator.next_frame();
@@ -532,6 +535,7 @@ impl TeletextPage {
     }
 
     /// Renders only the loading indicator area without redrawing the entire screen
+    #[allow(dead_code)]
     pub fn render_loading_indicator_only(&self, stdout: &mut Stdout) -> Result<(), AppError> {
         if !self.show_footer {
             return Ok(());
@@ -1222,8 +1226,11 @@ impl TeletextPage {
                 ));
             }
 
-            // Add auto-refresh indicator if active
-            let footer_text = if let Some(ref indicator) = self.auto_refresh_indicator {
+            // Add loading indicator or auto-refresh indicator if active
+            let footer_text = if let Some(ref loading) = self.loading_indicator {
+                let loading_frame = loading.current_frame();
+                format!("{controls} {} {}", loading_frame, loading.message())
+            } else if let Some(ref indicator) = self.auto_refresh_indicator {
                 let indicator_frame = indicator.current_frame();
                 format!("{controls} {indicator_frame}")
             } else {

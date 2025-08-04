@@ -1,3 +1,5 @@
 pub mod interactive;
 
-pub use interactive::run_interactive_ui;
+pub use interactive::{
+    create_future_games_page, create_page, format_date_for_display, run_interactive_ui,
+};
