@@ -780,11 +780,14 @@ async fn test_compact_mode_basic_functionality() {
 
     // Test that compact mode is compatible
     let validation = page.validate_compact_mode_compatibility();
-    assert!(matches!(
-        validation,
-        liiga_teletext::teletext_ui::CompactModeValidation::Compatible
-            | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
-    ), "Compact mode should be compatible");
+    assert!(
+        matches!(
+            validation,
+            liiga_teletext::teletext_ui::CompactModeValidation::Compatible
+                | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
+        ),
+        "Compact mode should be compatible"
+    );
 
     // Test toggling compact mode
     page.set_compact_mode(false);
