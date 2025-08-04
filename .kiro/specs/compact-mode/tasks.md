@@ -38,14 +38,14 @@
     - Add responsive layout adjustments
     - _Requirements: 3.5_
 
-- [ ] 4. Update page creation functions
-  - [ ] 4.1 Modify create_base_page function
+- [x] 4. Update page creation functions
+  - [x] 4.1 Modify create_base_page function
     - Add compact mode parameter to create_base_page function
     - Pass compact mode flag to TeletextPage constructor
     - Ensure compact mode works with existing page features
     - _Requirements: 1.1, 1.2_
 
-  - [ ] 4.2 Update create_page and create_future_games_page functions
+  - [x] 4.2 Update create_page and create_future_games_page functions
     - Add compact mode parameter to both functions
     - Propagate compact mode flag through function calls
     - Maintain backward compatibility with existing callers
