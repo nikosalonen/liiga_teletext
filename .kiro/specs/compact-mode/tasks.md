@@ -20,7 +20,7 @@
     - _Requirements: 3.4, 3.5_
 
 - [ ] 3. Extend TeletextPage for compact mode support
-  - [ ] 3.1 Add compact mode field to TeletextPage struct
+  - [x] 3.1 Add compact mode field to TeletextPage struct
     - Add `compact_mode: bool` field to TeletextPage
     - Update constructor to accept compact mode parameter
     - Add getter and setter methods for compact mode

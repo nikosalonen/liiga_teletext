@@ -499,6 +499,7 @@ impl TeletextPage {
     ///     "SM-LIIGA".to_string(),
     ///     false,
     ///     true,
+    ///     false,
     ///     false
     /// );
     ///
@@ -557,6 +558,7 @@ impl TeletextPage {
     ///     "SM-LIIGA".to_string(),
     ///     false,
     ///     true,
+    ///     false,
     ///     false
     /// );
     ///
@@ -607,6 +609,7 @@ impl TeletextPage {
     ///     "SM-LIIGA".to_string(),
     ///     false,
     ///     true,
+    ///     false,
     ///     false
     /// );
     ///
@@ -717,6 +720,117 @@ impl TeletextPage {
     /// * `compact` - Whether to enable compact mode
     pub fn set_compact_mode(&mut self, compact: bool) {
         self.compact_mode = compact;
+    }
+
+    /// Formats a single game in compact mode.
+    ///
+    /// # Arguments
+    /// * `game` - The game result to format
+    /// * `config` - Compact display configuration
+    ///
+    /// # Returns
+    /// * `String` - Formatted game string for compact display
+    fn format_compact_game(&self, game: &TeletextRow, config: &CompactDisplayConfig) -> String {
+        match game {
+            TeletextRow::GameResult {
+                home_team,
+                away_team,
+                time,
+                result,
+                score_type,
+                is_overtime,
+                is_shootout,
+                ..
+            } => {
+                // Use team abbreviations
+                let home_abbr = get_team_abbreviation(home_team);
+                let away_abbr = get_team_abbreviation(away_team);
+                
+                // Format team names with proper width
+                let team_display = format!("{}-{}", home_abbr, away_abbr);
+                let padded_team = format!("{:<width$}", team_display, width = config.team_name_width);
+                
+                // Format score based on game state
+                let score_display = match score_type {
+                    ScoreType::Scheduled => format!("{:<width$}", time, width = config.score_width),
+                    ScoreType::Ongoing | ScoreType::Final => {
+                        let mut score = result.clone();
+                        if *is_shootout {
+                            score.push_str(" rl");
+                        } else if *is_overtime {
+                            score.push_str(" ja");
+                        }
+                        format!("{:<width$}", score, width = config.score_width)
+                    }
+                };
+                
+                format!("{}{}", padded_team, score_display)
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Groups games into lines for compact display.
+    ///
+    /// # Arguments
+    /// * `games` - List of games to group
+    /// * `config` - Compact display configuration
+    /// * `terminal_width` - Current terminal width
+    ///
+    /// # Returns
+    /// * `Vec<String>` - Lines of formatted games
+    fn group_games_for_compact_display(
+        &self,
+        games: &[&TeletextRow],
+        config: &CompactDisplayConfig,
+        terminal_width: usize,
+    ) -> Vec<String> {
+        let games_per_line = config.calculate_games_per_line(terminal_width);
+        let mut lines = Vec::new();
+        let mut current_line = String::new();
+        
+        for (i, game) in games.iter().enumerate() {
+            let game_str = self.format_compact_game(game, config);
+            
+            if current_line.is_empty() {
+                current_line = game_str;
+            } else {
+                current_line.push_str(config.game_separator);
+                current_line.push_str(&game_str);
+            }
+            
+            // Start new line if we've reached the limit or this is the last game
+            if (i + 1) % games_per_line == 0 || i == games.len() - 1 {
+                lines.push(current_line.clone());
+                current_line.clear();
+            }
+        }
+        
+        lines
+    }
+
+    /// Calculates the optimal number of games per line for the current terminal width.
+    ///
+    /// # Arguments
+    /// * `terminal_width` - Current terminal width in characters
+    ///
+    /// # Returns
+    /// * `usize` - Optimal number of games per line
+    fn calculate_compact_games_per_line(&self, terminal_width: usize) -> usize {
+        let config = CompactDisplayConfig::default();
+        config.calculate_games_per_line(terminal_width)
+    }
+
+    /// Checks if the current terminal width can accommodate compact mode.
+    ///
+    /// # Arguments
+    /// * `terminal_width` - Current terminal width in characters
+    ///
+    /// # Returns
+    /// * `bool` - True if terminal is wide enough for compact mode
+    fn is_terminal_suitable_for_compact(&self, terminal_width: usize) -> bool {
+        let config = CompactDisplayConfig::default();
+        config.is_terminal_width_sufficient(terminal_width)
     }
 
     /// Renders only the loading indicator area without redrawing the entire screen
@@ -923,6 +1037,7 @@ impl TeletextPage {
     ///     "SM-LIIGA".to_string(),
     ///     false,
     ///     true,
+    ///     false,
     ///     false
     /// );
     ///
@@ -953,6 +1068,7 @@ impl TeletextPage {
     ///     "SM-LIIGA".to_string(),
     ///     false,
     ///     true,
+    ///     false,
     ///     false
     /// );
     ///
@@ -994,6 +1110,7 @@ impl TeletextPage {
     ///     "SM-LIIGA".to_string(),
     ///     false,
     ///     true,
+    ///     false,
     ///     false
     /// );
     ///
@@ -1136,11 +1253,40 @@ impl TeletextPage {
         ));
 
         // Build content starting at line 4 (1-based ANSI positioning)
-        let mut current_line = 4;
+        let mut current_line: usize = 4;
         let text_fg_code = get_ansi_code(text_fg(), 231);
         let result_fg_code = get_ansi_code(result_fg(), 46);
 
-        for row in visible_rows {
+        // Handle compact mode rendering
+        if self.compact_mode {
+            // Check if terminal is suitable for compact mode
+            if self.is_terminal_suitable_for_compact(width as usize) {
+                let config = CompactDisplayConfig::default();
+                let compact_lines = self.group_games_for_compact_display(&visible_rows, &config, width as usize);
+                
+                for (line_index, compact_line) in compact_lines.iter().enumerate() {
+                    buffer.push_str(&format!(
+                        "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                        current_line + line_index,
+                        CONTENT_MARGIN + 1,
+                        text_fg_code,
+                        compact_line
+                    ));
+                }
+                current_line += compact_lines.len();
+            } else {
+                // Fallback to normal mode if terminal is too narrow
+                buffer.push_str(&format!(
+                    "\x1b[{};{}H\x1b[38;5;{}mTerminal too narrow for compact mode\x1b[0m",
+                    current_line,
+                    CONTENT_MARGIN + 1,
+                    text_fg_code
+                ));
+                current_line += 1;
+            }
+        } else {
+            // Normal rendering mode
+            for row in visible_rows {
             match row {
                 TeletextRow::GameResult {
                     home_team,
@@ -1374,13 +1520,14 @@ impl TeletextPage {
                 }
             }
         }
+        }
 
         // Add footer if enabled
         if self.show_footer {
             let footer_y = if self.ignore_height_limit {
                 current_line + 1
             } else {
-                self.screen_height.saturating_sub(1)
+                self.screen_height.saturating_sub(1) as usize
             };
 
             let controls = if total_pages > 1 {
@@ -2155,5 +2302,132 @@ mod tests {
         // Test setting compact mode to false
         page.set_compact_mode(false);
         assert!(!page.is_compact_mode());
+    }
+
+    #[test]
+    fn test_format_compact_game() {
+        let page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            true, // compact_mode = true
+        );
+
+        let config = CompactDisplayConfig::default();
+        
+        // Test scheduled game
+        let scheduled_game = TeletextRow::GameResult {
+            home_team: "Tappara".to_string(),
+            away_team: "HIFK".to_string(),
+            time: "18:30".to_string(),
+            result: "".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 0,
+        };
+
+        let formatted = page.format_compact_game(&scheduled_game, &config);
+        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("18:30"));
+
+        // Test final game
+        let final_game = TeletextRow::GameResult {
+            home_team: "Tappara".to_string(),
+            away_team: "HIFK".to_string(),
+            time: "18:30".to_string(),
+            result: "3-2".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: true,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 3900,
+        };
+
+        let formatted = page.format_compact_game(&final_game, &config);
+        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("3-2 ja"));
+    }
+
+    #[test]
+    fn test_group_games_for_compact_display() {
+        let page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            true, // compact_mode = true
+        );
+
+        let config = CompactDisplayConfig::new(2, 10, 8, " | ");
+        
+        let games = vec![
+            TeletextRow::GameResult {
+                home_team: "Tappara".to_string(),
+                away_team: "HIFK".to_string(),
+                time: "18:30".to_string(),
+                result: "3-2".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                goal_events: vec![],
+                played_time: 3900,
+            },
+            TeletextRow::GameResult {
+                home_team: "HIFK".to_string(),
+                away_team: "Tappara".to_string(),
+                time: "19:00".to_string(),
+                result: "1-4".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                goal_events: vec![],
+                played_time: 3900,
+            },
+        ];
+
+        let game_refs: Vec<&TeletextRow> = games.iter().collect();
+        let lines = page.group_games_for_compact_display(&game_refs, &config, 80);
+
+        assert_eq!(lines.len(), 1); // Should fit on one line with 2 games per line
+        assert!(lines[0].contains("TAP-HIF"));
+        assert!(lines[0].contains("HIFK-TAP"));
+        assert!(lines[0].contains(" | ")); // Should contain separator
+    }
+
+    #[test]
+    fn test_terminal_width_adaptation() {
+        let page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            true, // compact_mode = true
+        );
+
+        // Test wide terminal
+        assert!(page.is_terminal_suitable_for_compact(120));
+        assert_eq!(page.calculate_compact_games_per_line(120), 1); // Default config limits to 1
+
+        // Test narrow terminal
+        assert!(page.is_terminal_suitable_for_compact(30)); // 30 >= 14 (8+6)
+        assert_eq!(page.calculate_compact_games_per_line(30), 1);
+
+        // Test very narrow terminal
+        assert!(!page.is_terminal_suitable_for_compact(10)); // 10 < 14
+        assert_eq!(page.calculate_compact_games_per_line(10), 1);
+
+        // Test with custom config that allows multiple games per line
+        let custom_config = CompactDisplayConfig::new(3, 8, 6, "  ");
+        assert_eq!(custom_config.calculate_games_per_line(120), 3);
+        assert_eq!(custom_config.calculate_games_per_line(30), 1);
     }
 }
