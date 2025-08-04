@@ -136,13 +136,13 @@ pub struct CompactDisplayConfig {
 }
 
 impl Default for CompactDisplayConfig {
-    /// Creates a default compact display configuration optimized for readability.
+    /// Creates a default compact display configuration optimized for multi-column layout.
     ///
-    /// The default configuration is designed to work well on standard terminal widths
-    /// while maintaining clear visual separation between games.
+    /// The default configuration supports up to 3 columns on wide terminals,
+    /// falling back to 2 columns on medium terminals, and 1 column on narrow terminals.
     fn default() -> Self {
         Self {
-            max_games_per_line: 1, // One game per line for better readability
+            max_games_per_line: 3, // Up to 3 games per line for efficient space usage
             team_name_width: 8,    // "TAP-HIFK" = 8 characters
             score_width: 6,        // " 3-2  " = 6 characters with padding
             game_separator: "  ",  // Two spaces between games
@@ -179,7 +179,8 @@ impl CompactDisplayConfig {
     /// Calculates the optimal number of games per line based on terminal width.
     ///
     /// This method adapts the display to the current terminal width while
-    /// respecting the maximum games per line setting.
+    /// respecting the maximum games per line setting. It accounts for content
+    /// margins and proper separator spacing.
     ///
     /// # Arguments
     /// * `terminal_width` - Current terminal width in characters
@@ -192,12 +193,32 @@ impl CompactDisplayConfig {
             return 1;
         }
 
-        // Calculate space needed for one game: team names + score + separator
-        let game_width = self.team_name_width + self.score_width + self.game_separator.len();
+        // Account for content margins (2 chars on each side)
+        let available_width = terminal_width.saturating_sub(CONTENT_MARGIN * 2);
 
-        // Calculate how many games can fit, but respect the maximum
-        let calculated_games = terminal_width / game_width;
-        calculated_games.max(1).min(self.max_games_per_line)
+        if available_width == 0 {
+            return 1;
+        }
+
+        // Calculate space needed for one game: team names + score
+        let single_game_width = self.team_name_width + self.score_width;
+
+        // Try to fit multiple games with separators
+        // For n games, we need: n * game_width + (n-1) * separator_width
+        for games_count in (1..=self.max_games_per_line).rev() {
+            let total_width = if games_count == 1 {
+                single_game_width
+            } else {
+                games_count * single_game_width + (games_count - 1) * self.game_separator.len()
+            };
+
+            if total_width <= available_width {
+                return games_count;
+            }
+        }
+
+        // Fallback to 1 game if nothing fits
+        1
     }
 
     /// Checks if the current terminal width can accommodate compact mode.
@@ -209,13 +230,12 @@ impl CompactDisplayConfig {
     /// * `bool` - True if terminal is wide enough for compact mode
     #[allow(dead_code)]
     pub fn is_terminal_width_sufficient(&self, terminal_width: usize) -> bool {
-        let min_width = self.team_name_width + self.score_width;
-        terminal_width >= min_width
+        terminal_width >= self.get_minimum_terminal_width()
     }
 
-    /// Gets the minimum terminal width required for compact mode
+    /// Gets the minimum terminal width required for compact mode (including margins)
     pub fn get_minimum_terminal_width(&self) -> usize {
-        self.team_name_width + self.score_width
+        self.team_name_width + self.score_width + CONTENT_MARGIN * 2
     }
 
     /// Validates terminal width and returns detailed error information
@@ -782,14 +802,14 @@ impl TeletextPage {
         self.compact_mode = compact;
     }
 
-    /// Formats a single game in compact mode.
+    /// Formats a single game in compact mode with proper teletext colors.
     ///
     /// # Arguments
     /// * `game` - The game result to format
     /// * `config` - Compact display configuration
     ///
     /// # Returns
-    /// * `String` - Formatted game string for compact display
+    /// * `String` - Formatted game string for compact display with ANSI color codes
     fn format_compact_game(&self, game: &TeletextRow, config: &CompactDisplayConfig) -> String {
         match game {
             TeletextRow::GameResult {
@@ -802,38 +822,57 @@ impl TeletextPage {
                 is_shootout,
                 ..
             } => {
+                let text_fg_code = get_ansi_code(text_fg(), 231);
+                let result_fg_code = get_ansi_code(result_fg(), 46);
+
                 // Use team abbreviations
                 let home_abbr = get_team_abbreviation(home_team);
                 let away_abbr = get_team_abbreviation(away_team);
 
-                // Format team names with proper width
+                // Format team names with proper width and teletext white color
                 let team_display = format!("{home_abbr}-{away_abbr}");
-                let padded_team = format!("{:<width$}", team_display, width = config.team_name_width);
+                let padded_team = format!("\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m", team_display, width = config.team_name_width);
 
-                // Format score based on game state
+                // Format score based on game state with appropriate colors
                 let score_display = match score_type {
-                    ScoreType::Scheduled => format!("{:<width$}", time, width = config.score_width),
-                    ScoreType::Ongoing | ScoreType::Final => {
+                    ScoreType::Scheduled => {
+                        // Scheduled games show time in white
+                        format!("\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m", time, width = config.score_width)
+                    }
+                    ScoreType::Ongoing => {
+                        // Ongoing games show score in white (like regular mode)
                         let mut score = result.clone();
                         if *is_shootout {
                             score.push_str(" rl");
                         } else if *is_overtime {
                             score.push_str(" ja");
                         }
-                        format!("{:<width$}", score, width = config.score_width)
+                        format!("\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m", score, width = config.score_width)
+                    }
+                    ScoreType::Final => {
+                        // Final games show score in bright green (like regular mode)
+                        let mut score = result.clone();
+                        if *is_shootout {
+                            score.push_str(" rl");
+                        } else if *is_overtime {
+                            score.push_str(" ja");
+                        }
+                        format!("\x1b[38;5;{result_fg_code}m{:<width$}\x1b[0m", score, width = config.score_width)
                     }
                 };
 
                 format!("{padded_team}{score_display}")
             }
             TeletextRow::FutureGamesHeader(header_text) => {
+                let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
+
                 // Format future games header for compact mode - use abbreviated format
                 let abbreviated_header = if header_text.len() > 25 {
                     format!("{}...", &header_text[..22])
                 } else {
                     header_text.clone()
                 };
-                format!(">>> {abbreviated_header}")
+                format!("\x1b[38;5;{subheader_fg_code}m>>> {abbreviated_header}\x1b[0m")
             }
             _ => String::new(),
         }
@@ -893,6 +932,8 @@ impl TeletextPage {
             // Start new line if we've reached the limit
             if games_in_current_line >= games_per_line {
                 lines.push(current_line.clone());
+                // Add empty line after each group of games for better readability
+                lines.push(String::new());
                 current_line.clear();
                 games_in_current_line = 0;
             }
@@ -901,6 +942,13 @@ impl TeletextPage {
         // Add remaining games if any
         if !current_line.is_empty() {
             lines.push(current_line);
+            // Add empty line after the last group as well
+            lines.push(String::new());
+        }
+
+        // Remove the final empty line if there are any lines (to avoid trailing empty space)
+        if !lines.is_empty() && lines.last() == Some(&String::new()) {
+            lines.pop();
         }
 
         lines
@@ -1422,10 +1470,9 @@ impl TeletextPage {
 
                     for (line_index, compact_line) in compact_lines.iter().enumerate() {
                         buffer.push_str(&format!(
-                            "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                            "\x1b[{};{}H{}",
                             current_line + line_index,
                             CONTENT_MARGIN + 1,
-                            text_fg_code,
                             compact_line
                         ));
                     }
@@ -1817,7 +1864,7 @@ mod tests {
     fn test_compact_display_config() {
         // Test default configuration
         let config = CompactDisplayConfig::default();
-        assert_eq!(config.max_games_per_line, 1);
+        assert_eq!(config.max_games_per_line, 3);
         assert_eq!(config.team_name_width, 8);
         assert_eq!(config.score_width, 6);
         assert_eq!(config.game_separator, "  ");
@@ -1830,14 +1877,14 @@ mod tests {
         assert_eq!(custom_config.game_separator, " | ");
 
         // Test terminal width adaptation
-        assert_eq!(config.calculate_games_per_line(80), 1);
-        assert_eq!(config.calculate_games_per_line(100), 1);
+        assert_eq!(config.calculate_games_per_line(80), 3);
+        assert_eq!(config.calculate_games_per_line(100), 3);
         assert_eq!(config.calculate_games_per_line(0), 1);
 
         // Test terminal width sufficiency
         assert!(config.is_terminal_width_sufficient(20));
-        assert!(config.is_terminal_width_sufficient(14));
-        assert!(!config.is_terminal_width_sufficient(10));
+        assert!(config.is_terminal_width_sufficient(18));
+        assert!(!config.is_terminal_width_sufficient(17));
     }
 
     #[test]
@@ -2589,14 +2636,14 @@ mod tests {
 
         // Test wide terminal
         assert!(page.is_terminal_suitable_for_compact(120));
-        assert_eq!(page.calculate_compact_games_per_line(120), 1); // Default config limits to 1
+        assert_eq!(page.calculate_compact_games_per_line(120), 3); // Default config allows up to 3
 
         // Test narrow terminal
-        assert!(page.is_terminal_suitable_for_compact(30)); // 30 >= 14 (8+6)
+        assert!(page.is_terminal_suitable_for_compact(30)); // 30 >= 18 (8+6+4)
         assert_eq!(page.calculate_compact_games_per_line(30), 1);
 
         // Test very narrow terminal
-        assert!(!page.is_terminal_suitable_for_compact(10)); // 10 < 14
+        assert!(!page.is_terminal_suitable_for_compact(10)); // 10 < 18
         assert_eq!(page.calculate_compact_games_per_line(10), 1);
 
         // Test with custom config that allows multiple games per line
@@ -2614,8 +2661,8 @@ mod tests {
         match validation {
             TerminalWidthValidation::Sufficient { current_width, required_width, excess } => {
                 assert_eq!(current_width, 80);
-                assert_eq!(required_width, 14); // team_name_width + score_width
-                assert_eq!(excess, 66);
+                assert_eq!(required_width, 18); // team_name_width + score_width + margins
+                assert_eq!(excess, 62);
             }
             _ => panic!("Expected sufficient validation"),
         }
@@ -2625,8 +2672,8 @@ mod tests {
         match validation {
             TerminalWidthValidation::Insufficient { current_width, required_width, shortfall } => {
                 assert_eq!(current_width, 10);
-                assert_eq!(required_width, 14);
-                assert_eq!(shortfall, 4);
+                assert_eq!(required_width, 18);
+                assert_eq!(shortfall, 8);
             }
             _ => panic!("Expected insufficient validation"),
         }
@@ -2676,9 +2723,10 @@ mod tests {
 
         // Test page with many games (manually create games to avoid testing_utils dependency)
         for i in 0..25 {
+            let away_team_index = i + 1;
             let game = GameData {
-                home_team: format!("Team{}", i),
-                away_team: format!("Team{}", i + 1),
+                home_team: format!("Team{i}"),
+                away_team: format!("Team{away_team_index}"),
                 time: "18:30".to_string(),
                 result: "1-0".to_string(),
                 score_type: ScoreType::Final,
@@ -2753,7 +2801,7 @@ mod tests {
         let config = CompactDisplayConfig::default();
         assert_eq!(config.team_name_width, 8);
         assert_eq!(config.score_width, 6);
-        assert_eq!(config.max_games_per_line, 1);
+        assert_eq!(config.max_games_per_line, 3);
         assert_eq!(config.game_separator, "  ");
 
         // Test custom configuration
@@ -2763,12 +2811,12 @@ mod tests {
         assert_eq!(custom_config.score_width, 8);
         assert_eq!(custom_config.game_separator, " | ");
 
-        // Test terminal width calculations
-        assert_eq!(config.get_minimum_terminal_width(), 14); // 8 + 6
-        assert_eq!(custom_config.get_minimum_terminal_width(), 18); // 10 + 8
+        // Test terminal width calculations (includes CONTENT_MARGIN * 2 = 4)
+        assert_eq!(config.get_minimum_terminal_width(), 18); // 8 + 6 + 4
+        assert_eq!(custom_config.get_minimum_terminal_width(), 22); // 10 + 8 + 4
 
         // Test games per line calculation with different terminal widths
-        assert_eq!(config.calculate_games_per_line(80), 1); // Default max is 1
+        assert_eq!(config.calculate_games_per_line(80), 3); // Default max is 3, fits easily
         assert_eq!(custom_config.calculate_games_per_line(80), 3); // Can fit 3 games
         assert_eq!(custom_config.calculate_games_per_line(40), 1); // Can fit 1 game (corrected expectation)
         assert_eq!(custom_config.calculate_games_per_line(20), 1); // Can fit 1 game
@@ -2776,9 +2824,104 @@ mod tests {
 
         // Test terminal width sufficiency
         assert!(config.is_terminal_width_sufficient(80));
-        assert!(config.is_terminal_width_sufficient(14)); // Exactly minimum
-        assert!(!config.is_terminal_width_sufficient(13)); // Below minimum
+        assert!(config.is_terminal_width_sufficient(18)); // Exactly minimum
+        assert!(!config.is_terminal_width_sufficient(17)); // Below minimum
         assert!(!config.is_terminal_width_sufficient(0));
+    }
+
+    #[test]
+    fn test_multi_column_compact_layout() {
+        let config = CompactDisplayConfig::default();
+
+        // Test 1 column layout (narrow terminal)
+        assert_eq!(config.calculate_games_per_line(20), 1); // 20 chars total, 18 needed minimum
+
+        // Test 2 column layout (medium terminal)
+        // Each game: 8 (team) + 6 (score) = 14 chars
+        // Two games: 14 + 2 (separator) + 14 = 30 chars content + 4 (margins) = 34 chars total
+        assert_eq!(config.calculate_games_per_line(34), 2);
+        assert_eq!(config.calculate_games_per_line(40), 2);
+
+        // Test 3 column layout (wide terminal)
+        // Three games: 14 + 2 + 14 + 2 + 14 = 46 chars content + 4 (margins) = 50 chars total
+        assert_eq!(config.calculate_games_per_line(50), 3);
+        assert_eq!(config.calculate_games_per_line(80), 3);
+        assert_eq!(config.calculate_games_per_line(120), 3); // Max is 3, even on very wide terminals
+
+        // Test edge cases
+        assert_eq!(config.calculate_games_per_line(0), 1); // Always return at least 1
+        assert_eq!(config.calculate_games_per_line(18), 1); // Exactly minimum width
+        assert_eq!(config.calculate_games_per_line(33), 1); // Just under 2-column threshold
+    }
+
+    #[test]
+    fn test_compact_mode_spacing() {
+        let page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            false,
+            false,
+            true, // compact mode
+        );
+        
+        let config = CompactDisplayConfig::new(2, 8, 6, "  "); // 2 games per line
+        
+        // Create test rows
+        let game1 = TeletextRow::GameResult {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "18:30".to_string(),
+            result: "3-2".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: Vec::new(),
+            played_time: 0,
+        };
+        
+        let game2 = TeletextRow::GameResult {
+            home_team: "Blues".to_string(),
+            away_team: "Jokerit".to_string(),
+            time: "19:00".to_string(),
+            result: "1-4".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: Vec::new(),
+            played_time: 0,
+        };
+        
+        let game3 = TeletextRow::GameResult {
+            home_team: "Lukko".to_string(),
+            away_team: "KalPa".to_string(),
+            time: "19:30".to_string(),
+            result: "2-1".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: true,
+            is_shootout: false,
+            goal_events: Vec::new(),
+            played_time: 0,
+        };
+        
+        let rows = vec![&game1, &game2, &game3];
+        let result = page.group_games_for_compact_display(&rows, &config, 80);
+        
+        // Should have: 
+        // Line 1: game1 + game2 (2 games per line)
+        // Line 2: empty line for spacing
+        // Line 3: game3 (remaining game)
+        assert_eq!(result.len(), 3);
+        assert!(!result[0].is_empty()); // First line with games
+        assert!(result[1].is_empty());  // Empty spacing line
+        assert!(!result[2].is_empty()); // Second line with remaining game
+        
+        // Verify the content contains expected teams (using correct abbreviations)
+        assert!(result[0].contains("HIFK"));
+        assert!(result[0].contains("TAP")); // "Tappara" -> "TAP"
+        assert!(result[0].contains("Blu")); // "Blues" -> "Blu" (fallback rule)
+        assert!(result[2].contains("LUK")); // "Lukko" -> "LUK"
     }
 
     #[test]
