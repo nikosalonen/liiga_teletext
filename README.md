@@ -28,6 +28,7 @@ A Rust terminal application that displays Finnish Liiga hockey results in a YLE 
 - **Version checking** and update notifications
 - **Debug mode** for development and troubleshooting
 - **Non-interactive mode** for scripting and automation
+- **Compact mode** with multi-column layout for space-efficient display
 - **Performance monitoring** with request deduplication and metrics collection
 - **Advanced caching** with intelligent cache management and emergency cache clearing
 
@@ -112,6 +113,7 @@ liiga_teletext/
 - `-d, --date <DATE>` - Show games for a specific date in YYYY-MM-DD format
 - `-o, --once` - Show scores once and exit immediately (useful for scripts)
 - `-p, --plain` - Disable clickable video links in the output
+- `--compact` - Enable compact mode with space-efficient multi-column layout
 - `--min-refresh-interval <SECONDS>` - Set minimum refresh interval in seconds (default: auto-detect based on game count). Higher values reduce API calls but may miss updates. Use with caution.
 
 #### Configuration
@@ -126,6 +128,47 @@ liiga_teletext/
 
 #### Info
 - `-V, --version` - Show version information
+
+### Compact Mode
+
+The application features a compact display mode that provides a space-efficient layout for viewing multiple games:
+
+#### Features
+- **Multi-column layout**: Displays up to 3 columns of games when terminal width allows
+- **Adaptive design**: Automatically falls back to 2 or 1 columns for narrower terminals
+- **Team abbreviations**: Uses 3-character team abbreviations to save space
+- **Clean formatting**: Maintains authentic teletext colors and styling
+- **Visual spacing**: Adds empty rows between game groups for improved readability
+
+#### Usage
+```bash
+# Enable compact mode
+liiga_teletext --compact
+
+# Combine with other options
+liiga_teletext --compact --once        # Single compact view
+liiga_teletext --compact --date 2024-01-15  # Compact view for specific date
+```
+
+#### Layout Examples
+```
+# Wide terminal (3 columns):
+KalPa 2-1 HIFK    Tappara 3-2 JYP    Blues 1-0 Lukko
+
+# Medium terminal (2 columns):
+KalPa 2-1 HIFK    Tappara 3-2 JYP
+Blues 1-0 Lukko
+
+# Narrow terminal (1 column):
+KalPa 2-1 HIFK
+Tappara 3-2 JYP
+Blues 1-0 Lukko
+```
+
+#### Requirements
+- **Minimum terminal width**: 18 characters for basic compact mode
+- **Optimal width**: 60+ characters for multi-column layout
+- **Terminal compatibility**: Works with all terminal types that support ANSI colors
 
 ## Configuration
 
@@ -202,6 +245,7 @@ The application includes several performance optimizations:
 - [x] Robust error handling with user-friendly messages
 - [x] Comprehensive test coverage with testing utilities
 - [x] Advanced UI components with interactive features
+- [x] Compact mode with multi-column layout and team abbreviations
 
 ## Development
 
