@@ -19,7 +19,7 @@
     - Add methods for terminal width adaptation
     - _Requirements: 3.4, 3.5_
 
-- [ ] 3. Extend TeletextPage for compact mode support
+- [x] 3. Extend TeletextPage for compact mode support
   - [x] 3.1 Add compact mode field to TeletextPage struct
     - Add `compact_mode: bool` field to TeletextPage
     - Update constructor to accept compact mode parameter
