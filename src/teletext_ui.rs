@@ -482,6 +482,7 @@ impl TeletextPageConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct TeletextPage {
     page_number: u16,
     title: String,
@@ -501,6 +502,7 @@ pub struct TeletextPage {
     wide_mode: bool,                                  // Enable wide display mode
 }
 
+#[derive(Debug)]
 pub enum TeletextRow {
     GameResult {
         home_team: String,
@@ -664,19 +666,22 @@ impl TeletextPage {
     ///     "JÄÄKIEKKO".to_string(),
     ///     "SM-LIIGA".to_string(),
     /// );
-    /// let page = TeletextPage::from_config(config);
+    /// let page = TeletextPage::from_config(config)?;
+    /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
     ///
-    /// # Panics
-    /// Panics if both compact_mode and wide_mode are enabled in the configuration.
+    /// # Errors
+    /// Returns an error if both compact_mode and wide_mode are enabled in the configuration.
     #[allow(dead_code)]
-    pub fn from_config(config: TeletextPageConfig) -> Self {
+    pub fn from_config(config: TeletextPageConfig) -> Result<Self, crate::AppError> {
         // Validate mode exclusivity before creating the page
         if let Err(msg) = config.validate_mode_exclusivity() {
-            panic!("Invalid TeletextPageConfig: {msg}");
+            return Err(crate::AppError::config_error(format!(
+                "Invalid TeletextPageConfig: {msg}"
+            )));
         }
 
-        Self::new(
+        Ok(Self::new(
             config.page_number,
             config.title,
             config.subheader,
@@ -685,7 +690,7 @@ impl TeletextPage {
             config.ignore_height_limit,
             config.compact_mode,
             config.wide_mode,
-        )
+        ))
     }
 
     /// Updates the page layout when terminal size changes.
@@ -4485,15 +4490,37 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(
-        expected = "Invalid TeletextPageConfig: compact_mode and wide_mode cannot be enabled simultaneously"
-    )]
-    fn test_from_config_panics_with_invalid_config() {
+    fn test_from_config_returns_error_with_invalid_config() {
         let mut config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
         config.compact_mode = true;
         config.wide_mode = true;
 
-        // This should panic
-        let _page = TeletextPage::from_config(config);
+        // This should return an error
+        let result = TeletextPage::from_config(config);
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert!(matches!(error, crate::AppError::Config(_)));
+        assert!(
+            error
+                .to_string()
+                .contains("compact_mode and wide_mode cannot be enabled simultaneously")
+        );
+    }
+
+    #[test]
+    fn test_from_config_succeeds_with_valid_config() {
+        let config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
+
+        // This should succeed
+        let result = TeletextPage::from_config(config);
+        assert!(result.is_ok());
+
+        let page = result.unwrap();
+        assert_eq!(page.page_number, 221);
+        assert_eq!(page.title, "Test");
+        assert_eq!(page.subheader, "Test");
+        assert!(!page.is_compact_mode());
+        assert!(!page.is_wide_mode());
     }
 }
