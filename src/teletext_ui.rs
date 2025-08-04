@@ -2865,9 +2865,9 @@ mod tests {
             false,
             true, // compact mode
         );
-        
+
         let config = CompactDisplayConfig::new(2, 8, 6, "  "); // 2 games per line
-        
+
         // Create test rows
         let game1 = TeletextRow::GameResult {
             home_team: "HIFK".to_string(),
@@ -2880,7 +2880,7 @@ mod tests {
             goal_events: Vec::new(),
             played_time: 0,
         };
-        
+
         let game2 = TeletextRow::GameResult {
             home_team: "Blues".to_string(),
             away_team: "Jokerit".to_string(),
@@ -2892,7 +2892,7 @@ mod tests {
             goal_events: Vec::new(),
             played_time: 0,
         };
-        
+
         let game3 = TeletextRow::GameResult {
             home_team: "Lukko".to_string(),
             away_team: "KalPa".to_string(),
@@ -2904,11 +2904,11 @@ mod tests {
             goal_events: Vec::new(),
             played_time: 0,
         };
-        
+
         let rows = vec![&game1, &game2, &game3];
         let result = page.group_games_for_compact_display(&rows, &config, 80);
-        
-        // Should have: 
+
+        // Should have:
         // Line 1: game1 + game2 (2 games per line)
         // Line 2: empty line for spacing
         // Line 3: game3 (remaining game)
@@ -2916,7 +2916,7 @@ mod tests {
         assert!(!result[0].is_empty()); // First line with games
         assert!(result[1].is_empty());  // Empty spacing line
         assert!(!result[2].is_empty()); // Second line with remaining game
-        
+
         // Verify the content contains expected teams (using correct abbreviations)
         assert!(result[0].contains("HIFK"));
         assert!(result[0].contains("TAP")); // "Tappara" -> "TAP"
