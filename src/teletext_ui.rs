@@ -889,9 +889,13 @@ impl TeletextPage {
             TeletextRow::FutureGamesHeader(header_text) => {
                 let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
 
-                // Format future games header for compact mode - use abbreviated format
-                let abbreviated_header = if header_text.len() > 22 {
-                    format!("{}...", &header_text[..22])
+                // Format future games header for compact mode - intelligently abbreviate to preserve date
+                let abbreviated_header = if header_text.starts_with("Seuraavat ottelut ") {
+                    // Special handling for "Seuraavat ottelut DD.MM." - abbreviate "Seuraavat" to preserve date
+                    header_text.replace("Seuraavat ottelut ", "Seur. ottelut ")
+                } else if header_text.len() > 30 {
+                    // For other long headers, truncate at 30 characters (increased from 22)
+                    format!("{}...", &header_text[..30])
                 } else {
                     header_text.clone()
                 };
@@ -1011,10 +1015,8 @@ impl TeletextPage {
         let issues: Vec<String> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
 
-        // Check if we have error messages (compact mode might not display them well)
-        if self.has_error_messages() {
-            warnings.push("Compact mode may not display error messages optimally".to_string());
-        }
+        // Error messages are now properly handled in compact mode
+        // No need for warning anymore
 
         // Loading indicators and auto-refresh indicators work fine in compact mode
         // No need for warnings anymore
@@ -2754,14 +2756,20 @@ mod tests {
             _ => panic!("Expected compatible validation for empty page"),
         }
 
-        // Test page with error messages
+        // Test page with error messages - now properly handled in compact mode
         page.add_error_message("Test error");
         let validation = page.validate_compact_mode_compatibility();
         match validation {
-            CompactModeValidation::CompatibleWithWarnings { warnings } => {
-                assert!(warnings.iter().any(|w| w.contains("error messages")));
+            CompactModeValidation::Compatible => {
+                // Expected - error messages are now properly handled in compact mode
             }
-            _ => panic!("Expected warnings for page with error messages"),
+            CompactModeValidation::CompatibleWithWarnings { warnings } => {
+                // If there are warnings, they should be about other things, not error messages
+                assert!(!warnings.iter().any(|w| w.contains("error messages")));
+            }
+            CompactModeValidation::Incompatible { .. } => {
+                panic!("Unexpected incompatible validation for page with error messages");
+            }
         }
 
         // Reset page for next test
@@ -3088,33 +3096,41 @@ mod tests {
         );
         let config = CompactDisplayConfig::default();
 
-        // Test header shorter than 22 characters - should not be truncated
+        // Test short header - should not be truncated
         let short_header = TeletextRow::FutureGamesHeader("Short Header".to_string());
         let formatted = page.format_compact_game(&short_header, &config);
         assert!(formatted.contains("Short Header"));
         assert!(!formatted.contains("..."));
 
-        // Test header exactly 22 characters - should not be truncated
-        let exact_header = TeletextRow::FutureGamesHeader("1234567890123456789012".to_string());
-        let formatted = page.format_compact_game(&exact_header, &config);
-        assert!(formatted.contains("1234567890123456789012"));
+        // Test "Seuraavat ottelut" header - should be abbreviated to preserve date
+        let future_games_header = TeletextRow::FutureGamesHeader("Seuraavat ottelut 07.08.".to_string());
+        let formatted = page.format_compact_game(&future_games_header, &config);
+        assert!(formatted.contains("Seur. ottelut 07.08."));
+        assert!(!formatted.contains("Seuraavat ottelut"));
         assert!(!formatted.contains("..."));
 
-        // Test header 23 characters - should be truncated
-        let long_header = TeletextRow::FutureGamesHeader("12345678901234567890123".to_string());
-        let formatted = page.format_compact_game(&long_header, &config);
-        assert!(formatted.contains("1234567890123456789012..."));
-        assert!(!formatted.contains("12345678901234567890123"));
+        // Test header under 30 characters - should not be truncated
+        let medium_header = TeletextRow::FutureGamesHeader("Medium length header text".to_string());
+        let formatted = page.format_compact_game(&medium_header, &config);
+        assert!(formatted.contains("Medium length header text"));
+        assert!(!formatted.contains("..."));
 
-        // Test very long header - should be truncated to 22 chars + "..."
+        // Test header exactly 30 characters - should not be truncated
+        let exact_header = TeletextRow::FutureGamesHeader("123456789012345678901234567890".to_string());
+        let formatted = page.format_compact_game(&exact_header, &config);
+        assert!(formatted.contains("123456789012345678901234567890"));
+        assert!(!formatted.contains("..."));
+
+        // Test header over 30 characters - should be truncated
         let very_long_header = TeletextRow::FutureGamesHeader(
-            "This is a very long header that should be truncated".to_string(),
+            "This is a very long header that should be truncated at thirty chars".to_string(),
         );
         let formatted = page.format_compact_game(&very_long_header, &config);
-        assert!(formatted.contains("This is a very long he..."));
+        assert!(formatted.contains("This is a very long header tha..."));
+        assert!(!formatted.contains("This is a very long header that should be truncated at thirty chars"));
 
-        // Verify the final length is 25 characters (22 + 3 for "...")
-        let truncated_part = "This is a very long he...";
-        assert_eq!(truncated_part.len(), 25);
+        // Verify the truncated part length is 33 characters (30 + 3 for "...")
+        let truncated_part = "This is a very long header tha...";
+        assert_eq!(truncated_part.len(), 33);
     }
 }
