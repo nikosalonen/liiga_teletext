@@ -66,8 +66,13 @@ struct Args {
     #[arg(long = "plain", short = 'p', help_heading = "Display Options")]
     disable_links: bool,
 
+    /// Display games in compact format showing only team identifiers and scores.
+    /// Removes goal scorer details, timestamps, and video links for a condensed view.
+    #[arg(short = 'c', long = "compact", help_heading = "Display Options")]
+    compact: bool,
+
     /// Update API domain in config. Will prompt for new domain if not provided.
-    #[arg(long = "config", short = 'c', help_heading = "Configuration")]
+    #[arg(long = "config", help_heading = "Configuration")]
     new_api_domain: Option<String>,
 
     /// Update log file path in config. This sets a persistent custom log file location.
