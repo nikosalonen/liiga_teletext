@@ -116,7 +116,7 @@ pub fn get_team_abbreviation(team_name: &str) -> String {
                 .filter(|c| c.is_alphabetic())
                 .collect::<String>()
                 .to_uppercase();
-            
+
             if letters_only.len() >= 3 {
                 letters_only[..3.min(letters_only.len())].to_string()
             } else if !letters_only.is_empty() {
@@ -2794,7 +2794,7 @@ mod tests {
 
         // Test fallback for unknown teams (letters only, uppercase)
         assert_eq!(get_team_abbreviation("Unknown Team"), "UNK"); // "UnknownTeam" -> "UNK"
-        assert_eq!(get_team_abbreviation("New Team"), "NEW");     // "NewTeam" -> "NEW" 
+        assert_eq!(get_team_abbreviation("New Team"), "NEW");     // "NewTeam" -> "NEW"
         assert_eq!(get_team_abbreviation("Future Club"), "FUT");  // "FutureClub" -> "FUT"
 
         // Test special character handling (non-letters removed, uppercase)
