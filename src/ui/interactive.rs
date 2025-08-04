@@ -3,9 +3,7 @@
 //! This module contains the main interactive UI loop and all UI-related helper functions.
 //! It handles user input, screen updates, page creation, and the main application flow.
 
-use crate::data_fetcher::cache::{
-    has_live_games_from_game_data, invalidate_cache_for_games_near_start_time,
-};
+use crate::data_fetcher::cache::has_live_games_from_game_data;
 use crate::data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::{GameResultData, ScoreType, TeletextPage};
@@ -605,6 +603,750 @@ async fn monitor_cache_usage() {
     // This ensures that the oldest/least recently used entries are always removed first.
 }
 
+/// Initialize timer state for the interactive UI
+fn initialize_timers() -> (
+    Instant, // last_manual_refresh
+    Instant, // last_auto_refresh
+    Instant, // last_page_change
+    Instant, // last_date_navigation
+    Instant, // last_resize
+    Instant, // last_activity
+    Instant, // cache_monitor_timer
+    Instant, // last_rate_limit_hit
+) {
+    (
+        Instant::now()
+            .checked_sub(Duration::from_secs(15))
+            .unwrap_or_else(Instant::now),
+        Instant::now()
+            .checked_sub(Duration::from_secs(10))
+            .unwrap_or_else(Instant::now),
+        Instant::now()
+            .checked_sub(Duration::from_millis(200))
+            .unwrap_or_else(Instant::now),
+        Instant::now()
+            .checked_sub(Duration::from_millis(250))
+            .unwrap_or_else(Instant::now),
+        Instant::now()
+            .checked_sub(Duration::from_millis(500))
+            .unwrap_or_else(Instant::now),
+        Instant::now(),
+        Instant::now(),
+        Instant::now()
+            .checked_sub(Duration::from_secs(60))
+            .unwrap_or_else(Instant::now),
+    )
+}
+
+/// Calculate adaptive polling interval based on user activity
+fn calculate_poll_interval(time_since_activity: Duration) -> Duration {
+    if time_since_activity < Duration::from_secs(5) {
+        Duration::from_millis(50) // Active: 50ms (smooth interaction)
+    } else if time_since_activity < Duration::from_secs(30) {
+        Duration::from_millis(200) // Semi-active: 200ms (good responsiveness)
+    } else {
+        Duration::from_millis(500) // Idle: 500ms (conserve CPU)
+    }
+}
+
+/// Calculate auto-refresh interval based on game states
+fn calculate_auto_refresh_interval(games: &[GameData]) -> Duration {
+    if has_live_games_from_game_data(games) {
+        Duration::from_secs(15) // Increased from 8 to 15 seconds for live games
+    } else if games.iter().any(is_game_near_start_time) {
+        Duration::from_secs(30) // Increased from 10 to 30 seconds for games near start time
+    } else {
+        Duration::from_secs(60) // Standard interval for completed/scheduled games
+    }
+}
+
+/// Calculate minimum interval between refreshes based on game count
+fn calculate_min_refresh_interval(
+    game_count: usize,
+    min_refresh_interval: Option<u64>,
+) -> Duration {
+    if let Some(user_interval) = min_refresh_interval {
+        Duration::from_secs(user_interval) // Use user-specified interval
+    } else if game_count >= 6 {
+        Duration::from_secs(30) // Minimum 30 seconds between refreshes for 6+ games
+    } else if game_count >= 4 {
+        Duration::from_secs(20) // Minimum 20 seconds between refreshes for 4-5 games
+    } else {
+        Duration::from_secs(10) // Minimum 10 seconds between refreshes for 1-3 games
+    }
+}
+
+/// Parameters for auto-refresh checking
+struct AutoRefreshParams {
+    needs_refresh: bool,
+    games: Vec<GameData>,
+    last_auto_refresh: Instant,
+    auto_refresh_interval: Duration,
+    min_interval_between_refreshes: Duration,
+    last_rate_limit_hit: Instant,
+    rate_limit_backoff: Duration,
+    current_date: Option<String>,
+}
+
+/// Check if auto-refresh should be triggered
+fn should_trigger_auto_refresh(params: AutoRefreshParams) -> bool {
+    if params.needs_refresh || params.games.is_empty() {
+        return false;
+    }
+
+    if params.last_auto_refresh.elapsed() < params.auto_refresh_interval {
+        return false;
+    }
+
+    if params.last_auto_refresh.elapsed() < params.min_interval_between_refreshes {
+        return false;
+    }
+
+    if params.last_rate_limit_hit.elapsed() < params.rate_limit_backoff {
+        return false;
+    }
+
+    // Don't auto-refresh for historical dates
+    if let Some(date) = &params.current_date {
+        if is_historical_date(date) {
+            tracing::debug!("Auto-refresh skipped for historical date: {}", date);
+            return false;
+        }
+    }
+
+    let has_ongoing_games = has_live_games_from_game_data(&params.games);
+    let all_scheduled = !params.games.is_empty() && params.games.iter().all(is_future_game);
+
+    if has_ongoing_games {
+        tracing::info!("Auto-refresh triggered for ongoing games");
+        true
+    } else if !all_scheduled {
+        tracing::debug!("Auto-refresh triggered for non-scheduled games (mixed game states)");
+        true
+    } else {
+        // Enhanced check for games that might have started
+        let has_recently_started_games = params.games.iter().any(is_game_near_start_time);
+        if has_recently_started_games {
+            tracing::info!("Auto-refresh triggered for games that may have started");
+            true
+        } else {
+            tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
+            false
+        }
+    }
+}
+
+/// Handle data fetching with error handling and timeout
+async fn fetch_data_with_timeout(
+    current_date: Option<String>,
+    timeout_duration: Duration,
+) -> (Vec<GameData>, bool, String, bool) {
+    let fetch_future = fetch_liiga_data(current_date.clone());
+
+    match tokio::time::timeout(timeout_duration, fetch_future).await {
+        Ok(fetch_result) => match fetch_result {
+            Ok((games, fetched_date)) => {
+                tracing::debug!("Auto-refresh successful: fetched {} games", games.len());
+                (games, false, fetched_date, false)
+            }
+            Err(e) => {
+                tracing::error!("Auto-refresh failed: {}", e);
+                tracing::error!(
+                    "Error details - Type: {}, Current date: {:?}",
+                    std::any::type_name_of_val(&e),
+                    current_date
+                );
+
+                // Log specific error context for debugging
+                match &e {
+                    crate::error::AppError::NetworkTimeout { url } => {
+                        tracing::warn!(
+                            "Auto-refresh timeout for URL: {}, will retry on next cycle",
+                            url
+                        );
+                    }
+                    crate::error::AppError::NetworkConnection { url, message } => {
+                        tracing::warn!(
+                            "Auto-refresh connection error for URL: {}, details: {}, will retry on next cycle",
+                            url,
+                            message
+                        );
+                    }
+                    crate::error::AppError::ApiServerError {
+                        status,
+                        message,
+                        url,
+                    } => {
+                        tracing::warn!(
+                            "Auto-refresh server error: HTTP {} - {} (URL: {}), will retry on next cycle",
+                            status,
+                            message,
+                            url
+                        );
+                    }
+                    crate::error::AppError::ApiServiceUnavailable {
+                        status,
+                        message,
+                        url,
+                    } => {
+                        tracing::warn!(
+                            "Auto-refresh service unavailable: HTTP {} - {} (URL: {}), will retry on next cycle",
+                            status,
+                            message,
+                            url
+                        );
+                    }
+                    crate::error::AppError::ApiRateLimit { message, url } => {
+                        tracing::warn!(
+                            "Auto-refresh rate limited: {} (URL: {}), will retry on next cycle",
+                            message,
+                            url
+                        );
+                    }
+                    _ => {
+                        tracing::warn!("Auto-refresh error: {}, will retry on next cycle", e);
+                    }
+                }
+
+                // Graceful degradation: continue with existing data instead of showing error page
+                tracing::info!("Continuing with existing data due to auto-refresh failure");
+
+                (Vec::new(), true, String::new(), true)
+            }
+        },
+        Err(_) => {
+            // Timeout occurred during auto-refresh
+            tracing::warn!(
+                "Auto-refresh timeout after {:?}, continuing with existing data",
+                timeout_duration
+            );
+            (Vec::new(), true, String::new(), true)
+        }
+    }
+}
+
+/// Create loading page for data fetching
+fn create_loading_page(current_date: &Option<String>, disable_links: bool) -> TeletextPage {
+    let mut loading_page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        disable_links,
+        true,
+        false,
+    );
+
+    if let Some(date) = current_date {
+        if is_historical_date(date) {
+            loading_page.add_error_message(&format!(
+                "Haetaan historiallista dataa päivälle {}...",
+                format_date_for_display(date)
+            ));
+            loading_page.add_error_message("Tämä voi kestää hetken, odotathan...");
+        } else {
+            loading_page.add_error_message(&format!(
+                "Haetaan otteluita päivälle {}...",
+                format_date_for_display(date)
+            ));
+        }
+    } else {
+        loading_page.add_error_message("Haetaan päivän otteluita...");
+    }
+
+    loading_page
+}
+
+/// Create error page for empty games
+fn create_error_page(fetched_date: &str, disable_links: bool) -> TeletextPage {
+    let mut error_page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        disable_links,
+        true,
+        false,
+    );
+
+    // Use UTC internally, convert to local time for date formatting
+    let today = Utc::now()
+        .with_timezone(&Local)
+        .format("%Y-%m-%d")
+        .to_string();
+
+    if fetched_date == today {
+        error_page.add_error_message("Ei otteluita tänään");
+    } else {
+        error_page.add_error_message(&format!(
+            "Ei otteluita {} päivälle",
+            format_date_for_display(fetched_date)
+        ));
+    }
+
+    error_page
+}
+
+/// Handle data fetching and page creation
+async fn handle_data_fetching(
+    current_date: &Option<String>,
+    last_games: &[GameData],
+    disable_links: bool,
+    preserved_page_for_restoration: Option<usize>,
+) -> Result<
+    (
+        Vec<GameData>,
+        bool,
+        String,
+        bool,
+        Option<TeletextPage>,
+        bool,
+    ),
+    AppError,
+> {
+    let has_ongoing_games = has_live_games_from_game_data(last_games);
+
+    // Show loading indicator only in specific cases
+    let should_show_loading = if let Some(date) = current_date {
+        // Only show loading for historical dates
+        is_historical_date(date)
+    } else {
+        // Show loading for initial load when no specific date is requested
+        true
+    };
+
+    // Show auto-refresh indicator whenever auto-refresh is active
+    let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
+    let should_show_indicator = if let Some(date) = current_date {
+        !is_historical_date(date) && (has_ongoing_games || !all_scheduled)
+    } else {
+        has_ongoing_games || !all_scheduled
+    };
+
+    let mut current_page: Option<TeletextPage> = None;
+    let mut needs_render = false;
+
+    if should_show_indicator {
+        if let Some(page) = &mut current_page {
+            page.show_auto_refresh_indicator();
+            needs_render = true;
+        }
+    }
+
+    if should_show_loading {
+        current_page = Some(create_loading_page(current_date, disable_links));
+        needs_render = true;
+    } else {
+        tracing::debug!("Skipping loading screen due to ongoing games");
+    }
+
+    // Add timeout for auto-refresh to prevent hanging
+    let timeout_duration = tokio::time::Duration::from_secs(15);
+    let (games, had_error, fetched_date, should_retry) =
+        fetch_data_with_timeout(current_date.clone(), timeout_duration).await;
+
+    // Update current_date to track the actual date being displayed
+    let mut updated_current_date = current_date.clone();
+    if !had_error && !fetched_date.is_empty() {
+        updated_current_date = Some(fetched_date.clone());
+        tracing::debug!("Updated current_date to: {:?}", updated_current_date);
+    }
+
+    // Change detection using a simple hash of game data
+    let games_hash = calculate_games_hash(&games);
+    let last_games_hash = calculate_games_hash(last_games);
+    let data_changed = games_hash != last_games_hash;
+
+    if data_changed {
+        tracing::debug!("Data changed, updating UI");
+
+        // Log specific changes for live games to help debug game clock updates
+        if !last_games.is_empty() && games.len() == last_games.len() {
+            for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate() {
+                if new_game.played_time != old_game.played_time
+                    && new_game.score_type == ScoreType::Ongoing
+                {
+                    tracing::info!(
+                        "Game clock update detected: Game {} - {} vs {} - time changed from {}s to {}s",
+                        i + 1,
+                        new_game.home_team,
+                        new_game.away_team,
+                        old_game.played_time,
+                        new_game.played_time
+                    );
+                }
+            }
+        }
+
+        // Only create a new page if we didn't have an error and data changed
+        if !had_error {
+            // Restore the preserved page number
+            if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
+                let mut page = create_page(
+                    &games,
+                    disable_links,
+                    true,
+                    false,
+                    Some(fetched_date.clone()),
+                    Some(preserved_page_for_restoration),
+                )
+                .await;
+
+                // Disable auto-refresh for historical dates
+                if let Some(ref date) = updated_current_date {
+                    if is_historical_date(date) {
+                        page.set_auto_refresh_disabled(true);
+                    }
+                }
+
+                current_page = Some(page);
+            } else {
+                let page = if games.is_empty() {
+                    create_error_page(&fetched_date, disable_links)
+                } else {
+                    // Try to create a future games page, fall back to regular page if not future games
+                    let show_future_header = current_date.is_none();
+                    match create_future_games_page(
+                        &games,
+                        disable_links,
+                        true,
+                        false,
+                        show_future_header,
+                        Some(fetched_date.clone()),
+                        None,
+                    )
+                    .await
+                    {
+                        Some(page) => page,
+                        None => {
+                            let mut page = create_page(
+                                &games,
+                                disable_links,
+                                true,
+                                false,
+                                Some(fetched_date.clone()),
+                                None,
+                            )
+                            .await;
+
+                            // Disable auto-refresh for historical dates
+                            if let Some(ref date) = updated_current_date {
+                                if is_historical_date(date) {
+                                    page.set_auto_refresh_disabled(true);
+                                }
+                            }
+
+                            page
+                        }
+                    }
+                };
+
+                current_page = Some(page);
+            }
+
+            needs_render = true;
+        }
+    } else if had_error {
+        tracing::debug!(
+            "Auto-refresh failed but no data changes detected, continuing with existing UI"
+        );
+    } else {
+        // Track ongoing games with static time to confirm API limitations
+        let ongoing_games: Vec<_> = games
+            .iter()
+            .enumerate()
+            .filter(|(_, game)| game.score_type == ScoreType::Ongoing)
+            .collect();
+
+        if !ongoing_games.is_empty() {
+            tracing::debug!(
+                "No data changes detected despite {} ongoing game(s): {}",
+                ongoing_games.len(),
+                ongoing_games
+                    .iter()
+                    .map(|(i, game)| format!(
+                        "{}. {} vs {} ({}s)",
+                        i + 1,
+                        game.home_team,
+                        game.away_team,
+                        game.played_time
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
+        // Check if all games are scheduled (future games) - only relevant if no ongoing games
+        let has_ongoing_games = has_live_games_from_game_data(&games);
+        let all_scheduled = !games.is_empty() && games.iter().all(is_future_game);
+
+        if all_scheduled && !has_ongoing_games {
+            tracing::info!("All games are scheduled - auto-refresh disabled");
+        } else if has_ongoing_games {
+            tracing::info!("Ongoing games detected - auto-refresh enabled");
+        }
+
+        tracing::debug!("No data changes detected, skipping UI update");
+    }
+
+    // If we showed a loading screen but data didn't change, we still need to restore pagination
+    if !data_changed && !had_error && preserved_page_for_restoration.is_some() {
+        if let Some(ref current) = current_page {
+            // Check if current page is a loading page by checking if it has error messages
+            if current.has_error_messages() {
+                if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
+                    let games_to_use = if games.is_empty() { last_games } else { &games };
+                    let mut page = create_page(
+                        games_to_use,
+                        disable_links,
+                        true,
+                        false,
+                        Some(fetched_date.clone()),
+                        Some(preserved_page_for_restoration),
+                    )
+                    .await;
+
+                    // Disable auto-refresh for historical dates
+                    if let Some(ref date) = updated_current_date {
+                        if is_historical_date(date) {
+                            page.set_auto_refresh_disabled(true);
+                        }
+                    }
+
+                    current_page = Some(page);
+                    needs_render = true;
+                }
+            }
+        }
+    }
+
+    // Hide auto-refresh indicator after data is fetched
+    if let Some(page) = &mut current_page {
+        page.hide_auto_refresh_indicator();
+        needs_render = true;
+    }
+
+    Ok((
+        games,
+        had_error,
+        fetched_date,
+        should_retry,
+        current_page,
+        needs_render,
+    ))
+}
+
+/// Parameters for keyboard event handling
+#[allow(dead_code)]
+struct KeyEventParams<'a> {
+    key_event: &'a crossterm::event::KeyEvent,
+    current_date: &'a mut Option<String>,
+    current_page: &'a mut Option<TeletextPage>,
+    needs_refresh: &'a mut bool,
+    needs_render: &'a mut bool,
+    last_manual_refresh: &'a mut Instant,
+    last_page_change: &'a mut Instant,
+    last_date_navigation: &'a mut Instant,
+    debug_mode: bool,
+    disable_links: bool,
+}
+
+/// Handle keyboard events
+async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> {
+    tracing::debug!(
+        "Key event: {:?}, modifiers: {:?}",
+        params.key_event.code,
+        params.key_event.modifiers
+    );
+
+    // Check for date navigation first (Shift + Arrow keys)
+    if is_date_navigation_key(params.key_event, true) {
+        // Shift + Left: Previous date with games
+        if params.last_date_navigation.elapsed() >= Duration::from_millis(250) {
+            tracing::info!("Previous date navigation requested");
+            tracing::debug!("Current date state: {:?}", params.current_date);
+            let target_date = get_target_date_for_navigation(params.current_date);
+
+            // Show loading indicator
+            if let Some(page) = params.current_page {
+                page.show_loading("Etsitään edellisiä otteluita...".to_string());
+            }
+
+            tracing::info!(
+                "Searching for previous date with games from: {}",
+                target_date
+            );
+
+            let result = find_previous_date_with_games(&target_date).await;
+
+            if let Some(prev_date) = result {
+                *params.current_date = Some(prev_date.clone());
+                *params.needs_refresh = true;
+                tracing::info!("Navigated to previous date: {}", prev_date);
+            } else {
+                tracing::warn!("No previous date with games found");
+            }
+
+            // Hide loading indicator
+            if let Some(page) = params.current_page {
+                page.hide_loading();
+            }
+            *params.last_date_navigation = Instant::now();
+        }
+    } else if is_date_navigation_key(params.key_event, false) {
+        // Shift + Right: Next date with games
+        if params.last_date_navigation.elapsed() >= Duration::from_millis(250) {
+            tracing::info!("Next date navigation requested");
+            tracing::debug!("Current date state: {:?}", params.current_date);
+            let target_date = get_target_date_for_navigation(params.current_date);
+
+            // Show loading indicator
+            if let Some(page) = params.current_page {
+                page.show_loading("Etsitään seuraavia otteluita...".to_string());
+            }
+
+            tracing::info!("Searching for next date with games from: {}", target_date);
+
+            let result = find_next_date_with_games(&target_date).await;
+
+            if let Some(next_date) = result {
+                *params.current_date = Some(next_date.clone());
+                *params.needs_refresh = true;
+                tracing::info!("Navigated to next date: {}", next_date);
+            } else {
+                tracing::warn!("No next date with games found");
+            }
+
+            // Hide loading indicator
+            if let Some(page) = params.current_page {
+                page.hide_loading();
+            }
+            *params.last_date_navigation = Instant::now();
+        }
+    } else {
+        // Handle regular key events (without modifiers)
+        match params.key_event.code {
+            KeyCode::Char('q') => {
+                tracing::info!("Quit requested");
+                return Ok(true); // Signal to quit
+            }
+            KeyCode::Char('r') => {
+                // Check if auto-refresh is disabled - ignore manual refresh too
+                if let Some(page) = params.current_page {
+                    if page.is_auto_refresh_disabled() {
+                        tracing::info!("Manual refresh ignored - auto-refresh is disabled");
+                        return Ok(false); // Skip refresh when auto-refresh is disabled
+                    }
+                }
+
+                // Check if current date is historical - don't refresh historical data
+                if let Some(date) = params.current_date {
+                    if is_historical_date(date) {
+                        tracing::info!("Manual refresh skipped for historical date: {}", date);
+                        return Ok(false); // Skip refresh for historical dates
+                    }
+                }
+
+                if params.last_manual_refresh.elapsed() >= Duration::from_secs(15) {
+                    tracing::info!("Manual refresh requested");
+                    *params.needs_refresh = true;
+                    *params.last_manual_refresh = Instant::now();
+                }
+            }
+            KeyCode::Left => {
+                if params.last_page_change.elapsed() >= Duration::from_millis(200) {
+                    if let Some(page) = params.current_page {
+                        page.previous_page();
+                        *params.needs_render = true;
+                    }
+                    *params.last_page_change = Instant::now();
+                }
+            }
+            KeyCode::Right => {
+                if params.last_page_change.elapsed() >= Duration::from_millis(200) {
+                    if let Some(page) = params.current_page {
+                        page.next_page();
+                        *params.needs_render = true;
+                    }
+                    *params.last_page_change = Instant::now();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(false) // Continue running
+}
+
+/// Handle resize events with debouncing
+fn handle_resize_event(
+    _current_page: &mut Option<TeletextPage>,
+    _needs_render: &mut bool,
+    pending_resize: &mut bool,
+    resize_timer: &mut Instant,
+    last_resize: &mut Instant,
+) {
+    tracing::debug!("Resize event");
+    // Debounce resize events
+    if last_resize.elapsed() >= Duration::from_millis(500) {
+        *resize_timer = Instant::now();
+        *pending_resize = true;
+        *last_resize = Instant::now();
+    }
+}
+
+/// Update auto-refresh indicator animation
+fn update_auto_refresh_animation(current_page: &mut Option<TeletextPage>, needs_render: &mut bool) {
+    if let Some(page) = current_page {
+        if page.is_auto_refresh_indicator_active() {
+            page.update_auto_refresh_animation();
+            *needs_render = true;
+        }
+    }
+}
+
+/// Handle pending resize with debouncing
+fn handle_pending_resize(
+    current_page: &mut Option<TeletextPage>,
+    needs_render: &mut bool,
+    pending_resize: &mut bool,
+    resize_timer: &Instant,
+) {
+    if *pending_resize && resize_timer.elapsed() >= Duration::from_millis(500) {
+        tracing::debug!("Handling resize");
+        if let Some(page) = current_page {
+            page.handle_resize();
+            *needs_render = true;
+        }
+        *pending_resize = false;
+    }
+}
+
+/// Render UI with buffering
+fn render_ui(
+    current_page: &Option<TeletextPage>,
+    needs_render: &mut bool,
+    stdout: &mut std::io::Stdout,
+) -> Result<(), AppError> {
+    if *needs_render {
+        if let Some(page) = current_page {
+            page.render_buffered(stdout)?;
+            tracing::debug!("UI rendered with buffering");
+        }
+        *needs_render = false;
+    }
+    Ok(())
+}
+
+/// Handle cache monitoring
+async fn handle_cache_monitoring(cache_monitor_timer: &mut Instant) {
+    const CACHE_MONITOR_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
+
+    if cache_monitor_timer.elapsed() >= CACHE_MONITOR_INTERVAL {
+        tracing::debug!("Monitoring cache usage");
+        monitor_cache_usage().await;
+        *cache_monitor_timer = Instant::now();
+    }
+}
+
 /// Runs the interactive UI with adaptive polling and change detection
 pub async fn run_interactive_ui(
     date: Option<String>,
@@ -619,21 +1361,16 @@ pub async fn run_interactive_ui(
         execute!(stdout, EnterAlternateScreen)?;
     }
     // Timer management with adaptive intervals
-    let mut last_manual_refresh = Instant::now()
-        .checked_sub(Duration::from_secs(15))
-        .unwrap_or_else(Instant::now);
-    let mut last_auto_refresh = Instant::now()
-        .checked_sub(Duration::from_secs(10))
-        .unwrap_or_else(Instant::now);
-    let mut last_page_change = Instant::now()
-        .checked_sub(Duration::from_millis(200))
-        .unwrap_or_else(Instant::now);
-    let mut last_date_navigation = Instant::now()
-        .checked_sub(Duration::from_millis(250))
-        .unwrap_or_else(Instant::now);
-    let mut last_resize = Instant::now()
-        .checked_sub(Duration::from_millis(500))
-        .unwrap_or_else(Instant::now);
+    let (
+        mut last_manual_refresh,
+        mut last_auto_refresh,
+        mut last_page_change,
+        mut last_date_navigation,
+        mut last_resize,
+        _last_activity,
+        mut cache_monitor_timer,
+        _last_rate_limit_hit,
+    ) = initialize_timers();
 
     // State management
     let mut needs_refresh = true;
@@ -655,205 +1392,55 @@ pub async fn run_interactive_ui(
     // Adaptive polling configuration
     let mut last_activity = Instant::now();
 
-    // Cache monitoring tracking
-    let mut cache_monitor_timer = Instant::now();
-    const CACHE_MONITOR_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
-
     // Rate limiting protection
-    let mut rate_limit_backoff = Duration::from_secs(0);
-    let mut last_rate_limit_hit = Instant::now()
+    let _rate_limit_backoff = Duration::from_secs(0);
+    let _last_rate_limit_hit = Instant::now()
         .checked_sub(Duration::from_secs(60))
         .unwrap_or_else(Instant::now);
 
     loop {
         // Adaptive polling interval based on activity
         let time_since_activity = last_activity.elapsed();
-        let poll_interval = if time_since_activity < Duration::from_secs(5) {
-            Duration::from_millis(50) // Active: 50ms (smooth interaction)
-        } else if time_since_activity < Duration::from_secs(30) {
-            Duration::from_millis(200) // Semi-active: 200ms (good responsiveness)
-        } else {
-            Duration::from_millis(500) // Idle: 500ms (conserve CPU)
-        };
+        let poll_interval = calculate_poll_interval(time_since_activity);
 
         // Check for auto-refresh with better logic and rate limiting protection
-        let auto_refresh_interval = if has_live_games_from_game_data(&last_games) {
-            Duration::from_secs(15) // Increased from 8 to 15 seconds for live games
-        } else if last_games.iter().any(is_game_near_start_time) {
-            Duration::from_secs(30) // Increased from 10 to 30 seconds for games near start time
-        } else {
-            Duration::from_secs(60) // Standard interval for completed/scheduled games
-        };
+        let auto_refresh_interval = calculate_auto_refresh_interval(&last_games);
+        let min_interval_between_refreshes =
+            calculate_min_refresh_interval(last_games.len(), min_refresh_interval);
 
         // Rate limiting protection: don't refresh too frequently if we have many games
-        let game_count = last_games.len();
-        let min_interval_between_refreshes = if let Some(user_interval) = min_refresh_interval {
-            Duration::from_secs(user_interval) // Use user-specified interval
-        } else if game_count >= 6 {
-            Duration::from_secs(30) // Minimum 30 seconds between refreshes for 6+ games
-        } else if game_count >= 4 {
-            Duration::from_secs(20) // Minimum 20 seconds between refreshes for 4-5 games
-        } else {
-            Duration::from_secs(10) // Minimum 10 seconds between refreshes for 1-3 games
-        };
+        let _rate_limit_backoff = Duration::from_secs(0);
 
         // Debug logging for rate limit backoff enforcement
-        if rate_limit_backoff > Duration::from_secs(0) {
+        if _rate_limit_backoff > Duration::from_secs(0) {
             let backoff_remaining =
-                rate_limit_backoff.saturating_sub(last_rate_limit_hit.elapsed());
+                _rate_limit_backoff.saturating_sub(_last_rate_limit_hit.elapsed());
             if backoff_remaining > Duration::from_secs(0) {
                 tracing::debug!(
                     "Rate limit backoff active: {}s remaining (total backoff: {}s, elapsed since rate limit: {}s)",
                     backoff_remaining.as_secs(),
-                    rate_limit_backoff.as_secs(),
-                    last_rate_limit_hit.elapsed().as_secs()
+                    _rate_limit_backoff.as_secs(),
+                    _last_rate_limit_hit.elapsed().as_secs()
                 );
             }
         }
 
-        if !needs_refresh
-            && !last_games.is_empty()
-            && last_auto_refresh.elapsed() >= auto_refresh_interval
-            && last_auto_refresh.elapsed() >= min_interval_between_refreshes
-            && last_rate_limit_hit.elapsed() >= rate_limit_backoff
-        // Respect rate limit backoff
-        {
-            // Check if there are ongoing games - if so, always refresh
-            let has_ongoing_games = has_live_games_from_game_data(&last_games);
-            // Compute current state directly from last_games (don't rely on stale all_games_scheduled)
-            let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
-            let time_elapsed = last_auto_refresh.elapsed();
-
-            // Enhanced logging for better debugging
-            tracing::debug!(
-                "Auto-refresh check: has_ongoing_games={}, all_scheduled={}, time_elapsed={:?}, games_count={}, auto_refresh_interval={:?}",
-                has_ongoing_games,
-                all_scheduled,
-                time_elapsed,
-                last_games.len(),
-                auto_refresh_interval
-            );
-
-            // Log rate limit backoff status
-            if rate_limit_backoff > Duration::from_secs(0) {
-                let backoff_remaining =
-                    rate_limit_backoff.saturating_sub(last_rate_limit_hit.elapsed());
-                if backoff_remaining > Duration::from_secs(0) {
-                    tracing::debug!(
-                        "Auto-refresh skipped due to rate limit backoff: {}s remaining (total backoff: {}s)",
-                        backoff_remaining.as_secs(),
-                        rate_limit_backoff.as_secs()
-                    );
-                } else {
-                    tracing::debug!(
-                        "Rate limit backoff period completed: {}s elapsed since last rate limit hit",
-                        last_rate_limit_hit.elapsed().as_secs()
-                    );
-                }
-            }
-
-            // Log individual game states for debugging
-            for (i, game) in last_games.iter().enumerate() {
-                tracing::debug!(
-                    "Game {}: {} vs {} - score_type={:?}, time='{}', start='{}'",
-                    i + 1,
-                    game.home_team,
-                    game.away_team,
-                    game.score_type,
-                    game.time,
-                    game.start
-                );
-            }
-
-            // Don't auto-refresh for historical dates
-            if let Some(ref date) = current_date {
-                if is_historical_date(date) {
-                    tracing::debug!("Auto-refresh skipped for historical date: {}", date);
-                } else if has_ongoing_games {
-                    needs_refresh = true;
-                    tracing::info!("Auto-refresh triggered for ongoing games");
-                } else if !all_scheduled {
-                    // Only refresh if not all games are scheduled (i.e., some are finished)
-                    needs_refresh = true;
-                    tracing::debug!(
-                        "Auto-refresh triggered for non-scheduled games (mixed game states)"
-                    );
-                } else {
-                    // Enhanced check for games that might have started
-                    let has_recently_started_games = last_games.iter().any(is_game_near_start_time);
-
-                    if has_recently_started_games {
-                        // Aggressively invalidate cache for starting games to ensure fresh data
-                        if let Some(ref date) = current_date {
-                            invalidate_cache_for_games_near_start_time(date).await;
-                        }
-                        needs_refresh = true;
-                        tracing::info!("Auto-refresh triggered for games that may have started");
-                    } else {
-                        tracing::debug!(
-                            "Auto-refresh skipped - all games are scheduled for future"
-                        );
-                    }
-                }
-            } else if has_ongoing_games {
-                needs_refresh = true;
-                tracing::info!("Auto-refresh triggered for ongoing games");
-            } else if !all_scheduled {
-                needs_refresh = true;
-                tracing::debug!(
-                    "Auto-refresh triggered for non-scheduled games (mixed game states)"
-                );
-            } else {
-                // Enhanced check for games that might have started (same logic as above)
-                let has_recently_started_games = last_games.iter().any(is_game_near_start_time);
-
-                if has_recently_started_games {
-                    // Aggressively invalidate cache for starting games to ensure fresh data
-                    if let Some(ref date) = current_date {
-                        invalidate_cache_for_games_near_start_time(date).await;
-                    }
-                    needs_refresh = true;
-                    tracing::info!("Auto-refresh triggered for games that may have started");
-                } else {
-                    tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
-                }
-            }
+        if should_trigger_auto_refresh(AutoRefreshParams {
+            needs_refresh,
+            games: last_games.clone(),
+            last_auto_refresh,
+            auto_refresh_interval,
+            min_interval_between_refreshes,
+            last_rate_limit_hit: _last_rate_limit_hit,
+            rate_limit_backoff: _rate_limit_backoff,
+            current_date: current_date.clone(),
+        }) {
+            needs_refresh = true;
         }
 
         // Data fetching with change detection
         if needs_refresh {
             tracing::debug!("Fetching new data");
-
-            // Check if there are ongoing games to avoid showing loading screen during auto-refresh
-            let has_ongoing_games = has_live_games_from_game_data(&last_games);
-
-            // Show loading indicator only in specific cases:
-            // 1. For historical dates (always show loading - these are slow)
-            // 2. For initial load (when current_page is None)
-            // Skip loading for all current date refreshes (both auto and manual)
-            let should_show_loading = if let Some(ref date) = current_date {
-                // Only show loading for historical dates
-                is_historical_date(date)
-            } else {
-                // Show loading for initial load when no specific date is requested
-                current_page.is_none()
-            };
-
-            // Show auto-refresh indicator whenever auto-refresh is active
-            // This should match the auto-refresh logic above
-            let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
-            let should_show_indicator = if let Some(ref date) = current_date {
-                !is_historical_date(date) && (has_ongoing_games || !all_scheduled)
-            } else {
-                has_ongoing_games || !all_scheduled
-            };
-
-            if should_show_indicator {
-                if let Some(page) = &mut current_page {
-                    page.show_auto_refresh_indicator();
-                    needs_render = true;
-                }
-            }
 
             // Always preserve the current page number before refresh, regardless of loading screen
             let preserved_page = current_page
@@ -861,181 +1448,15 @@ pub async fn run_interactive_ui(
                 .map(|existing_page| existing_page.get_current_page());
             preserved_page_for_restoration = preserved_page;
 
-            if should_show_loading {
-                let mut loading_page = TeletextPage::new(
-                    221,
-                    "JÄÄKIEKKO".to_string(),
-                    "SM-LIIGA".to_string(),
+            // Handle data fetching using the helper function
+            let (games, had_error, fetched_date, should_retry, new_page, _needs_render_update) =
+                handle_data_fetching(
+                    &current_date,
+                    &last_games,
                     disable_links,
-                    true,
-                    false,
-                );
-
-                if let Some(ref date) = current_date {
-                    if is_historical_date(date) {
-                        loading_page.add_error_message(&format!(
-                            "Haetaan historiallista dataa päivälle {}...",
-                            format_date_for_display(date)
-                        ));
-                        loading_page.add_error_message("Tämä voi kestää hetken, odotathan...");
-                    } else {
-                        loading_page.add_error_message(&format!(
-                            "Haetaan otteluita päivälle {}...",
-                            format_date_for_display(date)
-                        ));
-                    }
-                } else {
-                    loading_page.add_error_message("Haetaan päivän otteluita...");
-                }
-
-                current_page = Some(loading_page);
-                needs_render = true;
-
-                // Render the loading page immediately
-                if needs_render {
-                    if let Some(page) = &current_page {
-                        page.render_buffered(&mut stdout)?;
-                    }
-                    needs_render = false;
-                }
-            } else {
-                tracing::debug!("Skipping loading screen due to ongoing games");
-            }
-
-            // Add timeout for auto-refresh to prevent hanging
-            let fetch_future = fetch_liiga_data(current_date.clone());
-            let timeout_duration = tokio::time::Duration::from_secs(15); // Shorter timeout for auto-refresh
-
-            let (games, had_error, fetched_date, should_retry) = match tokio::time::timeout(
-                timeout_duration,
-                fetch_future,
-            )
-            .await
-            {
-                Ok(fetch_result) => match fetch_result {
-                    Ok((games, fetched_date)) => {
-                        // Log successful recovery if we had previous errors
-                        tracing::debug!("Auto-refresh successful: fetched {} games", games.len());
-                        (games, false, fetched_date, false)
-                    }
-                    Err(e) => {
-                        // Enhanced error logging with detailed information
-                        tracing::error!("Auto-refresh failed: {}", e);
-                        tracing::error!(
-                            "Error details - Type: {}, Current date: {:?}, Has ongoing games: {}",
-                            std::any::type_name_of_val(&e),
-                            current_date,
-                            has_live_games_from_game_data(&last_games)
-                        );
-
-                        // Log specific error context for debugging
-                        match &e {
-                            crate::error::AppError::NetworkTimeout { url } => {
-                                tracing::warn!(
-                                    "Auto-refresh timeout for URL: {}, will retry on next cycle",
-                                    url
-                                );
-                            }
-                            crate::error::AppError::NetworkConnection { url, message } => {
-                                tracing::warn!(
-                                    "Auto-refresh connection error for URL: {}, details: {}, will retry on next cycle",
-                                    url,
-                                    message
-                                );
-                            }
-                            crate::error::AppError::ApiServerError {
-                                status,
-                                message,
-                                url,
-                            } => {
-                                tracing::warn!(
-                                    "Auto-refresh server error: HTTP {} - {} (URL: {}), will retry on next cycle",
-                                    status,
-                                    message,
-                                    url
-                                );
-                            }
-                            crate::error::AppError::ApiServiceUnavailable {
-                                status,
-                                message,
-                                url,
-                            } => {
-                                tracing::warn!(
-                                    "Auto-refresh service unavailable: HTTP {} - {} (URL: {}), will retry on next cycle",
-                                    status,
-                                    message,
-                                    url
-                                );
-                            }
-                            crate::error::AppError::ApiRateLimit { message, url } => {
-                                tracing::warn!(
-                                    "Auto-refresh rate limited: {} (URL: {}), will retry on next cycle",
-                                    message,
-                                    url
-                                );
-
-                                // Implement exponential backoff for rate limits
-                                last_rate_limit_hit = Instant::now();
-                                if rate_limit_backoff.is_zero() {
-                                    rate_limit_backoff = Duration::from_secs(60); // Start with 1 minute
-                                } else {
-                                    // Double the backoff time, but cap at 10 minutes
-                                    rate_limit_backoff = std::cmp::min(
-                                        rate_limit_backoff * 2,
-                                        Duration::from_secs(600),
-                                    );
-                                }
-                                tracing::info!(
-                                    "Rate limit backoff set to {:?} seconds",
-                                    rate_limit_backoff.as_secs()
-                                );
-                            }
-                            _ => {
-                                tracing::warn!(
-                                    "Auto-refresh error: {}, will retry on next cycle",
-                                    e
-                                );
-                            }
-                        }
-
-                        // Graceful degradation: continue with existing data instead of showing error page
-                        tracing::info!(
-                            "Continuing with existing data ({} games) due to auto-refresh failure",
-                            last_games.len()
-                        );
-
-                        // Return empty games but indicate we should retry (don't update last_auto_refresh)
-                        (Vec::new(), true, String::new(), true)
-                    }
-                },
-                Err(_) => {
-                    // Timeout occurred during auto-refresh
-                    tracing::warn!(
-                        "Auto-refresh timeout after {:?}, continuing with existing data ({} games, {} live games)",
-                        auto_refresh_interval,
-                        last_games.len(),
-                        last_games
-                            .iter()
-                            .filter(|g| g.score_type == ScoreType::Ongoing)
-                            .count()
-                    );
-                    (Vec::new(), true, String::new(), true)
-                }
-            };
-
-            // Reset rate limit backoff on successful refresh
-            if !games.is_empty() && rate_limit_backoff > Duration::from_secs(0) {
-                // Gradually reduce backoff on successful requests
-                rate_limit_backoff = std::cmp::max(rate_limit_backoff / 2, Duration::from_secs(0));
-                if rate_limit_backoff.is_zero() {
-                    tracing::info!("Rate limit backoff reset to zero after successful request");
-                } else {
-                    tracing::debug!(
-                        "Rate limit backoff reduced to {:?} seconds after successful request",
-                        rate_limit_backoff.as_secs()
-                    );
-                }
-            }
+                    preserved_page_for_restoration,
+                )
+                .await?;
 
             // Update current_date to track the actual date being displayed
             if !had_error && !fetched_date.is_empty() {
@@ -1049,6 +1470,7 @@ pub async fn run_interactive_ui(
 
             if data_changed {
                 tracing::debug!("Data changed, updating UI");
+
                 // Log specific changes for live games to help debug game clock updates
                 if !last_games.is_empty() && games.len() == last_games.len() {
                     for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate()
@@ -1068,93 +1490,9 @@ pub async fn run_interactive_ui(
                     }
                 }
 
-                // Only create a new page if we didn't have an error and data changed
-                if !had_error {
-                    // Restore the preserved page number
-                    if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
-                        let mut page = create_page(
-                            &games,
-                            disable_links,
-                            true,
-                            false,
-                            Some(fetched_date.clone()),
-                            Some(preserved_page_for_restoration),
-                        )
-                        .await;
-
-                        // Disable auto-refresh for historical dates
-                        if let Some(ref date) = current_date {
-                            if is_historical_date(date) {
-                                page.set_auto_refresh_disabled(true);
-                            }
-                        }
-
-                        current_page = Some(page);
-                    } else {
-                        let page = if games.is_empty() {
-                            let mut error_page = TeletextPage::new(
-                                221,
-                                "JÄÄKIEKKO".to_string(),
-                                "SM-LIIGA".to_string(),
-                                disable_links,
-                                true,
-                                false,
-                            );
-                            // Use UTC internally, convert to local time for date formatting
-                            let today = Utc::now()
-                                .with_timezone(&Local)
-                                .format("%Y-%m-%d")
-                                .to_string();
-                            if fetched_date == today {
-                                error_page.add_error_message("Ei otteluita tänään");
-                            } else {
-                                error_page.add_error_message(&format!(
-                                    "Ei otteluita {} päivälle",
-                                    format_date_for_display(&fetched_date)
-                                ));
-                            }
-                            error_page
-                        } else {
-                            // Try to create a future games page, fall back to regular page if not future games
-                            let show_future_header = current_date.is_none();
-                            match create_future_games_page(
-                                &games,
-                                disable_links,
-                                true,
-                                false,
-                                show_future_header,
-                                Some(fetched_date.clone()),
-                                None,
-                            )
-                            .await
-                            {
-                                Some(page) => page,
-                                None => {
-                                    let mut page = create_page(
-                                        &games,
-                                        disable_links,
-                                        true,
-                                        false,
-                                        Some(fetched_date.clone()),
-                                        None,
-                                    )
-                                    .await;
-
-                                    // Disable auto-refresh for historical dates
-                                    if let Some(ref date) = current_date {
-                                        if is_historical_date(date) {
-                                            page.set_auto_refresh_disabled(true);
-                                        }
-                                    }
-
-                                    page
-                                }
-                            }
-                        };
-
-                        current_page = Some(page);
-                    }
-
+                // Update the current page if we have a new one
+                if let Some(new_page) = new_page {
+                    current_page = Some(new_page);
                     needs_render = true;
                 }
             } else if had_error {
@@ -1200,48 +1538,6 @@ pub async fn run_interactive_ui(
                 tracing::debug!("No data changes detected, skipping UI update");
             }
 
-            // If we showed a loading screen but data didn't change, we still need to restore pagination
-            if !data_changed && !had_error && preserved_page_for_restoration.is_some() {
-                if let Some(ref current) = current_page {
-                    // Check if current page is a loading page by checking if it has error messages
-                    if current.has_error_messages() {
-                        if let Some(preserved_page_for_restoration) = preserved_page_for_restoration
-                        {
-                            let games_to_use = if games.is_empty() {
-                                &last_games
-                            } else {
-                                &games
-                            };
-                            let mut page = create_page(
-                                games_to_use,
-                                disable_links,
-                                true,
-                                false,
-                                Some(fetched_date.clone()),
-                                Some(preserved_page_for_restoration),
-                            )
-                            .await;
-
-                            // Disable auto-refresh for historical dates
-                            if let Some(ref date) = current_date {
-                                if is_historical_date(date) {
-                                    page.set_auto_refresh_disabled(true);
-                                }
-                            }
-
-                            current_page = Some(page);
-                            needs_render = true;
-                        }
-                    }
-                }
-            }
-
-            // Hide auto-refresh indicator after data is fetched
-            if let Some(page) = &mut current_page {
-                page.hide_auto_refresh_indicator();
-                needs_render = true;
-            }
-
             // Update change detection variables
             last_games_hash = games_hash;
             last_games = games.clone();
@@ -1261,32 +1557,19 @@ pub async fn run_interactive_ui(
         }
 
         // Handle pending resize with debouncing
-        if pending_resize && resize_timer.elapsed() >= Duration::from_millis(500) {
-            tracing::debug!("Handling resize");
-            if let Some(page) = &mut current_page {
-                page.handle_resize();
-                needs_render = true;
-            }
-            pending_resize = false;
-        }
+        handle_pending_resize(
+            &mut current_page,
+            &mut needs_render,
+            &mut pending_resize,
+            &resize_timer,
+        );
 
         // Update auto-refresh indicator animation (only when active)
-        if let Some(page) = &mut current_page {
-            if page.is_auto_refresh_indicator_active() {
-                page.update_auto_refresh_animation();
-                needs_render = true;
-            }
-        }
+        update_auto_refresh_animation(&mut current_page, &mut needs_render);
 
         // Batched UI rendering - only render when necessary
         // Use buffered rendering to minimize flickering
-        if needs_render {
-            if let Some(page) = &current_page {
-                page.render_buffered(&mut stdout)?;
-                tracing::debug!("UI rendered with buffering");
-            }
-            needs_render = false;
-        }
+        render_ui(&current_page, &mut needs_render, &mut stdout)?;
 
         // Event handling with adaptive polling
         if event::poll(poll_interval)? {
@@ -1294,229 +1577,50 @@ pub async fn run_interactive_ui(
 
             match event::read()? {
                 Event::Key(key_event) => {
-                    tracing::debug!(
-                        "Key event: {:?}, modifiers: {:?}",
-                        key_event.code,
-                        key_event.modifiers
-                    );
-
-                    // Check for date navigation first (Shift + Arrow keys)
-                    if is_date_navigation_key(&key_event, true) {
-                        // Shift + Left: Previous date with games
-                        if last_date_navigation.elapsed() >= Duration::from_millis(250) {
-                            tracing::info!("Previous date navigation requested");
-                            tracing::debug!("Current date state: {:?}", current_date);
-                            let target_date = get_target_date_for_navigation(&current_date);
-
-                            // Show loading indicator
-                            if let Some(page) = &mut current_page {
-                                page.show_loading("Etsitään edellisiä otteluita...".to_string());
-                                page.render_loading_indicator_only(&mut stdout)?;
-                            }
-
-                            tracing::info!(
-                                "Searching for previous date with games from: {}",
-                                target_date
-                            );
-
-                            // Create a task that will update animation while search runs
-                            let target_date_clone = target_date.clone();
-                            let mut search_task = tokio::spawn(async move {
-                                find_previous_date_with_games(&target_date_clone).await
-                            });
-                            let mut animation_interval =
-                                tokio::time::interval(Duration::from_millis(200));
-
-                            let result = loop {
-                                tokio::select! {
-                                    search_result = &mut search_task => {
-                                        match search_result {
-                                            Ok(date_option) => {
-                                                break date_option;
-                                            }
-                                            Err(join_error) => {
-                                                tracing::error!(
-                                                    "Previous date search task failed: {}",
-                                                    join_error
-                                                );
-                                                break None;
-                                            }
-                                        }
-                                    }
-                                    _ = animation_interval.tick() => {
-                                        if let Some(page) = &mut current_page {
-                                            page.update_loading_animation();
-                                            page.render_loading_indicator_only(&mut stdout)?;
-                                        }
-                                    }
-                                }
-                            };
-
-                            if let Some(prev_date) = result {
-                                current_date = Some(prev_date.clone());
-                                needs_refresh = true;
-                                tracing::info!("Navigated to previous date: {}", prev_date);
-                            } else {
-                                tracing::warn!("No previous date with games found");
-                            }
-
-                            // Hide loading indicator
-                            if let Some(page) = &mut current_page {
-                                page.hide_loading();
-                            }
-                            last_date_navigation = Instant::now();
-                        }
-                    } else if is_date_navigation_key(&key_event, false) {
-                        // Shift + Right: Next date with games
-                        if last_date_navigation.elapsed() >= Duration::from_millis(250) {
-                            tracing::info!("Next date navigation requested");
-                            tracing::debug!("Current date state: {:?}", current_date);
-                            let target_date = get_target_date_for_navigation(&current_date);
-
-                            // Show loading indicator
-                            if let Some(page) = &mut current_page {
-                                page.show_loading("Etsitään seuraavia otteluita...".to_string());
-                                page.render_loading_indicator_only(&mut stdout)?;
-                            }
-
-                            tracing::info!(
-                                "Searching for next date with games from: {}",
-                                target_date
-                            );
-
-                            // Create a task that will update animation while search runs
-                            let target_date_clone = target_date.clone();
-                            let mut search_task = tokio::spawn(async move {
-                                find_next_date_with_games(&target_date_clone).await
-                            });
-                            let mut animation_interval =
-                                tokio::time::interval(Duration::from_millis(200));
-
-                            let result = loop {
-                                tokio::select! {
-                                    search_result = &mut search_task => {
-                                        match search_result {
-                                            Ok(date_option) => {
-                                                break date_option;
-                                            }
-                                            Err(join_error) => {
-                                                tracing::error!(
-                                                    "Next date search task failed: {}",
-                                                    join_error
-                                                );
-                                                break None;
-                                            }
-                                        }
-                                    }
-                                    _ = animation_interval.tick() => {
-                                        if let Some(page) = &mut current_page {
-                                            page.update_loading_animation();
-                                            page.render_loading_indicator_only(&mut stdout)?;
-                                        }
-                                    }
-                                }
-                            };
-
-                            if let Some(next_date) = result {
-                                current_date = Some(next_date.clone());
-                                needs_refresh = true;
-                                tracing::info!("Navigated to next date: {}", next_date);
-                            } else {
-                                tracing::warn!("No next date with games found");
-                            }
-
-                            // Hide loading indicator
-                            if let Some(page) = &mut current_page {
-                                page.hide_loading();
-                            }
-                            last_date_navigation = Instant::now();
-                        }
-                    } else {
-                        // Handle regular key events (without modifiers)
-                        match key_event.code {
-                            KeyCode::Char('q') => {
-                                tracing::info!("Quit requested");
-                                if !debug_mode {
-                                    disable_raw_mode()?;
-                                    execute!(stdout, LeaveAlternateScreen)?;
-                                }
-                                return Ok(());
-                            }
-                            KeyCode::Char('r') => {
-                                // Check if auto-refresh is disabled - ignore manual refresh too
-                                if let Some(page) = &current_page {
-                                    if page.is_auto_refresh_disabled() {
-                                        tracing::info!(
-                                            "Manual refresh ignored - auto-refresh is disabled"
-                                        );
-                                        continue; // Skip refresh when auto-refresh is disabled
-                                    }
-                                }
-
-                                // Check if current date is historical - don't refresh historical data
-                                if let Some(ref date) = current_date {
-                                    if is_historical_date(date) {
-                                        tracing::info!(
-                                            "Manual refresh skipped for historical date: {}",
-                                            date
-                                        );
-                                        continue; // Skip refresh for historical dates
-                                    }
-                                }
-
-                                if last_manual_refresh.elapsed() >= Duration::from_secs(15) {
-                                    tracing::info!("Manual refresh requested");
-                                    needs_refresh = true;
-                                    last_manual_refresh = Instant::now();
-                                }
-                            }
-                            KeyCode::Left => {
-                                if last_page_change.elapsed() >= Duration::from_millis(200) {
-                                    if let Some(page) = &mut current_page {
-                                        page.previous_page();
-                                        needs_render = true;
-                                    }
-                                    last_page_change = Instant::now();
-                                }
-                            }
-                            KeyCode::Right => {
-                                if last_page_change.elapsed() >= Duration::from_millis(200) {
-                                    if let Some(page) = &mut current_page {
-                                        page.next_page();
-                                        needs_render = true;
-                                    }
-                                    last_page_change = Instant::now();
-                                }
-                            }
-                            _ => {}
-                        }
+                    if handle_key_event(KeyEventParams {
+                        key_event: &key_event,
+                        current_date: &mut current_date,
+                        current_page: &mut current_page,
+                        needs_refresh: &mut needs_refresh,
+                        needs_render: &mut needs_render,
+                        last_manual_refresh: &mut last_manual_refresh,
+                        last_page_change: &mut last_page_change,
+                        last_date_navigation: &mut last_date_navigation,
+                        debug_mode,
+                        disable_links,
+                    })
+                    .await?
+                    {
+                        break;
                     }
                 }
                 Event::Resize(_, _) => {
-                    tracing::debug!("Resize event");
-                    // Debounce resize events
-                    if last_resize.elapsed() >= Duration::from_millis(500) {
-                        resize_timer = Instant::now();
-                        pending_resize = true;
-                        last_resize = Instant::now();
-                    }
+                    handle_resize_event(
+                        &mut current_page,
+                        &mut needs_render,
+                        &mut pending_resize,
+                        &mut resize_timer,
+                        &mut last_resize,
+                    );
                 }
                 _ => {}
             }
         }
 
         // Periodic cache monitoring for long-running sessions
-        if cache_monitor_timer.elapsed() >= CACHE_MONITOR_INTERVAL {
-            tracing::debug!("Monitoring cache usage");
-            monitor_cache_usage().await;
-            cache_monitor_timer = Instant::now();
-        }
+        handle_cache_monitoring(&mut cache_monitor_timer).await;
 
         // Only sleep if we're in idle mode to avoid unnecessary delays
         if poll_interval >= Duration::from_millis(200) {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
+
+    if !debug_mode {
+        disable_raw_mode()?;
+        execute!(stdout, LeaveAlternateScreen)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
