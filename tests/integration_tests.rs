@@ -825,10 +825,6 @@ async fn test_wide_mode_cli_integration() {
         true,  // wide_mode - ENABLED
     );
 
-    // Debug prints to understand the issue
-    println!("Wide mode enabled: {}", page.is_wide_mode());
-    println!("Can fit two pages: {}", page.can_fit_two_pages());
-
     assert!(page.is_wide_mode(), "Wide mode should be enabled");
     assert!(
         page.can_fit_two_pages(),
