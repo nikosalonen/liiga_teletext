@@ -71,6 +71,13 @@ struct Args {
     #[arg(short = 'c', long = "compact", help_heading = "Display Options")]
     compact: bool,
 
+    /// Display games in wide format with two columns side by side.
+    /// Shows full game details in a two-column layout when terminal width is 128+ characters.
+    /// Each column displays 60 characters width with full teletext layout.
+    /// Falls back to normal single-column display on narrow terminals.
+    #[arg(short = 'w', long = "wide", help_heading = "Display Options")]
+    wide: bool,
+
     /// Update API domain in config. Will prompt for new domain if not provided.
     #[arg(long = "config", help_heading = "Configuration")]
     new_api_domain: Option<String>,
@@ -288,6 +295,13 @@ fn print_logo() {
 async fn main() -> Result<(), AppError> {
     let args = Args::parse();
 
+    // Validate argument combinations
+    if args.compact && args.wide {
+        return Err(AppError::config_error(
+            "Cannot use both compact (-c) and wide (-w) modes simultaneously",
+        ));
+    }
+
     // Try to load config to get log file path if specified
     let config_log_path = Config::load()
         .await
@@ -471,6 +485,7 @@ async fn main() -> Result<(), AppError> {
                     true,
                     false,
                     args.compact,
+                    args.wide,
                 );
                 error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
                 // Set terminal title for non-interactive mode (error case)
@@ -491,6 +506,7 @@ async fn main() -> Result<(), AppError> {
                 false, // Don't show footer in quick view mode
                 true,  // Ignore height limit in quick view mode
                 args.compact,
+                args.wide,
             );
             // Use UTC internally, convert to local time for date formatting
             let today = Utc::now()
@@ -516,6 +532,7 @@ async fn main() -> Result<(), AppError> {
                 true,
                 true,
                 args.compact,
+                args.wide,
                 args.once || args.compact, // suppress_countdown when once or compact mode
                 show_future_header,
                 Some(fetched_date.clone()),
@@ -531,6 +548,7 @@ async fn main() -> Result<(), AppError> {
                         true,
                         true,
                         args.compact,
+                        args.wide,
                         args.once || args.compact, // suppress_countdown when once or compact mode
                         Some(fetched_date.clone()),
                         None,
@@ -578,6 +596,7 @@ async fn main() -> Result<(), AppError> {
         args.debug,
         args.min_refresh_interval,
         args.compact,
+        args.wide,
     )
     .await;
 

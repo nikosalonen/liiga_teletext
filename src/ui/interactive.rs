@@ -124,6 +124,7 @@ fn manage_loading_indicators(
     current_date: &Option<String>,
     disable_links: bool,
     compact_mode: bool,
+    wide_mode: bool,
 ) -> bool {
     let mut needs_render = false;
 
@@ -139,6 +140,7 @@ fn manage_loading_indicators(
             current_date,
             disable_links,
             compact_mode,
+            wide_mode,
         ));
         needs_render = true;
     } else {
@@ -251,32 +253,37 @@ fn detect_and_log_changes(games: &[GameData], last_games: &[GameData]) -> bool {
     data_changed
 }
 
-/// Creates or restores a teletext page based on the current state and data
-async fn create_or_restore_page(
-    games: &[GameData],
+/// Configuration for creating or restoring a teletext page
+struct PageCreationConfig<'a> {
+    games: &'a [GameData],
     disable_links: bool,
     compact_mode: bool,
-    fetched_date: &str,
+    wide_mode: bool,
+    fetched_date: &'a str,
     preserved_page_for_restoration: Option<usize>,
-    current_date: &Option<String>,
-    updated_current_date: &Option<String>,
-) -> Option<TeletextPage> {
+    current_date: &'a Option<String>,
+    updated_current_date: &'a Option<String>,
+}
+
+/// Creates or restores a teletext page based on the current state and data
+async fn create_or_restore_page(config: PageCreationConfig<'_>) -> Option<TeletextPage> {
     // Restore the preserved page number
-    if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
+    if let Some(preserved_page_for_restoration) = config.preserved_page_for_restoration {
         let mut page = create_page(
-            games,
-            disable_links,
+            config.games,
+            config.disable_links,
             true,
             false,
-            compact_mode,
+            config.compact_mode,
+            config.wide_mode,
             false, // suppress_countdown - false for interactive mode
-            Some(fetched_date.to_string()),
+            Some(config.fetched_date.to_string()),
             Some(preserved_page_for_restoration),
         )
         .await;
 
         // Disable auto-refresh for historical dates
-        if let Some(date) = updated_current_date {
+        if let Some(date) = config.updated_current_date {
             if is_historical_date(date) {
                 page.set_auto_refresh_disabled(true);
             }
@@ -284,20 +291,26 @@ async fn create_or_restore_page(
 
         Some(page)
     } else {
-        let page = if games.is_empty() {
-            create_error_page(fetched_date, disable_links, compact_mode)
+        let page = if config.games.is_empty() {
+            create_error_page(
+                config.fetched_date,
+                config.disable_links,
+                config.compact_mode,
+                config.wide_mode,
+            )
         } else {
             // Try to create a future games page, fall back to regular page if not future games
-            let show_future_header = current_date.is_none();
+            let show_future_header = config.current_date.is_none();
             match create_future_games_page(
-                games,
-                disable_links,
+                config.games,
+                config.disable_links,
                 true,
                 false,
-                compact_mode,
+                config.compact_mode,
+                config.wide_mode,
                 false, // suppress_countdown - false for interactive mode
                 show_future_header,
-                Some(fetched_date.to_string()),
+                Some(config.fetched_date.to_string()),
                 None,
             )
             .await
@@ -305,19 +318,20 @@ async fn create_or_restore_page(
                 Some(page) => page,
                 None => {
                     let mut page = create_page(
-                        games,
-                        disable_links,
+                        config.games,
+                        config.disable_links,
                         true,
                         false,
-                        compact_mode,
+                        config.compact_mode,
+                        config.wide_mode,
                         false, // suppress_countdown - false for interactive mode
-                        Some(fetched_date.to_string()),
+                        Some(config.fetched_date.to_string()),
                         None,
                     )
                     .await;
 
                     // Disable auto-refresh for historical dates
-                    if let Some(date) = updated_current_date {
+                    if let Some(date) = config.updated_current_date {
                         if is_historical_date(date) {
                             page.set_auto_refresh_disabled(true);
                         }
@@ -344,6 +358,7 @@ struct PageRestorationParams<'a> {
     fetched_date: &'a str,
     updated_current_date: &'a Option<String>,
     compact_mode: bool,
+    wide_mode: bool,
 }
 
 /// Handles page restoration when loading screen was shown but data didn't change
@@ -369,6 +384,7 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
                         true,
                         false,
                         params.compact_mode,
+                        params.wide_mode,
                         false, // suppress_countdown - false for interactive mode
                         Some(params.fetched_date.to_string()),
                         Some(preserved_page_for_restoration),
@@ -401,6 +417,7 @@ async fn create_base_page(
     show_footer: bool,
     ignore_height_limit: bool,
     compact_mode: bool,
+    wide_mode: bool,
     suppress_countdown: bool,
     future_games_header: Option<String>,
     fetched_date: Option<String>,
@@ -415,6 +432,7 @@ async fn create_base_page(
         show_footer,
         ignore_height_limit,
         compact_mode,
+        wide_mode,
     );
 
     // Set the fetched date if provided
@@ -452,6 +470,7 @@ pub async fn create_page(
     show_footer: bool,
     ignore_height_limit: bool,
     compact_mode: bool,
+    wide_mode: bool,
     suppress_countdown: bool,
     fetched_date: Option<String>,
     current_page: Option<usize>,
@@ -462,6 +481,7 @@ pub async fn create_page(
         show_footer,
         ignore_height_limit,
         compact_mode,
+        wide_mode,
         suppress_countdown,
         None,
         fetched_date,
@@ -551,6 +571,7 @@ pub async fn create_future_games_page(
     show_footer: bool,
     ignore_height_limit: bool,
     compact_mode: bool,
+    wide_mode: bool,
     suppress_countdown: bool,
     show_future_header: bool,
     fetched_date: Option<String>,
@@ -580,6 +601,7 @@ pub async fn create_future_games_page(
             show_footer,
             ignore_height_limit,
             compact_mode,
+            wide_mode,
             suppress_countdown,
             future_games_header,
             fetched_date, // Pass the fetched date to show it in the header
@@ -1141,6 +1163,7 @@ fn create_loading_page(
     current_date: &Option<String>,
     disable_links: bool,
     compact_mode: bool,
+    wide_mode: bool,
 ) -> TeletextPage {
     let mut loading_page = TeletextPage::new(
         221,
@@ -1150,6 +1173,7 @@ fn create_loading_page(
         true,
         false,
         compact_mode,
+        wide_mode,
     );
 
     if let Some(date) = current_date {
@@ -1173,7 +1197,12 @@ fn create_loading_page(
 }
 
 /// Create error page for empty games
-fn create_error_page(fetched_date: &str, disable_links: bool, compact_mode: bool) -> TeletextPage {
+fn create_error_page(
+    fetched_date: &str,
+    disable_links: bool,
+    compact_mode: bool,
+    wide_mode: bool,
+) -> TeletextPage {
     let mut error_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
@@ -1182,6 +1211,7 @@ fn create_error_page(fetched_date: &str, disable_links: bool, compact_mode: bool
         true,
         false,
         compact_mode,
+        wide_mode,
     );
 
     // Use UTC internally, convert to local time for date formatting
@@ -1208,6 +1238,7 @@ async fn handle_data_fetching(
     last_games: &[GameData],
     disable_links: bool,
     compact_mode: bool,
+    wide_mode: bool,
     preserved_page_for_restoration: Option<usize>,
 ) -> Result<
     (
@@ -1233,6 +1264,7 @@ async fn handle_data_fetching(
         current_date,
         disable_links,
         compact_mode,
+        wide_mode,
     );
 
     // Fetch data with timeout
@@ -1252,15 +1284,16 @@ async fn handle_data_fetching(
 
     // Handle page creation/restoration based on data changes and errors
     if data_changed && !had_error {
-        if let Some(page) = create_or_restore_page(
-            &games,
+        if let Some(page) = create_or_restore_page(PageCreationConfig {
+            games: &games,
             disable_links,
             compact_mode,
-            &fetched_date,
+            wide_mode,
+            fetched_date: &fetched_date,
             preserved_page_for_restoration,
             current_date,
-            &updated_current_date,
-        )
+            updated_current_date: &updated_current_date,
+        })
         .await
         {
             current_page = Some(page);
@@ -1284,6 +1317,7 @@ async fn handle_data_fetching(
         fetched_date: &fetched_date,
         updated_current_date: &updated_current_date,
         compact_mode,
+        wide_mode,
     })
     .await;
     needs_render = needs_render || restoration_render;
@@ -1553,6 +1587,7 @@ pub async fn run_interactive_ui(
     debug_mode: bool,
     min_refresh_interval: Option<u64>,
     compact_mode: bool,
+    wide_mode: bool,
 ) -> Result<(), AppError> {
     // Setup terminal for interactive mode
     let mut stdout = setup_terminal(debug_mode)?;
@@ -1649,6 +1684,7 @@ pub async fn run_interactive_ui(
                     &last_games,
                     disable_links,
                     compact_mode,
+                    wide_mode,
                     preserved_page_for_restoration,
                 )
                 .await?;
