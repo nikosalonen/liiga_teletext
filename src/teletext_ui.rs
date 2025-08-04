@@ -1404,7 +1404,7 @@ impl TeletextPage {
         } else {
             // Hide cursor to prevent visual artifacts during rendering
             execute!(stdout, crossterm::cursor::Hide)?;
-            
+
             // Get terminal dimensions
             let (width, _) = crossterm::terminal::size()?;
             width
@@ -3107,7 +3107,9 @@ mod tests {
         assert!(!formatted.contains("12345678901234567890123"));
 
         // Test very long header - should be truncated to 22 chars + "..."
-        let very_long_header = TeletextRow::FutureGamesHeader("This is a very long header that should be truncated".to_string());
+        let very_long_header = TeletextRow::FutureGamesHeader(
+            "This is a very long header that should be truncated".to_string(),
+        );
         let formatted = page.format_compact_game(&very_long_header, &config);
         assert!(formatted.contains("This is a very long he..."));
 

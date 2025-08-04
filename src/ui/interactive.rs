@@ -135,7 +135,11 @@ fn manage_loading_indicators(
     }
 
     if should_show_loading {
-        *current_page = Some(create_loading_page(current_date, disable_links, compact_mode));
+        *current_page = Some(create_loading_page(
+            current_date,
+            disable_links,
+            compact_mode,
+        ));
         needs_render = true;
     } else {
         tracing::debug!("Skipping loading screen due to ongoing games");
@@ -1133,7 +1137,11 @@ async fn fetch_data_with_timeout(
 }
 
 /// Create loading page for data fetching
-fn create_loading_page(current_date: &Option<String>, disable_links: bool, compact_mode: bool) -> TeletextPage {
+fn create_loading_page(
+    current_date: &Option<String>,
+    disable_links: bool,
+    compact_mode: bool,
+) -> TeletextPage {
     let mut loading_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
