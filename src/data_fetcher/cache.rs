@@ -1150,6 +1150,7 @@ pub struct CacheStats {
 }
 
 /// Clears all caches (useful for testing and debugging)
+#[allow(dead_code)]
 pub async fn clear_all_caches() {
     clear_cache().await;
     clear_tournament_cache().await;
@@ -1210,6 +1211,7 @@ pub async fn get_detailed_cache_debug_info() -> String {
 }
 
 /// Resets all caches and returns confirmation - demonstrates clear_all_caches usage
+#[allow(dead_code)]
 pub async fn reset_all_caches_with_confirmation() -> String {
     let stats_before = get_all_cache_stats().await;
     let total_before = stats_before.player_cache.size
