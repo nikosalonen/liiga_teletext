@@ -2615,7 +2615,7 @@ mod tests {
             false,
             true, // compact mode
         );
-        
+
         // Test compatible page (no warnings)
         let validation = page.validate_compact_mode_compatibility();
         match validation {
@@ -2624,7 +2624,7 @@ mod tests {
             }
             _ => panic!("Expected compatible validation for empty page"),
         }
-        
+
         // Test page with error messages
         page.add_error_message("Test error");
         let validation = page.validate_compact_mode_compatibility();
@@ -2634,7 +2634,7 @@ mod tests {
             }
             _ => panic!("Expected warnings for page with error messages"),
         }
-        
+
         // Reset page for next test
         let mut many_games_page = TeletextPage::new(
             221,
@@ -2645,7 +2645,7 @@ mod tests {
             false,
             true, // compact mode
         );
-        
+
         // Test page with many games (manually create games to avoid testing_utils dependency)
         for i in 0..25 {
             let game = GameData {
@@ -2664,7 +2664,7 @@ mod tests {
             let game_data = GameResultData::new(&game);
             many_games_page.add_game_result(game_data);
         }
-        
+
         let validation = many_games_page.validate_compact_mode_compatibility();
         match validation {
             CompactModeValidation::CompatibleWithWarnings { warnings } => {
@@ -2709,7 +2709,7 @@ mod tests {
         assert_eq!(get_team_abbreviation("Unknown Team"), "Unk");
         assert_eq!(get_team_abbreviation("New Team"), "New");
         assert_eq!(get_team_abbreviation("Future Club"), "Fut");
-        
+
         // Test edge cases
         assert_eq!(get_team_abbreviation(""), "");
         assert_eq!(get_team_abbreviation("A"), "A");
