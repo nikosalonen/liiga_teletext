@@ -427,6 +427,7 @@ pub struct TeletextPage {
     loading_indicator: Option<LoadingIndicator>,
     auto_refresh_indicator: Option<LoadingIndicator>, // Subtle indicator for auto-refresh
     compact_mode: bool,                               // Enable compact display mode
+    wide_mode: bool,                                  // Enable wide display mode
 }
 
 pub enum TeletextRow {
@@ -545,6 +546,7 @@ impl TeletextPage {
         show_footer: bool,
         ignore_height_limit: bool,
         compact_mode: bool,
+        wide_mode: bool,
     ) -> Self {
         // Get terminal size, fallback to reasonable default if can't get size
         let screen_height = crossterm::terminal::size()
@@ -567,6 +569,7 @@ impl TeletextPage {
             loading_indicator: None,
             auto_refresh_indicator: None,
             compact_mode,
+            wide_mode,
         }
     }
 
@@ -807,6 +810,24 @@ impl TeletextPage {
     #[allow(dead_code)]
     pub fn set_compact_mode(&mut self, compact: bool) {
         self.compact_mode = compact;
+    }
+
+    /// Returns whether wide mode is enabled.
+    ///
+    /// # Returns
+    /// * `bool` - True if wide mode is enabled, false otherwise
+    #[allow(dead_code)]
+    pub fn is_wide_mode(&self) -> bool {
+        self.wide_mode
+    }
+
+    /// Sets the wide mode state.
+    ///
+    /// # Arguments
+    /// * `wide` - Whether to enable wide mode
+    #[allow(dead_code)]
+    pub fn set_wide_mode(&mut self, wide: bool) {
+        self.wide_mode = wide;
     }
 
     /// Formats a single game in compact mode with proper teletext colors.
@@ -1945,6 +1966,7 @@ mod tests {
             true,
             false,
             false,
+            false,
         );
 
         // Test showing loading indicator
@@ -1975,6 +1997,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
+            false,
             false,
             false,
         );
@@ -2041,6 +2064,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
+            false,
             false,
             false,
         );
@@ -2116,6 +2140,7 @@ mod tests {
             true,
             true, // ignore_height_limit = true to show all games
             false,
+            false,
         );
 
         // Test game without goals
@@ -2174,6 +2199,7 @@ mod tests {
             true,
             true, // ignore_height_limit = true to show all content
             false,
+            false,
         );
         let error_msg = "Test Error";
         page.add_error_message(error_msg);
@@ -2195,6 +2221,7 @@ mod tests {
             false,
             true,
             true, // ignore_height_limit = true to show all games
+            false,
             false,
         );
 
@@ -2330,6 +2357,7 @@ mod tests {
             true,
             false,
             false,
+            false,
         );
 
         let goal_events = vec![GoalEventData {
@@ -2367,6 +2395,7 @@ mod tests {
             true,
             false,
             false,
+            false,
         );
 
         page_no_video.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
@@ -2401,6 +2430,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
+            false,
             false,
             false,
         );
@@ -2506,6 +2536,7 @@ mod tests {
             true,
             false,
             false,
+            false,
         );
 
         // Set a small screen height to ensure multiple pages
@@ -2527,6 +2558,7 @@ mod tests {
             "SM-LIIGA".to_string(),
             false,
             true,
+            false,
             false,
             false,
         );
@@ -2558,7 +2590,8 @@ mod tests {
             false,
             true,
             false,
-            false, // compact_mode = false initially
+            false,
+            false,
         );
 
         // Test initial state
@@ -2582,7 +2615,8 @@ mod tests {
             false,
             true,
             false,
-            true, // compact_mode = true
+            true,
+            false,
         );
 
         let config = CompactDisplayConfig::default();
@@ -2631,7 +2665,8 @@ mod tests {
             false,
             true,
             false,
-            true, // compact_mode = true
+            true,
+            false,
         );
 
         let config = CompactDisplayConfig::new(2, 10, 8, " | ");
@@ -2679,7 +2714,8 @@ mod tests {
             false,
             true,
             false,
-            true, // compact_mode = true
+            true,
+            false,
         );
 
         // Test wide terminal
@@ -2744,7 +2780,8 @@ mod tests {
             false,
             true,
             false,
-            true, // compact mode
+            true,
+            false,
         );
 
         // Test compatible page (no warnings)
@@ -2780,7 +2817,8 @@ mod tests {
             false,
             true,
             false,
-            true, // compact mode
+            true,
+            false,
         );
 
         // Test page with many games (manually create games to avoid testing_utils dependency)
@@ -2933,7 +2971,8 @@ mod tests {
             false,
             false,
             false,
-            true, // compact mode
+            true,
+            false,
         );
 
         let config = CompactDisplayConfig::new(2, 8, 6, "  "); // 2 games per line
@@ -3003,7 +3042,8 @@ mod tests {
             false,
             true,
             false,
-            true, // compact mode
+            true,
+            false,
         );
 
         let config = CompactDisplayConfig::default();
@@ -3092,7 +3132,8 @@ mod tests {
             false,
             false,
             false,
-            true, // compact_mode = true
+            true,
+            false,
         );
         let config = CompactDisplayConfig::default();
 
