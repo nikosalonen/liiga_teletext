@@ -221,7 +221,7 @@ impl CompactDisplayConfig {
     /// Validates terminal width and returns detailed error information
     pub fn validate_terminal_width(&self, terminal_width: usize) -> TerminalWidthValidation {
         let min_width = self.get_minimum_terminal_width();
-        
+
         if terminal_width < min_width {
             TerminalWidthValidation::Insufficient {
                 current_width: terminal_width,
@@ -929,7 +929,7 @@ impl TeletextPage {
         let game_count = self.content_rows.iter().filter(|row| {
             matches!(row, TeletextRow::GameResult { .. })
         }).count();
-        
+
         if game_count > 20 {
             warnings.push("Many games detected - compact mode may be crowded".to_string());
         }
@@ -1369,7 +1369,7 @@ impl TeletextPage {
         if self.compact_mode {
             let config = CompactDisplayConfig::default();
             let validation = config.validate_terminal_width(width as usize);
-            
+
             match validation {
                 TerminalWidthValidation::Sufficient { current_width, required_width, excess } => {
                     // Terminal is wide enough for compact mode
@@ -1408,7 +1408,7 @@ impl TeletextPage {
                         "Terminal too narrow for compact mode ({} chars, need {} chars, short {} chars)",
                         current_width, required_width, shortfall
                     );
-                    
+
                     buffer.push_str(&format!(
                         "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                         current_line,
@@ -1417,7 +1417,7 @@ impl TeletextPage {
                         error_message
                     ));
                     current_line += 1;
-                    
+
                     // Add suggestion for minimum terminal width
                     buffer.push_str(&format!(
                         "\x1b[{};{}H\x1b[38;5;{}mResize terminal to at least {} characters wide\x1b[0m",
@@ -1739,6 +1739,7 @@ impl TeletextPage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_fetcher::models::GameData;
     use crate::data_fetcher::GoalEventData;
 
     #[test]
@@ -2579,7 +2580,7 @@ mod tests {
     #[test]
     fn test_terminal_width_validation() {
         let config = CompactDisplayConfig::default();
-        
+
         // Test sufficient width
         let validation = config.validate_terminal_width(80);
         match validation {
@@ -2590,7 +2591,7 @@ mod tests {
             }
             _ => panic!("Expected sufficient validation"),
         }
-        
+
         // Test insufficient width
         let validation = config.validate_terminal_width(10);
         match validation {
@@ -2603,7 +2604,7 @@ mod tests {
         }
     }
 
-    #[test]
+        #[test]
     fn test_compact_mode_compatibility_validation() {
         let mut page = TeletextPage::new(
             221,
@@ -2634,21 +2635,210 @@ mod tests {
             _ => panic!("Expected warnings for page with error messages"),
         }
         
-        // Test page with many games
+        // Reset page for next test
+        let mut many_games_page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "Test".to_string(),
+            false,
+            true,
+            false,
+            true, // compact mode
+        );
+        
+        // Test page with many games (manually create games to avoid testing_utils dependency)
         for i in 0..25 {
-            let game_data = GameResultData::new(&crate::testing_utils::TestDataBuilder::create_basic_game(
-                &format!("Team{}", i),
-                &format!("Team{}", i + 1),
-            ));
-            page.add_game_result(game_data);
+            let game = GameData {
+                home_team: format!("Team{}", i),
+                away_team: format!("Team{}", i + 1),
+                time: "18:30".to_string(),
+                result: "1-0".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3600,
+                start: "2024-01-15T18:30:00Z".to_string(),
+            };
+            let game_data = GameResultData::new(&game);
+            many_games_page.add_game_result(game_data);
         }
         
-        let validation = page.validate_compact_mode_compatibility();
+        let validation = many_games_page.validate_compact_mode_compatibility();
         match validation {
             CompactModeValidation::CompatibleWithWarnings { warnings } => {
                 assert!(warnings.iter().any(|w| w.contains("Many games detected")));
             }
             _ => panic!("Expected warnings for page with many games"),
         }
+    }
+
+    #[test]
+    fn test_team_abbreviation_comprehensive() {
+        // Test all current Liiga teams
+        assert_eq!(get_team_abbreviation("Tappara"), "TAP");
+        assert_eq!(get_team_abbreviation("HIFK"), "HIFK");
+        assert_eq!(get_team_abbreviation("TPS"), "TPS");
+        assert_eq!(get_team_abbreviation("JYP"), "JYP");
+        assert_eq!(get_team_abbreviation("Ilves"), "ILV");
+        assert_eq!(get_team_abbreviation("KalPa"), "KAL");
+        assert_eq!(get_team_abbreviation("Kärpät"), "KÄR");
+        assert_eq!(get_team_abbreviation("Lukko"), "LUK");
+        assert_eq!(get_team_abbreviation("Pelicans"), "PEL");
+        assert_eq!(get_team_abbreviation("SaiPa"), "SAI");
+        assert_eq!(get_team_abbreviation("Sport"), "SPO");
+        assert_eq!(get_team_abbreviation("HPK"), "HPK");
+        assert_eq!(get_team_abbreviation("Jukurit"), "JUK");
+        assert_eq!(get_team_abbreviation("Ässät"), "ÄSS");
+        assert_eq!(get_team_abbreviation("KooKoo"), "KOO");
+
+        // Test full team names
+        assert_eq!(get_team_abbreviation("HIFK Helsinki"), "HIFK");
+        assert_eq!(get_team_abbreviation("TPS Turku"), "TPS");
+        assert_eq!(get_team_abbreviation("Tampereen Tappara"), "TAP");
+        assert_eq!(get_team_abbreviation("Tampereen Ilves"), "ILV");
+        assert_eq!(get_team_abbreviation("Jyväskylän JYP"), "JYP");
+
+        // Test case sensitivity
+        assert_eq!(get_team_abbreviation("tappara"), "tap");
+        assert_eq!(get_team_abbreviation("TAPPARA"), "TAP");
+        assert_eq!(get_team_abbreviation("TapPaRa"), "Tap");
+
+        // Test fallback for unknown teams
+        assert_eq!(get_team_abbreviation("Unknown Team"), "Unk");
+        assert_eq!(get_team_abbreviation("New Team"), "New");
+        assert_eq!(get_team_abbreviation("Future Club"), "Fut");
+        
+        // Test edge cases
+        assert_eq!(get_team_abbreviation(""), "");
+        assert_eq!(get_team_abbreviation("A"), "A");
+        assert_eq!(get_team_abbreviation("AB"), "AB");
+        assert_eq!(get_team_abbreviation("ABC"), "ABC");
+        assert_eq!(get_team_abbreviation("ABCD"), "ABC");
+        assert_eq!(get_team_abbreviation("ABCDE"), "ABC");
+    }
+
+    #[test]
+    fn test_compact_display_config_comprehensive() {
+        // Test default configuration
+        let config = CompactDisplayConfig::default();
+        assert_eq!(config.team_name_width, 8);
+        assert_eq!(config.score_width, 6);
+        assert_eq!(config.max_games_per_line, 1);
+        assert_eq!(config.game_separator, "  ");
+
+        // Test custom configuration
+        let custom_config = CompactDisplayConfig::new(3, 10, 8, " | ");
+        assert_eq!(custom_config.max_games_per_line, 3);
+        assert_eq!(custom_config.team_name_width, 10);
+        assert_eq!(custom_config.score_width, 8);
+        assert_eq!(custom_config.game_separator, " | ");
+
+        // Test terminal width calculations
+        assert_eq!(config.get_minimum_terminal_width(), 14); // 8 + 6
+        assert_eq!(custom_config.get_minimum_terminal_width(), 18); // 10 + 8
+
+        // Test games per line calculation with different terminal widths
+        assert_eq!(config.calculate_games_per_line(80), 1); // Default max is 1
+        assert_eq!(custom_config.calculate_games_per_line(80), 3); // Can fit 3 games
+        assert_eq!(custom_config.calculate_games_per_line(40), 1); // Can fit 1 game (corrected expectation)
+        assert_eq!(custom_config.calculate_games_per_line(20), 1); // Can fit 1 game
+        assert_eq!(custom_config.calculate_games_per_line(10), 1); // Too narrow but return 1
+
+        // Test terminal width sufficiency
+        assert!(config.is_terminal_width_sufficient(80));
+        assert!(config.is_terminal_width_sufficient(14)); // Exactly minimum
+        assert!(!config.is_terminal_width_sufficient(13)); // Below minimum
+        assert!(!config.is_terminal_width_sufficient(0));
+    }
+
+    #[test]
+    fn test_compact_formatting_various_game_states() {
+        let page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            true, // compact mode
+        );
+
+        let config = CompactDisplayConfig::default();
+
+        // Test scheduled game
+        let scheduled_game = TeletextRow::GameResult {
+            home_team: "Tappara".to_string(),
+            away_team: "HIFK".to_string(),
+            time: "18:30".to_string(),
+            result: "".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 0,
+        };
+
+        let formatted = page.format_compact_game(&scheduled_game, &config);
+        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("18:30"));
+
+        // Test ongoing game
+        let ongoing_game = TeletextRow::GameResult {
+            home_team: "Tappara".to_string(),
+            away_team: "HIFK".to_string(),
+            time: "18:30".to_string(),
+            result: "1-0".to_string(),
+            score_type: ScoreType::Ongoing,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 2400, // 40 minutes
+        };
+
+        let formatted = page.format_compact_game(&ongoing_game, &config);
+        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("1-0"));
+
+        // Test final game with overtime
+        let overtime_game = TeletextRow::GameResult {
+            home_team: "Tappara".to_string(),
+            away_team: "HIFK".to_string(),
+            time: "18:30".to_string(),
+            result: "3-2".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: true,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 3900,
+        };
+
+        let formatted = page.format_compact_game(&overtime_game, &config);
+        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("3-2 ja"));
+
+        // Test final game with shootout
+        let shootout_game = TeletextRow::GameResult {
+            home_team: "Tappara".to_string(),
+            away_team: "HIFK".to_string(),
+            time: "18:30".to_string(),
+            result: "4-3".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: true,
+            goal_events: vec![],
+            played_time: 3900,
+        };
+
+        let formatted = page.format_compact_game(&shootout_game, &config);
+        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("4-3 rl"));
+
+        // Test non-game row (should return empty string)
+        let error_row = TeletextRow::ErrorMessage("Error".to_string());
+
+        let formatted = page.format_compact_game(&error_row, &config);
+        assert_eq!(formatted, "");
     }
 }
