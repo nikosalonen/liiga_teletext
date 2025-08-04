@@ -489,6 +489,7 @@ pub async fn invalidate_tournament_cache_for_date(date: &str) {
 
 /// Aggressively invalidates cache for games that should be starting soon
 /// This is called when we detect games are near their scheduled start time
+#[allow(dead_code)]
 pub async fn invalidate_cache_for_games_near_start_time(date: &str) {
     let mut cache = TOURNAMENT_CACHE.write().await;
 
