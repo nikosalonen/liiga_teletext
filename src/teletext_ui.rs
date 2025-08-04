@@ -536,6 +536,7 @@ impl TeletextPage {
     ///     true,
     ///     false,
     ///     false,
+    ///     false, // wide_mode
     /// );
     /// ```
     pub fn new(
@@ -588,7 +589,8 @@ impl TeletextPage {
     ///     false,
     ///     true,
     ///     false,
-    ///     false
+    ///     false,
+    ///     false, // wide_mode
     /// );
     ///
     /// // Set a fixed screen height for testing to avoid terminal size issues
@@ -647,7 +649,8 @@ impl TeletextPage {
     ///     false,
     ///     true,
     ///     false,
-    ///     false
+    ///     false,
+    ///     false, // wide_mode
     /// );
     ///
     /// // Create a sample game result
@@ -698,7 +701,8 @@ impl TeletextPage {
     ///     false,
     ///     true,
     ///     false,
-    ///     false
+    ///     false,
+    ///     false, // wide_mode
     /// );
     ///
     /// page.add_error_message("Failed to fetch game data");
@@ -1271,7 +1275,8 @@ impl TeletextPage {
     ///     false,
     ///     true,
     ///     false,
-    ///     false
+    ///     false,
+    ///     false, // wide_mode
     /// );
     ///
     /// let event = KeyCode::Right;
@@ -1302,7 +1307,8 @@ impl TeletextPage {
     ///     false,
     ///     true,
     ///     false,
-    ///     false
+    ///     false,
+    ///     false, // wide_mode
     /// );
     ///
     /// let event = KeyCode::Left;
@@ -1344,7 +1350,8 @@ impl TeletextPage {
     ///     false,
     ///     true,
     ///     false,
-    ///     false
+    ///     false,
+    ///     false, // wide_mode
     /// );
     ///
     /// // Set a fixed screen height for testing to avoid terminal size issues

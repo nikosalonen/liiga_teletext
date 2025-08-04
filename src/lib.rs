@@ -24,6 +24,7 @@
 //!         true,
 //!         false,
 //!         false,
+//!         false, // wide_mode
 //!     );
 //!
 //!     // Add games to the page
