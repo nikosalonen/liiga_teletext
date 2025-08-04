@@ -440,6 +440,46 @@ impl TeletextPageConfig {
             wide_mode: false,
         }
     }
+
+    /// Sets compact mode, automatically disabling wide mode if both were enabled.
+    /// Compact mode and wide mode are mutually exclusive.
+    ///
+    /// # Arguments
+    /// * `compact` - Whether to enable compact mode
+    #[allow(dead_code)]
+    pub fn set_compact_mode(&mut self, compact: bool) {
+        self.compact_mode = compact;
+        if compact && self.wide_mode {
+            self.wide_mode = false;
+        }
+    }
+
+    /// Sets wide mode, automatically disabling compact mode if both were enabled.
+    /// Compact mode and wide mode are mutually exclusive.
+    ///
+    /// # Arguments
+    /// * `wide` - Whether to enable wide mode
+    #[allow(dead_code)]
+    pub fn set_wide_mode(&mut self, wide: bool) {
+        self.wide_mode = wide;
+        if wide && self.compact_mode {
+            self.compact_mode = false;
+        }
+    }
+
+    /// Validates that compact mode and wide mode are not both enabled.
+    /// This method should be called after manual field modifications to ensure consistency.
+    ///
+    /// # Returns
+    /// * `Result<(), &'static str>` - Ok if valid, Err with message if invalid
+    #[allow(dead_code)]
+    pub fn validate_mode_exclusivity(&self) -> Result<(), &'static str> {
+        if self.compact_mode && self.wide_mode {
+            Err("compact_mode and wide_mode cannot be enabled simultaneously")
+        } else {
+            Ok(())
+        }
+    }
 }
 
 pub struct TeletextPage {
@@ -613,6 +653,7 @@ impl TeletextPage {
 
     /// Creates a new TeletextPage from a configuration struct.
     /// This provides a more ergonomic API compared to the many-parameter constructor.
+    /// Validates that compact_mode and wide_mode are not both enabled.
     ///
     /// # Example
     /// ```
@@ -625,8 +666,16 @@ impl TeletextPage {
     /// );
     /// let page = TeletextPage::from_config(config);
     /// ```
+    ///
+    /// # Panics
+    /// Panics if both compact_mode and wide_mode are enabled in the configuration.
     #[allow(dead_code)]
     pub fn from_config(config: TeletextPageConfig) -> Self {
+        // Validate mode exclusivity before creating the page
+        if let Err(msg) = config.validate_mode_exclusivity() {
+            panic!("Invalid TeletextPageConfig: {msg}");
+        }
+
         Self::new(
             config.page_number,
             config.title,
@@ -873,12 +922,16 @@ impl TeletextPage {
     }
 
     /// Sets the compact mode state.
+    /// Compact mode and wide mode are mutually exclusive.
     ///
     /// # Arguments
     /// * `compact` - Whether to enable compact mode
     #[allow(dead_code)]
     pub fn set_compact_mode(&mut self, compact: bool) {
         self.compact_mode = compact;
+        if compact && self.wide_mode {
+            self.wide_mode = false;
+        }
     }
 
     /// Returns whether wide mode is enabled.
@@ -891,12 +944,30 @@ impl TeletextPage {
     }
 
     /// Sets the wide mode state.
+    /// Compact mode and wide mode are mutually exclusive.
     ///
     /// # Arguments
     /// * `wide` - Whether to enable wide mode
     #[allow(dead_code)]
     pub fn set_wide_mode(&mut self, wide: bool) {
         self.wide_mode = wide;
+        if wide && self.compact_mode {
+            self.compact_mode = false;
+        }
+    }
+
+    /// Validates that compact mode and wide mode are not both enabled.
+    /// This method should be called after manual field modifications to ensure consistency.
+    ///
+    /// # Returns
+    /// * `Result<(), &'static str>` - Ok if valid, Err with message if invalid
+    #[allow(dead_code)]
+    pub fn validate_mode_exclusivity(&self) -> Result<(), &'static str> {
+        if self.compact_mode && self.wide_mode {
+            Err("compact_mode and wide_mode cannot be enabled simultaneously")
+        } else {
+            Ok(())
+        }
     }
 
     /// Checks if the terminal width is sufficient for wide mode display.
@@ -4281,5 +4352,148 @@ mod tests {
             !left_games.is_empty(),
             "Should have at least one game in left column"
         );
+    }
+
+    #[test]
+    fn test_teletext_page_config_mode_exclusivity() {
+        // Test that new config has both modes disabled by default
+        let config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
+        assert!(!config.compact_mode);
+        assert!(!config.wide_mode);
+        assert!(config.validate_mode_exclusivity().is_ok());
+
+        // Test setter methods enforce mutual exclusivity
+        let mut config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
+
+        // Enable compact mode
+        config.set_compact_mode(true);
+        assert!(config.compact_mode);
+        assert!(!config.wide_mode);
+        assert!(config.validate_mode_exclusivity().is_ok());
+
+        // Enable wide mode - should disable compact mode
+        config.set_wide_mode(true);
+        assert!(!config.compact_mode);
+        assert!(config.wide_mode);
+        assert!(config.validate_mode_exclusivity().is_ok());
+
+        // Enable compact mode again - should disable wide mode
+        config.set_compact_mode(true);
+        assert!(config.compact_mode);
+        assert!(!config.wide_mode);
+        assert!(config.validate_mode_exclusivity().is_ok());
+    }
+
+    #[test]
+    fn test_teletext_page_config_validation() {
+        // Test valid configurations
+        let mut config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
+        assert!(config.validate_mode_exclusivity().is_ok());
+
+        config.set_compact_mode(true);
+        assert!(config.validate_mode_exclusivity().is_ok());
+
+        config.set_wide_mode(true);
+        assert!(config.validate_mode_exclusivity().is_ok());
+
+        // Test invalid configuration (both modes enabled)
+        let mut config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
+        config.compact_mode = true;
+        config.wide_mode = true;
+        assert!(config.validate_mode_exclusivity().is_err());
+        assert_eq!(
+            config.validate_mode_exclusivity().unwrap_err(),
+            "compact_mode and wide_mode cannot be enabled simultaneously"
+        );
+    }
+
+    #[test]
+    fn test_teletext_page_mode_exclusivity() {
+        let mut page = TeletextPage::new(
+            221,
+            "Test".to_string(),
+            "Test".to_string(),
+            false,
+            true,
+            false,
+            false, // compact_mode
+            false, // wide_mode
+        );
+
+        // Test initial state
+        assert!(!page.is_compact_mode());
+        assert!(!page.is_wide_mode());
+        assert!(page.validate_mode_exclusivity().is_ok());
+
+        // Test setter methods enforce mutual exclusivity
+        page.set_compact_mode(true);
+        assert!(page.is_compact_mode());
+        assert!(!page.is_wide_mode());
+        assert!(page.validate_mode_exclusivity().is_ok());
+
+        // Enable wide mode - should disable compact mode
+        page.set_wide_mode(true);
+        assert!(!page.is_compact_mode());
+        assert!(page.is_wide_mode());
+        assert!(page.validate_mode_exclusivity().is_ok());
+
+        // Enable compact mode again - should disable wide mode
+        page.set_compact_mode(true);
+        assert!(page.is_compact_mode());
+        assert!(!page.is_wide_mode());
+        assert!(page.validate_mode_exclusivity().is_ok());
+    }
+
+    #[test]
+    fn test_teletext_page_validation() {
+        let mut page = TeletextPage::new(
+            221,
+            "Test".to_string(),
+            "Test".to_string(),
+            false,
+            true,
+            false,
+            false,
+            false,
+        );
+
+        // Test valid configurations
+        assert!(page.validate_mode_exclusivity().is_ok());
+
+        page.set_compact_mode(true);
+        assert!(page.validate_mode_exclusivity().is_ok());
+
+        page.set_wide_mode(true);
+        assert!(page.validate_mode_exclusivity().is_ok());
+
+        // Test invalid configuration (both modes enabled)
+        let page = TeletextPage::new(
+            221,
+            "Test".to_string(),
+            "Test".to_string(),
+            false,
+            true,
+            false,
+            true, // compact_mode
+            true, // wide_mode
+        );
+        assert!(page.validate_mode_exclusivity().is_err());
+        assert_eq!(
+            page.validate_mode_exclusivity().unwrap_err(),
+            "compact_mode and wide_mode cannot be enabled simultaneously"
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Invalid TeletextPageConfig: compact_mode and wide_mode cannot be enabled simultaneously"
+    )]
+    fn test_from_config_panics_with_invalid_config() {
+        let mut config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
+        config.compact_mode = true;
+        config.wide_mode = true;
+
+        // This should panic
+        let _page = TeletextPage::from_config(config);
     }
 }
