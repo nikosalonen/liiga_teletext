@@ -745,11 +745,11 @@ impl TeletextPage {
                 // Use team abbreviations
                 let home_abbr = get_team_abbreviation(home_team);
                 let away_abbr = get_team_abbreviation(away_team);
-                
+
                 // Format team names with proper width
                 let team_display = format!("{}-{}", home_abbr, away_abbr);
                 let padded_team = format!("{:<width$}", team_display, width = config.team_name_width);
-                
+
                 // Format score based on game state
                 let score_display = match score_type {
                     ScoreType::Scheduled => format!("{:<width$}", time, width = config.score_width),
@@ -763,7 +763,7 @@ impl TeletextPage {
                         format!("{:<width$}", score, width = config.score_width)
                     }
                 };
-                
+
                 format!("{}{}", padded_team, score_display)
             }
             _ => String::new(),
@@ -788,24 +788,24 @@ impl TeletextPage {
         let games_per_line = config.calculate_games_per_line(terminal_width);
         let mut lines = Vec::new();
         let mut current_line = String::new();
-        
+
         for (i, game) in games.iter().enumerate() {
             let game_str = self.format_compact_game(game, config);
-            
+
             if current_line.is_empty() {
                 current_line = game_str;
             } else {
                 current_line.push_str(config.game_separator);
                 current_line.push_str(&game_str);
             }
-            
+
             // Start new line if we've reached the limit or this is the last game
             if (i + 1) % games_per_line == 0 || i == games.len() - 1 {
                 lines.push(current_line.clone());
                 current_line.clear();
             }
         }
-        
+
         lines
     }
 
@@ -1263,7 +1263,7 @@ impl TeletextPage {
             if self.is_terminal_suitable_for_compact(width as usize) {
                 let config = CompactDisplayConfig::default();
                 let compact_lines = self.group_games_for_compact_display(&visible_rows, &config, width as usize);
-                
+
                 for (line_index, compact_line) in compact_lines.iter().enumerate() {
                     buffer.push_str(&format!(
                         "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
@@ -2317,7 +2317,7 @@ mod tests {
         );
 
         let config = CompactDisplayConfig::default();
-        
+
         // Test scheduled game
         let scheduled_game = TeletextRow::GameResult {
             home_team: "Tappara".to_string(),
@@ -2366,7 +2366,7 @@ mod tests {
         );
 
         let config = CompactDisplayConfig::new(2, 10, 8, " | ");
-        
+
         let games = vec![
             TeletextRow::GameResult {
                 home_team: "Tappara".to_string(),
