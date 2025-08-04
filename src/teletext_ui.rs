@@ -49,6 +49,170 @@ const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
 
+/// Returns the abbreviated form of a team name for compact display.
+///
+/// This function maps full team names to their 3-4 character abbreviations
+/// commonly used in Finnish hockey. For unknown team names, it returns
+/// the first 3 characters as a fallback.
+///
+/// # Arguments
+/// * `team_name` - The full team name to abbreviate
+///
+/// # Returns
+/// * `&str` - The abbreviated team name
+///
+/// # Examples
+/// ```
+/// use liiga_teletext::get_team_abbreviation;
+///
+/// assert_eq!(get_team_abbreviation("Tappara"), "TAP");
+/// assert_eq!(get_team_abbreviation("HIFK"), "HIFK");
+/// assert_eq!(get_team_abbreviation("Unknown Team"), "Unk");
+/// ```
+#[allow(dead_code)]
+pub fn get_team_abbreviation(team_name: &str) -> &str {
+    match team_name {
+        // Current Liiga teams (2024-25 season)
+        "Tappara" => "TAP",
+        "HIFK" => "HIFK",
+        "TPS" => "TPS",
+        "JYP" => "JYP",
+        "Ilves" => "ILV",
+        "KalPa" => "KAL",
+        "Kärpät" => "KÄR",
+        "Lukko" => "LUK",
+        "Pelicans" => "PEL",
+        "SaiPa" => "SAI",
+        "Sport" => "SPO",
+        "HPK" => "HPK",
+        "Jukurit" => "JUK",
+        "Ässät" => "ÄSS",
+        "KooKoo" => "KOO",
+
+        // Alternative team name formats that might appear in API
+        "HIFK Helsinki" => "HIFK",
+        "TPS Turku" => "TPS",
+        "Tampereen Tappara" => "TAP",
+        "Tampereen Ilves" => "ILV",
+        "Jyväskylän JYP" => "JYP",
+        "Kuopion KalPa" => "KAL",
+        "Oulun Kärpät" => "KÄR",
+        "Rauman Lukko" => "LUK",
+        "Lahden Pelicans" => "PEL",
+        "Lappeenrannan SaiPa" => "SAI",
+        "Vaasan Sport" => "SPO",
+        "Hämeenlinnan HPK" => "HPK",
+        "Mikkelin Jukurit" => "JUK",
+        "Porin Ässät" => "ÄSS",
+        "Kouvolan KooKoo" => "KOO",
+
+        // Fallback for unknown team names - take first 3 characters
+        _ => {
+            if team_name.len() >= 3 {
+                &team_name[..3]
+            } else {
+                team_name
+            }
+        }
+    }
+}
+
+/// Configuration for compact display mode layout parameters.
+///
+/// This struct defines the layout parameters used when rendering games
+/// in compact mode, including spacing, width constraints, and formatting options.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct CompactDisplayConfig {
+    /// Maximum number of games to display per line
+    pub max_games_per_line: usize,
+    /// Width allocated for team name display (e.g., "TAP-HIK")
+    pub team_name_width: usize,
+    /// Width allocated for score display (e.g., " 3-2 ")
+    pub score_width: usize,
+    /// String used to separate games on the same line
+    pub game_separator: &'static str,
+}
+
+impl Default for CompactDisplayConfig {
+    /// Creates a default compact display configuration optimized for readability.
+    ///
+    /// The default configuration is designed to work well on standard terminal widths
+    /// while maintaining clear visual separation between games.
+    fn default() -> Self {
+        Self {
+            max_games_per_line: 1, // One game per line for better readability
+            team_name_width: 8,    // "TAP-HIFK" = 8 characters
+            score_width: 6,        // " 3-2  " = 6 characters with padding
+            game_separator: "  ",  // Two spaces between games
+        }
+    }
+}
+
+impl CompactDisplayConfig {
+    /// Creates a new compact display configuration with custom parameters.
+    ///
+    /// # Arguments
+    /// * `max_games_per_line` - Maximum games to show per line
+    /// * `team_name_width` - Width for team name display
+    /// * `score_width` - Width for score display
+    /// * `game_separator` - String to separate games
+    ///
+    /// # Returns
+    /// * `CompactDisplayConfig` - New configuration instance
+    #[allow(dead_code)]
+    pub fn new(
+        max_games_per_line: usize,
+        team_name_width: usize,
+        score_width: usize,
+        game_separator: &'static str,
+    ) -> Self {
+        Self {
+            max_games_per_line,
+            team_name_width,
+            score_width,
+            game_separator,
+        }
+    }
+
+    /// Calculates the optimal number of games per line based on terminal width.
+    ///
+    /// This method adapts the display to the current terminal width while
+    /// respecting the maximum games per line setting.
+    ///
+    /// # Arguments
+    /// * `terminal_width` - Current terminal width in characters
+    ///
+    /// # Returns
+    /// * `usize` - Optimal number of games that can fit per line
+    #[allow(dead_code)]
+    pub fn calculate_games_per_line(&self, terminal_width: usize) -> usize {
+        if terminal_width == 0 {
+            return 1;
+        }
+
+        // Calculate space needed for one game: team names + score + separator
+        let game_width = self.team_name_width + self.score_width + self.game_separator.len();
+
+        // Calculate how many games can fit, but respect the maximum
+        let calculated_games = terminal_width / game_width;
+        calculated_games.max(1).min(self.max_games_per_line)
+    }
+
+    /// Checks if the current terminal width can accommodate compact mode.
+    ///
+    /// # Arguments
+    /// * `terminal_width` - Current terminal width in characters
+    ///
+    /// # Returns
+    /// * `bool` - True if terminal is wide enough for compact mode
+    #[allow(dead_code)]
+    pub fn is_terminal_width_sufficient(&self, terminal_width: usize) -> bool {
+        let min_width = self.team_name_width + self.score_width;
+        terminal_width >= min_width
+    }
+}
+
 /// Helper function to extract ANSI color code from crossterm Color enum.
 /// Provides a fallback value for non-ANSI colors.
 fn get_ansi_code(color: Color, fallback: u8) -> u8 {
@@ -1263,6 +1427,76 @@ impl TeletextPage {
 mod tests {
     use super::*;
     use crate::data_fetcher::GoalEventData;
+
+    #[test]
+    fn test_team_abbreviation() {
+        // Test current Liiga teams
+        assert_eq!(get_team_abbreviation("Tappara"), "TAP");
+        assert_eq!(get_team_abbreviation("HIFK"), "HIFK");
+        assert_eq!(get_team_abbreviation("TPS"), "TPS");
+        assert_eq!(get_team_abbreviation("JYP"), "JYP");
+        assert_eq!(get_team_abbreviation("Ilves"), "ILV");
+        assert_eq!(get_team_abbreviation("KalPa"), "KAL");
+        assert_eq!(get_team_abbreviation("Kärpät"), "KÄR");
+        assert_eq!(get_team_abbreviation("Lukko"), "LUK");
+        assert_eq!(get_team_abbreviation("Pelicans"), "PEL");
+        assert_eq!(get_team_abbreviation("SaiPa"), "SAI");
+        assert_eq!(get_team_abbreviation("Sport"), "SPO");
+        assert_eq!(get_team_abbreviation("HPK"), "HPK");
+        assert_eq!(get_team_abbreviation("Jukurit"), "JUK");
+        assert_eq!(get_team_abbreviation("Ässät"), "ÄSS");
+        assert_eq!(get_team_abbreviation("KooKoo"), "KOO");
+
+        // Test alternative team name formats
+        assert_eq!(get_team_abbreviation("HIFK Helsinki"), "HIFK");
+        assert_eq!(get_team_abbreviation("TPS Turku"), "TPS");
+        assert_eq!(get_team_abbreviation("Tampereen Tappara"), "TAP");
+        assert_eq!(get_team_abbreviation("Tampereen Ilves"), "ILV");
+        assert_eq!(get_team_abbreviation("Jyväskylän JYP"), "JYP");
+        assert_eq!(get_team_abbreviation("Kuopion KalPa"), "KAL");
+        assert_eq!(get_team_abbreviation("Oulun Kärpät"), "KÄR");
+        assert_eq!(get_team_abbreviation("Rauman Lukko"), "LUK");
+        assert_eq!(get_team_abbreviation("Lahden Pelicans"), "PEL");
+        assert_eq!(get_team_abbreviation("Lappeenrannan SaiPa"), "SAI");
+        assert_eq!(get_team_abbreviation("Vaasan Sport"), "SPO");
+        assert_eq!(get_team_abbreviation("Hämeenlinnan HPK"), "HPK");
+        assert_eq!(get_team_abbreviation("Mikkelin Jukurit"), "JUK");
+        assert_eq!(get_team_abbreviation("Porin Ässät"), "ÄSS");
+        assert_eq!(get_team_abbreviation("Kouvolan KooKoo"), "KOO");
+
+        // Test fallback for unknown team names
+        assert_eq!(get_team_abbreviation("Unknown Team"), "Unk");
+        assert_eq!(get_team_abbreviation("New Team"), "New");
+        assert_eq!(get_team_abbreviation("AB"), "AB"); // Short name
+        assert_eq!(get_team_abbreviation("A"), "A");   // Very short name
+    }
+
+    #[test]
+    fn test_compact_display_config() {
+        // Test default configuration
+        let config = CompactDisplayConfig::default();
+        assert_eq!(config.max_games_per_line, 1);
+        assert_eq!(config.team_name_width, 8);
+        assert_eq!(config.score_width, 6);
+        assert_eq!(config.game_separator, "  ");
+
+        // Test custom configuration
+        let custom_config = CompactDisplayConfig::new(3, 10, 8, " | ");
+        assert_eq!(custom_config.max_games_per_line, 3);
+        assert_eq!(custom_config.team_name_width, 10);
+        assert_eq!(custom_config.score_width, 8);
+        assert_eq!(custom_config.game_separator, " | ");
+
+        // Test terminal width adaptation
+        assert_eq!(config.calculate_games_per_line(80), 1);
+        assert_eq!(config.calculate_games_per_line(100), 1);
+        assert_eq!(config.calculate_games_per_line(0), 1);
+
+        // Test terminal width sufficiency
+        assert!(config.is_terminal_width_sufficient(20));
+        assert!(config.is_terminal_width_sufficient(14));
+        assert!(!config.is_terminal_width_sufficient(10));
+    }
 
     #[test]
     fn test_loading_indicator() {
