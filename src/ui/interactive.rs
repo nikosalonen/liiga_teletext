@@ -90,6 +90,7 @@ fn get_subheader(games: &[GameData]) -> String {
 }
 
 /// Calculates a hash of the games data for change detection
+/// Optimized to focus on essential fields that indicate meaningful changes
 fn calculate_games_hash(games: &[GameData]) -> u64 {
     let mut hasher = DefaultHasher::new();
 
@@ -105,16 +106,18 @@ fn calculate_games_hash(games: &[GameData]) -> u64 {
         game.played_time.hash(&mut hasher);
         game.start.hash(&mut hasher);
 
-        // Hash goal events for change detection
+        // Hash only essential goal event fields for efficient change detection
+        // These fields capture the most important changes: new goals, score updates, and timing
         for goal in &game.goal_events {
             goal.scorer_player_id.hash(&mut hasher);
-            goal.scorer_name.hash(&mut hasher);
             goal.minute.hash(&mut hasher);
             goal.home_team_score.hash(&mut hasher);
             goal.away_team_score.hash(&mut hasher);
-            goal.is_winning_goal.hash(&mut hasher);
-            goal.is_home_team.hash(&mut hasher);
-            goal.goal_types.hash(&mut hasher);
+            // Omitted fields for performance:
+            // - scorer_name: derived from scorer_player_id via players cache
+            // - is_winning_goal: calculated field, can be derived
+            // - is_home_team: derived from team comparison
+            // - goal_types: less critical for change detection, rarely updated
         }
     }
 
