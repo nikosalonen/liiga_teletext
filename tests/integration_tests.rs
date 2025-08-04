@@ -436,7 +436,11 @@ async fn test_compact_mode_non_interactive() {
 
     // Test compact mode compatibility
     let validation = page.validate_compact_mode_compatibility();
-    assert!(matches!(validation, liiga_teletext::teletext_ui::CompactModeValidation::Compatible | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }));
+    assert!(matches!(
+        validation,
+        liiga_teletext::teletext_ui::CompactModeValidation::Compatible
+            | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
+    ));
 
     // Test rendering doesn't panic (we can't easily test output in integration tests)
     // This verifies the compact mode logic works end-to-end
@@ -526,10 +530,14 @@ async fn test_compact_mode_terminal_width_constraints() {
     // Test sufficient width
     let validation = config.validate_terminal_width(80);
     match validation {
-        TerminalWidthValidation::Sufficient { current_width, required_width, excess } => {
+        TerminalWidthValidation::Sufficient {
+            current_width,
+            required_width,
+            excess,
+        } => {
             assert_eq!(current_width, 80);
-            assert_eq!(required_width, 14);
-            assert_eq!(excess, 66);
+            assert_eq!(required_width, 18);
+            assert_eq!(excess, 62);
         }
         _ => panic!("Expected sufficient validation"),
     }
@@ -537,20 +545,28 @@ async fn test_compact_mode_terminal_width_constraints() {
     // Test insufficient width
     let validation = config.validate_terminal_width(10);
     match validation {
-        TerminalWidthValidation::Insufficient { current_width, required_width, shortfall } => {
+        TerminalWidthValidation::Insufficient {
+            current_width,
+            required_width,
+            shortfall,
+        } => {
             assert_eq!(current_width, 10);
-            assert_eq!(required_width, 14);
-            assert_eq!(shortfall, 4);
+            assert_eq!(required_width, 18);
+            assert_eq!(shortfall, 8);
         }
         _ => panic!("Expected insufficient validation"),
     }
 
     // Test minimum width exactly
-    let validation = config.validate_terminal_width(14);
+    let validation = config.validate_terminal_width(18);
     match validation {
-        TerminalWidthValidation::Sufficient { current_width, required_width, excess } => {
-            assert_eq!(current_width, 14);
-            assert_eq!(required_width, 14);
+        TerminalWidthValidation::Sufficient {
+            current_width,
+            required_width,
+            excess,
+        } => {
+            assert_eq!(current_width, 18);
+            assert_eq!(required_width, 18);
             assert_eq!(excess, 0);
         }
         _ => panic!("Expected sufficient validation at minimum width"),
@@ -649,29 +665,42 @@ async fn test_compact_mode_various_terminal_sizes() {
 
     // Test different configurations for different terminal sizes
     let configs = vec![
-        (CompactDisplayConfig::default(), 80, true),           // Standard wide terminal
-        (CompactDisplayConfig::default(), 40, true),           // Medium terminal
-        (CompactDisplayConfig::default(), 20, true),           // Narrow terminal
-        (CompactDisplayConfig::default(), 14, true),           // Minimum width
-        (CompactDisplayConfig::default(), 10, false),          // Too narrow
+        (CompactDisplayConfig::default(), 80, true), // Standard wide terminal
+        (CompactDisplayConfig::default(), 40, true), // Medium terminal
+        (CompactDisplayConfig::default(), 20, true), // Narrow terminal
+        (CompactDisplayConfig::default(), 18, true), // Minimum width
+        (CompactDisplayConfig::default(), 17, false), // Too narrow
         (CompactDisplayConfig::new(3, 10, 8, " | "), 80, true), // Custom config wide
         (CompactDisplayConfig::new(3, 10, 8, " | "), 40, true), // Custom config medium
-        (CompactDisplayConfig::new(3, 10, 8, " | "), 20, true), // Custom config narrow
+        (CompactDisplayConfig::new(3, 10, 8, " | "), 22, true), // Custom config minimum
+        (CompactDisplayConfig::new(3, 10, 8, " | "), 20, false), // Custom config too narrow
     ];
 
     for (config, terminal_width, should_be_sufficient) in configs {
         let is_sufficient = config.is_terminal_width_sufficient(terminal_width);
-        assert_eq!(is_sufficient, should_be_sufficient,
-                   "Terminal width {} should be {} for config {:?}",
-                   terminal_width,
-                   if should_be_sufficient { "sufficient" } else { "insufficient" },
-                   config);
+        assert_eq!(
+            is_sufficient,
+            should_be_sufficient,
+            "Terminal width {} should be {} for config {:?}",
+            terminal_width,
+            if should_be_sufficient {
+                "sufficient"
+            } else {
+                "insufficient"
+            },
+            config
+        );
 
         // Test games per line calculation
         let games_per_line = config.calculate_games_per_line(terminal_width);
-        assert!(games_per_line > 0, "Games per line should always be at least 1");
-        assert!(games_per_line <= config.max_games_per_line,
-                "Games per line should not exceed max_games_per_line");
+        assert!(
+            games_per_line > 0,
+            "Games per line should always be at least 1"
+        );
+        assert!(
+            games_per_line <= config.max_games_per_line,
+            "Games per line should not exceed max_games_per_line"
+        );
     }
 }
 
