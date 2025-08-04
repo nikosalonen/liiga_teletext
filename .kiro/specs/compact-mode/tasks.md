@@ -64,20 +64,20 @@
     - Ensure compact mode preserves all interactive features
     - _Requirements: 2.1, 2.3_
 
-- [ ] 6. Implement compact rendering logic
-  - [ ] 6.1 Create compact game formatting functions
+- [x] 6. Implement compact rendering logic
+  - [x] 6.1 Create compact game formatting functions
     - Write function to format single game in compact format
     - Implement logic to group multiple games per line
     - Add proper spacing and alignment for compact display
     - _Requirements: 3.1, 3.2, 3.4_
 
-  - [ ] 6.2 Handle different game states in compact mode
+  - [x] 6.2 Handle different game states in compact mode
     - Format live games with appropriate indicators
     - Display final scores clearly in compact format
     - Show upcoming games with start times
     - _Requirements: 4.3, 5.2, 5.3, 5.4_
 
-  - [ ] 6.3 Preserve teletext visual styling
+  - [x] 6.3 Preserve teletext visual styling
     - Maintain authentic teletext colors in compact mode
     - Ensure proper contrast and readability
     - Keep consistent visual hierarchy
