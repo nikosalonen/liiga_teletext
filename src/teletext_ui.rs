@@ -1226,8 +1226,11 @@ impl TeletextPage {
                 ));
             }
 
-            // Add auto-refresh indicator if active
-            let footer_text = if let Some(ref indicator) = self.auto_refresh_indicator {
+            // Add loading indicator or auto-refresh indicator if active
+            let footer_text = if let Some(ref loading) = self.loading_indicator {
+                let loading_frame = loading.current_frame();
+                format!("{controls} {} {}", loading_frame, loading.message())
+            } else if let Some(ref indicator) = self.auto_refresh_indicator {
                 let indicator_frame = indicator.current_frame();
                 format!("{controls} {indicator_frame}")
             } else {

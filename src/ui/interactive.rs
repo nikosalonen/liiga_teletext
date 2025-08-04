@@ -1166,8 +1166,12 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             let target_date = get_target_date_for_navigation(params.current_date);
 
             // Show loading indicator
-            if let Some(page) = params.current_page {
+            if let Some(page) = params.current_page.as_mut() {
                 page.show_loading("Etsitään edellisiä otteluita...".to_string());
+                // Force immediate render to show loading indicator
+                let mut stdout = std::io::stdout();
+                let _ = page.render_buffered(&mut stdout);
+                *params.needs_render = true;
             }
 
             tracing::info!(
@@ -1186,7 +1190,7 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             }
 
             // Hide loading indicator
-            if let Some(page) = params.current_page {
+            if let Some(page) = params.current_page.as_mut() {
                 page.hide_loading();
             }
             *params.last_date_navigation = Instant::now();
@@ -1199,8 +1203,12 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             let target_date = get_target_date_for_navigation(params.current_date);
 
             // Show loading indicator
-            if let Some(page) = params.current_page {
+            if let Some(page) = params.current_page.as_mut() {
                 page.show_loading("Etsitään seuraavia otteluita...".to_string());
+                // Force immediate render to show loading indicator
+                let mut stdout = std::io::stdout();
+                let _ = page.render_buffered(&mut stdout);
+                *params.needs_render = true;
             }
 
             tracing::info!("Searching for next date with games from: {}", target_date);
@@ -1216,7 +1224,7 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             }
 
             // Hide loading indicator
-            if let Some(page) = params.current_page {
+            if let Some(page) = params.current_page.as_mut() {
                 page.hide_loading();
             }
             *params.last_date_navigation = Instant::now();
@@ -1230,7 +1238,7 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             }
             KeyCode::Char('r') => {
                 // Check if auto-refresh is disabled - ignore manual refresh too
-                if let Some(page) = params.current_page {
+                if let Some(page) = params.current_page.as_ref() {
                     if page.is_auto_refresh_disabled() {
                         tracing::info!("Manual refresh ignored - auto-refresh is disabled");
                         return Ok(false); // Skip refresh when auto-refresh is disabled
@@ -1253,7 +1261,7 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             }
             KeyCode::Left => {
                 if params.last_page_change.elapsed() >= Duration::from_millis(200) {
-                    if let Some(page) = params.current_page {
+                    if let Some(page) = params.current_page.as_mut() {
                         page.previous_page();
                         *params.needs_render = true;
                     }
@@ -1262,7 +1270,7 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             }
             KeyCode::Right => {
                 if params.last_page_change.elapsed() >= Duration::from_millis(200) {
-                    if let Some(page) = params.current_page {
+                    if let Some(page) = params.current_page.as_mut() {
                         page.next_page();
                         *params.needs_render = true;
                     }
