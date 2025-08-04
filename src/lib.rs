@@ -53,7 +53,7 @@ pub use config::Config;
 pub use data_fetcher::api::fetch_liiga_data;
 pub use data_fetcher::models::{DetailedGameResponse, GameData, ScheduleResponse};
 pub use error::AppError;
-pub use teletext_ui::{GameResultData, TeletextPage, get_team_abbreviation, CompactDisplayConfig};
+pub use teletext_ui::{CompactDisplayConfig, GameResultData, TeletextPage, get_team_abbreviation};
 
 // Re-export cache debugging and monitoring functions for external tools
 pub use data_fetcher::cache::{

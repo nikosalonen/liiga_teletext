@@ -401,15 +401,15 @@ async fn create_base_page(
     current_page: Option<usize>,
 ) -> TeletextPage {
     let subheader = get_subheader(games);
-            let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            subheader,
-            disable_video_links,
-            show_footer,
-            ignore_height_limit,
-            compact_mode,
-        );
+    let mut page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        subheader,
+        disable_video_links,
+        show_footer,
+        ignore_height_limit,
+        compact_mode,
+    );
 
     // Set the fetched date if provided
     if let Some(date) = fetched_date {
@@ -1132,15 +1132,15 @@ async fn fetch_data_with_timeout(
 
 /// Create loading page for data fetching
 fn create_loading_page(current_date: &Option<String>, disable_links: bool) -> TeletextPage {
-            let mut loading_page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            disable_links,
-            true,
-            false,
-            false, // compact_mode - will be passed from main later
-        );
+    let mut loading_page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        disable_links,
+        true,
+        false,
+        false, // compact_mode - will be passed from main later
+    );
 
     if let Some(date) = current_date {
         if is_historical_date(date) {
@@ -1164,15 +1164,15 @@ fn create_loading_page(current_date: &Option<String>, disable_links: bool) -> Te
 
 /// Create error page for empty games
 fn create_error_page(fetched_date: &str, disable_links: bool) -> TeletextPage {
-            let mut error_page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            disable_links,
-            true,
-            false,
-            false, // compact_mode - will be passed from main later
-        );
+    let mut error_page = TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        disable_links,
+        true,
+        false,
+        false, // compact_mode - will be passed from main later
+    );
 
     // Use UTC internally, convert to local time for date formatting
     let today = Utc::now()

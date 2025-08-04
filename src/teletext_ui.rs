@@ -294,13 +294,9 @@ pub enum CompactModeValidation {
     /// Compact mode is fully compatible
     Compatible,
     /// Compact mode is compatible but with warnings
-    CompatibleWithWarnings {
-        warnings: Vec<String>,
-    },
+    CompatibleWithWarnings { warnings: Vec<String> },
     /// Compact mode is incompatible
-    Incompatible {
-        issues: Vec<String>,
-    },
+    Incompatible { issues: Vec<String> },
 }
 
 /// Helper function to extract ANSI color code from crossterm Color enum.
@@ -430,7 +426,7 @@ pub struct TeletextPage {
     fetched_date: Option<String>, // Date for which data was fetched
     loading_indicator: Option<LoadingIndicator>,
     auto_refresh_indicator: Option<LoadingIndicator>, // Subtle indicator for auto-refresh
-    compact_mode: bool, // Enable compact display mode
+    compact_mode: bool,                               // Enable compact display mode
 }
 
 pub enum TeletextRow {
@@ -532,14 +528,14 @@ impl TeletextPage {
     /// use liiga_teletext::TeletextPage;
     ///
     /// let page = TeletextPage::new(
-///     221,
-///     "JÄÄKIEKKO".to_string(),
-///     "SM-LIIGA".to_string(),
-///     false,
-///     true,
-///     false,
-///     false,
-/// );
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false,
+    ///     false,
+    /// );
     /// ```
     pub fn new(
         page_number: u16,
@@ -842,13 +838,21 @@ impl TeletextPage {
 
                 // Format team names with proper width and teletext white color
                 let team_display = format!("{home_abbr}-{away_abbr}");
-                let padded_team = format!("\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m", team_display, width = config.team_name_width);
+                let padded_team = format!(
+                    "\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m",
+                    team_display,
+                    width = config.team_name_width
+                );
 
                 // Format score based on game state with appropriate colors
                 let score_display = match score_type {
                     ScoreType::Scheduled => {
                         // Scheduled games show time in white
-                        format!("\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m", time, width = config.score_width)
+                        format!(
+                            "\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m",
+                            time,
+                            width = config.score_width
+                        )
                     }
                     ScoreType::Ongoing => {
                         // Ongoing games show score in white (like regular mode)
@@ -858,7 +862,11 @@ impl TeletextPage {
                         } else if *is_overtime {
                             score.push_str(" ja");
                         }
-                        format!("\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m", score, width = config.score_width)
+                        format!(
+                            "\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m",
+                            score,
+                            width = config.score_width
+                        )
                     }
                     ScoreType::Final => {
                         // Final games show score in bright green (like regular mode)
@@ -868,7 +876,11 @@ impl TeletextPage {
                         } else if *is_overtime {
                             score.push_str(" ja");
                         }
-                        format!("\x1b[38;5;{result_fg_code}m{:<width$}\x1b[0m", score, width = config.score_width)
+                        format!(
+                            "\x1b[38;5;{result_fg_code}m{:<width$}\x1b[0m",
+                            score,
+                            width = config.score_width
+                        )
                     }
                 };
 
@@ -1014,9 +1026,11 @@ impl TeletextPage {
         // No need for warning anymore
 
         // Check if we have many games (compact mode might be crowded)
-        let game_count = self.content_rows.iter().filter(|row| {
-            matches!(row, TeletextRow::GameResult { .. })
-        }).count();
+        let game_count = self
+            .content_rows
+            .iter()
+            .filter(|row| matches!(row, TeletextRow::GameResult { .. }))
+            .count();
 
         if game_count > 20 {
             warnings.push("Many games detected - compact mode may be crowded".to_string());
@@ -1459,13 +1473,23 @@ impl TeletextPage {
             let validation = config.validate_terminal_width(width as usize);
 
             match validation {
-                TerminalWidthValidation::Sufficient { current_width: _, required_width: _, excess: _ } => {
+                TerminalWidthValidation::Sufficient {
+                    current_width: _,
+                    required_width: _,
+                    excess: _,
+                } => {
                     // Terminal is wide enough for compact mode
-                    let compact_lines = self.group_games_for_compact_display(&visible_rows, &config, width as usize);
+                    let compact_lines = self.group_games_for_compact_display(
+                        &visible_rows,
+                        &config,
+                        width as usize,
+                    );
 
                     // Check for compatibility warnings
                     let compatibility = self.validate_compact_mode_compatibility();
-                    if let CompactModeValidation::CompatibleWithWarnings { warnings } = compatibility {
+                    if let CompactModeValidation::CompatibleWithWarnings { warnings } =
+                        compatibility
+                    {
                         // Display warnings at the top of compact content
                         for (warning_index, warning) in warnings.iter().enumerate() {
                             buffer.push_str(&format!(
@@ -1489,7 +1513,11 @@ impl TeletextPage {
                     }
                     current_line += compact_lines.len();
                 }
-                TerminalWidthValidation::Insufficient { current_width, required_width, shortfall } => {
+                TerminalWidthValidation::Insufficient {
+                    current_width,
+                    required_width,
+                    shortfall,
+                } => {
                     // Terminal is too narrow for compact mode - show detailed error message
                     let error_message = format!(
                         "Terminal too narrow for compact mode ({current_width} chars, need {required_width} chars, short {shortfall} chars)"
@@ -1518,47 +1546,47 @@ impl TeletextPage {
         } else {
             // Normal rendering mode
             for row in visible_rows {
-            match row {
-                TeletextRow::GameResult {
-                    home_team,
-                    away_team,
-                    time,
-                    result,
-                    score_type,
-                    is_overtime,
-                    is_shootout,
-                    goal_events,
-                    played_time,
-                } => {
-                    // Format result with overtime/shootout indicator
-                    let result_text = if *is_shootout {
-                        format!("{result} rl")
-                    } else if *is_overtime {
-                        format!("{result} ja")
-                    } else {
-                        result.clone()
-                    };
+                match row {
+                    TeletextRow::GameResult {
+                        home_team,
+                        away_team,
+                        time,
+                        result,
+                        score_type,
+                        is_overtime,
+                        is_shootout,
+                        goal_events,
+                        played_time,
+                    } => {
+                        // Format result with overtime/shootout indicator
+                        let result_text = if *is_shootout {
+                            format!("{result} rl")
+                        } else if *is_overtime {
+                            format!("{result} ja")
+                        } else {
+                            result.clone()
+                        };
 
-                    // Format time display based on game state
-                    let (time_display, score_display) = match score_type {
-                        ScoreType::Scheduled => (time.clone(), String::new()),
-                        ScoreType::Ongoing => {
-                            let formatted_time =
-                                format!("{:02}:{:02}", played_time / 60, played_time % 60);
-                            (formatted_time, result_text.clone())
-                        }
-                        ScoreType::Final => (String::new(), result_text.clone()),
-                    };
+                        // Format time display based on game state
+                        let (time_display, score_display) = match score_type {
+                            ScoreType::Scheduled => (time.clone(), String::new()),
+                            ScoreType::Ongoing => {
+                                let formatted_time =
+                                    format!("{:02}:{:02}", played_time / 60, played_time % 60);
+                                (formatted_time, result_text.clone())
+                            }
+                            ScoreType::Final => (String::new(), result_text.clone()),
+                        };
 
-                    let result_color = match score_type {
-                        ScoreType::Final => result_fg_code,
-                        _ => text_fg_code,
-                    };
+                        let result_color = match score_type {
+                            ScoreType::Final => result_fg_code,
+                            _ => text_fg_code,
+                        };
 
-                    // Build game line with precise positioning (using 1-based ANSI coordinates)
-                    if !time_display.is_empty() && !score_display.is_empty() {
-                        // For ongoing games: show time on the left, score on the right
-                        buffer.push_str(&format!(
+                        // Build game line with precise positioning (using 1-based ANSI coordinates)
+                        if !time_display.is_empty() && !score_display.is_empty() {
+                            // For ongoing games: show time on the left, score on the right
+                            buffer.push_str(&format!(
                             "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{:<10}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                             current_line, CONTENT_MARGIN + 1,
                             text_fg_code,
@@ -1575,14 +1603,14 @@ impl TeletextPage {
                             result_color,
                             score_display
                         ));
-                    } else {
-                        // For scheduled/final games: show time or score on the right
-                        let display_text = if !time_display.is_empty() {
-                            time_display
                         } else {
-                            score_display
-                        };
-                        buffer.push_str(&format!(
+                            // For scheduled/final games: show time or score on the right
+                            let display_text = if !time_display.is_empty() {
+                                time_display
+                            } else {
+                                score_display
+                            };
+                            buffer.push_str(&format!(
                             "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                             current_line, CONTENT_MARGIN + 1,
                             text_fg_code,
@@ -1596,161 +1624,161 @@ impl TeletextPage {
                             result_color,
                             display_text
                         ));
-                    }
+                        }
 
-                    current_line += 1;
+                        current_line += 1;
 
-                    // Add goal events for finished/ongoing games
-                    if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
-                        && !goal_events.is_empty()
-                    {
-                        let home_scorer_fg_code = get_ansi_code(home_scorer_fg(), 51);
-                        let away_scorer_fg_code = get_ansi_code(away_scorer_fg(), 51);
-                        let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
-                        let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
+                        // Add goal events for finished/ongoing games
+                        if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
+                            && !goal_events.is_empty()
+                        {
+                            let home_scorer_fg_code = get_ansi_code(home_scorer_fg(), 51);
+                            let away_scorer_fg_code = get_ansi_code(away_scorer_fg(), 51);
+                            let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
+                            let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
 
-                        let home_scorers: Vec<_> =
-                            goal_events.iter().filter(|e| e.is_home_team).collect();
-                        let away_scorers: Vec<_> =
-                            goal_events.iter().filter(|e| !e.is_home_team).collect();
-                        let max_scorers = home_scorers.len().max(away_scorers.len());
+                            let home_scorers: Vec<_> =
+                                goal_events.iter().filter(|e| e.is_home_team).collect();
+                            let away_scorers: Vec<_> =
+                                goal_events.iter().filter(|e| !e.is_home_team).collect();
+                            let max_scorers = home_scorers.len().max(away_scorers.len());
 
-                        for i in 0..max_scorers {
-                            // Home team scorer
-                            if let Some(event) = home_scorers.get(i) {
-                                let scorer_color = if (event.is_winning_goal
-                                    && (*is_overtime || *is_shootout))
-                                    || event.goal_types.contains(&"VL".to_string())
-                                {
-                                    winning_goal_fg_code
-                                } else {
-                                    home_scorer_fg_code
-                                };
+                            for i in 0..max_scorers {
+                                // Home team scorer
+                                if let Some(event) = home_scorers.get(i) {
+                                    let scorer_color = if (event.is_winning_goal
+                                        && (*is_overtime || *is_shootout))
+                                        || event.goal_types.contains(&"VL".to_string())
+                                    {
+                                        winning_goal_fg_code
+                                    } else {
+                                        home_scorer_fg_code
+                                    };
 
-                                buffer.push_str(&format!(
-                                    "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
-                                    current_line,
-                                    CONTENT_MARGIN + 1,
-                                    scorer_color,
-                                    event.minute
-                                ));
+                                    buffer.push_str(&format!(
+                                        "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
+                                        current_line,
+                                        CONTENT_MARGIN + 1,
+                                        scorer_color,
+                                        event.minute
+                                    ));
 
-                                // Add video link functionality if there's a video clip and links are enabled
-                                if let Some(url) = &event.video_clip_url {
-                                    if !self.disable_video_links {
-                                        buffer.push_str(&format!(
-                                            "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                            scorer_color, event.scorer_name, url
-                                        ));
+                                    // Add video link functionality if there's a video clip and links are enabled
+                                    if let Some(url) = &event.video_clip_url {
+                                        if !self.disable_video_links {
+                                            buffer.push_str(&format!(
+                                                "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
+                                                scorer_color, event.scorer_name, url
+                                            ));
+                                        } else {
+                                            buffer.push_str(&format!(
+                                                "\x1b[38;5;{}m{:<12}",
+                                                scorer_color, event.scorer_name
+                                            ));
+                                        }
                                     } else {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}",
                                             scorer_color, event.scorer_name
                                         ));
                                     }
-                                } else {
-                                    buffer.push_str(&format!(
-                                        "\x1b[38;5;{}m{:<12}",
-                                        scorer_color, event.scorer_name
-                                    ));
-                                }
 
-                                // Add goal type indicators
-                                let goal_type = event.get_goal_type_display();
-                                if !goal_type.is_empty() {
-                                    buffer.push_str(&format!(
-                                        " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
-                                    ));
-                                } else {
-                                    buffer.push_str("\x1b[0m");
-                                }
-                            }
-
-                            // Away team scorer
-                            if let Some(event) = away_scorers.get(i) {
-                                let scorer_color = if (event.is_winning_goal
-                                    && (*is_overtime || *is_shootout))
-                                    || event.goal_types.contains(&"VL".to_string())
-                                {
-                                    winning_goal_fg_code
-                                } else {
-                                    away_scorer_fg_code
-                                };
-
-                                buffer.push_str(&format!(
-                                    "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
-                                    current_line,
-                                    AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
-                                    scorer_color,
-                                    event.minute
-                                ));
-
-                                // Add video link functionality if there's a video clip and links are enabled
-                                if let Some(url) = &event.video_clip_url {
-                                    if !self.disable_video_links {
+                                    // Add goal type indicators
+                                    let goal_type = event.get_goal_type_display();
+                                    if !goal_type.is_empty() {
                                         buffer.push_str(&format!(
-                                            "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                            scorer_color, event.scorer_name, url
+                                            " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
                                         ));
+                                    } else {
+                                        buffer.push_str("\x1b[0m");
+                                    }
+                                }
+
+                                // Away team scorer
+                                if let Some(event) = away_scorers.get(i) {
+                                    let scorer_color = if (event.is_winning_goal
+                                        && (*is_overtime || *is_shootout))
+                                        || event.goal_types.contains(&"VL".to_string())
+                                    {
+                                        winning_goal_fg_code
+                                    } else {
+                                        away_scorer_fg_code
+                                    };
+
+                                    buffer.push_str(&format!(
+                                        "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
+                                        current_line,
+                                        AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                                        scorer_color,
+                                        event.minute
+                                    ));
+
+                                    // Add video link functionality if there's a video clip and links are enabled
+                                    if let Some(url) = &event.video_clip_url {
+                                        if !self.disable_video_links {
+                                            buffer.push_str(&format!(
+                                                "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
+                                                scorer_color, event.scorer_name, url
+                                            ));
+                                        } else {
+                                            buffer.push_str(&format!(
+                                                "\x1b[38;5;{}m{:<12}",
+                                                scorer_color, event.scorer_name
+                                            ));
+                                        }
                                     } else {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}",
                                             scorer_color, event.scorer_name
                                         ));
                                     }
-                                } else {
-                                    buffer.push_str(&format!(
-                                        "\x1b[38;5;{}m{:<12}",
-                                        scorer_color, event.scorer_name
-                                    ));
+
+                                    // Add goal type indicators
+                                    let goal_type = event.get_goal_type_display();
+                                    if !goal_type.is_empty() {
+                                        buffer.push_str(&format!(
+                                            " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
+                                        ));
+                                    } else {
+                                        buffer.push_str("\x1b[0m");
+                                    }
                                 }
 
-                                // Add goal type indicators
-                                let goal_type = event.get_goal_type_display();
-                                if !goal_type.is_empty() {
-                                    buffer.push_str(&format!(
-                                        " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
-                                    ));
-                                } else {
-                                    buffer.push_str("\x1b[0m");
+                                if home_scorers.get(i).is_some() || away_scorers.get(i).is_some() {
+                                    current_line += 1;
                                 }
-                            }
-
-                            if home_scorers.get(i).is_some() || away_scorers.get(i).is_some() {
-                                current_line += 1;
                             }
                         }
-                    }
 
-                    // Add spacing between games in interactive mode
-                    if !self.ignore_height_limit {
-                        current_line += 1;
+                        // Add spacing between games in interactive mode
+                        if !self.ignore_height_limit {
+                            current_line += 1;
+                        }
                     }
-                }
-                TeletextRow::ErrorMessage(message) => {
-                    for line in message.lines() {
+                    TeletextRow::ErrorMessage(message) => {
+                        for line in message.lines() {
+                            buffer.push_str(&format!(
+                                "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                                current_line,
+                                CONTENT_MARGIN + 1,
+                                text_fg_code,
+                                line
+                            ));
+                            current_line += 1;
+                        }
+                    }
+                    TeletextRow::FutureGamesHeader(header_text) => {
                         buffer.push_str(&format!(
                             "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
                             current_line,
                             CONTENT_MARGIN + 1,
-                            text_fg_code,
-                            line
+                            subheader_fg_code,
+                            header_text
                         ));
                         current_line += 1;
                     }
                 }
-                TeletextRow::FutureGamesHeader(header_text) => {
-                    buffer.push_str(&format!(
-                        "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                        current_line,
-                        CONTENT_MARGIN + 1,
-                        subheader_fg_code,
-                        header_text
-                    ));
-                    current_line += 1;
-                }
             }
-        }
         }
 
         // Add footer if enabled
@@ -1825,8 +1853,8 @@ impl TeletextPage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::models::GameData;
     use crate::data_fetcher::GoalEventData;
+    use crate::data_fetcher::models::GameData;
 
     #[test]
     fn test_team_abbreviation() {
@@ -1866,9 +1894,9 @@ mod tests {
 
         // Test fallback for unknown team names (letters only, uppercase)
         assert_eq!(get_team_abbreviation("Unknown Team"), "UNK"); // "UnknownTeam" -> "UNK"
-        assert_eq!(get_team_abbreviation("New Team"), "NEW");     // "NewTeam" -> "NEW"
-        assert_eq!(get_team_abbreviation("AB"), "AB");           // Short name
-        assert_eq!(get_team_abbreviation("A"), "A");             // Very short name
+        assert_eq!(get_team_abbreviation("New Team"), "NEW"); // "NewTeam" -> "NEW"
+        assert_eq!(get_team_abbreviation("AB"), "AB"); // Short name
+        assert_eq!(get_team_abbreviation("A"), "A"); // Very short name
     }
 
     #[test]
@@ -2670,7 +2698,11 @@ mod tests {
         // Test sufficient width
         let validation = config.validate_terminal_width(80);
         match validation {
-            TerminalWidthValidation::Sufficient { current_width, required_width, excess } => {
+            TerminalWidthValidation::Sufficient {
+                current_width,
+                required_width,
+                excess,
+            } => {
                 assert_eq!(current_width, 80);
                 assert_eq!(required_width, 18); // team_name_width + score_width + margins
                 assert_eq!(excess, 62);
@@ -2681,7 +2713,11 @@ mod tests {
         // Test insufficient width
         let validation = config.validate_terminal_width(10);
         match validation {
-            TerminalWidthValidation::Insufficient { current_width, required_width, shortfall } => {
+            TerminalWidthValidation::Insufficient {
+                current_width,
+                required_width,
+                shortfall,
+            } => {
                 assert_eq!(current_width, 10);
                 assert_eq!(required_width, 18);
                 assert_eq!(shortfall, 8);
@@ -2690,7 +2726,7 @@ mod tests {
         }
     }
 
-        #[test]
+    #[test]
     fn test_compact_mode_compatibility_validation() {
         let mut page = TeletextPage::new(
             221,
@@ -2788,30 +2824,30 @@ mod tests {
         assert_eq!(get_team_abbreviation("Jyväskylän JYP"), "JYP");
 
         // Test case sensitivity (fallback extracts letters and uppercases)
-        assert_eq!(get_team_abbreviation("tappara"), "TAP");     // "tappara" -> "TAP"
-        assert_eq!(get_team_abbreviation("TAPPARA"), "TAP");     // "TAPPARA" -> "TAP"
-        assert_eq!(get_team_abbreviation("TapPaRa"), "TAP");     // "TapPaRa" -> "TAP"
+        assert_eq!(get_team_abbreviation("tappara"), "TAP"); // "tappara" -> "TAP"
+        assert_eq!(get_team_abbreviation("TAPPARA"), "TAP"); // "TAPPARA" -> "TAP"
+        assert_eq!(get_team_abbreviation("TapPaRa"), "TAP"); // "TapPaRa" -> "TAP"
 
         // Test fallback for unknown teams (letters only, uppercase)
         assert_eq!(get_team_abbreviation("Unknown Team"), "UNK"); // "UnknownTeam" -> "UNK"
-        assert_eq!(get_team_abbreviation("New Team"), "NEW");     // "NewTeam" -> "NEW"
-        assert_eq!(get_team_abbreviation("Future Club"), "FUT");  // "FutureClub" -> "FUT"
+        assert_eq!(get_team_abbreviation("New Team"), "NEW"); // "NewTeam" -> "NEW"
+        assert_eq!(get_team_abbreviation("Future Club"), "FUT"); // "FutureClub" -> "FUT"
 
         // Test special character handling (non-letters removed, uppercase)
-        assert_eq!(get_team_abbreviation("HC Blues"), "HCB");     // "HCBlues" -> "HCB"
-        assert_eq!(get_team_abbreviation("K-Espoo"), "KES");      // Known team (exact match)
-        assert_eq!(get_team_abbreviation("HC-Jokers"), "HCJ");    // "HCJokers" -> "HCJ"
-        assert_eq!(get_team_abbreviation("Team #1"), "TEA");      // "Team" -> "TEA"
-        assert_eq!(get_team_abbreviation("123 ABC 456"), "ABC");  // "ABC" -> "ABC"
-        assert_eq!(get_team_abbreviation("!@#$%"), "!@#$%");      // No letters -> return original
+        assert_eq!(get_team_abbreviation("HC Blues"), "HCB"); // "HCBlues" -> "HCB"
+        assert_eq!(get_team_abbreviation("K-Espoo"), "KES"); // Known team (exact match)
+        assert_eq!(get_team_abbreviation("HC-Jokers"), "HCJ"); // "HCJokers" -> "HCJ"
+        assert_eq!(get_team_abbreviation("Team #1"), "TEA"); // "Team" -> "TEA"
+        assert_eq!(get_team_abbreviation("123 ABC 456"), "ABC"); // "ABC" -> "ABC"
+        assert_eq!(get_team_abbreviation("!@#$%"), "!@#$%"); // No letters -> return original
 
         // Test edge cases
-        assert_eq!(get_team_abbreviation(""), "");               // No letters
-        assert_eq!(get_team_abbreviation("A"), "A");             // Single letter
-        assert_eq!(get_team_abbreviation("AB"), "AB");           // Two letters
-        assert_eq!(get_team_abbreviation("ABC"), "ABC");         // Three letters
-        assert_eq!(get_team_abbreviation("ABCD"), "ABC");        // Four letters -> truncate to 3
-        assert_eq!(get_team_abbreviation("ABCDE"), "ABC");       // Five letters -> truncate to 3
+        assert_eq!(get_team_abbreviation(""), ""); // No letters
+        assert_eq!(get_team_abbreviation("A"), "A"); // Single letter
+        assert_eq!(get_team_abbreviation("AB"), "AB"); // Two letters
+        assert_eq!(get_team_abbreviation("ABC"), "ABC"); // Three letters
+        assert_eq!(get_team_abbreviation("ABCD"), "ABC"); // Four letters -> truncate to 3
+        assert_eq!(get_team_abbreviation("ABCDE"), "ABC"); // Five letters -> truncate to 3
     }
 
     #[test]
@@ -2933,7 +2969,7 @@ mod tests {
         // Line 3: game3 (remaining game)
         assert_eq!(result.len(), 3);
         assert!(!result[0].is_empty()); // First line with games
-        assert!(result[1].is_empty());  // Empty spacing line
+        assert!(result[1].is_empty()); // Empty spacing line
         assert!(!result[2].is_empty()); // Second line with remaining game
 
         // Verify the content contains expected teams (using correct abbreviations)
