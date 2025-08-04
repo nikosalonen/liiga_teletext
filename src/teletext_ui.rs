@@ -1030,32 +1030,23 @@ impl TeletextPage {
             return (Vec::new(), Vec::new());
         }
 
-        let available_height = self.screen_height.saturating_sub(5); // Reserve space for header, subheader, and footer
+        // Split games roughly evenly between columns using balanced distribution
+        // Left column gets the extra game if there's an odd number
+        let total_games = visible_rows.len();
+        let games_per_column = total_games.div_ceil(2);
 
-        // Calculate how many games can fit in the left column
-        let mut left_column_height = 0u16;
-        let mut games_for_left: Vec<&TeletextRow> = Vec::new();
+        let mut left_games: Vec<&TeletextRow> = Vec::new();
+        let mut right_games: Vec<&TeletextRow> = Vec::new();
 
-        for game in &visible_rows {
-            let game_height = Self::calculate_game_height(game);
-
-            if left_column_height + game_height <= available_height {
-                left_column_height += game_height;
-                games_for_left.push(*game);
+        for (i, game) in visible_rows.iter().enumerate() {
+            if i < games_per_column {
+                left_games.push(game);
             } else {
-                break;
+                right_games.push(game);
             }
         }
 
-        // Remaining games go to the right column
-        let games_for_right: Vec<&TeletextRow> = visible_rows
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| *index >= games_for_left.len())
-            .map(|(_, game)| *game)
-            .collect();
-
-        (games_for_left, games_for_right)
+        (left_games, right_games)
     }
 
     /// Renders content in wide mode with two columns.
@@ -1119,21 +1110,8 @@ impl TeletextPage {
             return;
         }
 
-        // Distribute visible rows between left and right columns
-        // Split games roughly evenly between columns instead of using height
-        let total_games = visible_rows.len();
-        let games_per_column = total_games.div_ceil(2); // Left column gets the extra game if odd number
-
-        let mut left_games: Vec<&TeletextRow> = Vec::new();
-        let mut right_games: Vec<&TeletextRow> = Vec::new();
-
-        for (i, game) in visible_rows.iter().enumerate() {
-            if i < games_per_column {
-                left_games.push(game);
-            } else {
-                right_games.push(game);
-            }
-        }
+        // Distribute visible rows between left and right columns using the shared distribution logic
+        let (left_games, right_games) = self.distribute_games_for_wide_display();
 
         // Calculate column widths for wide mode - based on normal mode layout
         let left_column_start = 2;
@@ -4275,11 +4253,11 @@ mod tests {
             221,
             "JÄÄKIEKKO".to_string(),
             "RUNKOSARJA".to_string(),
-            false, // show_videos
+            false, // disable_video_links
+            true,  // show_footer
             true,  // ignore_height_limit (non-interactive mode - wide terminal)
             false, // compact_mode
             true,  // wide_mode - ENABLED
-            false, // enable_colors
         );
 
         // Add multiple test games to test distribution
@@ -4303,12 +4281,58 @@ mod tests {
 
         let (left_games, right_games) = page.distribute_games_for_wide_display();
 
-        // Games should be distributed between columns
-        // The exact distribution depends on the game content and available height
-        assert!(!left_games.is_empty(), "Left column should have games");
-        assert!(
-            left_games.len() + right_games.len() > 0,
-            "Total games should be distributed"
+        // With 4 games, balanced distribution should put 2 in left, 2 in right
+        assert_eq!(left_games.len(), 2, "Left column should have 2 games");
+        assert_eq!(right_games.len(), 2, "Right column should have 2 games");
+        assert_eq!(
+            left_games.len() + right_games.len(),
+            4,
+            "Total games should equal 4"
+        );
+    }
+
+    #[test]
+    fn test_distribute_games_for_wide_display_odd_number() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            false, // disable_video_links
+            true,  // show_footer
+            true,  // ignore_height_limit (non-interactive mode - wide terminal)
+            false, // compact_mode
+            true,  // wide_mode - ENABLED
+        );
+
+        // Add 3 test games (odd number)
+        for i in 0..3 {
+            let test_game = crate::data_fetcher::GameData {
+                home_team: format!("Team{i}A"),
+                away_team: format!("Team{i}B"),
+                time: "18:30".to_string(),
+                result: "2-1".to_string(),
+                score_type: ScoreType::Final,
+                is_overtime: false,
+                is_shootout: false,
+                serie: "runkosarja".to_string(),
+                goal_events: vec![],
+                played_time: 3600,
+                start: "2024-01-15T18:30:00Z".to_string(),
+            };
+            let test_game_data = GameResultData::new(&test_game);
+            page.add_game_result(test_game_data);
+        }
+
+        let (left_games, right_games) = page.distribute_games_for_wide_display();
+
+        // With 3 games, balanced distribution should put 2 in left, 1 in right
+        // (left column gets the extra game if odd number)
+        assert_eq!(left_games.len(), 2, "Left column should have 2 games");
+        assert_eq!(right_games.len(), 1, "Right column should have 1 game");
+        assert_eq!(
+            left_games.len() + right_games.len(),
+            3,
+            "Total games should equal 3"
         );
     }
 
