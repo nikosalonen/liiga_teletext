@@ -1209,15 +1209,13 @@ async fn test_wide_mode_performance_edge_cases() {
 
     // Test that game distribution and basic operations work with many goals (performance test)
     // Use timeout-based check to avoid coupling to machine performance
-    let (left_games_2, right_games_2) = tokio::time::timeout(
-        std::time::Duration::from_millis(50),
-        async {
+    let (left_games_2, right_games_2) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), async {
             // Test operations that internally use the optimized functions
             page.distribute_games_for_wide_display()
-        }
-    )
-    .await
-    .expect("Game distribution should complete within 50ms timeout");
+        })
+        .await
+        .expect("Game distribution should complete within 50ms timeout");
 
     let total_games = left_games_2.len() + right_games_2.len();
 
