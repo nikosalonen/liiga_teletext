@@ -1,12 +1,12 @@
 # Implementation Plan
 
-- [x] 1. Extract and move UI helper functions from main.rs to interactive.rs
+- [ ] 1. Extract and move UI helper functions from main.rs to interactive.rs
   - Move all UI-related helper functions from main.rs to src/ui/interactive.rs
   - Update function signatures to work with the UI module context
   - Add necessary imports for moved functions
   - _Requirements: 1.1, 2.1, 2.2_
 
-- [-] 2. Replace the current run_interactive_ui implementation in interactive.rs
+- [x] 2. Replace the current run_interactive_ui implementation in interactive.rs
   - Replace the existing simple implementation with the full implementation from main.rs
   - Adapt the function signature to accept Args instead of individual parameters
   - Ensure all terminal management and user input handling is preserved
