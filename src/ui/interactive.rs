@@ -264,6 +264,7 @@ async fn create_or_restore_page(
             true,
             false,
             compact_mode,
+            false, // suppress_countdown - false for interactive mode
             Some(fetched_date.to_string()),
             Some(preserved_page_for_restoration),
         )
@@ -289,6 +290,7 @@ async fn create_or_restore_page(
                 true,
                 false,
                 compact_mode,
+                false, // suppress_countdown - false for interactive mode
                 show_future_header,
                 Some(fetched_date.to_string()),
                 None,
@@ -303,6 +305,7 @@ async fn create_or_restore_page(
                         true,
                         false,
                         compact_mode,
+                        false, // suppress_countdown - false for interactive mode
                         Some(fetched_date.to_string()),
                         None,
                     )
@@ -360,6 +363,7 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
                         true,
                         false,
                         false, // compact_mode - will be passed from main later
+                        false, // suppress_countdown - false for interactive mode
                         Some(params.fetched_date.to_string()),
                         Some(preserved_page_for_restoration),
                     )
@@ -384,12 +388,14 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
 
 /// Creates a base TeletextPage with common initialization logic.
 /// This helper function reduces code duplication between create_page and create_future_games_page.
+#[allow(clippy::too_many_arguments)]
 async fn create_base_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
     compact_mode: bool,
+    suppress_countdown: bool,
     future_games_header: Option<String>,
     fetched_date: Option<String>,
     current_page: Option<usize>,
@@ -419,8 +425,10 @@ async fn create_base_page(
         page.add_game_result(GameResultData::new(game));
     }
 
-    // Set season countdown if regular season hasn't started yet
-    page.set_show_season_countdown(games).await;
+    // Set season countdown if regular season hasn't started yet (unless suppressed)
+    if !suppress_countdown {
+        page.set_show_season_countdown(games).await;
+    }
 
     // Set the current page AFTER content is added (so total_pages() is correct)
     if let Some(page_num) = current_page {
@@ -431,12 +439,14 @@ async fn create_base_page(
 }
 
 /// Creates a TeletextPage for regular games
+#[allow(clippy::too_many_arguments)]
 pub async fn create_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
     compact_mode: bool,
+    suppress_countdown: bool,
     fetched_date: Option<String>,
     current_page: Option<usize>,
 ) -> TeletextPage {
@@ -446,6 +456,7 @@ pub async fn create_page(
         show_footer,
         ignore_height_limit,
         compact_mode,
+        suppress_countdown,
         None,
         fetched_date,
         current_page,
@@ -527,12 +538,14 @@ fn is_game_near_start_time(game: &GameData) -> bool {
 
 /// Creates a TeletextPage for future games if the games are scheduled.
 /// Returns Some(TeletextPage) if the games are future games, None otherwise.
+#[allow(clippy::too_many_arguments)]
 pub async fn create_future_games_page(
     games: &[GameData],
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
     compact_mode: bool,
+    suppress_countdown: bool,
     show_future_header: bool,
     fetched_date: Option<String>,
     current_page: Option<usize>,
@@ -561,6 +574,7 @@ pub async fn create_future_games_page(
             show_footer,
             ignore_height_limit,
             compact_mode,
+            suppress_countdown,
             future_games_header,
             fetched_date, // Pass the fetched date to show it in the header
             current_page,

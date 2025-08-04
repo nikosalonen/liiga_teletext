@@ -240,6 +240,7 @@ impl CompactDisplayConfig {
 
 /// Terminal width validation result
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum TerminalWidthValidation {
     /// Terminal width is sufficient for compact mode
     Sufficient {
@@ -257,6 +258,7 @@ pub enum TerminalWidthValidation {
 
 /// Compact mode compatibility validation result
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum CompactModeValidation {
     /// Compact mode is fully compatible
     Compatible,
@@ -766,6 +768,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `bool` - True if compact mode is enabled, false otherwise
+    #[allow(dead_code)]
     pub fn is_compact_mode(&self) -> bool {
         self.compact_mode
     }
@@ -774,6 +777,7 @@ impl TeletextPage {
     ///
     /// # Arguments
     /// * `compact` - Whether to enable compact mode
+    #[allow(dead_code)]
     pub fn set_compact_mode(&mut self, compact: bool) {
         self.compact_mode = compact;
     }
@@ -803,7 +807,7 @@ impl TeletextPage {
                 let away_abbr = get_team_abbreviation(away_team);
 
                 // Format team names with proper width
-                let team_display = format!("{}-{}", home_abbr, away_abbr);
+                let team_display = format!("{home_abbr}-{away_abbr}");
                 let padded_team = format!("{:<width$}", team_display, width = config.team_name_width);
 
                 // Format score based on game state
@@ -820,46 +824,83 @@ impl TeletextPage {
                     }
                 };
 
-                format!("{}{}", padded_team, score_display)
+                format!("{padded_team}{score_display}")
+            }
+            TeletextRow::FutureGamesHeader(header_text) => {
+                // Format future games header for compact mode - use abbreviated format
+                let abbreviated_header = if header_text.len() > 25 {
+                    format!("{}...", &header_text[..22])
+                } else {
+                    header_text.clone()
+                };
+                format!(">>> {abbreviated_header}")
             }
             _ => String::new(),
         }
     }
 
-    /// Groups games into lines for compact display.
+    /// Groups rows into lines for compact display.
     ///
     /// # Arguments
-    /// * `games` - List of games to group
+    /// * `rows` - List of rows to group
     /// * `config` - Compact display configuration
     /// * `terminal_width` - Current terminal width
     ///
     /// # Returns
-    /// * `Vec<String>` - Lines of formatted games
+    /// * `Vec<String>` - Lines of formatted content
     fn group_games_for_compact_display(
         &self,
-        games: &[&TeletextRow],
+        rows: &[&TeletextRow],
         config: &CompactDisplayConfig,
         terminal_width: usize,
     ) -> Vec<String> {
         let games_per_line = config.calculate_games_per_line(terminal_width);
         let mut lines = Vec::new();
         let mut current_line = String::new();
+        let mut games_in_current_line = 0;
 
-        for (i, game) in games.iter().enumerate() {
-            let game_str = self.format_compact_game(game, config);
+        for row in rows.iter() {
+            let row_str = self.format_compact_game(row, config);
 
+            // Skip empty strings (unsupported row types)
+            if row_str.is_empty() {
+                continue;
+            }
+
+            // Handle headers as separate lines
+            if matches!(row, TeletextRow::FutureGamesHeader(_)) {
+                // Finish current game line if not empty
+                if !current_line.is_empty() {
+                    lines.push(current_line.clone());
+                    current_line.clear();
+                    games_in_current_line = 0;
+                }
+                // Add header as its own line
+                lines.push(row_str);
+                continue;
+            }
+
+            // Handle games
             if current_line.is_empty() {
-                current_line = game_str;
+                current_line = row_str;
+                games_in_current_line = 1;
             } else {
                 current_line.push_str(config.game_separator);
-                current_line.push_str(&game_str);
+                current_line.push_str(&row_str);
+                games_in_current_line += 1;
             }
 
-            // Start new line if we've reached the limit or this is the last game
-            if (i + 1) % games_per_line == 0 || i == games.len() - 1 {
+            // Start new line if we've reached the limit
+            if games_in_current_line >= games_per_line {
                 lines.push(current_line.clone());
                 current_line.clear();
+                games_in_current_line = 0;
             }
+        }
+
+        // Add remaining games if any
+        if !current_line.is_empty() {
+            lines.push(current_line);
         }
 
         lines
@@ -872,6 +913,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `usize` - Optimal number of games per line
+    #[allow(dead_code)]
     fn calculate_compact_games_per_line(&self, terminal_width: usize) -> usize {
         let config = CompactDisplayConfig::default();
         config.calculate_games_per_line(terminal_width)
@@ -884,6 +926,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `bool` - True if terminal is wide enough for compact mode
+    #[allow(dead_code)]
     fn is_terminal_suitable_for_compact(&self, terminal_width: usize) -> bool {
         let config = CompactDisplayConfig::default();
         config.is_terminal_width_sufficient(terminal_width)
@@ -894,7 +937,7 @@ impl TeletextPage {
     /// # Returns
     /// * `CompactModeValidation` - Validation result with any issues found
     pub fn validate_compact_mode_compatibility(&self) -> CompactModeValidation {
-        let mut issues: Vec<String> = Vec::new();
+        let issues: Vec<String> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
 
         // Check if we have error messages (compact mode might not display them well)
@@ -917,13 +960,8 @@ impl TeletextPage {
             warnings.push("Season countdown may not display optimally in compact mode".to_string());
         }
 
-        // Check if we have future games header (compact mode might not display it well)
-        let has_future_games_header = self.content_rows.iter().any(|row| {
-            matches!(row, TeletextRow::FutureGamesHeader(_))
-        });
-        if has_future_games_header {
-            warnings.push("Future games headers may not display optimally in compact mode".to_string());
-        }
+        // Future games headers are now properly supported in compact mode
+        // No need for warning anymore
 
         // Check if we have many games (compact mode might be crowded)
         let game_count = self.content_rows.iter().filter(|row| {
@@ -1371,7 +1409,7 @@ impl TeletextPage {
             let validation = config.validate_terminal_width(width as usize);
 
             match validation {
-                TerminalWidthValidation::Sufficient { current_width, required_width, excess } => {
+                TerminalWidthValidation::Sufficient { current_width: _, required_width: _, excess: _ } => {
                     // Terminal is wide enough for compact mode
                     let compact_lines = self.group_games_for_compact_display(&visible_rows, &config, width as usize);
 
@@ -1405,8 +1443,7 @@ impl TeletextPage {
                 TerminalWidthValidation::Insufficient { current_width, required_width, shortfall } => {
                     // Terminal is too narrow for compact mode - show detailed error message
                     let error_message = format!(
-                        "Terminal too narrow for compact mode ({} chars, need {} chars, short {} chars)",
-                        current_width, required_width, shortfall
+                        "Terminal too narrow for compact mode ({current_width} chars, need {required_width} chars, short {shortfall} chars)"
                     );
 
                     buffer.push_str(&format!(
