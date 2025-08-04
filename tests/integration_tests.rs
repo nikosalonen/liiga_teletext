@@ -661,16 +661,16 @@ async fn test_compact_mode_various_terminal_sizes() {
 
     for (config, terminal_width, should_be_sufficient) in configs {
         let is_sufficient = config.is_terminal_width_sufficient(terminal_width);
-        assert_eq!(is_sufficient, should_be_sufficient, 
-                   "Terminal width {} should be {} for config {:?}", 
-                   terminal_width, 
-                   if should_be_sufficient { "sufficient" } else { "insufficient" }, 
+        assert_eq!(is_sufficient, should_be_sufficient,
+                   "Terminal width {} should be {} for config {:?}",
+                   terminal_width,
+                   if should_be_sufficient { "sufficient" } else { "insufficient" },
                    config);
 
         // Test games per line calculation
         let games_per_line = config.calculate_games_per_line(terminal_width);
         assert!(games_per_line > 0, "Games per line should always be at least 1");
-        assert!(games_per_line <= config.max_games_per_line, 
+        assert!(games_per_line <= config.max_games_per_line,
                 "Games per line should not exceed max_games_per_line");
     }
 }
