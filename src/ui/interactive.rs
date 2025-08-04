@@ -292,7 +292,12 @@ async fn create_or_restore_page(config: PageCreationConfig<'_>) -> Option<Telete
         Some(page)
     } else {
         let page = if config.games.is_empty() {
-            create_error_page(config.fetched_date, config.disable_links, config.compact_mode, config.wide_mode)
+            create_error_page(
+                config.fetched_date,
+                config.disable_links,
+                config.compact_mode,
+                config.wide_mode,
+            )
         } else {
             // Try to create a future games page, fall back to regular page if not future games
             let show_future_header = config.current_date.is_none();

@@ -1154,7 +1154,8 @@ fn create_test_game_data() -> GameData {
 async fn test_wide_mode_performance_edge_cases() {
     // Create a game with many goal scorers to test limits
     let mut game_with_many_goals = create_test_game_data();
-    game_with_many_goals.home_team = "Very Long Home Team Name That Should Be Truncated Gracefully".to_string();
+    game_with_many_goals.home_team =
+        "Very Long Home Team Name That Should Be Truncated Gracefully".to_string();
     game_with_many_goals.away_team = "Also A Very Long Away Team Name For Testing".to_string();
     game_with_many_goals.result = "15-10".to_string(); // High-scoring game
     game_with_many_goals.score_type = ScoreType::Final;
@@ -1227,7 +1228,12 @@ async fn test_wide_mode_performance_edge_cases() {
     // Test that the game contains expected data
     if !left_games_2.is_empty() {
         match &left_games_2[0] {
-            TeletextRow::GameResult { home_team, away_team, goal_events, .. } => {
+            TeletextRow::GameResult {
+                home_team,
+                away_team,
+                goal_events,
+                ..
+            } => {
                 assert!(home_team.contains("Very Long Home Team"));
                 assert!(away_team.contains("Also A Very Long"));
                 // Should have all 25 goal events (limit is applied during rendering, not storage)
