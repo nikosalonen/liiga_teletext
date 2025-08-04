@@ -931,12 +931,18 @@ impl TeletextPage {
     ///
     /// # Arguments
     /// * `compact` - Whether to enable compact mode
+    ///
+    /// # Returns
+    /// * `Result<(), &'static str>` - Ok if successful, Err with message if there's a conflict
     #[allow(dead_code)]
-    pub fn set_compact_mode(&mut self, compact: bool) {
-        self.compact_mode = compact;
+    pub fn set_compact_mode(&mut self, compact: bool) -> Result<(), &'static str> {
         if compact && self.wide_mode {
+            // Automatically disable wide mode
             self.wide_mode = false;
         }
+
+        self.compact_mode = compact;
+        Ok(())
     }
 
     /// Returns whether wide mode is enabled.
@@ -953,12 +959,18 @@ impl TeletextPage {
     ///
     /// # Arguments
     /// * `wide` - Whether to enable wide mode
+    ///
+    /// # Returns
+    /// * `Result<(), &'static str>` - Ok if successful, Err with message if there's a conflict
     #[allow(dead_code)]
-    pub fn set_wide_mode(&mut self, wide: bool) {
-        self.wide_mode = wide;
+    pub fn set_wide_mode(&mut self, wide: bool) -> Result<(), &'static str> {
         if wide && self.compact_mode {
+            // Automatically disable compact mode
             self.compact_mode = false;
         }
+
+        self.wide_mode = wide;
+        Ok(())
     }
 
     /// Validates that compact mode and wide mode are not both enabled.
@@ -3519,11 +3531,11 @@ mod tests {
         assert!(!page.is_compact_mode());
 
         // Test setting compact mode to true
-        page.set_compact_mode(true);
+        assert!(page.set_compact_mode(true).is_ok());
         assert!(page.is_compact_mode());
 
         // Test setting compact mode to false
-        page.set_compact_mode(false);
+        assert!(page.set_compact_mode(false).is_ok());
         assert!(!page.is_compact_mode());
     }
 
@@ -4120,11 +4132,11 @@ mod tests {
         assert!(!page.is_wide_mode());
 
         // Test setter
-        page.set_wide_mode(true);
+        assert!(page.set_wide_mode(true).is_ok());
         assert!(page.is_wide_mode());
 
         // Test setter again
-        page.set_wide_mode(false);
+        assert!(page.set_wide_mode(false).is_ok());
         assert!(!page.is_wide_mode());
     }
 
@@ -4431,19 +4443,19 @@ mod tests {
         assert!(page.validate_mode_exclusivity().is_ok());
 
         // Test setter methods enforce mutual exclusivity
-        page.set_compact_mode(true);
+        assert!(page.set_compact_mode(true).is_ok());
         assert!(page.is_compact_mode());
         assert!(!page.is_wide_mode());
         assert!(page.validate_mode_exclusivity().is_ok());
 
         // Enable wide mode - should disable compact mode
-        page.set_wide_mode(true);
+        assert!(page.set_wide_mode(true).is_ok());
         assert!(!page.is_compact_mode());
         assert!(page.is_wide_mode());
         assert!(page.validate_mode_exclusivity().is_ok());
 
         // Enable compact mode again - should disable wide mode
-        page.set_compact_mode(true);
+        assert!(page.set_compact_mode(true).is_ok());
         assert!(page.is_compact_mode());
         assert!(!page.is_wide_mode());
         assert!(page.validate_mode_exclusivity().is_ok());
@@ -4465,10 +4477,10 @@ mod tests {
         // Test valid configurations
         assert!(page.validate_mode_exclusivity().is_ok());
 
-        page.set_compact_mode(true);
+        assert!(page.set_compact_mode(true).is_ok());
         assert!(page.validate_mode_exclusivity().is_ok());
 
-        page.set_wide_mode(true);
+        assert!(page.set_wide_mode(true).is_ok());
         assert!(page.validate_mode_exclusivity().is_ok());
 
         // Test invalid configuration (both modes enabled)
@@ -4522,5 +4534,59 @@ mod tests {
         assert_eq!(page.subheader, "Test");
         assert!(!page.is_compact_mode());
         assert!(!page.is_wide_mode());
+    }
+
+    #[test]
+    fn test_setter_validation_conflicts() {
+        let mut page = TeletextPage::new(
+            221,
+            "Test".to_string(),
+            "Test".to_string(),
+            false,
+            true,
+            false,
+            false, // compact_mode
+            false, // wide_mode
+        );
+
+        // Test that enabling compact mode when wide mode is active automatically disables wide mode
+        page.set_wide_mode(true).unwrap();
+        let result = page.set_compact_mode(true);
+        assert!(result.is_ok());
+        // Verify that wide mode was automatically disabled
+        assert!(!page.is_wide_mode());
+        assert!(page.is_compact_mode());
+
+        // Test that enabling wide mode when compact mode is active automatically disables compact mode
+        let mut page = TeletextPage::new(
+            221,
+            "Test".to_string(),
+            "Test".to_string(),
+            false,
+            true,
+            false,
+            false, // compact_mode
+            false, // wide_mode
+        );
+        page.set_compact_mode(true).unwrap();
+        let result = page.set_wide_mode(true);
+        assert!(result.is_ok());
+        // Verify that compact mode was automatically disabled
+        assert!(!page.is_compact_mode());
+        assert!(page.is_wide_mode());
+
+        // Test that disabling modes doesn't cause conflicts
+        let mut page = TeletextPage::new(
+            221,
+            "Test".to_string(),
+            "Test".to_string(),
+            false,
+            true,
+            false,
+            true,  // compact_mode
+            false, // wide_mode
+        );
+        assert!(page.set_compact_mode(false).is_ok());
+        assert!(page.set_wide_mode(false).is_ok());
     }
 }
