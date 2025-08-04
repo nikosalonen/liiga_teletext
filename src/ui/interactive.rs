@@ -32,37 +32,61 @@ pub fn format_date_for_display(date_str: &str) -> String {
     }
 }
 
-/// Gets the appropriate subheader based on the game series type
+/// Represents different tournament series types with explicit priority ordering
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum SeriesType {
+    /// Highest priority - playoff games
+    Playoffs,
+    /// Playout games (relegation/promotion)
+    Playout,
+    /// Qualification tournament
+    Qualifications,
+    /// Practice/preseason games
+    Practice,
+    /// Regular season games (lowest priority)
+    RegularSeason,
+}
+
+impl From<&str> for SeriesType {
+    /// Converts a series string from the API to a SeriesType enum
+    fn from(serie: &str) -> Self {
+        match serie.to_ascii_lowercase().as_str() {
+            "playoffs" => SeriesType::Playoffs,
+            "playout" => SeriesType::Playout,
+            "qualifications" => SeriesType::Qualifications,
+            "valmistavat_ottelut" | "practice" => SeriesType::Practice,
+            _ => SeriesType::RegularSeason,
+        }
+    }
+}
+
+impl std::fmt::Display for SeriesType {
+    /// Returns the display text for the teletext UI subheader
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let display_text = match self {
+            SeriesType::Playoffs => "PLAYOFFS",
+            SeriesType::Playout => "PLAYOUT-OTTELUT",
+            SeriesType::Qualifications => "LIIGAKARSINTA",
+            SeriesType::Practice => "HARJOITUSOTTELUT",
+            SeriesType::RegularSeason => "RUNKOSARJA",
+        };
+        write!(f, "{display_text}")
+    }
+}
+
+/// Gets the appropriate subheader based on the game series type with highest priority
 fn get_subheader(games: &[GameData]) -> String {
     if games.is_empty() {
         return "SM-LIIGA".to_string();
     }
-    // Priority: PLAYOFFS > PLAYOUT-OTTELUT > LIIGAKARSINTA > HARJOITUSOTTELUT > RUNKOSARJA
-    let mut priority = 4; // Default to RUNKOSARJA
-    for game in games {
-        let serie_lower = game.serie.to_ascii_lowercase();
-        let current_priority = match serie_lower.as_str() {
-            "playoffs" => 0,
-            "playout" => 1,
-            "qualifications" => 2,
-            "valmistavat_ottelut" | "practice" => 3,
-            _ => 4,
-        };
-        if current_priority < priority {
-            priority = current_priority;
-            if priority == 0 {
-                break;
-            } // Found highest priority
-        }
-    }
 
-    match priority {
-        0 => "PLAYOFFS".to_string(),
-        1 => "PLAYOUT-OTTELUT".to_string(),
-        2 => "LIIGAKARSINTA".to_string(),
-        3 => "HARJOITUSOTTELUT".to_string(),
-        _ => "RUNKOSARJA".to_string(),
-    }
+    // Find the series type with highest priority (lowest enum value due to Ord implementation)
+    games
+        .iter()
+        .map(|game| SeriesType::from(game.serie.as_str()))
+        .min() // Uses the Ord implementation where Playoffs < Playout < ... < RegularSeason
+        .unwrap_or(SeriesType::RegularSeason)
+        .to_string()
 }
 
 /// Calculates a hash of the games data for change detection
@@ -1386,9 +1410,8 @@ pub async fn run_interactive_ui(
     let mut current_page: Option<TeletextPage> = None;
     let mut pending_resize = false;
     let mut resize_timer = Instant::now();
-    // Preserved page number for restoration after refresh - initially None for first run
-    #[allow(unused_assignments)]
-    let mut preserved_page_for_restoration: Option<usize> = None;
+    // Preserved page number for restoration after refresh - will be set when needed
+    let mut preserved_page_for_restoration: Option<usize>;
 
     // Date navigation state - track the current date being displayed
     let mut current_date = date;
@@ -1451,10 +1474,9 @@ pub async fn run_interactive_ui(
             tracing::debug!("Fetching new data");
 
             // Always preserve the current page number before refresh, regardless of loading screen
-            let preserved_page = current_page
+            preserved_page_for_restoration = current_page
                 .as_ref()
                 .map(|existing_page| existing_page.get_current_page());
-            preserved_page_for_restoration = preserved_page;
 
             // Handle data fetching using the helper function
             let (games, had_error, fetched_date, should_retry, new_page, _needs_render_update) =
@@ -1731,5 +1753,104 @@ mod tests {
         };
 
         assert!(!is_future_game(&past_game));
+    }
+
+    #[test]
+    fn test_series_type_from_string() {
+        // Test all known series types
+        assert_eq!(SeriesType::from("playoffs"), SeriesType::Playoffs);
+        assert_eq!(SeriesType::from("PLAYOFFS"), SeriesType::Playoffs);
+        assert_eq!(SeriesType::from("playout"), SeriesType::Playout);
+        assert_eq!(SeriesType::from("PLAYOUT"), SeriesType::Playout);
+        assert_eq!(SeriesType::from("qualifications"), SeriesType::Qualifications);
+        assert_eq!(SeriesType::from("QUALIFICATIONS"), SeriesType::Qualifications);
+        assert_eq!(SeriesType::from("practice"), SeriesType::Practice);
+        assert_eq!(SeriesType::from("valmistavat_ottelut"), SeriesType::Practice);
+        assert_eq!(SeriesType::from("PRACTICE"), SeriesType::Practice);
+
+        // Test default fallback to RegularSeason
+        assert_eq!(SeriesType::from("runkosarja"), SeriesType::RegularSeason);
+        assert_eq!(SeriesType::from("unknown"), SeriesType::RegularSeason);
+        assert_eq!(SeriesType::from(""), SeriesType::RegularSeason);
+    }
+
+    #[test]
+    fn test_series_type_priority_ordering() {
+        // Test that enum variants are ordered by priority (Playoffs highest, RegularSeason lowest)
+        assert!(SeriesType::Playoffs < SeriesType::Playout);
+        assert!(SeriesType::Playout < SeriesType::Qualifications);
+        assert!(SeriesType::Qualifications < SeriesType::Practice);
+        assert!(SeriesType::Practice < SeriesType::RegularSeason);
+
+        // Test min() function picks highest priority
+        let series_types = [
+            SeriesType::RegularSeason,
+            SeriesType::Playoffs,
+            SeriesType::Practice,
+        ];
+        assert_eq!(series_types.iter().min(), Some(&SeriesType::Playoffs));
+    }
+
+    #[test]
+    fn test_series_type_display() {
+        assert_eq!(SeriesType::Playoffs.to_string(), "PLAYOFFS");
+        assert_eq!(SeriesType::Playout.to_string(), "PLAYOUT-OTTELUT");
+        assert_eq!(SeriesType::Qualifications.to_string(), "LIIGAKARSINTA");
+        assert_eq!(SeriesType::Practice.to_string(), "HARJOITUSOTTELUT");
+        assert_eq!(SeriesType::RegularSeason.to_string(), "RUNKOSARJA");
+    }
+
+    #[test]
+    fn test_get_subheader_with_series_types() {
+        // Test empty games
+        assert_eq!(get_subheader(&[]), "SM-LIIGA");
+
+        // Test single regular season game
+        let regular_game = GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "19:00".to_string(),
+            result: "3-2".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-01T19:00:00Z".to_string(),
+        };
+        assert_eq!(get_subheader(&[regular_game]), "RUNKOSARJA");
+
+        // Test mixed games - should prioritize playoffs
+        let playoff_game = GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "19:00".to_string(),
+            result: "3-2".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "playoffs".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-01T19:00:00Z".to_string(),
+        };
+
+        let practice_game = GameData {
+            home_team: "HIFK".to_string(),
+            away_team: "Tappara".to_string(),
+            time: "19:00".to_string(),
+            result: "1-0".to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "practice".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-01T19:00:00Z".to_string(),
+        };
+
+        // With mixed series types, should show highest priority (playoffs)
+        assert_eq!(get_subheader(&[practice_game, playoff_game]), "PLAYOFFS");
     }
 }
