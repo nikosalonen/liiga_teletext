@@ -262,6 +262,7 @@ async fn create_or_restore_page(
             disable_links,
             true,
             false,
+            false, // compact_mode - will be passed from main later
             Some(fetched_date.to_string()),
             Some(preserved_page_for_restoration),
         )
@@ -286,6 +287,7 @@ async fn create_or_restore_page(
                 disable_links,
                 true,
                 false,
+                false, // compact_mode - will be passed from main later
                 show_future_header,
                 Some(fetched_date.to_string()),
                 None,
@@ -299,6 +301,7 @@ async fn create_or_restore_page(
                         disable_links,
                         true,
                         false,
+                        false, // compact_mode - will be passed from main later
                         Some(fetched_date.to_string()),
                         None,
                     )
@@ -355,6 +358,7 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
                         params.disable_links,
                         true,
                         false,
+                        false, // compact_mode - will be passed from main later
                         Some(params.fetched_date.to_string()),
                         Some(preserved_page_for_restoration),
                     )
@@ -384,6 +388,7 @@ async fn create_base_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    compact_mode: bool,
     future_games_header: Option<String>,
     fetched_date: Option<String>,
     current_page: Option<usize>,
@@ -396,7 +401,7 @@ async fn create_base_page(
             disable_video_links,
             show_footer,
             ignore_height_limit,
-            false, // compact_mode - will be passed from main later
+            compact_mode,
         );
 
     // Set the fetched date if provided
@@ -430,6 +435,7 @@ pub async fn create_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    compact_mode: bool,
     fetched_date: Option<String>,
     current_page: Option<usize>,
 ) -> TeletextPage {
@@ -438,6 +444,7 @@ pub async fn create_page(
         disable_video_links,
         show_footer,
         ignore_height_limit,
+        compact_mode,
         None,
         fetched_date,
         current_page,
@@ -524,6 +531,7 @@ pub async fn create_future_games_page(
     disable_video_links: bool,
     show_footer: bool,
     ignore_height_limit: bool,
+    compact_mode: bool,
     show_future_header: bool,
     fetched_date: Option<String>,
     current_page: Option<usize>,
@@ -551,6 +559,7 @@ pub async fn create_future_games_page(
             disable_video_links,
             show_footer,
             ignore_height_limit,
+            compact_mode,
             future_games_header,
             fetched_date, // Pass the fetched date to show it in the header
             current_page,
