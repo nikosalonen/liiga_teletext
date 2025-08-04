@@ -52,14 +52,15 @@ const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal 
 /// Returns the abbreviated form of a team name for compact display.
 ///
 /// This function maps full team names to their 3-4 character abbreviations
-/// commonly used in Finnish hockey. For unknown team names, it returns
-/// the first 3 characters as a fallback.
+/// commonly used in Finnish hockey. For unknown team names, it generates
+/// a fallback by taking letters only, converting to uppercase, and using
+/// the first 3-4 characters.
 ///
 /// # Arguments
 /// * `team_name` - The full team name to abbreviate
 ///
 /// # Returns
-/// * `&str` - The abbreviated team name
+/// * `String` - The abbreviated team name
 ///
 /// # Examples
 /// ```
@@ -67,52 +68,62 @@ const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal 
 ///
 /// assert_eq!(get_team_abbreviation("Tappara"), "TAP");
 /// assert_eq!(get_team_abbreviation("HIFK"), "HIFK");
-/// assert_eq!(get_team_abbreviation("Unknown Team"), "Unk");
+/// assert_eq!(get_team_abbreviation("HC Blues"), "HCB");
+/// assert_eq!(get_team_abbreviation("K-Espoo"), "KES");
 /// ```
 #[allow(dead_code)]
-pub fn get_team_abbreviation(team_name: &str) -> &str {
+pub fn get_team_abbreviation(team_name: &str) -> String {
     match team_name {
         // Current Liiga teams (2024-25 season)
-        "Tappara" => "TAP",
-        "HIFK" => "HIFK",
-        "TPS" => "TPS",
-        "JYP" => "JYP",
-        "Ilves" => "ILV",
-        "KalPa" => "KAL",
-        "Kärpät" => "KÄR",
-        "Lukko" => "LUK",
-        "Pelicans" => "PEL",
-        "SaiPa" => "SAI",
-        "Sport" => "SPO",
-        "HPK" => "HPK",
-        "Jukurit" => "JUK",
-        "Ässät" => "ÄSS",
-        "KooKoo" => "KOO",
-        "K-Espoo" => "KES",
+        "Tappara" => "TAP".to_string(),
+        "HIFK" => "HIFK".to_string(),
+        "TPS" => "TPS".to_string(),
+        "JYP" => "JYP".to_string(),
+        "Ilves" => "ILV".to_string(),
+        "KalPa" => "KAL".to_string(),
+        "Kärpät" => "KÄR".to_string(),
+        "Lukko" => "LUK".to_string(),
+        "Pelicans" => "PEL".to_string(),
+        "SaiPa" => "SAI".to_string(),
+        "Sport" => "SPO".to_string(),
+        "HPK" => "HPK".to_string(),
+        "Jukurit" => "JUK".to_string(),
+        "Ässät" => "ÄSS".to_string(),
+        "KooKoo" => "KOO".to_string(),
+        "K-Espoo" => "KES".to_string(),
 
         // Alternative team name formats that might appear in API
-        "HIFK Helsinki" => "HIFK",
-        "TPS Turku" => "TPS",
-        "Tampereen Tappara" => "TAP",
-        "Tampereen Ilves" => "ILV",
-        "Jyväskylän JYP" => "JYP",
-        "Kuopion KalPa" => "KAL",
-        "Oulun Kärpät" => "KÄR",
-        "Rauman Lukko" => "LUK",
-        "Lahden Pelicans" => "PEL",
-        "Lappeenrannan SaiPa" => "SAI",
-        "Vaasan Sport" => "SPO",
-        "Hämeenlinnan HPK" => "HPK",
-        "Mikkelin Jukurit" => "JUK",
-        "Porin Ässät" => "ÄSS",
-        "Kouvolan KooKoo" => "KOO",
+        "HIFK Helsinki" => "HIFK".to_string(),
+        "TPS Turku" => "TPS".to_string(),
+        "Tampereen Tappara" => "TAP".to_string(),
+        "Tampereen Ilves" => "ILV".to_string(),
+        "Jyväskylän JYP" => "JYP".to_string(),
+        "Kuopion KalPa" => "KAL".to_string(),
+        "Oulun Kärpät" => "KÄR".to_string(),
+        "Rauman Lukko" => "LUK".to_string(),
+        "Lahden Pelicans" => "PEL".to_string(),
+        "Lappeenrannan SaiPa" => "SAI".to_string(),
+        "Vaasan Sport" => "SPO".to_string(),
+        "Hämeenlinnan HPK" => "HPK".to_string(),
+        "Mikkelin Jukurit" => "JUK".to_string(),
+        "Porin Ässät" => "ÄSS".to_string(),
+        "Kouvolan KooKoo" => "KOO".to_string(),
 
-        // Fallback for unknown team names - take first 3 characters
+        // Fallback for unknown team names - extract letters only, uppercase, take first 3-4 chars
         _ => {
-            if team_name.len() >= 3 {
-                &team_name[..3]
+            let letters_only: String = team_name
+                .chars()
+                .filter(|c| c.is_alphabetic())
+                .collect::<String>()
+                .to_uppercase();
+            
+            if letters_only.len() >= 3 {
+                letters_only[..3.min(letters_only.len())].to_string()
+            } else if !letters_only.is_empty() {
+                letters_only
             } else {
-                team_name
+                // If no letters found, use original team name as last resort
+                team_name.to_string()
             }
         }
     }
@@ -1853,11 +1864,11 @@ mod tests {
         assert_eq!(get_team_abbreviation("Porin Ässät"), "ÄSS");
         assert_eq!(get_team_abbreviation("Kouvolan KooKoo"), "KOO");
 
-        // Test fallback for unknown team names
-        assert_eq!(get_team_abbreviation("Unknown Team"), "Unk");
-        assert_eq!(get_team_abbreviation("New Team"), "New");
-        assert_eq!(get_team_abbreviation("AB"), "AB"); // Short name
-        assert_eq!(get_team_abbreviation("A"), "A");   // Very short name
+        // Test fallback for unknown team names (letters only, uppercase)
+        assert_eq!(get_team_abbreviation("Unknown Team"), "UNK"); // "UnknownTeam" -> "UNK"
+        assert_eq!(get_team_abbreviation("New Team"), "NEW");     // "NewTeam" -> "NEW"
+        assert_eq!(get_team_abbreviation("AB"), "AB");           // Short name
+        assert_eq!(get_team_abbreviation("A"), "A");             // Very short name
     }
 
     #[test]
@@ -2776,23 +2787,31 @@ mod tests {
         assert_eq!(get_team_abbreviation("Tampereen Ilves"), "ILV");
         assert_eq!(get_team_abbreviation("Jyväskylän JYP"), "JYP");
 
-        // Test case sensitivity
-        assert_eq!(get_team_abbreviation("tappara"), "tap");
-        assert_eq!(get_team_abbreviation("TAPPARA"), "TAP");
-        assert_eq!(get_team_abbreviation("TapPaRa"), "Tap");
+        // Test case sensitivity (fallback extracts letters and uppercases)
+        assert_eq!(get_team_abbreviation("tappara"), "TAP");     // "tappara" -> "TAP"
+        assert_eq!(get_team_abbreviation("TAPPARA"), "TAP");     // "TAPPARA" -> "TAP"
+        assert_eq!(get_team_abbreviation("TapPaRa"), "TAP");     // "TapPaRa" -> "TAP"
 
-        // Test fallback for unknown teams
-        assert_eq!(get_team_abbreviation("Unknown Team"), "Unk");
-        assert_eq!(get_team_abbreviation("New Team"), "New");
-        assert_eq!(get_team_abbreviation("Future Club"), "Fut");
+        // Test fallback for unknown teams (letters only, uppercase)
+        assert_eq!(get_team_abbreviation("Unknown Team"), "UNK"); // "UnknownTeam" -> "UNK"
+        assert_eq!(get_team_abbreviation("New Team"), "NEW");     // "NewTeam" -> "NEW" 
+        assert_eq!(get_team_abbreviation("Future Club"), "FUT");  // "FutureClub" -> "FUT"
+
+        // Test special character handling (non-letters removed, uppercase)
+        assert_eq!(get_team_abbreviation("HC Blues"), "HCB");     // "HCBlues" -> "HCB"
+        assert_eq!(get_team_abbreviation("K-Espoo"), "KES");      // Known team (exact match)
+        assert_eq!(get_team_abbreviation("HC-Jokers"), "HCJ");    // "HCJokers" -> "HCJ"
+        assert_eq!(get_team_abbreviation("Team #1"), "TEA");      // "Team" -> "TEA"
+        assert_eq!(get_team_abbreviation("123 ABC 456"), "ABC");  // "ABC" -> "ABC"
+        assert_eq!(get_team_abbreviation("!@#$%"), "!@#$%");      // No letters -> return original
 
         // Test edge cases
-        assert_eq!(get_team_abbreviation(""), "");
-        assert_eq!(get_team_abbreviation("A"), "A");
-        assert_eq!(get_team_abbreviation("AB"), "AB");
-        assert_eq!(get_team_abbreviation("ABC"), "ABC");
-        assert_eq!(get_team_abbreviation("ABCD"), "ABC");
-        assert_eq!(get_team_abbreviation("ABCDE"), "ABC");
+        assert_eq!(get_team_abbreviation(""), "");               // No letters
+        assert_eq!(get_team_abbreviation("A"), "A");             // Single letter
+        assert_eq!(get_team_abbreviation("AB"), "AB");           // Two letters
+        assert_eq!(get_team_abbreviation("ABC"), "ABC");         // Three letters
+        assert_eq!(get_team_abbreviation("ABCD"), "ABC");        // Four letters -> truncate to 3
+        assert_eq!(get_team_abbreviation("ABCDE"), "ABC");       // Five letters -> truncate to 3
     }
 
     #[test]
@@ -2920,7 +2939,7 @@ mod tests {
         // Verify the content contains expected teams (using correct abbreviations)
         assert!(result[0].contains("HIFK"));
         assert!(result[0].contains("TAP")); // "Tappara" -> "TAP"
-        assert!(result[0].contains("Blu")); // "Blues" -> "Blu" (fallback rule)
+        assert!(result[0].contains("BLU")); // "Blues" -> "BLU" (fallback rule, uppercase)
         assert!(result[2].contains("LUK")); // "Lukko" -> "LUK"
     }
 
