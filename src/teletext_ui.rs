@@ -90,6 +90,7 @@ pub fn get_team_abbreviation(team_name: &str) -> &str {
         "KooKoo" => "KOO",
 
         // Alternative team name formats that might appear in API
+        "K-Espoo" => "BLU",
         "HIFK Helsinki" => "HIFK",
         "TPS Turku" => "TPS",
         "Tampereen Tappara" => "TAP",
@@ -340,6 +341,7 @@ pub struct TeletextPage {
     fetched_date: Option<String>, // Date for which data was fetched
     loading_indicator: Option<LoadingIndicator>,
     auto_refresh_indicator: Option<LoadingIndicator>, // Subtle indicator for auto-refresh
+    compact_mode: bool, // Enable compact display mode
 }
 
 pub enum TeletextRow {
@@ -456,6 +458,7 @@ impl TeletextPage {
         disable_video_links: bool,
         show_footer: bool,
         ignore_height_limit: bool,
+        compact_mode: bool,
     ) -> Self {
         // Get terminal size, fallback to reasonable default if can't get size
         let screen_height = crossterm::terminal::size()
@@ -477,6 +480,7 @@ impl TeletextPage {
             fetched_date: None,
             loading_indicator: None,
             auto_refresh_indicator: None,
+            compact_mode,
         }
     }
 
@@ -1507,6 +1511,7 @@ mod tests {
             false,
             true,
             false,
+            false,
         );
 
         // Test showing loading indicator
@@ -1537,6 +1542,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
+            false,
             false,
         );
         page.set_screen_height(20); // Set fixed screen height for testing
@@ -1602,6 +1608,7 @@ mod tests {
             "TEST".to_string(),
             false,
             true,
+            false,
             false,
         );
         page.set_screen_height(20); // Set fixed screen height for testing
@@ -1675,6 +1682,7 @@ mod tests {
             false,
             true,
             true, // ignore_height_limit = true to show all games
+            false,
         );
 
         // Test game without goals
@@ -1732,6 +1740,7 @@ mod tests {
             false,
             true,
             true, // ignore_height_limit = true to show all content
+            false,
         );
         let error_msg = "Test Error";
         page.add_error_message(error_msg);
@@ -1753,6 +1762,7 @@ mod tests {
             false,
             true,
             true, // ignore_height_limit = true to show all games
+            false,
         );
 
         // Test scheduled game display
@@ -1886,6 +1896,7 @@ mod tests {
             false, // video links enabled
             true,
             false,
+            false,
         );
 
         let goal_events = vec![GoalEventData {
@@ -1921,6 +1932,7 @@ mod tests {
             "TEST".to_string(),
             true, // video links disabled
             true,
+            false,
             false,
         );
 
