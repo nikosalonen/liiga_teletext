@@ -123,6 +123,7 @@ fn manage_loading_indicators(
     should_show_indicator: bool,
     current_date: &Option<String>,
     disable_links: bool,
+    compact_mode: bool,
 ) -> bool {
     let mut needs_render = false;
 
@@ -134,7 +135,7 @@ fn manage_loading_indicators(
     }
 
     if should_show_loading {
-        *current_page = Some(create_loading_page(current_date, disable_links));
+        *current_page = Some(create_loading_page(current_date, disable_links, compact_mode));
         needs_render = true;
     } else {
         tracing::debug!("Skipping loading screen due to ongoing games");
@@ -280,7 +281,7 @@ async fn create_or_restore_page(
         Some(page)
     } else {
         let page = if games.is_empty() {
-            create_error_page(fetched_date, disable_links)
+            create_error_page(fetched_date, disable_links, compact_mode)
         } else {
             // Try to create a future games page, fall back to regular page if not future games
             let show_future_header = current_date.is_none();
@@ -1132,7 +1133,7 @@ async fn fetch_data_with_timeout(
 }
 
 /// Create loading page for data fetching
-fn create_loading_page(current_date: &Option<String>, disable_links: bool) -> TeletextPage {
+fn create_loading_page(current_date: &Option<String>, disable_links: bool, compact_mode: bool) -> TeletextPage {
     let mut loading_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
@@ -1140,7 +1141,7 @@ fn create_loading_page(current_date: &Option<String>, disable_links: bool) -> Te
         disable_links,
         true,
         false,
-        false, // compact_mode - will be passed from main later
+        compact_mode,
     );
 
     if let Some(date) = current_date {
@@ -1164,7 +1165,7 @@ fn create_loading_page(current_date: &Option<String>, disable_links: bool) -> Te
 }
 
 /// Create error page for empty games
-fn create_error_page(fetched_date: &str, disable_links: bool) -> TeletextPage {
+fn create_error_page(fetched_date: &str, disable_links: bool, compact_mode: bool) -> TeletextPage {
     let mut error_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
@@ -1172,7 +1173,7 @@ fn create_error_page(fetched_date: &str, disable_links: bool) -> TeletextPage {
         disable_links,
         true,
         false,
-        false, // compact_mode - will be passed from main later
+        compact_mode,
     );
 
     // Use UTC internally, convert to local time for date formatting
@@ -1223,6 +1224,7 @@ async fn handle_data_fetching(
         should_show_indicator,
         current_date,
         disable_links,
+        compact_mode,
     );
 
     // Fetch data with timeout
