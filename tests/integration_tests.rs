@@ -46,6 +46,7 @@ async fn test_error_handling() {
         true,
         false,
         false,
+        false,
     );
 
     // Add error message
@@ -70,6 +71,7 @@ async fn test_page_navigation() {
         "RUNKOSARJA".to_string(),
         false,
         true,
+        false,
         false,
         false,
     );
@@ -186,6 +188,7 @@ async fn test_teletext_ui_generation() {
         true,  // show_footer
         false, // ignore_height_limit
         false, // compact_mode
+        false, // wide_mode
     );
 
     // Add game result
@@ -269,6 +272,7 @@ async fn test_end_to_end_multiple_games() {
         true,
         false,
         false,
+        false,
     );
 
     // Add all game results
@@ -306,6 +310,7 @@ async fn test_different_tournament_types() {
         "PLAYOFFS".to_string(),
         false,
         true,
+        false,
         false,
         false,
     );
@@ -423,6 +428,7 @@ async fn test_compact_mode_non_interactive() {
         true,  // show_footer
         true,  // ignore_height_limit (non-interactive mode)
         true,  // compact_mode
+        false, // wide_mode
     );
 
     // Add all game results
@@ -493,6 +499,7 @@ async fn test_compact_mode_with_dates() {
         true,
         true,
         true, // compact_mode
+        false, // wide_mode
     );
     past_page.set_fetched_date("2024-01-15".to_string());
     let past_game_data = GameResultData::new(&past_game);
@@ -509,6 +516,7 @@ async fn test_compact_mode_with_dates() {
         true,
         true,
         true, // compact_mode
+        false, // wide_mode
     );
     future_page.set_fetched_date("2024-12-15".to_string());
     let future_game_data = GameResultData::new(&future_game);
@@ -640,6 +648,7 @@ async fn test_compact_mode_preserves_styling() {
         true,
         true,
         false, // normal mode
+        false, // wide_mode
     );
 
     let mut compact_page = TeletextPage::new(
@@ -650,6 +659,7 @@ async fn test_compact_mode_preserves_styling() {
         true,
         true,
         true, // compact mode
+        false, // wide_mode
     );
 
     // Add same games to both pages
@@ -737,6 +747,7 @@ async fn test_compact_mode_basic_functionality() {
         true,
         false,
         true, // compact mode enabled
+        false, // wide_mode
     );
 
     // Verify compact mode is enabled
