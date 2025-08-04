@@ -70,7 +70,7 @@ impl std::fmt::Display for SeriesType {
             SeriesType::Practice => "HARJOITUSOTTELUT",
             SeriesType::RegularSeason => "RUNKOSARJA",
         };
-        write!(f, "{display_text}")
+        f.write_str(display_text)
     }
 }
 
