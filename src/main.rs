@@ -515,6 +515,7 @@ async fn main() -> Result<(), AppError> {
                 args.disable_links,
                 true,
                 true,
+                args.compact,
                 show_future_header,
                 Some(fetched_date.clone()),
                 None,
@@ -528,6 +529,7 @@ async fn main() -> Result<(), AppError> {
                         args.disable_links,
                         true,
                         true,
+                        args.compact,
                         Some(fetched_date.clone()),
                         None,
                     )
