@@ -89,6 +89,60 @@ fn get_subheader(games: &[GameData]) -> String {
         .to_string()
 }
 
+/// Determines whether to show loading indicator and auto-refresh indicator
+fn determine_indicator_states(
+    current_date: &Option<String>,
+    last_games: &[GameData],
+) -> (bool, bool) {
+    let has_ongoing_games = has_live_games_from_game_data(last_games);
+
+    // Show loading indicator only in specific cases
+    let should_show_loading = if let Some(date) = current_date {
+        // Only show loading for historical dates
+        is_historical_date(date)
+    } else {
+        // Show loading for initial load when no specific date is requested
+        true
+    };
+
+    // Show auto-refresh indicator whenever auto-refresh is active
+    let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
+    let should_show_indicator = if let Some(date) = current_date {
+        !is_historical_date(date) && (has_ongoing_games || !all_scheduled)
+    } else {
+        has_ongoing_games || !all_scheduled
+    };
+
+    (should_show_loading, should_show_indicator)
+}
+
+/// Manages loading and auto-refresh indicators for the current page
+fn manage_loading_indicators(
+    current_page: &mut Option<TeletextPage>,
+    should_show_loading: bool,
+    should_show_indicator: bool,
+    current_date: &Option<String>,
+    disable_links: bool,
+) -> bool {
+    let mut needs_render = false;
+
+    if should_show_indicator {
+        if let Some(page) = current_page {
+            page.show_auto_refresh_indicator();
+            needs_render = true;
+        }
+    }
+
+    if should_show_loading {
+        *current_page = Some(create_loading_page(current_date, disable_links));
+        needs_render = true;
+    } else {
+        tracing::debug!("Skipping loading screen due to ongoing games");
+    }
+
+    needs_render
+}
+
 /// Calculates a hash of the games data for change detection
 /// Optimized to focus on essential fields that indicate meaningful changes
 fn calculate_games_hash(games: &[GameData]) -> u64 {
@@ -122,6 +176,199 @@ fn calculate_games_hash(games: &[GameData]) -> u64 {
     }
 
     hasher.finish()
+}
+
+/// Performs change detection and logs detailed information about changes
+fn detect_and_log_changes(games: &[GameData], last_games: &[GameData]) -> bool {
+    let games_hash = calculate_games_hash(games);
+    let last_games_hash = calculate_games_hash(last_games);
+    let data_changed = games_hash != last_games_hash;
+
+    if data_changed {
+        tracing::debug!("Data changed, updating UI");
+
+        // Log specific changes for live games to help debug game clock updates
+        if !last_games.is_empty() && games.len() == last_games.len() {
+            for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate() {
+                if new_game.played_time != old_game.played_time
+                    && new_game.score_type == ScoreType::Ongoing
+                {
+                    tracing::info!(
+                        "Game clock update detected: Game {} - {} vs {} - time changed from {}s to {}s",
+                        i + 1,
+                        new_game.home_team,
+                        new_game.away_team,
+                        old_game.played_time,
+                        new_game.played_time
+                    );
+                }
+            }
+        }
+    } else {
+        // Track ongoing games with static time to confirm API limitations
+        let ongoing_games: Vec<_> = games
+            .iter()
+            .enumerate()
+            .filter(|(_, game)| game.score_type == ScoreType::Ongoing)
+            .collect();
+
+        if !ongoing_games.is_empty() {
+            tracing::debug!(
+                "No data changes detected despite {} ongoing game(s): {}",
+                ongoing_games.len(),
+                ongoing_games
+                    .iter()
+                    .map(|(i, game)| format!(
+                        "{}. {} vs {} ({}s)",
+                        i + 1,
+                        game.home_team,
+                        game.away_team,
+                        game.played_time
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
+        // Check if all games are scheduled (future games) - only relevant if no ongoing games
+        let has_ongoing_games = has_live_games_from_game_data(games);
+        let all_scheduled = !games.is_empty() && games.iter().all(is_future_game);
+
+        if all_scheduled && !has_ongoing_games {
+            tracing::info!("All games are scheduled - auto-refresh disabled");
+        } else if has_ongoing_games {
+            tracing::info!("Ongoing games detected - auto-refresh enabled");
+        }
+
+        tracing::debug!("No data changes detected, skipping UI update");
+    }
+
+    data_changed
+}
+
+/// Creates or restores a teletext page based on the current state and data
+async fn create_or_restore_page(
+    games: &[GameData],
+    disable_links: bool,
+    fetched_date: &str,
+    preserved_page_for_restoration: Option<usize>,
+    current_date: &Option<String>,
+    updated_current_date: &Option<String>,
+) -> Option<TeletextPage> {
+    // Restore the preserved page number
+    if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
+        let mut page = create_page(
+            games,
+            disable_links,
+            true,
+            false,
+            Some(fetched_date.to_string()),
+            Some(preserved_page_for_restoration),
+        )
+        .await;
+
+        // Disable auto-refresh for historical dates
+        if let Some(date) = updated_current_date {
+            if is_historical_date(date) {
+                page.set_auto_refresh_disabled(true);
+            }
+        }
+
+        Some(page)
+    } else {
+        let page = if games.is_empty() {
+            create_error_page(fetched_date, disable_links)
+        } else {
+            // Try to create a future games page, fall back to regular page if not future games
+            let show_future_header = current_date.is_none();
+            match create_future_games_page(
+                games,
+                disable_links,
+                true,
+                false,
+                show_future_header,
+                Some(fetched_date.to_string()),
+                None,
+            )
+            .await
+            {
+                Some(page) => page,
+                None => {
+                    let mut page = create_page(
+                        games,
+                        disable_links,
+                        true,
+                        false,
+                        Some(fetched_date.to_string()),
+                        None,
+                    )
+                    .await;
+
+                    // Disable auto-refresh for historical dates
+                    if let Some(date) = updated_current_date {
+                        if is_historical_date(date) {
+                            page.set_auto_refresh_disabled(true);
+                        }
+                    }
+
+                    page
+                }
+            }
+        };
+
+        Some(page)
+    }
+}
+
+/// Parameters for page restoration
+struct PageRestorationParams<'a> {
+    current_page: &'a mut Option<TeletextPage>,
+    data_changed: bool,
+    had_error: bool,
+    preserved_page_for_restoration: Option<usize>,
+    games: &'a [GameData],
+    last_games: &'a [GameData],
+    disable_links: bool,
+    fetched_date: &'a str,
+    updated_current_date: &'a Option<String>,
+}
+
+/// Handles page restoration when loading screen was shown but data didn't change
+async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
+    let mut needs_render = false;
+
+    // If we showed a loading screen but data didn't change, we still need to restore pagination
+    if !params.data_changed && !params.had_error && params.preserved_page_for_restoration.is_some() {
+        if let Some(current) = params.current_page {
+            // Check if current page is a loading page by checking if it has error messages
+            if current.has_error_messages() {
+                if let Some(preserved_page_for_restoration) = params.preserved_page_for_restoration {
+                    let games_to_use = if params.games.is_empty() { params.last_games } else { params.games };
+                    let mut page = create_page(
+                        games_to_use,
+                        params.disable_links,
+                        true,
+                        false,
+                        Some(params.fetched_date.to_string()),
+                        Some(preserved_page_for_restoration),
+                    )
+                    .await;
+
+                    // Disable auto-refresh for historical dates
+                    if let Some(date) = params.updated_current_date {
+                        if is_historical_date(date) {
+                            page.set_auto_refresh_disabled(true);
+                        }
+                    }
+
+                    *params.current_page = Some(page);
+                    needs_render = true;
+                }
+            }
+        }
+    }
+
+    needs_render
 }
 
 /// Creates a base TeletextPage with common initialization logic.
@@ -929,43 +1176,21 @@ async fn handle_data_fetching(
     ),
     AppError,
 > {
-    let has_ongoing_games = has_live_games_from_game_data(last_games);
+    // Determine indicator states
+    let (should_show_loading, should_show_indicator) =
+        determine_indicator_states(current_date, last_games);
 
-    // Show loading indicator only in specific cases
-    let should_show_loading = if let Some(date) = current_date {
-        // Only show loading for historical dates
-        is_historical_date(date)
-    } else {
-        // Show loading for initial load when no specific date is requested
-        true
-    };
-
-    // Show auto-refresh indicator whenever auto-refresh is active
-    let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
-    let should_show_indicator = if let Some(date) = current_date {
-        !is_historical_date(date) && (has_ongoing_games || !all_scheduled)
-    } else {
-        has_ongoing_games || !all_scheduled
-    };
-
+    // Initialize page state
     let mut current_page: Option<TeletextPage> = None;
-    let mut needs_render = false;
+    let mut needs_render = manage_loading_indicators(
+        &mut current_page,
+        should_show_loading,
+        should_show_indicator,
+        current_date,
+        disable_links,
+    );
 
-    if should_show_indicator {
-        if let Some(page) = &mut current_page {
-            page.show_auto_refresh_indicator();
-            needs_render = true;
-        }
-    }
-
-    if should_show_loading {
-        current_page = Some(create_loading_page(current_date, disable_links));
-        needs_render = true;
-    } else {
-        tracing::debug!("Skipping loading screen due to ongoing games");
-    }
-
-    // Add timeout for auto-refresh to prevent hanging
+    // Fetch data with timeout
     let timeout_duration = tokio::time::Duration::from_secs(15);
     let (games, had_error, fetched_date, should_retry) =
         fetch_data_with_timeout(current_date.clone(), timeout_duration).await;
@@ -977,173 +1202,41 @@ async fn handle_data_fetching(
         tracing::debug!("Updated current_date to: {:?}", updated_current_date);
     }
 
-    // Change detection using a simple hash of game data
-    let games_hash = calculate_games_hash(&games);
-    let last_games_hash = calculate_games_hash(last_games);
-    let data_changed = games_hash != last_games_hash;
+    // Perform change detection and logging
+    let data_changed = detect_and_log_changes(&games, last_games);
 
-    if data_changed {
-        tracing::debug!("Data changed, updating UI");
-
-        // Log specific changes for live games to help debug game clock updates
-        if !last_games.is_empty() && games.len() == last_games.len() {
-            for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate() {
-                if new_game.played_time != old_game.played_time
-                    && new_game.score_type == ScoreType::Ongoing
-                {
-                    tracing::info!(
-                        "Game clock update detected: Game {} - {} vs {} - time changed from {}s to {}s",
-                        i + 1,
-                        new_game.home_team,
-                        new_game.away_team,
-                        old_game.played_time,
-                        new_game.played_time
-                    );
-                }
-            }
-        }
-
-        // Only create a new page if we didn't have an error and data changed
-        if !had_error {
-            // Restore the preserved page number
-            if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
-                let mut page = create_page(
-                    &games,
-                    disable_links,
-                    true,
-                    false,
-                    Some(fetched_date.clone()),
-                    Some(preserved_page_for_restoration),
-                )
-                .await;
-
-                // Disable auto-refresh for historical dates
-                if let Some(ref date) = updated_current_date {
-                    if is_historical_date(date) {
-                        page.set_auto_refresh_disabled(true);
-                    }
-                }
-
-                current_page = Some(page);
-            } else {
-                let page = if games.is_empty() {
-                    create_error_page(&fetched_date, disable_links)
-                } else {
-                    // Try to create a future games page, fall back to regular page if not future games
-                    let show_future_header = current_date.is_none();
-                    match create_future_games_page(
-                        &games,
-                        disable_links,
-                        true,
-                        false,
-                        show_future_header,
-                        Some(fetched_date.clone()),
-                        None,
-                    )
-                    .await
-                    {
-                        Some(page) => page,
-                        None => {
-                            let mut page = create_page(
-                                &games,
-                                disable_links,
-                                true,
-                                false,
-                                Some(fetched_date.clone()),
-                                None,
-                            )
-                            .await;
-
-                            // Disable auto-refresh for historical dates
-                            if let Some(ref date) = updated_current_date {
-                                if is_historical_date(date) {
-                                    page.set_auto_refresh_disabled(true);
-                                }
-                            }
-
-                            page
-                        }
-                    }
-                };
-
-                current_page = Some(page);
-            }
-
+    // Handle page creation/restoration based on data changes and errors
+    if data_changed && !had_error {
+        if let Some(page) = create_or_restore_page(
+            &games,
+            disable_links,
+            &fetched_date,
+            preserved_page_for_restoration,
+            current_date,
+            &updated_current_date,
+        ).await {
+            current_page = Some(page);
             needs_render = true;
         }
     } else if had_error {
         tracing::debug!(
             "Auto-refresh failed but no data changes detected, continuing with existing UI"
         );
-    } else {
-        // Track ongoing games with static time to confirm API limitations
-        let ongoing_games: Vec<_> = games
-            .iter()
-            .enumerate()
-            .filter(|(_, game)| game.score_type == ScoreType::Ongoing)
-            .collect();
-
-        if !ongoing_games.is_empty() {
-            tracing::debug!(
-                "No data changes detected despite {} ongoing game(s): {}",
-                ongoing_games.len(),
-                ongoing_games
-                    .iter()
-                    .map(|(i, game)| format!(
-                        "{}. {} vs {} ({}s)",
-                        i + 1,
-                        game.home_team,
-                        game.away_team,
-                        game.played_time
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        }
-
-        // Check if all games are scheduled (future games) - only relevant if no ongoing games
-        let has_ongoing_games = has_live_games_from_game_data(&games);
-        let all_scheduled = !games.is_empty() && games.iter().all(is_future_game);
-
-        if all_scheduled && !has_ongoing_games {
-            tracing::info!("All games are scheduled - auto-refresh disabled");
-        } else if has_ongoing_games {
-            tracing::info!("Ongoing games detected - auto-refresh enabled");
-        }
-
-        tracing::debug!("No data changes detected, skipping UI update");
     }
 
-    // If we showed a loading screen but data didn't change, we still need to restore pagination
-    if !data_changed && !had_error && preserved_page_for_restoration.is_some() {
-        if let Some(ref current) = current_page {
-            // Check if current page is a loading page by checking if it has error messages
-            if current.has_error_messages() {
-                if let Some(preserved_page_for_restoration) = preserved_page_for_restoration {
-                    let games_to_use = if games.is_empty() { last_games } else { &games };
-                    let mut page = create_page(
-                        games_to_use,
-                        disable_links,
-                        true,
-                        false,
-                        Some(fetched_date.clone()),
-                        Some(preserved_page_for_restoration),
-                    )
-                    .await;
-
-                    // Disable auto-refresh for historical dates
-                    if let Some(ref date) = updated_current_date {
-                        if is_historical_date(date) {
-                            page.set_auto_refresh_disabled(true);
-                        }
-                    }
-
-                    current_page = Some(page);
-                    needs_render = true;
-                }
-            }
-        }
-    }
+    // Handle page restoration when loading screen was shown but data didn't change
+    let restoration_render = handle_page_restoration(PageRestorationParams {
+        current_page: &mut current_page,
+        data_changed,
+        had_error,
+        preserved_page_for_restoration,
+        games: &games,
+        last_games,
+        disable_links,
+        fetched_date: &fetched_date,
+        updated_current_date: &updated_current_date,
+    }).await;
+    needs_render = needs_render || restoration_render;
 
     // Hide auto-refresh indicator after data is fetched
     if let Some(page) = &mut current_page {
