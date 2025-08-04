@@ -890,7 +890,7 @@ impl TeletextPage {
                 let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
 
                 // Format future games header for compact mode - use abbreviated format
-                let abbreviated_header = if header_text.len() > 25 {
+                let abbreviated_header = if header_text.len() > 22 {
                     format!("{}...", &header_text[..22])
                 } else {
                     header_text.clone()
@@ -3066,5 +3066,46 @@ mod tests {
 
         let formatted = page.format_compact_game(&error_row, &config);
         assert_eq!(formatted, "");
+    }
+
+    #[test]
+    fn test_header_truncation_logic() {
+        let page = TeletextPage::new(
+            1,
+            "Test Title".to_string(),
+            "Test Subheader".to_string(),
+            false,
+            false,
+            false,
+            true, // compact_mode = true
+        );
+        let config = CompactDisplayConfig::default();
+
+        // Test header shorter than 22 characters - should not be truncated
+        let short_header = TeletextRow::FutureGamesHeader("Short Header".to_string());
+        let formatted = page.format_compact_game(&short_header, &config);
+        assert!(formatted.contains("Short Header"));
+        assert!(!formatted.contains("..."));
+
+        // Test header exactly 22 characters - should not be truncated
+        let exact_header = TeletextRow::FutureGamesHeader("1234567890123456789012".to_string());
+        let formatted = page.format_compact_game(&exact_header, &config);
+        assert!(formatted.contains("1234567890123456789012"));
+        assert!(!formatted.contains("..."));
+
+        // Test header 23 characters - should be truncated
+        let long_header = TeletextRow::FutureGamesHeader("12345678901234567890123".to_string());
+        let formatted = page.format_compact_game(&long_header, &config);
+        assert!(formatted.contains("1234567890123456789012..."));
+        assert!(!formatted.contains("12345678901234567890123"));
+
+        // Test very long header - should be truncated to 22 chars + "..."
+        let very_long_header = TeletextRow::FutureGamesHeader("This is a very long header that should be truncated".to_string());
+        let formatted = page.format_compact_game(&very_long_header, &config);
+        assert!(formatted.contains("This is a very long he..."));
+        
+        // Verify the final length is 25 characters (22 + 3 for "...")
+        let truncated_part = "This is a very long he...";
+        assert_eq!(truncated_part.len(), 25);
     }
 }
