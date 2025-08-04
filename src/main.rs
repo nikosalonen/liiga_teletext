@@ -470,6 +470,7 @@ async fn main() -> Result<(), AppError> {
                     args.disable_links,
                     true,
                     false,
+                    args.compact,
                 );
                 error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
                 // Set terminal title for non-interactive mode (error case)
@@ -489,6 +490,7 @@ async fn main() -> Result<(), AppError> {
                 args.disable_links,
                 false, // Don't show footer in quick view mode
                 true,  // Ignore height limit in quick view mode
+                args.compact,
             );
             // Use UTC internally, convert to local time for date formatting
             let today = Utc::now()
