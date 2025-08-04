@@ -516,6 +516,7 @@ async fn main() -> Result<(), AppError> {
                 true,
                 true,
                 args.compact,
+                args.once || args.compact, // suppress_countdown when once or compact mode
                 show_future_header,
                 Some(fetched_date.clone()),
                 None,
@@ -530,6 +531,7 @@ async fn main() -> Result<(), AppError> {
                         true,
                         true,
                         args.compact,
+                        args.once || args.compact, // suppress_countdown when once or compact mode
                         Some(fetched_date.clone()),
                         None,
                     )
