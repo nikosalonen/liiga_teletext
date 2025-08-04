@@ -120,6 +120,7 @@ liiga_teletext/
 
 #### Configuration
 - `--config [DOMAIN]` - Update API domain in config (prompts if not provided)
+  - **Breaking Change**: The `-c` short flag has been removed to avoid conflict with `--compact`. Use the full `--config` flag instead.
 - `--set-log-file <PATH>` - Set a persistent custom log file location
 - `--clear-log-file` - Clear custom log file path and revert to default location
 - `-l, --list-config` - List current configuration settings
