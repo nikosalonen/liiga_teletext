@@ -95,6 +95,7 @@ pub fn format_for_display(full_name: &str) -> String {
 /// let display_name = format_for_display_with_first_initial("Saku", "Koivu");
 /// assert_eq!(display_name, "Koivu S.");
 /// ```
+#[allow(dead_code)]
 pub fn format_for_display_with_first_initial(first_name: &str, last_name: &str) -> String {
     let formatted_last_name = format_for_display(&build_full_name("", last_name));
 
@@ -146,10 +147,9 @@ pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<
     // Apply disambiguation rules
     for (_, group) in last_name_groups {
         if group.len() > 1 {
-            // Multiple players with same last name - use disambiguation
-            for (id, first_name, last_name) in group {
-                let disambiguated_name =
-                    format_for_display_with_first_initial(&first_name, &last_name);
+            // Multiple players with same last name - apply progressive disambiguation
+            let disambiguated_group = apply_progressive_disambiguation(&group);
+            for (id, disambiguated_name) in disambiguated_group {
                 result.insert(id, disambiguated_name);
             }
         } else {
@@ -157,6 +157,149 @@ pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<
             let (id, _, last_name) = &group[0];
             let display_name = format_for_display(&build_full_name("", last_name));
             result.insert(*id, display_name);
+        }
+    }
+
+    result
+}
+
+/// Applies progressive disambiguation to a group of players with the same last name.
+/// If single initials are sufficient, uses them. If not, extends to 2-3 characters as needed.
+///
+/// # Arguments
+/// * `group` - A slice of players with the same last name: (player_id, first_name, last_name)
+///
+/// # Returns
+/// * `Vec<(i64, String)>` - A vector of (player_id, disambiguated_name) pairs
+///
+/// # Examples
+/// ```
+/// use liiga_teletext::data_fetcher::player_names::apply_progressive_disambiguation;
+///
+/// let group = vec![
+///     (1, "Mikael".to_string(), "Granlund".to_string()),
+///     (2, "Markus".to_string(), "Granlund".to_string()),
+/// ];
+/// let result = apply_progressive_disambiguation(&group);
+/// // Result should be: [(1, "Granlund Mi."), (2, "Granlund Ma.")]
+/// ```
+fn apply_progressive_disambiguation(group: &[(i64, String, String)]) -> Vec<(i64, String)> {
+    let mut result = Vec::new();
+    let formatted_last_name = format_for_display(&build_full_name("", &group[0].2));
+
+    // Step 1: Try single initials
+    let mut initial_groups: HashMap<String, Vec<(i64, String, String)>> = HashMap::new();
+
+    for (id, first_name, last_name) in group {
+        if let Some(initial) = extract_first_initial(first_name) {
+            initial_groups.entry(initial).or_default().push((
+                *id,
+                first_name.clone(),
+                last_name.clone(),
+            ));
+        } else {
+            // No valid initial - use last name only
+            result.push((*id, formatted_last_name.clone()));
+        }
+    }
+
+    // Step 2: Process each initial group
+    for (initial, players_with_same_initial) in initial_groups {
+        if players_with_same_initial.len() == 1 {
+            // Single player with this initial - use single initial
+            let (id, _, _) = &players_with_same_initial[0];
+            result.push((*id, format!("{formatted_last_name} {initial}.")));
+        } else {
+            // Multiple players with same initial - try extended disambiguation
+            let extended_disambiguated =
+                apply_extended_disambiguation(&players_with_same_initial, &formatted_last_name);
+
+            // Check if extended disambiguation actually creates unique identifiers
+            let mut unique_names: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            let mut all_unique = true;
+
+            for (_, name) in &extended_disambiguated {
+                if !unique_names.insert(name.clone()) {
+                    all_unique = false;
+                    break;
+                }
+            }
+
+            if all_unique {
+                // Extended disambiguation worked - use it
+                result.extend(extended_disambiguated);
+            } else {
+                // Extended disambiguation didn't help - fall back to single initial
+                for (id, _, _) in &players_with_same_initial {
+                    result.push((*id, format!("{formatted_last_name} {initial}.")));
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Applies extended disambiguation when players share the same last name and first initial.
+/// Uses 2-3 characters from the first name to create unique identifiers.
+///
+/// # Arguments
+/// * `players` - Players with the same last name and first initial
+/// * `formatted_last_name` - The already formatted last name
+///
+/// # Returns
+/// * `Vec<(i64, String)>` - Disambiguated names using extended prefixes
+fn apply_extended_disambiguation(
+    players: &[(i64, String, String)],
+    formatted_last_name: &str,
+) -> Vec<(i64, String)> {
+    let mut result = Vec::new();
+
+    // Try 2 characters first
+    let mut char2_groups: HashMap<String, Vec<(i64, String)>> = HashMap::new();
+
+    for (id, first_name, _) in players {
+        if let Some(chars2) = extract_first_chars(first_name, 2) {
+            char2_groups
+                .entry(chars2)
+                .or_default()
+                .push((*id, first_name.clone()));
+        } else {
+            // Fallback to single initial or last name only
+            if let Some(initial) = extract_first_initial(first_name) {
+                result.push((*id, format!("{formatted_last_name} {initial}.")));
+            } else {
+                result.push((*id, formatted_last_name.to_string()));
+            }
+        }
+    }
+
+    // Process 2-character groups
+    for (chars2, players_with_same_2chars) in char2_groups {
+        if players_with_same_2chars.len() == 1 {
+            // Unique with 2 characters
+            let (id, _) = &players_with_same_2chars[0];
+            result.push((*id, format!("{formatted_last_name} {chars2}.")));
+        } else {
+            // Still conflicts, try 3 characters
+            let mut char3_groups: HashMap<String, Vec<i64>> = HashMap::new();
+
+            for (id, first_name) in &players_with_same_2chars {
+                if let Some(chars3) = extract_first_chars(first_name, 3) {
+                    char3_groups.entry(chars3).or_default().push(*id);
+                } else {
+                    // Fallback to 2 characters if 3 is not available
+                    result.push((*id, format!("{formatted_last_name} {chars2}.")));
+                }
+            }
+
+            // Process 3-character groups
+            for (chars3, player_ids) in char3_groups {
+                for id in player_ids {
+                    result.push((id, format!("{formatted_last_name} {chars3}.")));
+                }
+            }
         }
     }
 
@@ -191,6 +334,50 @@ pub fn extract_first_initial(first_name: &str) -> Option<String> {
         .map(|c| c.to_uppercase().to_string())
 }
 
+/// Extracts the first N characters from a first name for extended disambiguation.
+/// This function is used when single initials are not sufficient to distinguish players.
+///
+/// # Arguments
+/// * `first_name` - The player's first name
+/// * `length` - Number of characters to extract (minimum 1, maximum 3)
+///
+/// # Returns
+/// * `Option<String>` - The first N characters as uppercase, or None if no valid characters found
+///
+/// # Examples
+/// ```
+/// use liiga_teletext::data_fetcher::player_names::extract_first_chars;
+///
+/// assert_eq!(extract_first_chars("Mikael", 2), Some("Mi".to_string()));
+/// assert_eq!(extract_first_chars("Markus", 2), Some("Ma".to_string()));
+/// assert_eq!(extract_first_chars("Äkäslompolo", 3), Some("Äkä".to_string()));
+/// assert_eq!(extract_first_chars("", 2), None);
+/// ```
+pub fn extract_first_chars(first_name: &str, length: usize) -> Option<String> {
+    let length = length.clamp(1, 3); // Limit to reasonable range
+    let alphabetic_chars: Vec<char> = first_name
+        .trim()
+        .chars()
+        .filter(|c| c.is_alphabetic())
+        .take(length)
+        .collect();
+
+    if alphabetic_chars.is_empty() {
+        None
+    } else {
+        // First character uppercase, rest lowercase
+        let mut result = String::new();
+        for (i, c) in alphabetic_chars.iter().enumerate() {
+            if i == 0 {
+                result.push(c.to_uppercase().next().unwrap_or(*c));
+            } else {
+                result.push(c.to_lowercase().next().unwrap_or(*c));
+            }
+        }
+        Some(result)
+    }
+}
+
 /// Determines if disambiguation is needed for a given last name within a group of players.
 /// This helper function checks if multiple players share the same last name (case-insensitive).
 ///
@@ -215,6 +402,7 @@ pub fn extract_first_initial(first_name: &str) -> Option<String> {
 /// assert!(!is_disambiguation_needed("Selänne", &players));
 /// assert!(!is_disambiguation_needed("NonExistent", &players));
 /// ```
+#[allow(dead_code)]
 pub fn is_disambiguation_needed(last_name: &str, players: &[(i64, String, String)]) -> bool {
     let normalized_last_name = last_name.to_lowercase();
     let count = players
@@ -248,6 +436,7 @@ pub fn is_disambiguation_needed(last_name: &str, players: &[(i64, String, String
 /// assert_eq!(groups.get("koivu").unwrap().len(), 2);
 /// assert_eq!(groups.get("selänne").unwrap().len(), 1);
 /// ```
+#[allow(dead_code)]
 pub fn group_players_by_last_name(
     players: &[(i64, String, String)],
 ) -> HashMap<String, Vec<(i64, String, String)>> {
@@ -255,10 +444,11 @@ pub fn group_players_by_last_name(
 
     for (id, first_name, last_name) in players {
         let normalized_last_name = last_name.to_lowercase();
-        groups
-            .entry(normalized_last_name)
-            .or_default()
-            .push((*id, first_name.clone(), last_name.clone()));
+        groups.entry(normalized_last_name).or_default().push((
+            *id,
+            first_name.clone(),
+            last_name.clone(),
+        ));
     }
 
     groups
@@ -268,6 +458,7 @@ pub fn group_players_by_last_name(
 /// This struct handles the disambiguation logic for a single team, ensuring that
 /// players with the same last name are properly distinguished.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct DisambiguationContext {
     /// The players in this team context
     pub players: Vec<(i64, String, String)>, // (id, first_name, last_name)
@@ -297,6 +488,7 @@ impl DisambiguationContext {
     /// let context = DisambiguationContext::new(players);
     /// assert_eq!(context.get_disambiguated_name(1), Some(&"Koivu M.".to_string()));
     /// ```
+    #[allow(dead_code)]
     pub fn new(players: Vec<(i64, String, String)>) -> Self {
         let disambiguated_names = format_with_disambiguation(&players);
 
@@ -313,6 +505,7 @@ impl DisambiguationContext {
     ///
     /// # Returns
     /// * `Option<&String>` - The disambiguated name if the player exists
+    #[allow(dead_code)]
     pub fn get_disambiguated_name(&self, player_id: i64) -> Option<&String> {
         self.disambiguated_names.get(&player_id)
     }
@@ -324,6 +517,7 @@ impl DisambiguationContext {
     ///
     /// # Returns
     /// * `bool` - True if multiple players share this last name
+    #[allow(dead_code)]
     pub fn needs_disambiguation(&self, last_name: &str) -> bool {
         let normalized_last_name = last_name.to_lowercase();
         let count = self
@@ -549,8 +743,8 @@ mod tests {
         assert_eq!(result.get(&1), Some(&"Koivu M.".to_string()));
         assert_eq!(result.get(&2), Some(&"Koivu S.".to_string()));
         assert_eq!(result.get(&3), Some(&"Selänne".to_string()));
-        assert_eq!(result.get(&4), Some(&"Kurri J.".to_string()));
-        assert_eq!(result.get(&5), Some(&"Kurri J.".to_string()));
+        assert_eq!(result.get(&4), Some(&"Kurri Ja.".to_string()));
+        assert_eq!(result.get(&5), Some(&"Kurri Je.".to_string()));
     }
 
     #[test]
@@ -807,11 +1001,11 @@ mod tests {
         ];
 
         let groups = group_players_by_last_name(&players);
-        
+
         assert_eq!(groups.len(), 2);
         assert_eq!(groups.get("koivu").unwrap().len(), 2);
         assert_eq!(groups.get("selänne").unwrap().len(), 1);
-        
+
         let koivu_group = groups.get("koivu").unwrap();
         assert!(koivu_group.contains(&(1, "Mikko".to_string(), "Koivu".to_string())));
         assert!(koivu_group.contains(&(2, "Saku".to_string(), "Koivu".to_string())));
@@ -826,7 +1020,7 @@ mod tests {
         ];
 
         let groups = group_players_by_last_name(&players);
-        
+
         assert_eq!(groups.len(), 1);
         assert_eq!(groups.get("koivu").unwrap().len(), 3);
     }
@@ -840,7 +1034,7 @@ mod tests {
         ];
 
         let groups = group_players_by_last_name(&players);
-        
+
         assert_eq!(groups.len(), 3);
         assert_eq!(groups.get("koivu").unwrap().len(), 1);
         assert_eq!(groups.get("selänne").unwrap().len(), 1);
@@ -851,7 +1045,7 @@ mod tests {
     fn test_group_players_by_last_name_empty() {
         let players = vec![];
         let groups = group_players_by_last_name(&players);
-        
+
         assert!(groups.is_empty());
     }
 
@@ -859,7 +1053,7 @@ mod tests {
     fn test_group_players_by_last_name_single_player() {
         let players = vec![(1, "Mikko".to_string(), "Koivu".to_string())];
         let groups = group_players_by_last_name(&players);
-        
+
         assert_eq!(groups.len(), 1);
         assert_eq!(groups.get("koivu").unwrap().len(), 1);
     }
@@ -873,7 +1067,7 @@ mod tests {
         ];
 
         let groups = group_players_by_last_name(&players);
-        
+
         assert_eq!(groups.len(), 2);
         assert_eq!(groups.get("kärppä").unwrap().len(), 2);
         assert_eq!(groups.get("björklund").unwrap().len(), 1);
@@ -891,7 +1085,7 @@ mod tests {
         ];
 
         let groups = group_players_by_last_name(&players);
-        
+
         assert_eq!(groups.len(), 3);
         assert_eq!(groups.get("koivu").unwrap().len(), 3);
         assert_eq!(groups.get("kurri").unwrap().len(), 2);
@@ -907,14 +1101,14 @@ mod tests {
 
         let groups = group_players_by_last_name(&players);
         let koivu_group = groups.get("koivu").unwrap();
-        
+
         // Check that original case is preserved in the stored data
         assert!(koivu_group.contains(&(1, "Mikko".to_string(), "Koivu".to_string())));
         assert!(koivu_group.contains(&(2, "Saku".to_string(), "KOIVU".to_string())));
     }
 
     // Comprehensive disambiguation logic tests for task 6
-    
+
     #[test]
     fn test_comprehensive_basic_two_player_disambiguation() {
         // Test basic two-player disambiguation scenario (e.g., "Koivu M." and "Koivu S.")
@@ -925,16 +1119,22 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // Both players should be disambiguated with first initials
         assert_eq!(result.get(&1), Some(&"Koivu M.".to_string()));
         assert_eq!(result.get(&2), Some(&"Koivu S.".to_string()));
         assert_eq!(result.len(), 2);
-        
+
         // Verify the disambiguation context also works correctly
         let context = DisambiguationContext::new(players);
-        assert_eq!(context.get_disambiguated_name(1), Some(&"Koivu M.".to_string()));
-        assert_eq!(context.get_disambiguated_name(2), Some(&"Koivu S.".to_string()));
+        assert_eq!(
+            context.get_disambiguated_name(1),
+            Some(&"Koivu M.".to_string())
+        );
+        assert_eq!(
+            context.get_disambiguated_name(2),
+            Some(&"Koivu S.".to_string())
+        );
         assert!(context.needs_disambiguation("Koivu"));
     }
 
@@ -950,21 +1150,33 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // All players should display with last name only (no first initial)
         assert_eq!(result.get(&1), Some(&"Koivu".to_string()));
         assert_eq!(result.get(&2), Some(&"Selänne".to_string()));
         assert_eq!(result.get(&3), Some(&"Kurri".to_string()));
         assert_eq!(result.get(&4), Some(&"Kapanen".to_string()));
         assert_eq!(result.len(), 4);
-        
+
         // Verify the disambiguation context
         let context = DisambiguationContext::new(players);
-        assert_eq!(context.get_disambiguated_name(1), Some(&"Koivu".to_string()));
-        assert_eq!(context.get_disambiguated_name(2), Some(&"Selänne".to_string()));
-        assert_eq!(context.get_disambiguated_name(3), Some(&"Kurri".to_string()));
-        assert_eq!(context.get_disambiguated_name(4), Some(&"Kapanen".to_string()));
-        
+        assert_eq!(
+            context.get_disambiguated_name(1),
+            Some(&"Koivu".to_string())
+        );
+        assert_eq!(
+            context.get_disambiguated_name(2),
+            Some(&"Selänne".to_string())
+        );
+        assert_eq!(
+            context.get_disambiguated_name(3),
+            Some(&"Kurri".to_string())
+        );
+        assert_eq!(
+            context.get_disambiguated_name(4),
+            Some(&"Kapanen".to_string())
+        );
+
         // None of the names should need disambiguation
         assert!(!context.needs_disambiguation("Koivu"));
         assert!(!context.needs_disambiguation("Selänne"));
@@ -984,20 +1196,32 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // All four players should be disambiguated with first initials
         assert_eq!(result.get(&1), Some(&"Koivu M.".to_string()));
         assert_eq!(result.get(&2), Some(&"Koivu S.".to_string()));
         assert_eq!(result.get(&3), Some(&"Koivu A.".to_string()));
         assert_eq!(result.get(&4), Some(&"Koivu P.".to_string()));
         assert_eq!(result.len(), 4);
-        
+
         // Verify the disambiguation context
         let context = DisambiguationContext::new(players);
-        assert_eq!(context.get_disambiguated_name(1), Some(&"Koivu M.".to_string()));
-        assert_eq!(context.get_disambiguated_name(2), Some(&"Koivu S.".to_string()));
-        assert_eq!(context.get_disambiguated_name(3), Some(&"Koivu A.".to_string()));
-        assert_eq!(context.get_disambiguated_name(4), Some(&"Koivu P.".to_string()));
+        assert_eq!(
+            context.get_disambiguated_name(1),
+            Some(&"Koivu M.".to_string())
+        );
+        assert_eq!(
+            context.get_disambiguated_name(2),
+            Some(&"Koivu S.".to_string())
+        );
+        assert_eq!(
+            context.get_disambiguated_name(3),
+            Some(&"Koivu A.".to_string())
+        );
+        assert_eq!(
+            context.get_disambiguated_name(4),
+            Some(&"Koivu P.".to_string())
+        );
         assert!(context.needs_disambiguation("Koivu"));
     }
 
@@ -1006,13 +1230,13 @@ mod tests {
         // Test cross-team scenarios where same last names on different teams don't disambiguate
         // This simulates the team-scoped disambiguation requirement
         // Requirements: 1.1, 1.2, 2.1, 2.2
-        
+
         // Simulate home team with one Koivu
         let home_team_players = vec![
             (1, "Mikko".to_string(), "Koivu".to_string()),
             (2, "Teemu".to_string(), "Selänne".to_string()),
         ];
-        
+
         // Simulate away team with one Koivu
         let away_team_players = vec![
             (3, "Saku".to_string(), "Koivu".to_string()),
@@ -1022,37 +1246,43 @@ mod tests {
         // Process each team separately (as would happen in real team-scoped disambiguation)
         let home_result = format_with_disambiguation(&home_team_players);
         let away_result = format_with_disambiguation(&away_team_players);
-        
+
         // Both Koivu players should display without disambiguation since they're on different teams
         assert_eq!(home_result.get(&1), Some(&"Koivu".to_string())); // Home team Koivu
         assert_eq!(home_result.get(&2), Some(&"Selänne".to_string()));
         assert_eq!(away_result.get(&3), Some(&"Koivu".to_string())); // Away team Koivu
         assert_eq!(away_result.get(&4), Some(&"Kurri".to_string()));
-        
+
         // Verify disambiguation contexts for each team
         let home_context = DisambiguationContext::new(home_team_players);
         let away_context = DisambiguationContext::new(away_team_players);
-        
+
         // Neither team should need disambiguation for Koivu since there's only one per team
         assert!(!home_context.needs_disambiguation("Koivu"));
         assert!(!away_context.needs_disambiguation("Koivu"));
-        
-        assert_eq!(home_context.get_disambiguated_name(1), Some(&"Koivu".to_string()));
-        assert_eq!(away_context.get_disambiguated_name(3), Some(&"Koivu".to_string()));
+
+        assert_eq!(
+            home_context.get_disambiguated_name(1),
+            Some(&"Koivu".to_string())
+        );
+        assert_eq!(
+            away_context.get_disambiguated_name(3),
+            Some(&"Koivu".to_string())
+        );
     }
 
     #[test]
     fn test_comprehensive_mixed_team_scenario_with_cross_team_same_names() {
         // Test a more complex scenario with multiple same names within teams and across teams
         // Requirements: 1.1, 1.2, 2.1, 2.2
-        
+
         // Home team: 2 Koivus, 1 Selänne
         let home_team_players = vec![
             (1, "Mikko".to_string(), "Koivu".to_string()),
             (2, "Antti".to_string(), "Koivu".to_string()),
             (3, "Teemu".to_string(), "Selänne".to_string()),
         ];
-        
+
         // Away team: 1 Koivu, 2 Kurris
         let away_team_players = vec![
             (4, "Saku".to_string(), "Koivu".to_string()),
@@ -1062,25 +1292,25 @@ mod tests {
 
         let home_result = format_with_disambiguation(&home_team_players);
         let away_result = format_with_disambiguation(&away_team_players);
-        
+
         // Home team: Koivus should be disambiguated, Selänne should not
         assert_eq!(home_result.get(&1), Some(&"Koivu M.".to_string()));
         assert_eq!(home_result.get(&2), Some(&"Koivu A.".to_string()));
         assert_eq!(home_result.get(&3), Some(&"Selänne".to_string()));
-        
+
         // Away team: Kurris should be disambiguated, Koivu should not (only one on this team)
         assert_eq!(away_result.get(&4), Some(&"Koivu".to_string()));
-        assert_eq!(away_result.get(&5), Some(&"Kurri J.".to_string()));
-        assert_eq!(away_result.get(&6), Some(&"Kurri J.".to_string()));
-        
+        assert_eq!(away_result.get(&5), Some(&"Kurri Ja.".to_string()));
+        assert_eq!(away_result.get(&6), Some(&"Kurri Je.".to_string()));
+
         // Verify disambiguation contexts
         let home_context = DisambiguationContext::new(home_team_players);
         let away_context = DisambiguationContext::new(away_team_players);
-        
+
         // Home team should need disambiguation for Koivu but not Selänne
         assert!(home_context.needs_disambiguation("Koivu"));
         assert!(!home_context.needs_disambiguation("Selänne"));
-        
+
         // Away team should need disambiguation for Kurri but not Koivu
         assert!(!away_context.needs_disambiguation("Koivu"));
         assert!(away_context.needs_disambiguation("Kurri"));
@@ -1090,7 +1320,7 @@ mod tests {
     fn test_comprehensive_edge_cases_in_disambiguation() {
         // Test edge cases that might occur in real disambiguation scenarios
         // Requirements: 1.1, 1.2, 2.1, 2.2
-        
+
         let players = vec![
             // Two players with same last name, one with empty first name
             (1, "".to_string(), "Koivu".to_string()),
@@ -1103,19 +1333,19 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // Koivu with empty first name should fall back to last name only
         // Koivu with first name should get first initial
         assert_eq!(result.get(&1), Some(&"Koivu".to_string()));
         assert_eq!(result.get(&2), Some(&"Koivu S.".to_string()));
-        
-        // Both Kurris should get first initials (even though they're the same)
-        assert_eq!(result.get(&3), Some(&"Kurri J.".to_string()));
-        assert_eq!(result.get(&4), Some(&"Kurri J.".to_string()));
-        
+
+        // Both Kurris should get extended disambiguation (Ja. and Je.)
+        assert_eq!(result.get(&3), Some(&"Kurri Ja.".to_string()));
+        assert_eq!(result.get(&4), Some(&"Kurri Je.".to_string()));
+
         // Selänne should remain unique
         assert_eq!(result.get(&5), Some(&"Selänne".to_string()));
-        
+
         // Verify disambiguation context
         let context = DisambiguationContext::new(players);
         assert!(context.needs_disambiguation("Koivu"));
@@ -1127,7 +1357,7 @@ mod tests {
     fn test_comprehensive_case_insensitive_disambiguation() {
         // Test that disambiguation works correctly with different case variations
         // Requirements: 1.1, 1.2, 2.1, 2.2
-        
+
         let players = vec![
             (1, "Mikko".to_string(), "Koivu".to_string()),
             (2, "Saku".to_string(), "KOIVU".to_string()),
@@ -1136,13 +1366,13 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // All three Koivu variants should be disambiguated
         assert_eq!(result.get(&1), Some(&"Koivu M.".to_string()));
         assert_eq!(result.get(&2), Some(&"Koivu S.".to_string()));
         assert_eq!(result.get(&3), Some(&"Koivu A.".to_string()));
         assert_eq!(result.get(&4), Some(&"Selänne".to_string()));
-        
+
         // Verify disambiguation context recognizes case-insensitive matches
         let context = DisambiguationContext::new(players);
         assert!(context.needs_disambiguation("Koivu"));
@@ -1156,7 +1386,7 @@ mod tests {
     fn test_comprehensive_unicode_character_disambiguation() {
         // Test disambiguation with Finnish characters (ä, ö, å)
         // Requirements: 1.1, 1.2, 2.1, 2.2
-        
+
         let players = vec![
             (1, "Äkäslompolo".to_string(), "Kärppä".to_string()),
             (2, "Östen".to_string(), "Kärppä".to_string()),
@@ -1165,18 +1395,18 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // All three Kärppä players should be disambiguated with proper Unicode initials
         assert_eq!(result.get(&1), Some(&"Kärppä Ä.".to_string()));
         assert_eq!(result.get(&2), Some(&"Kärppä Ö.".to_string()));
         assert_eq!(result.get(&3), Some(&"Kärppä Å.".to_string()));
         assert_eq!(result.get(&4), Some(&"Selänne".to_string()));
-        
+
         // Verify disambiguation context
         let context = DisambiguationContext::new(players);
         assert!(context.needs_disambiguation("Kärppä"));
         assert!(!context.needs_disambiguation("Selänne"));
-        
+
         // Test case-insensitive matching with Unicode
         assert!(context.needs_disambiguation("kärppä"));
         assert!(context.needs_disambiguation("KÄRPPÄ"));
@@ -1186,24 +1416,27 @@ mod tests {
     fn test_comprehensive_empty_and_single_player_scenarios() {
         // Test edge cases with empty player lists and single players
         // Requirements: 1.1, 1.2, 2.1, 2.2
-        
+
         // Test empty player list
         let empty_players = vec![];
         let empty_result = format_with_disambiguation(&empty_players);
         assert!(empty_result.is_empty());
-        
+
         let empty_context = DisambiguationContext::new(empty_players);
         assert_eq!(empty_context.get_disambiguated_name(1), None);
         assert!(!empty_context.needs_disambiguation("Koivu"));
-        
+
         // Test single player
         let single_player = vec![(1, "Mikko".to_string(), "Koivu".to_string())];
         let single_result = format_with_disambiguation(&single_player);
         assert_eq!(single_result.get(&1), Some(&"Koivu".to_string()));
         assert_eq!(single_result.len(), 1);
-        
+
         let single_context = DisambiguationContext::new(single_player);
-        assert_eq!(single_context.get_disambiguated_name(1), Some(&"Koivu".to_string()));
+        assert_eq!(
+            single_context.get_disambiguated_name(1),
+            Some(&"Koivu".to_string())
+        );
         assert!(!single_context.needs_disambiguation("Koivu"));
     }
 
@@ -1214,7 +1447,7 @@ mod tests {
     fn test_edge_case_empty_and_missing_first_names() {
         // Test handling of empty or missing first names
         // Requirements: 4.1 - When a player's first name is missing or empty THEN the system SHALL fall back to displaying only the last name
-        
+
         let players = vec![
             // Empty first name
             (1, "".to_string(), "Koivu".to_string()),
@@ -1230,26 +1463,32 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // Players with empty first names should fall back to last name only
         // while their teammates with valid first names get disambiguation
         assert_eq!(result.get(&1), Some(&"Koivu".to_string()));
         assert_eq!(result.get(&2), Some(&"Koivu S.".to_string()));
-        
+
         assert_eq!(result.get(&3), Some(&"Lindström".to_string()));
         assert_eq!(result.get(&4), Some(&"Lindström E.".to_string()));
-        
+
         assert_eq!(result.get(&5), Some(&"Granlund".to_string()));
         assert_eq!(result.get(&6), Some(&"Granlund M.".to_string()));
-        
+
         // Single player with empty first name should just show last name
         assert_eq!(result.get(&7), Some(&"Selänne".to_string()));
-        
+
         // Test individual function behavior
         assert_eq!(format_for_display_with_first_initial("", "Koivu"), "Koivu");
-        assert_eq!(format_for_display_with_first_initial("   ", "Koivu"), "Koivu");
-        assert_eq!(format_for_display_with_first_initial("\t\n", "Koivu"), "Koivu");
-        
+        assert_eq!(
+            format_for_display_with_first_initial("   ", "Koivu"),
+            "Koivu"
+        );
+        assert_eq!(
+            format_for_display_with_first_initial("\t\n", "Koivu"),
+            "Koivu"
+        );
+
         // Test extract_first_initial with empty inputs
         assert_eq!(extract_first_initial(""), None);
         assert_eq!(extract_first_initial("   "), None);
@@ -1260,7 +1499,7 @@ mod tests {
     fn test_edge_case_unicode_finnish_characters() {
         // Test Unicode character support for Finnish names (ä, ö, å)
         // Requirements: 1.4 - When processing player names THEN the system SHALL handle Finnish characters (ä, ö, å) correctly
-        
+
         let players = vec![
             // Finnish characters in first names
             (1, "Äkäslompolo".to_string(), "Kärppä".to_string()),
@@ -1278,33 +1517,42 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // Test proper Unicode handling in disambiguation
         assert_eq!(result.get(&1), Some(&"Kärppä Ä.".to_string()));
         assert_eq!(result.get(&2), Some(&"Kärppä Ö.".to_string()));
         assert_eq!(result.get(&3), Some(&"Kärppä Å.".to_string()));
         assert_eq!(result.get(&4), Some(&"Kärppä M.".to_string()));
         assert_eq!(result.get(&5), Some(&"Kärppä S.".to_string()));
-        
+
         // Test case handling with Finnish characters
         assert_eq!(result.get(&6), Some(&"Lönnberg Ä.".to_string()));
         assert_eq!(result.get(&7), Some(&"Lönnberg Ö.".to_string()));
-        
+
         // Test complex Finnish names
         assert_eq!(result.get(&8), Some(&"Kääriäinen V.".to_string()));
         assert_eq!(result.get(&9), Some(&"Kääriäinen Y.".to_string()));
-        
+
         // Test individual function behavior with Unicode
-        assert_eq!(format_for_display_with_first_initial("Äkäslompolo", "Kärppä"), "Kärppä Ä.");
-        assert_eq!(format_for_display_with_first_initial("östen", "lönnberg"), "Lönnberg Ö.");
-        assert_eq!(format_for_display_with_first_initial("ÅKE", "KÄRPPÄ"), "Kärppä Å.");
-        
+        assert_eq!(
+            format_for_display_with_first_initial("Äkäslompolo", "Kärppä"),
+            "Kärppä Ä."
+        );
+        assert_eq!(
+            format_for_display_with_first_initial("östen", "lönnberg"),
+            "Lönnberg Ö."
+        );
+        assert_eq!(
+            format_for_display_with_first_initial("ÅKE", "KÄRPPÄ"),
+            "Kärppä Å."
+        );
+
         // Test extract_first_initial with Finnish characters
         assert_eq!(extract_first_initial("Äkäslompolo"), Some("Ä".to_string()));
         assert_eq!(extract_first_initial("östen"), Some("Ö".to_string()));
         assert_eq!(extract_first_initial("ÅKE"), Some("Å".to_string()));
         assert_eq!(extract_first_initial("väinö"), Some("V".to_string()));
-        
+
         // Test case-insensitive grouping with Finnish characters
         let context = DisambiguationContext::new(players);
         assert!(context.needs_disambiguation("Kärppä"));
@@ -1316,7 +1564,7 @@ mod tests {
     fn test_edge_case_multiple_words_and_hyphens() {
         // Test handling of first names with multiple words or hyphens
         // Requirements: 4.2 - When a player's first name contains multiple words THEN the system SHALL use the first letter of the first word
-        
+
         let players = vec![
             // Hyphenated first names
             (1, "Jean-Pierre".to_string(), "Dumont".to_string()),
@@ -1337,33 +1585,45 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // Test hyphenated names - should use first letter of first part
         assert_eq!(result.get(&1), Some(&"Dumont J.".to_string()));
         assert_eq!(result.get(&2), Some(&"Dumont J.".to_string()));
         assert_eq!(result.get(&3), Some(&"Dubois M.".to_string()));
         assert_eq!(result.get(&4), Some(&"Dubois A.".to_string()));
-        
+
         // Test multiple word names - should use first letter of first word
         assert_eq!(result.get(&5), Some(&"Watson M.".to_string()));
         assert_eq!(result.get(&6), Some(&"Watson M.".to_string()));
         assert_eq!(result.get(&7), Some(&"Berg V.".to_string()));
         assert_eq!(result.get(&8), Some(&"Berg V.".to_string()));
-        
+
         // Test complex combinations
         assert_eq!(result.get(&9), Some(&"Martin J.".to_string()));
         assert_eq!(result.get(&10), Some(&"Martin J.".to_string()));
-        
+
         // Test apostrophe names
         assert_eq!(result.get(&11), Some(&"Smith O.".to_string()));
         assert_eq!(result.get(&12), Some(&"Smith O.".to_string()));
-        
+
         // Test individual function behavior
-        assert_eq!(format_for_display_with_first_initial("Jean-Pierre", "Dumont"), "Dumont J.");
-        assert_eq!(format_for_display_with_first_initial("Mary Jane", "Watson"), "Watson M.");
-        assert_eq!(format_for_display_with_first_initial("Van Der", "Berg"), "Berg V.");
-        assert_eq!(format_for_display_with_first_initial("O'Connor", "Smith"), "Smith O.");
-        
+        assert_eq!(
+            format_for_display_with_first_initial("Jean-Pierre", "Dumont"),
+            "Dumont J."
+        );
+        assert_eq!(
+            format_for_display_with_first_initial("Mary Jane", "Watson"),
+            "Watson M."
+        );
+        assert_eq!(
+            format_for_display_with_first_initial("Van Der", "Berg"),
+            "Berg V."
+        );
+        assert_eq!(
+            format_for_display_with_first_initial("O'Connor", "Smith"),
+            "Smith O."
+        );
+
         // Test extract_first_initial with complex names
         assert_eq!(extract_first_initial("Jean-Pierre"), Some("J".to_string()));
         assert_eq!(extract_first_initial("Mary Jane"), Some("M".to_string()));
@@ -1375,7 +1635,7 @@ mod tests {
     fn test_edge_case_non_alphabetic_first_characters() {
         // Test handling of first names starting with non-alphabetic characters
         // Requirements: 4.3 - When a player's first name starts with a non-alphabetic character THEN the system SHALL handle it gracefully
-        
+
         let players = vec![
             // Names starting with numbers
             (1, "123John".to_string(), "Smith".to_string()),
@@ -1394,31 +1654,43 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // Players with non-alphabetic first characters should fall back to last name only
         // while players with valid first names get disambiguation
         assert_eq!(result.get(&1), Some(&"Smith".to_string()));
         assert_eq!(result.get(&2), Some(&"Smith".to_string()));
-        
+
         assert_eq!(result.get(&3), Some(&"Dubois".to_string()));
         assert_eq!(result.get(&4), Some(&"Dubois".to_string()));
-        
+
         assert_eq!(result.get(&5), Some(&"Johnson".to_string()));
         assert_eq!(result.get(&6), Some(&"Johnson".to_string()));
-        
+
         assert_eq!(result.get(&7), Some(&"Brown".to_string()));
         assert_eq!(result.get(&8), Some(&"Brown".to_string()));
-        
+
         // Mixed scenario - valid name gets initial, invalid falls back
         assert_eq!(result.get(&9), Some(&"Wilson N.".to_string()));
         assert_eq!(result.get(&10), Some(&"Wilson".to_string()));
-        
+
         // Test individual function behavior
-        assert_eq!(format_for_display_with_first_initial("123John", "Smith"), "Smith");
-        assert_eq!(format_for_display_with_first_initial("-Pierre", "Dubois"), "Dubois");
-        assert_eq!(format_for_display_with_first_initial("@username", "Johnson"), "Johnson");
-        assert_eq!(format_for_display_with_first_initial("Normal", "Wilson"), "Wilson N.");
-        
+        assert_eq!(
+            format_for_display_with_first_initial("123John", "Smith"),
+            "Smith"
+        );
+        assert_eq!(
+            format_for_display_with_first_initial("-Pierre", "Dubois"),
+            "Dubois"
+        );
+        assert_eq!(
+            format_for_display_with_first_initial("@username", "Johnson"),
+            "Johnson"
+        );
+        assert_eq!(
+            format_for_display_with_first_initial("Normal", "Wilson"),
+            "Wilson N."
+        );
+
         // Test extract_first_initial with non-alphabetic characters
         assert_eq!(extract_first_initial("123John"), None);
         assert_eq!(extract_first_initial("-Pierre"), None);
@@ -1432,7 +1704,7 @@ mod tests {
     fn test_edge_case_incomplete_player_data() {
         // Test graceful degradation when player data is incomplete
         // Requirements: 4.4 - When player data is incomplete THEN the system SHALL not break the disambiguation logic for other players
-        
+
         let players = vec![
             // Complete data
             (1, "Mikko".to_string(), "Koivu".to_string()),
@@ -1453,37 +1725,37 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // Complete data should work normally
         assert_eq!(result.get(&1), Some(&"Koivu M.".to_string()));
         assert_eq!(result.get(&2), Some(&"Koivu S.".to_string()));
-        
+
         // Empty first name should fall back gracefully
         assert_eq!(result.get(&3), Some(&"Lindström".to_string()));
         assert_eq!(result.get(&4), Some(&"Lindström E.".to_string()));
-        
+
         // Empty last names should be handled (though unusual)
         assert!(result.contains_key(&5));
         assert!(result.contains_key(&6));
-        
+
         // Both names empty should be handled
         assert!(result.contains_key(&7));
-        
+
         // Whitespace-only should be handled
         assert!(result.contains_key(&8));
         assert!(result.contains_key(&9));
-        
+
         // Normal player should work fine despite other incomplete data
         assert_eq!(result.get(&10), Some(&"Selänne".to_string()));
-        
+
         // Test that the system doesn't crash with incomplete data
         let context = DisambiguationContext::new(players);
-        
+
         // Should be able to query for any player without crashing
         assert!(context.get_disambiguated_name(1).is_some());
         assert!(context.get_disambiguated_name(7).is_some());
         assert!(context.get_disambiguated_name(999).is_none());
-        
+
         // Should handle disambiguation queries gracefully
         assert!(context.needs_disambiguation("Koivu"));
         assert!(!context.needs_disambiguation("Selänne"));
@@ -1495,7 +1767,7 @@ mod tests {
     fn test_edge_case_extreme_unicode_and_special_characters() {
         // Test handling of extreme Unicode cases and special characters
         // Requirements: 1.4, 4.1, 4.2, 4.3
-        
+
         let players = vec![
             // Emoji in names (should be handled gracefully)
             (1, "😀John".to_string(), "Smith".to_string()),
@@ -1515,35 +1787,35 @@ mod tests {
         ];
 
         let result = format_with_disambiguation(&players);
-        
+
         // System should handle all cases without crashing
         assert_eq!(result.len(), 10);
-        
+
         // Emoji characters should not be considered alphabetic
         assert_eq!(result.get(&1), Some(&"Smith".to_string()));
         assert_eq!(result.get(&2), Some(&"Smith J.".to_string()));
-        
+
         // Extended Unicode should work
         assert_eq!(result.get(&3), Some(&"Novák Ž.".to_string()));
         assert_eq!(result.get(&4), Some(&"Novák Ł.".to_string()));
-        
+
         // Accented characters should work
         assert_eq!(result.get(&5), Some(&"García J.".to_string()));
         assert_eq!(result.get(&6), Some(&"García M.".to_string()));
-        
+
         // Non-Latin scripts should work
-        assert!(result.get(&7).is_some());
-        assert!(result.get(&8).is_some());
-        assert!(result.get(&9).is_some());
-        assert!(result.get(&10).is_some());
-        
+        assert!(result.contains_key(&7));
+        assert!(result.contains_key(&8));
+        assert!(result.contains_key(&9));
+        assert!(result.contains_key(&10));
+
         // Test extract_first_initial with various Unicode
         assert_eq!(extract_first_initial("😀John"), None); // Emoji not alphabetic
         assert_eq!(extract_first_initial("Žofia"), Some("Ž".to_string()));
         assert_eq!(extract_first_initial("Łukasz"), Some("Ł".to_string()));
         assert_eq!(extract_first_initial("José"), Some("J".to_string()));
         assert_eq!(extract_first_initial("María"), Some("M".to_string()));
-        
+
         // Test that the system remains stable with extreme inputs
         let context = DisambiguationContext::new(players);
         assert!(context.needs_disambiguation("Smith"));
@@ -1552,12 +1824,86 @@ mod tests {
     }
 
     #[test]
+    fn test_extended_disambiguation_same_initial() {
+        // Test that players with same last name and first initial get extended disambiguation
+        let players = vec![
+            (1, "Mikael".to_string(), "Granlund".to_string()),
+            (2, "Markus".to_string(), "Granlund".to_string()),
+            (3, "Teemu".to_string(), "Selänne".to_string()),
+        ];
+
+        let result = format_with_disambiguation(&players);
+
+        // Granlund players should get extended disambiguation (Mi., Ma.)
+        assert_eq!(result.get(&1), Some(&"Granlund Mi.".to_string()));
+        assert_eq!(result.get(&2), Some(&"Granlund Ma.".to_string()));
+        // Selänne should remain unique
+        assert_eq!(result.get(&3), Some(&"Selänne".to_string()));
+    }
+
+    #[test]
+    fn test_extended_disambiguation_three_characters() {
+        // Test extreme case where 2 characters are still not enough
+        let players = vec![
+            (1, "Michael".to_string(), "Smith".to_string()),
+            (2, "Michelle".to_string(), "Smith".to_string()),
+            (3, "Mikhail".to_string(), "Smith".to_string()),
+        ];
+
+        let result = format_with_disambiguation(&players);
+
+        // Should fall back to single initial since 3 characters don't help
+        assert_eq!(result.get(&1), Some(&"Smith M.".to_string()));
+        assert_eq!(result.get(&2), Some(&"Smith M.".to_string())); // Same as Michael - they can't be uniquely disambiguated
+        assert_eq!(result.get(&3), Some(&"Smith M.".to_string()));
+    }
+
+    #[test]
+    fn test_mixed_disambiguation_levels() {
+        // Test mix of single initial and extended disambiguation
+        let players = vec![
+            (1, "Mikael".to_string(), "Granlund".to_string()),
+            (2, "Markus".to_string(), "Granlund".to_string()),
+            (3, "Jari".to_string(), "Granlund".to_string()),
+            (4, "Teemu".to_string(), "Selänne".to_string()),
+        ];
+
+        let result = format_with_disambiguation(&players);
+
+        // M* players should get extended disambiguation
+        assert_eq!(result.get(&1), Some(&"Granlund Mi.".to_string()));
+        assert_eq!(result.get(&2), Some(&"Granlund Ma.".to_string()));
+        // J player should get single initial
+        assert_eq!(result.get(&3), Some(&"Granlund J.".to_string()));
+        // Unique player should not be disambiguated
+        assert_eq!(result.get(&4), Some(&"Selänne".to_string()));
+    }
+
+    #[test]
+    fn test_extract_first_chars() {
+        // Test the new helper function
+        assert_eq!(extract_first_chars("Mikael", 2), Some("Mi".to_string()));
+        assert_eq!(extract_first_chars("Markus", 2), Some("Ma".to_string()));
+        assert_eq!(
+            extract_first_chars("Äkäslompolo", 3),
+            Some("Äkä".to_string())
+        );
+        assert_eq!(
+            extract_first_chars("Jean-Pierre", 3),
+            Some("Jea".to_string())
+        );
+        assert_eq!(extract_first_chars("M", 2), Some("M".to_string())); // Short name
+        assert_eq!(extract_first_chars("", 2), None); // Empty name
+        assert_eq!(extract_first_chars("123John", 2), Some("Jo".to_string())); // Skip non-alphabetic
+    }
+
+    #[test]
     fn test_edge_case_performance_with_large_datasets() {
         // Test that disambiguation performs well with larger datasets
         // Requirements: 4.4 - System should handle large numbers of players efficiently
-        
+
         let mut players = Vec::new();
-        
+
         // Create 100 players with various name patterns
         for i in 0..100 {
             let first_name = match i % 10 {
@@ -1566,36 +1912,36 @@ mod tests {
                 2 => "Teemu".to_string(),
                 3 => "Jari".to_string(),
                 4 => "Antti".to_string(),
-                5 => "".to_string(), // Empty first name
+                5 => "".to_string(),            // Empty first name
                 6 => "Jean-Pierre".to_string(), // Hyphenated
-                7 => "Mary Jane".to_string(), // Multiple words
+                7 => "Mary Jane".to_string(),   // Multiple words
                 8 => "Äkäslompolo".to_string(), // Finnish characters
-                _ => format!("Player{}", i),
+                _ => format!("Player{i}"),
             };
-            
+
             let last_name = match i % 5 {
                 0 => "Koivu".to_string(),
                 1 => "Selänne".to_string(),
                 2 => "Kurri".to_string(),
                 3 => "Lindström".to_string(),
-                _ => format!("Lastname{}", i),
+                _ => format!("Lastname{i}"),
             };
-            
+
             players.push((i as i64, first_name, last_name));
         }
-        
+
         // This should complete without performance issues
         let result = format_with_disambiguation(&players);
         assert_eq!(result.len(), 100);
-        
+
         // Test context creation with large dataset
         let context = DisambiguationContext::new(players);
-        
+
         // Should be able to query efficiently
         assert!(context.get_disambiguated_name(0).is_some());
         assert!(context.get_disambiguated_name(99).is_some());
         assert!(context.get_disambiguated_name(1000).is_none());
-        
+
         // Should handle disambiguation queries efficiently
         assert!(context.needs_disambiguation("Koivu"));
         assert!(context.needs_disambiguation("Selänne"));

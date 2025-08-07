@@ -708,6 +708,7 @@ pub async fn cache_players(game_id: i32, players: HashMap<i64, String>) {
 ///     // Names will be cached as "Koivu" and "Selänne"
 /// }
 /// ```
+#[allow(dead_code)]
 pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i64, String>) {
     let formatted_players: HashMap<i64, String> = raw_players
         .into_iter()
@@ -735,10 +736,10 @@ pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i6
 ///     let mut home_players = HashMap::new();
 ///     home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
 ///     home_players.insert(456, ("Saku".to_string(), "Koivu".to_string()));
-///     
+///
 ///     let mut away_players = HashMap::new();
 ///     away_players.insert(789, ("Teemu".to_string(), "Selänne".to_string()));
-///     
+///
 ///     cache_players_with_disambiguation(12345, home_players, away_players).await;
 ///     // Home team Koivu players will be cached as "Koivu M." and "Koivu S."
 ///     // Away team Selänne will be cached as "Selänne"
@@ -820,6 +821,7 @@ pub async fn cache_players_with_disambiguation(
 /// }
 /// ```
 #[instrument(skip(game_id), fields(game_id = %game_id))]
+#[allow(dead_code)]
 pub async fn get_cached_disambiguated_players(game_id: i32) -> Option<HashMap<i64, String>> {
     debug!(
         "Attempting to retrieve cached disambiguated players for game_id: {}",
@@ -863,6 +865,7 @@ pub async fn get_cached_disambiguated_players(game_id: i32) -> Option<HashMap<i6
 /// }
 /// ```
 #[instrument(skip(game_id, player_id), fields(game_id = %game_id, player_id = %player_id))]
+#[allow(dead_code)]
 pub async fn get_cached_player_name(game_id: i32, player_id: i64) -> Option<String> {
     debug!(
         "Attempting to retrieve cached player name: game_id={}, player_id={}",
@@ -915,6 +918,7 @@ pub async fn get_cached_player_name(game_id: i32, player_id: i64) -> Option<Stri
 /// }
 /// ```
 #[instrument(skip(game_id), fields(game_id = %game_id))]
+#[allow(dead_code)]
 pub async fn has_cached_disambiguated_players(game_id: i32) -> bool {
     debug!(
         "Checking if disambiguated players exist in cache: game_id={}",
@@ -923,12 +927,9 @@ pub async fn has_cached_disambiguated_players(game_id: i32) -> bool {
 
     let cache = PLAYER_CACHE.read().await;
     let exists = cache.peek(&game_id).is_some();
-    
-    debug!(
-        "Cache check result: game_id={}, exists={}",
-        game_id, exists
-    );
-    
+
+    debug!("Cache check result: game_id={}, exists={}", game_id, exists);
+
     exists
 }
 
@@ -2872,8 +2873,8 @@ mod tests {
         assert_eq!(cached_players.get(&789), Some(&"Selänne".to_string()));
 
         // Away team: Kurri players should be disambiguated, Peltonen should not
-        assert_eq!(cached_players.get(&111), Some(&"Kurri J.".to_string()));
-        assert_eq!(cached_players.get(&222), Some(&"Kurri J.".to_string()));
+        assert_eq!(cached_players.get(&111), Some(&"Kurri Ja.".to_string()));
+        assert_eq!(cached_players.get(&222), Some(&"Kurri Je.".to_string()));
         assert_eq!(cached_players.get(&333), Some(&"Peltonen".to_string()));
 
         // Clear cache after test
@@ -3244,11 +3245,31 @@ mod tests {
         let cached_players = get_cached_players(game_id).await.unwrap();
 
         // Verify team-scoped disambiguation results
-        assert_eq!(cached_players.get(&123), Some(&"Koivu M.".to_string()), "Home Mikko Koivu should be disambiguated");
-        assert_eq!(cached_players.get(&124), Some(&"Koivu S.".to_string()), "Home Saku Koivu should be disambiguated");
-        assert_eq!(cached_players.get(&125), Some(&"Selänne".to_string()), "Selänne should not be disambiguated");
-        assert_eq!(cached_players.get(&456), Some(&"Koivu".to_string()), "Away Mikko Koivu should not be disambiguated (different team)");
-        assert_eq!(cached_players.get(&457), Some(&"Kurri".to_string()), "Kurri should not be disambiguated");
+        assert_eq!(
+            cached_players.get(&123),
+            Some(&"Koivu M.".to_string()),
+            "Home Mikko Koivu should be disambiguated"
+        );
+        assert_eq!(
+            cached_players.get(&124),
+            Some(&"Koivu S.".to_string()),
+            "Home Saku Koivu should be disambiguated"
+        );
+        assert_eq!(
+            cached_players.get(&125),
+            Some(&"Selänne".to_string()),
+            "Selänne should not be disambiguated"
+        );
+        assert_eq!(
+            cached_players.get(&456),
+            Some(&"Koivu".to_string()),
+            "Away Mikko Koivu should not be disambiguated (different team)"
+        );
+        assert_eq!(
+            cached_players.get(&457),
+            Some(&"Kurri".to_string()),
+            "Kurri should not be disambiguated"
+        );
 
         // Verify total number of cached players
         assert_eq!(cached_players.len(), 5);

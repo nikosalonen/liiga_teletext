@@ -46,8 +46,14 @@ fn test_ui_modes_handle_disambiguated_names() {
 
     // Test normal mode (Requirement 3.1)
     let mut normal_page = TeletextPage::new(
-        221, "JÄÄKIEKKO".to_string(), "SM-LIIGA".to_string(),
-        false, true, false, false, false,
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        false,
+        true,
+        false,
+        false,
+        false,
     );
     normal_page.add_game_result(game.clone());
     normal_page.set_screen_height(25);
@@ -56,8 +62,14 @@ fn test_ui_modes_handle_disambiguated_names() {
 
     // Test compact mode (Requirement 3.2)
     let mut compact_page = TeletextPage::new(
-        221, "JÄÄKIEKKO".to_string(), "SM-LIIGA".to_string(),
-        false, true, false, true, false,
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        false,
+        true,
+        false,
+        true,
+        false,
     );
     compact_page.add_game_result(game.clone());
     compact_page.set_screen_height(25);
@@ -66,8 +78,14 @@ fn test_ui_modes_handle_disambiguated_names() {
 
     // Test wide mode (Requirement 3.3)
     let mut wide_page = TeletextPage::new(
-        221, "JÄÄKIEKKO".to_string(), "SM-LIIGA".to_string(),
-        false, true, false, false, true,
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        false,
+        true,
+        false,
+        false,
+        true,
     );
     wide_page.add_game_result(game.clone());
     wide_page.set_screen_height(25);
@@ -83,25 +101,29 @@ fn test_ui_modes_handle_disambiguated_names() {
         score_type: ScoreType::Final,
         is_overtime: false,
         is_shootout: false,
-        goal_events: vec![
-            GoalEventData {
-                scorer_player_id: 1,
-                scorer_name: "Korhonen-Virtanen M.".to_string(), // Long name
-                minute: 8,
-                home_team_score: 1,
-                away_team_score: 0,
-                is_winning_goal: true,
-                goal_types: vec![],
-                is_home_team: true,
-                video_clip_url: None,
-            },
-        ],
+        goal_events: vec![GoalEventData {
+            scorer_player_id: 1,
+            scorer_name: "Korhonen-Virtanen M.".to_string(), // Long name
+            minute: 8,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: true,
+            goal_types: vec![],
+            is_home_team: true,
+            video_clip_url: None,
+        }],
         played_time: 60,
     };
 
     let mut truncation_page = TeletextPage::new(
-        221, "JÄÄKIEKKO".to_string(), "SM-LIIGA".to_string(),
-        false, true, false, false, false,
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        false,
+        true,
+        false,
+        false,
+        false,
     );
     truncation_page.add_game_result(long_name_game);
     truncation_page.set_screen_height(25);

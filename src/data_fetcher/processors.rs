@@ -1,5 +1,5 @@
 use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, ScheduleGame};
-use crate::data_fetcher::player_names::{create_fallback_name, DisambiguationContext};
+use crate::data_fetcher::player_names::{DisambiguationContext, create_fallback_name};
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{DateTime, Datelike, Local, NaiveTime, Utc};
@@ -50,6 +50,7 @@ const PRESEASON_END_MONTH: u32 = 9; // September
 /// // - Home team: "Koivu M.", "Koivu S."
 /// // - Away team: "Selänne" (no disambiguation needed)
 /// ```
+#[allow(dead_code)]
 pub fn process_goal_events_with_disambiguation<T>(
     game: &T,
     home_players: &[(i64, String, String)], // (id, first_name, last_name)
@@ -65,20 +66,10 @@ where
     let away_context = DisambiguationContext::new(away_players.to_vec());
 
     // Process home team goals with home team disambiguation
-    process_team_goals_with_disambiguation(
-        game.home_team(),
-        &home_context,
-        true,
-        &mut events,
-    );
+    process_team_goals_with_disambiguation(game.home_team(), &home_context, true, &mut events);
 
     // Process away team goals with away team disambiguation
-    process_team_goals_with_disambiguation(
-        game.away_team(),
-        &away_context,
-        false,
-        &mut events,
-    );
+    process_team_goals_with_disambiguation(game.away_team(), &away_context, false, &mut events);
 
     events
 }
@@ -177,6 +168,7 @@ where
 /// process_team_goals_with_disambiguation(&home_team, &context, true, &mut events);
 /// // Events will contain disambiguated names: "Koivu M.", "Koivu S."
 /// ```
+#[allow(dead_code)]
 pub fn process_team_goals_with_disambiguation(
     team: &dyn HasGoalEvents,
     disambiguation_context: &DisambiguationContext,
@@ -857,9 +849,7 @@ mod tests {
             (123, "Mikko".to_string(), "Koivu".to_string()),
             (124, "Saku".to_string(), "Koivu".to_string()),
         ];
-        let away_players = vec![
-            (456, "Teemu".to_string(), "Selänne".to_string()),
-        ];
+        let away_players = vec![(456, "Teemu".to_string(), "Selänne".to_string())];
 
         let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
 
@@ -886,12 +876,8 @@ mod tests {
 
         let game = create_test_game(vec![home_goal], vec![away_goal]);
 
-        let home_players = vec![
-            (123, "Mikko".to_string(), "Koivu".to_string()),
-        ];
-        let away_players = vec![
-            (456, "Saku".to_string(), "Koivu".to_string()),
-        ];
+        let home_players = vec![(123, "Mikko".to_string(), "Koivu".to_string())];
+        let away_players = vec![(456, "Saku".to_string(), "Koivu".to_string())];
 
         let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
 
@@ -962,9 +948,7 @@ mod tests {
         let home_goal = create_test_goal_event(999, 600, 1, 0, vec!["EV".to_string()]);
         let game = create_test_game(vec![home_goal], vec![]);
 
-        let home_players = vec![
-            (123, "Mikko".to_string(), "Koivu".to_string()),
-        ];
+        let home_players = vec![(123, "Mikko".to_string(), "Koivu".to_string())];
         let away_players = vec![];
 
         let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
@@ -1031,7 +1015,8 @@ mod tests {
         let cancelled_goal_rl0 = create_test_goal_event(124, 900, 1, 0, vec!["RL0".to_string()]);
         let cancelled_goal_vt0 = create_test_goal_event(125, 1200, 1, 0, vec!["VT0".to_string()]);
 
-        let team = create_test_team_with_goals(vec![valid_goal, cancelled_goal_rl0, cancelled_goal_vt0]);
+        let team =
+            create_test_team_with_goals(vec![valid_goal, cancelled_goal_rl0, cancelled_goal_vt0]);
 
         let players = vec![
             (123, "Mikko".to_string(), "Koivu".to_string()),
@@ -1054,9 +1039,7 @@ mod tests {
         let goal = create_test_goal_event(999, 600, 1, 0, vec!["EV".to_string()]);
         let team = create_test_team_with_goals(vec![goal]);
 
-        let players = vec![
-            (123, "Mikko".to_string(), "Koivu".to_string()),
-        ];
+        let players = vec![(123, "Mikko".to_string(), "Koivu".to_string())];
         let context = DisambiguationContext::new(players);
 
         let mut events = Vec::new();
