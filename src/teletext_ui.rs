@@ -67,7 +67,7 @@ const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal 
 /// use liiga_teletext::get_team_abbreviation;
 ///
 /// assert_eq!(get_team_abbreviation("Tappara"), "TAP");
-/// assert_eq!(get_team_abbreviation("HIFK"), "HIFK");
+/// assert_eq!(get_team_abbreviation("HIFK"), "IFK");
 /// assert_eq!(get_team_abbreviation("HC Blues"), "HCB");
 /// assert_eq!(get_team_abbreviation("K-Espoo"), "KES");
 /// ```
@@ -76,7 +76,7 @@ pub fn get_team_abbreviation(team_name: &str) -> String {
     match team_name {
         // Current Liiga teams (2024-25 season)
         "Tappara" => "TAP".to_string(),
-        "HIFK" => "HIFK".to_string(),
+        "HIFK" => "IFK".to_string(),
         "TPS" => "TPS".to_string(),
         "JYP" => "JYP".to_string(),
         "Ilves" => "ILV".to_string(),
@@ -93,7 +93,7 @@ pub fn get_team_abbreviation(team_name: &str) -> String {
         "K-Espoo" => "KES".to_string(),
 
         // Alternative team name formats that might appear in API
-        "HIFK Helsinki" => "HIFK".to_string(),
+        "HIFK Helsinki" => "IFK".to_string(),
         "TPS Turku" => "TPS".to_string(),
         "Tampereen Tappara" => "TAP".to_string(),
         "Tampereen Ilves" => "ILV".to_string(),
@@ -154,7 +154,7 @@ impl Default for CompactDisplayConfig {
     fn default() -> Self {
         Self {
             max_games_per_line: 3, // Up to 3 games per line for efficient space usage
-            team_name_width: 8,    // "TAP-HIFK" = 8 characters
+            team_name_width: 8,    // "TAP-IFK" = 7 characters
             score_width: 6,        // " 3-2  " = 6 characters with padding
             game_separator: "  ",  // Two spaces between games
         }
@@ -2801,7 +2801,7 @@ mod tests {
     fn test_team_abbreviation() {
         // Test current Liiga teams
         assert_eq!(get_team_abbreviation("Tappara"), "TAP");
-        assert_eq!(get_team_abbreviation("HIFK"), "HIFK");
+        assert_eq!(get_team_abbreviation("HIFK"), "IFK");
         assert_eq!(get_team_abbreviation("TPS"), "TPS");
         assert_eq!(get_team_abbreviation("JYP"), "JYP");
         assert_eq!(get_team_abbreviation("Ilves"), "ILV");
@@ -2817,7 +2817,7 @@ mod tests {
         assert_eq!(get_team_abbreviation("KooKoo"), "KOO");
 
         // Test alternative team name formats
-        assert_eq!(get_team_abbreviation("HIFK Helsinki"), "HIFK");
+        assert_eq!(get_team_abbreviation("HIFK Helsinki"), "IFK");
         assert_eq!(get_team_abbreviation("TPS Turku"), "TPS");
         assert_eq!(get_team_abbreviation("Tampereen Tappara"), "TAP");
         assert_eq!(get_team_abbreviation("Tampereen Ilves"), "ILV");
@@ -3546,7 +3546,7 @@ mod tests {
         };
 
         let formatted = page.format_compact_game(&scheduled_game, &config);
-        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("TAP-IFK"));
         assert!(formatted.contains("18:30"));
 
         // Test final game
@@ -3563,7 +3563,7 @@ mod tests {
         };
 
         let formatted = page.format_compact_game(&final_game, &config);
-        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("TAP-IFK"));
         assert!(formatted.contains("3-2 ja"));
     }
 
@@ -3611,8 +3611,8 @@ mod tests {
         let lines = page.group_games_for_compact_display(&game_refs, &config, 80);
 
         assert_eq!(lines.len(), 1); // Should fit on one line with 2 games per line
-        assert!(lines[0].contains("TAP-HIF"));
-        assert!(lines[0].contains("HIFK-TAP"));
+        assert!(lines[0].contains("TAP-IFK"));
+        assert!(lines[0].contains("IFK-TAP"));
         assert!(lines[0].contains(" | ")); // Should contain separator
     }
 
@@ -3765,7 +3765,7 @@ mod tests {
     fn test_team_abbreviation_comprehensive() {
         // Test all current Liiga teams
         assert_eq!(get_team_abbreviation("Tappara"), "TAP");
-        assert_eq!(get_team_abbreviation("HIFK"), "HIFK");
+        assert_eq!(get_team_abbreviation("HIFK"), "IFK");
         assert_eq!(get_team_abbreviation("TPS"), "TPS");
         assert_eq!(get_team_abbreviation("JYP"), "JYP");
         assert_eq!(get_team_abbreviation("Ilves"), "ILV");
@@ -3781,7 +3781,7 @@ mod tests {
         assert_eq!(get_team_abbreviation("KooKoo"), "KOO");
 
         // Test full team names
-        assert_eq!(get_team_abbreviation("HIFK Helsinki"), "HIFK");
+        assert_eq!(get_team_abbreviation("HIFK Helsinki"), "IFK");
         assert_eq!(get_team_abbreviation("TPS Turku"), "TPS");
         assert_eq!(get_team_abbreviation("Tampereen Tappara"), "TAP");
         assert_eq!(get_team_abbreviation("Tampereen Ilves"), "ILV");
@@ -3938,7 +3938,7 @@ mod tests {
         assert!(!result[2].is_empty()); // Second line with remaining game
 
         // Verify the content contains expected teams (using correct abbreviations)
-        assert!(result[0].contains("HIFK"));
+        assert!(result[0].contains("IFK"));
         assert!(result[0].contains("TAP")); // "Tappara" -> "TAP"
         assert!(result[0].contains("BLU")); // "Blues" -> "BLU" (fallback rule, uppercase)
         assert!(result[2].contains("LUK")); // "Lukko" -> "LUK"
@@ -3973,7 +3973,7 @@ mod tests {
         };
 
         let formatted = page.format_compact_game(&scheduled_game, &config);
-        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("TAP-IFK"));
         assert!(formatted.contains("18:30"));
 
         // Test ongoing game
@@ -3990,7 +3990,7 @@ mod tests {
         };
 
         let formatted = page.format_compact_game(&ongoing_game, &config);
-        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("TAP-IFK"));
         assert!(formatted.contains("1-0"));
 
         // Test final game with overtime
@@ -4007,7 +4007,7 @@ mod tests {
         };
 
         let formatted = page.format_compact_game(&overtime_game, &config);
-        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("TAP-IFK"));
         assert!(formatted.contains("3-2 ja"));
 
         // Test final game with shootout
@@ -4024,7 +4024,7 @@ mod tests {
         };
 
         let formatted = page.format_compact_game(&shootout_game, &config);
-        assert!(formatted.contains("TAP-HIF"));
+        assert!(formatted.contains("TAP-IFK"));
         assert!(formatted.contains("4-3 rl"));
 
         // Test non-game row (should return empty string)
