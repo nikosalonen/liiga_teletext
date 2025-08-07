@@ -1671,9 +1671,8 @@ pub async fn run_interactive_ui(
             tracing::debug!("Fetching new data");
 
             // Always preserve the current page number before refresh, regardless of loading screen
-            preserved_page_for_restoration = current_page
-                .as_ref()
-                .map(TeletextPage::get_current_page);
+            preserved_page_for_restoration =
+                current_page.as_ref().map(TeletextPage::get_current_page);
 
             // Handle data fetching using the helper function
             let (games, had_error, fetched_date, should_retry, new_page, _needs_render_update) =
