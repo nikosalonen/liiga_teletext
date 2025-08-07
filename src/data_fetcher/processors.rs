@@ -1,5 +1,5 @@
 use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, ScheduleGame};
-use crate::data_fetcher::player_names::create_fallback_name;
+use crate::data_fetcher::player_names::{create_fallback_name, DisambiguationContext};
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{DateTime, Datelike, Local, NaiveTime, Utc};
@@ -9,6 +9,79 @@ use tracing;
 // Tournament season constants for month-based logic
 const PRESEASON_START_MONTH: u32 = 6; // June
 const PRESEASON_END_MONTH: u32 = 9; // September
+
+/// Processes goal events for both teams in a game with team-scoped disambiguation.
+/// This enhanced version applies disambiguation separately for home and away teams,
+/// ensuring that players with the same last name on the same team are distinguished
+/// with first initials (e.g., "Koivu M.", "Koivu S.").
+///
+/// # Arguments
+/// * `game` - A type implementing HasTeams trait containing both home and away team data
+/// * `home_players` - A slice of tuples containing (player_id, first_name, last_name) for home team
+/// * `away_players` - A slice of tuples containing (player_id, first_name, last_name) for away team
+///
+/// # Returns
+/// * `Vec<GoalEventData>` - A vector of processed goal events in chronological order with disambiguated names
+///
+/// # Features
+/// - Applies team-scoped disambiguation (players on different teams don't affect each other)
+/// - Formats player names with first initials when needed (e.g., "Koivu M.", "Koivu S.")
+/// - Includes goal timing and score information
+/// - Marks special goal types (powerplay, empty net, etc.)
+/// - Preserves video clip links when available
+/// - Maintains chronological order of goals from both teams
+///
+/// # Example
+/// ```rust
+/// use liiga_teletext::data_fetcher::{GoalEventData, models::{HasTeams, HasGoalEvents, ScheduleGame, ScheduleTeam}};
+/// use liiga_teletext::data_fetcher::processors::process_goal_events_with_disambiguation;
+///
+/// let home_players = vec![
+///     (123, "Mikko".to_string(), "Koivu".to_string()),
+///     (124, "Saku".to_string(), "Koivu".to_string()),
+/// ];
+/// let away_players = vec![
+///     (456, "Teemu".to_string(), "Selänne".to_string()),
+/// ];
+///
+/// let game = ScheduleGame::default();
+/// let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
+/// // Events will contain disambiguated names:
+/// // - Home team: "Koivu M.", "Koivu S."
+/// // - Away team: "Selänne" (no disambiguation needed)
+/// ```
+pub fn process_goal_events_with_disambiguation<T>(
+    game: &T,
+    home_players: &[(i64, String, String)], // (id, first_name, last_name)
+    away_players: &[(i64, String, String)], // (id, first_name, last_name)
+) -> Vec<GoalEventData>
+where
+    T: HasTeams,
+{
+    let mut events = Vec::new();
+
+    // Create disambiguation contexts for each team separately
+    let home_context = DisambiguationContext::new(home_players.to_vec());
+    let away_context = DisambiguationContext::new(away_players.to_vec());
+
+    // Process home team goals with home team disambiguation
+    process_team_goals_with_disambiguation(
+        game.home_team(),
+        &home_context,
+        true,
+        &mut events,
+    );
+
+    // Process away team goals with away team disambiguation
+    process_team_goals_with_disambiguation(
+        game.away_team(),
+        &away_context,
+        false,
+        &mut events,
+    );
+
+    events
+}
 
 /// Processes goal events for both teams in a game, converting them into a standardized format
 /// with player names and additional metadata.
@@ -69,6 +142,65 @@ where
     process_team_goals(game.away_team(), player_names, false, &mut events);
 
     events
+}
+
+/// Processes goal events for a single team with team-scoped disambiguation.
+/// This enhanced version uses a disambiguation context to resolve player names
+/// with first initials when multiple players on the same team share the same last name.
+///
+/// # Arguments
+/// * `team` - Team data implementing HasGoalEvents trait
+/// * `disambiguation_context` - Context containing disambiguated player names for this team
+/// * `is_home_team` - Boolean indicating if this is the home team
+/// * `events` - Mutable vector to append processed goal events to
+///
+/// # Features
+/// - Filters out cancelled and removed goals (RL0, VT0)
+/// - Uses team-scoped disambiguation for player names
+/// - Handles missing player names gracefully with fallback
+/// - Preserves goal metadata like timing and special types
+///
+/// # Example
+/// ```rust
+/// use liiga_teletext::data_fetcher::{GoalEventData, models::{HasGoalEvents, ScheduleTeam}};
+/// use liiga_teletext::data_fetcher::processors::process_team_goals_with_disambiguation;
+/// use liiga_teletext::data_fetcher::player_names::DisambiguationContext;
+///
+/// let mut events = Vec::new();
+/// let players = vec![
+///     (123, "Mikko".to_string(), "Koivu".to_string()),
+///     (124, "Saku".to_string(), "Koivu".to_string()),
+/// ];
+/// let context = DisambiguationContext::new(players);
+/// let home_team = ScheduleTeam::default();
+///
+/// process_team_goals_with_disambiguation(&home_team, &context, true, &mut events);
+/// // Events will contain disambiguated names: "Koivu M.", "Koivu S."
+/// ```
+pub fn process_team_goals_with_disambiguation(
+    team: &dyn HasGoalEvents,
+    disambiguation_context: &DisambiguationContext,
+    is_home_team: bool,
+    events: &mut Vec<GoalEventData>,
+) {
+    for goal in team.goal_events().iter().filter(|g| {
+        !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
+    }) {
+        events.push(GoalEventData {
+            scorer_player_id: goal.scorer_player_id,
+            scorer_name: disambiguation_context
+                .get_disambiguated_name(goal.scorer_player_id)
+                .cloned()
+                .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id)),
+            minute: goal.game_time / 60,
+            home_team_score: goal.home_team_score,
+            away_team_score: goal.away_team_score,
+            is_winning_goal: goal.winning_goal,
+            goal_types: goal.goal_types.clone(),
+            is_home_team,
+            video_clip_url: goal.video_clip_url.clone(),
+        });
+    }
 }
 
 /// Processes goal events for a single team, filtering out certain goal types and formatting player names.
@@ -711,5 +843,226 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].minute, 120); // 7200 / 60 = 120 minutes
+    }
+
+    // Tests for process_goal_events_with_disambiguation
+    #[test]
+    fn test_process_goal_events_with_disambiguation_basic() {
+        let home_goal = create_test_goal_event(123, 900, 1, 0, vec!["EV".to_string()]);
+        let away_goal = create_test_goal_event(456, 1200, 1, 1, vec!["YV".to_string()]);
+
+        let game = create_test_game(vec![home_goal], vec![away_goal]);
+
+        let home_players = vec![
+            (123, "Mikko".to_string(), "Koivu".to_string()),
+            (124, "Saku".to_string(), "Koivu".to_string()),
+        ];
+        let away_players = vec![
+            (456, "Teemu".to_string(), "Selänne".to_string()),
+        ];
+
+        let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
+
+        assert_eq!(events.len(), 2);
+
+        // Check home goal - should be disambiguated because two Koivus on home team
+        let home_event = &events[0];
+        assert_eq!(home_event.scorer_player_id, 123);
+        assert_eq!(home_event.scorer_name, "Koivu M.");
+        assert!(home_event.is_home_team);
+
+        // Check away goal - should not be disambiguated because only one Selänne on away team
+        let away_event = &events[1];
+        assert_eq!(away_event.scorer_player_id, 456);
+        assert_eq!(away_event.scorer_name, "Selänne");
+        assert!(!away_event.is_home_team);
+    }
+
+    #[test]
+    fn test_process_goal_events_with_disambiguation_team_scoped() {
+        // Both teams have a "Koivu" but they shouldn't affect each other's disambiguation
+        let home_goal = create_test_goal_event(123, 900, 1, 0, vec!["EV".to_string()]);
+        let away_goal = create_test_goal_event(456, 1200, 1, 1, vec!["YV".to_string()]);
+
+        let game = create_test_game(vec![home_goal], vec![away_goal]);
+
+        let home_players = vec![
+            (123, "Mikko".to_string(), "Koivu".to_string()),
+        ];
+        let away_players = vec![
+            (456, "Saku".to_string(), "Koivu".to_string()),
+        ];
+
+        let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
+
+        assert_eq!(events.len(), 2);
+
+        // Both should show as "Koivu" without disambiguation since they're on different teams
+        let home_event = &events[0];
+        assert_eq!(home_event.scorer_name, "Koivu");
+        assert!(home_event.is_home_team);
+
+        let away_event = &events[1];
+        assert_eq!(away_event.scorer_name, "Koivu");
+        assert!(!away_event.is_home_team);
+    }
+
+    #[test]
+    fn test_process_goal_events_with_disambiguation_multiple_same_name() {
+        let home_goal1 = create_test_goal_event(123, 600, 1, 0, vec!["EV".to_string()]);
+        let home_goal2 = create_test_goal_event(124, 900, 2, 0, vec!["EV".to_string()]);
+        let home_goal3 = create_test_goal_event(125, 1200, 3, 0, vec!["EV".to_string()]);
+
+        let game = create_test_game(vec![home_goal1, home_goal2, home_goal3], vec![]);
+
+        let home_players = vec![
+            (123, "Mikko".to_string(), "Koivu".to_string()),
+            (124, "Saku".to_string(), "Koivu".to_string()),
+            (125, "Antti".to_string(), "Koivu".to_string()),
+        ];
+        let away_players = vec![];
+
+        let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
+
+        assert_eq!(events.len(), 3);
+
+        // All three should be disambiguated
+        assert_eq!(events[0].scorer_name, "Koivu M.");
+        assert_eq!(events[1].scorer_name, "Koivu S.");
+        assert_eq!(events[2].scorer_name, "Koivu A.");
+    }
+
+    #[test]
+    fn test_process_goal_events_with_disambiguation_mixed_scenario() {
+        let home_goal1 = create_test_goal_event(123, 600, 1, 0, vec!["EV".to_string()]);
+        let home_goal2 = create_test_goal_event(124, 900, 2, 0, vec!["EV".to_string()]);
+        let home_goal3 = create_test_goal_event(125, 1200, 3, 0, vec!["EV".to_string()]);
+
+        let game = create_test_game(vec![home_goal1, home_goal2, home_goal3], vec![]);
+
+        let home_players = vec![
+            (123, "Mikko".to_string(), "Koivu".to_string()),
+            (124, "Saku".to_string(), "Koivu".to_string()),
+            (125, "Teemu".to_string(), "Selänne".to_string()),
+        ];
+        let away_players = vec![];
+
+        let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
+
+        assert_eq!(events.len(), 3);
+
+        // Koivus should be disambiguated, Selänne should not
+        assert_eq!(events[0].scorer_name, "Koivu M.");
+        assert_eq!(events[1].scorer_name, "Koivu S.");
+        assert_eq!(events[2].scorer_name, "Selänne");
+    }
+
+    #[test]
+    fn test_process_goal_events_with_disambiguation_missing_player() {
+        let home_goal = create_test_goal_event(999, 600, 1, 0, vec!["EV".to_string()]);
+        let game = create_test_game(vec![home_goal], vec![]);
+
+        let home_players = vec![
+            (123, "Mikko".to_string(), "Koivu".to_string()),
+        ];
+        let away_players = vec![];
+
+        let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
+
+        assert_eq!(events.len(), 1);
+        // Should use fallback name for missing player
+        assert_eq!(events[0].scorer_name, "Pelaaja 999");
+    }
+
+    #[test]
+    fn test_process_goal_events_with_disambiguation_empty_teams() {
+        let game = create_test_game(vec![], vec![]);
+        let home_players = vec![];
+        let away_players = vec![];
+
+        let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_process_goal_events_with_disambiguation_unicode_names() {
+        let home_goal = create_test_goal_event(123, 600, 1, 0, vec!["EV".to_string()]);
+        let game = create_test_game(vec![home_goal], vec![]);
+
+        let home_players = vec![
+            (123, "Äkäslompolo".to_string(), "Kärppä".to_string()),
+            (124, "Östen".to_string(), "Kärppä".to_string()),
+        ];
+        let away_players = vec![];
+
+        let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Kärppä Ä.");
+    }
+
+    // Tests for process_team_goals_with_disambiguation
+    #[test]
+    fn test_process_team_goals_with_disambiguation() {
+        let goal1 = create_test_goal_event(123, 600, 1, 0, vec!["EV".to_string()]);
+        let goal2 = create_test_goal_event(124, 900, 2, 0, vec!["YV".to_string()]);
+        let team = create_test_team_with_goals(vec![goal1, goal2]);
+
+        let players = vec![
+            (123, "Mikko".to_string(), "Koivu".to_string()),
+            (124, "Saku".to_string(), "Koivu".to_string()),
+        ];
+        let context = DisambiguationContext::new(players);
+
+        let mut events = Vec::new();
+        process_team_goals_with_disambiguation(&team, &context, true, &mut events);
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].scorer_name, "Koivu M.");
+        assert_eq!(events[1].scorer_name, "Koivu S.");
+        assert!(events[0].is_home_team);
+        assert!(events[1].is_home_team);
+    }
+
+    #[test]
+    fn test_process_team_goals_with_disambiguation_filters_cancelled() {
+        let valid_goal = create_test_goal_event(123, 600, 1, 0, vec!["EV".to_string()]);
+        let cancelled_goal_rl0 = create_test_goal_event(124, 900, 1, 0, vec!["RL0".to_string()]);
+        let cancelled_goal_vt0 = create_test_goal_event(125, 1200, 1, 0, vec!["VT0".to_string()]);
+
+        let team = create_test_team_with_goals(vec![valid_goal, cancelled_goal_rl0, cancelled_goal_vt0]);
+
+        let players = vec![
+            (123, "Mikko".to_string(), "Koivu".to_string()),
+            (124, "Saku".to_string(), "Koivu".to_string()),
+            (125, "Antti".to_string(), "Koivu".to_string()),
+        ];
+        let context = DisambiguationContext::new(players);
+
+        let mut events = Vec::new();
+        process_team_goals_with_disambiguation(&team, &context, true, &mut events);
+
+        // Should only have the valid goal, cancelled goals filtered out
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_player_id, 123);
+        assert_eq!(events[0].scorer_name, "Koivu M.");
+    }
+
+    #[test]
+    fn test_process_team_goals_with_disambiguation_missing_player() {
+        let goal = create_test_goal_event(999, 600, 1, 0, vec!["EV".to_string()]);
+        let team = create_test_team_with_goals(vec![goal]);
+
+        let players = vec![
+            (123, "Mikko".to_string(), "Koivu".to_string()),
+        ];
+        let context = DisambiguationContext::new(players);
+
+        let mut events = Vec::new();
+        process_team_goals_with_disambiguation(&team, &context, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Pelaaja 999");
     }
 }
