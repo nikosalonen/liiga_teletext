@@ -233,6 +233,88 @@ liiga_teletext --wide --plain       # Wide mode without video links
 - **Terminal compatibility**: Works with all terminal types that support ANSI colors and cursor positioning
 - **Mutual exclusivity**: Cannot be used together with compact mode (`-c`)
 
+## Player Name Disambiguation
+
+The app supports authentic hockey-style player name disambiguation within each team. When multiple players share the same last name on the same team, names are shown as "Last F." (e.g., "Koivu M.", "Koivu S."). Players on different teams do not affect each other.
+
+### How it works
+- Team-scoped grouping by last name (case-insensitive)
+- First initial derived from the first alphabetic character of the first name (Unicode-aware, e.g., Ä/Ö/Å)
+- Graceful fallback to last name only when the initial cannot be determined
+
+### Quick examples (library usage)
+
+```rust
+use liiga_teletext::data_fetcher::player_names::{
+    format_with_disambiguation,
+    format_for_display_with_first_initial,
+    DisambiguationContext,
+};
+
+// Format a single player with first initial
+let shown = format_for_display_with_first_initial("Mikko", "Koivu");
+assert_eq!(shown, "Koivu M.");
+
+// Team-scoped disambiguation for a single team
+let team_players = vec![
+    (1_i64, "Mikko".to_string(), "Koivu".to_string()),
+    (2, "Saku".to_string(), "Koivu".to_string()),
+    (3, "Teemu".to_string(), "Selänne".to_string()),
+];
+let disambiguated = format_with_disambiguation(&team_players);
+assert_eq!(disambiguated.get(&1), Some(&"Koivu M.".to_string()));
+assert_eq!(disambiguated.get(&2), Some(&"Koivu S.".to_string()));
+assert_eq!(disambiguated.get(&3), Some(&"Selänne".to_string()));
+
+// Context helper when processing a team's goal events
+let context = DisambiguationContext::new(team_players);
+assert_eq!(context.needs_disambiguation("Koivu"), true);
+```
+
+### End-to-end goal processing
+
+Use team-scoped disambiguation in goal event processing so each side is handled independently:
+
+```rust
+use liiga_teletext::data_fetcher::processors::process_goal_events_with_disambiguation;
+use liiga_teletext::data_fetcher::models::ScheduleGame;
+
+let game = ScheduleGame::default();
+let home_players = vec![(1, "Mikko".to_string(), "Koivu".to_string())];
+let away_players = vec![(2, "Saku".to_string(), "Koivu".to_string())];
+
+let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
+// Home Koivu -> "Koivu" (no conflict on home team)
+// Away Koivu -> "Koivu" (no conflict on away team)
+```
+
+### Caching disambiguated names
+
+Cache disambiguated names per game for fast lookups during rendering:
+
+```rust
+use std::collections::HashMap;
+use liiga_teletext::data_fetcher::cache::cache_players_with_disambiguation;
+
+let mut home = HashMap::new();
+home.insert(101, ("Mikko".to_string(), "Koivu".to_string()));
+home.insert(102, ("Saku".to_string(), "Koivu".to_string()));
+
+let mut away = HashMap::new();
+away.insert(201, ("Teemu".to_string(), "Selänne".to_string()));
+
+tokio::spawn(async move {
+    cache_players_with_disambiguation(12345, home, away).await;
+});
+```
+
+### Best practices and notes
+- Always apply disambiguation per team; never mix home/away when grouping by last name
+- Do not hold locks across async awaits; prefer `tokio::sync::Mutex` if synchronization is needed
+- Use cached names when available to avoid recomputing during rendering
+- Unicode is supported end-to-end; initials are derived from the first alphabetic char
+- If a first name starts with a non-alphabetic character or is missing, show last name only
+
 ## Configuration
 
 On first run, you will be prompted to enter your API domain. This will be saved to a config file at:

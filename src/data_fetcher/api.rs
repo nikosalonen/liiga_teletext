@@ -1,10 +1,10 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
-    cache_players_with_disambiguation, cache_tournament_data, 
-    clear_goal_events_cache_for_game, get_cached_detailed_game_data, get_cached_goal_events_data, 
-    get_cached_goal_events_entry, get_cached_http_response, get_cached_players, 
-    get_cached_tournament_data_with_start_check, has_live_games, should_bypass_cache_for_starting_games,
+    cache_players_with_disambiguation, cache_tournament_data, clear_goal_events_cache_for_game,
+    get_cached_detailed_game_data, get_cached_goal_events_data, get_cached_goal_events_entry,
+    get_cached_http_response, get_cached_players, get_cached_tournament_data_with_start_check,
+    has_live_games, should_bypass_cache_for_starting_games,
 };
 #[cfg(test)]
 use crate::data_fetcher::cache::{
@@ -1190,15 +1190,15 @@ async fn process_game_response_with_cache(
 
     // Build separate player data for home and away teams with proper error handling
     debug!("No cached player data found, building player data with disambiguation");
-    
+
     let mut home_players = HashMap::new();
     let mut away_players = HashMap::new();
-    
+
     info!(
         "Processing {} home team players for disambiguation",
         game_response.home_team_players.len()
     );
-    
+
     // Process home team players with error handling for missing data
     for player in &game_response.home_team_players {
         if player.first_name.trim().is_empty() && player.last_name.trim().is_empty() {
@@ -1208,21 +1208,24 @@ async fn process_game_response_with_cache(
             );
             continue;
         }
-        
+
         let first_name = if player.first_name.trim().is_empty() {
-            debug!("Player {} has empty first name, using empty string for disambiguation", player.id);
+            debug!(
+                "Player {} has empty first name, using empty string for disambiguation",
+                player.id
+            );
             String::new()
         } else {
             player.first_name.clone()
         };
-        
+
         let last_name = if player.last_name.trim().is_empty() {
             warn!("Player {} has empty last name, using fallback", player.id);
             format!("Player{}", player.id)
         } else {
             player.last_name.clone()
         };
-        
+
         home_players.insert(player.id, (first_name, last_name));
     }
 
@@ -1230,7 +1233,7 @@ async fn process_game_response_with_cache(
         "Processing {} away team players for disambiguation",
         game_response.away_team_players.len()
     );
-    
+
     // Process away team players with error handling for missing data
     for player in &game_response.away_team_players {
         if player.first_name.trim().is_empty() && player.last_name.trim().is_empty() {
@@ -1240,24 +1243,27 @@ async fn process_game_response_with_cache(
             );
             continue;
         }
-        
+
         let first_name = if player.first_name.trim().is_empty() {
-            debug!("Player {} has empty first name, using empty string for disambiguation", player.id);
+            debug!(
+                "Player {} has empty first name, using empty string for disambiguation",
+                player.id
+            );
             String::new()
         } else {
             player.first_name.clone()
         };
-        
+
         let last_name = if player.last_name.trim().is_empty() {
             warn!("Player {} has empty last name, using fallback", player.id);
             format!("Player{}", player.id)
         } else {
             player.last_name.clone()
         };
-        
+
         away_players.insert(player.id, (first_name, last_name));
     }
-    
+
     info!(
         "Built player data: {} home players, {} away players",
         home_players.len(),
@@ -1265,7 +1271,10 @@ async fn process_game_response_with_cache(
     );
 
     // Apply team-scoped disambiguation and cache the results
-    debug!("Applying team-scoped disambiguation for game ID: {}", game_id);
+    debug!(
+        "Applying team-scoped disambiguation for game ID: {}",
+        game_id
+    );
     cache_players_with_disambiguation(game_id, home_players, away_players).await;
 
     // Get the disambiguated names from cache for processing
@@ -1295,7 +1304,7 @@ async fn process_game_response_with_cache(
             fallback_players
         }
     };
-    
+
     let events = process_goal_events(&game_response.game, &disambiguated_players);
     info!(
         "Processed {} goal events with team-scoped disambiguation for game ID: {}",
