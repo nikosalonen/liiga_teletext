@@ -716,6 +716,222 @@ pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i6
     cache_players(game_id, formatted_players).await;
 }
 
+/// Caches player information with team-scoped disambiguation for a specific game.
+/// This function takes separate home and away player data, applies disambiguation
+/// within each team, and caches the results.
+///
+/// # Arguments
+/// * `game_id` - The unique identifier of the game
+/// * `home_players` - HashMap mapping home player IDs to (first_name, last_name) tuples
+/// * `away_players` - HashMap mapping away player IDs to (first_name, last_name) tuples
+///
+/// # Example
+/// ```
+/// use std::collections::HashMap;
+/// use liiga_teletext::data_fetcher::cache::cache_players_with_disambiguation;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut home_players = HashMap::new();
+///     home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+///     home_players.insert(456, ("Saku".to_string(), "Koivu".to_string()));
+///     
+///     let mut away_players = HashMap::new();
+///     away_players.insert(789, ("Teemu".to_string(), "Selänne".to_string()));
+///     
+///     cache_players_with_disambiguation(12345, home_players, away_players).await;
+///     // Home team Koivu players will be cached as "Koivu M." and "Koivu S."
+///     // Away team Selänne will be cached as "Selänne"
+/// }
+/// ```
+#[instrument(skip(game_id, home_players, away_players), fields(game_id = %game_id))]
+pub async fn cache_players_with_disambiguation(
+    game_id: i32,
+    home_players: HashMap<i64, (String, String)>, // (first_name, last_name)
+    away_players: HashMap<i64, (String, String)>, // (first_name, last_name)
+) {
+    use crate::data_fetcher::player_names::format_with_disambiguation;
+
+    let home_count = home_players.len();
+    let away_count = away_players.len();
+    debug!(
+        "Caching players with disambiguation: game_id={}, home_players={}, away_players={}",
+        game_id, home_count, away_count
+    );
+
+    // Convert home players to the format expected by disambiguation function
+    let home_player_data: Vec<(i64, String, String)> = home_players
+        .into_iter()
+        .map(|(id, (first_name, last_name))| (id, first_name, last_name))
+        .collect();
+
+    // Convert away players to the format expected by disambiguation function
+    let away_player_data: Vec<(i64, String, String)> = away_players
+        .into_iter()
+        .map(|(id, (first_name, last_name))| (id, first_name, last_name))
+        .collect();
+
+    // Apply team-scoped disambiguation
+    let home_disambiguated = format_with_disambiguation(&home_player_data);
+    let away_disambiguated = format_with_disambiguation(&away_player_data);
+
+    // Combine both teams' disambiguated names
+    let mut all_players = HashMap::new();
+    all_players.extend(home_disambiguated);
+    all_players.extend(away_disambiguated);
+
+    let total_players = all_players.len();
+    debug!(
+        "Disambiguation complete: game_id={}, total_disambiguated_players={}",
+        game_id, total_players
+    );
+
+    // Cache the combined disambiguated names
+    cache_players(game_id, all_players).await;
+
+    info!(
+        "Successfully cached players with disambiguation: game_id={}, home_players={}, away_players={}, total_players={}",
+        game_id, home_count, away_count, total_players
+    );
+}
+
+/// Retrieves cached disambiguated player information for a specific game.
+/// This function is specifically designed to work with players that have been
+/// cached using team-scoped disambiguation.
+///
+/// # Arguments
+/// * `game_id` - The unique identifier of the game
+///
+/// # Returns
+/// * `Option<HashMap<i64, String>>` - Some(HashMap) with player_id -> disambiguated_name mapping if found, None if not cached
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::cache::get_cached_disambiguated_players;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     if let Some(players) = get_cached_disambiguated_players(12345).await {
+///         println!("Found {} cached disambiguated players", players.len());
+///         for (player_id, name) in players {
+///             println!("Player {}: {}", player_id, name);
+///         }
+///     }
+/// }
+/// ```
+#[instrument(skip(game_id), fields(game_id = %game_id))]
+pub async fn get_cached_disambiguated_players(game_id: i32) -> Option<HashMap<i64, String>> {
+    debug!(
+        "Attempting to retrieve cached disambiguated players for game_id: {}",
+        game_id
+    );
+
+    let mut cache = PLAYER_CACHE.write().await;
+
+    if let Some(players) = cache.get(&game_id) {
+        let player_count = players.len();
+        debug!(
+            "Cache hit for disambiguated players: game_id={}, player_count={}",
+            game_id, player_count
+        );
+        Some(players.clone())
+    } else {
+        debug!("Cache miss for disambiguated players: game_id={}", game_id);
+        None
+    }
+}
+
+/// Retrieves a specific player's disambiguated name from the cache.
+/// This is a convenience function for getting a single player's name.
+///
+/// # Arguments
+/// * `game_id` - The unique identifier of the game
+/// * `player_id` - The unique identifier of the player
+///
+/// # Returns
+/// * `Option<String>` - The disambiguated player name if found in cache
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::cache::get_cached_player_name;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     if let Some(name) = get_cached_player_name(12345, 123).await {
+///         println!("Player 123 name: {}", name);
+///     }
+/// }
+/// ```
+#[instrument(skip(game_id, player_id), fields(game_id = %game_id, player_id = %player_id))]
+pub async fn get_cached_player_name(game_id: i32, player_id: i64) -> Option<String> {
+    debug!(
+        "Attempting to retrieve cached player name: game_id={}, player_id={}",
+        game_id, player_id
+    );
+
+    if let Some(players) = get_cached_disambiguated_players(game_id).await {
+        if let Some(name) = players.get(&player_id) {
+            debug!(
+                "Found cached player name: game_id={}, player_id={}, name={}",
+                game_id, player_id, name
+            );
+            Some(name.clone())
+        } else {
+            debug!(
+                "Player not found in cache: game_id={}, player_id={}",
+                game_id, player_id
+            );
+            None
+        }
+    } else {
+        debug!(
+            "No cached players found for game: game_id={}, player_id={}",
+            game_id, player_id
+        );
+        None
+    }
+}
+
+/// Checks if disambiguated player data exists in cache for a specific game.
+/// This is useful for determining whether to fetch fresh data or use cached data.
+///
+/// # Arguments
+/// * `game_id` - The unique identifier of the game
+///
+/// # Returns
+/// * `bool` - True if disambiguated player data exists in cache
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::cache::has_cached_disambiguated_players;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     if has_cached_disambiguated_players(12345).await {
+///         println!("Using cached player data");
+///     } else {
+///         println!("Need to fetch fresh player data");
+///     }
+/// }
+/// ```
+#[instrument(skip(game_id), fields(game_id = %game_id))]
+pub async fn has_cached_disambiguated_players(game_id: i32) -> bool {
+    debug!(
+        "Checking if disambiguated players exist in cache: game_id={}",
+        game_id
+    );
+
+    let cache = PLAYER_CACHE.read().await;
+    let exists = cache.peek(&game_id).is_some();
+    
+    debug!(
+        "Cache check result: game_id={}, exists={}",
+        game_id, exists
+    );
+    
+    exists
+}
+
 /// Gets the current cache size for monitoring purposes
 #[allow(dead_code)]
 pub async fn get_cache_size() -> usize {
@@ -2619,5 +2835,425 @@ mod tests {
         let stats_after_reset = get_all_cache_stats().await;
         assert_eq!(stats_after_reset.player_cache.size, 0);
         assert_eq!(stats_after_reset.goal_events_cache.size, 0);
+    }
+
+    // Tests for disambiguation caching functionality
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_players_with_disambiguation_basic() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 100000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Create test data with players that need disambiguation
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+        home_players.insert(456, ("Saku".to_string(), "Koivu".to_string()));
+        home_players.insert(789, ("Teemu".to_string(), "Selänne".to_string()));
+
+        let mut away_players = HashMap::new();
+        away_players.insert(111, ("Jari".to_string(), "Kurri".to_string()));
+        away_players.insert(222, ("Jere".to_string(), "Kurri".to_string()));
+        away_players.insert(333, ("Ville".to_string(), "Peltonen".to_string()));
+
+        // Cache with disambiguation
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Retrieve and verify disambiguation
+        let cached_players = get_cached_players(game_id).await.unwrap();
+
+        // Home team: Koivu players should be disambiguated, Selänne should not
+        assert_eq!(cached_players.get(&123), Some(&"Koivu M.".to_string()));
+        assert_eq!(cached_players.get(&456), Some(&"Koivu S.".to_string()));
+        assert_eq!(cached_players.get(&789), Some(&"Selänne".to_string()));
+
+        // Away team: Kurri players should be disambiguated, Peltonen should not
+        assert_eq!(cached_players.get(&111), Some(&"Kurri J.".to_string()));
+        assert_eq!(cached_players.get(&222), Some(&"Kurri J.".to_string()));
+        assert_eq!(cached_players.get(&333), Some(&"Peltonen".to_string()));
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_players_with_disambiguation_no_conflicts() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 101000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Create test data with no name conflicts
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+        home_players.insert(456, ("Teemu".to_string(), "Selänne".to_string()));
+
+        let mut away_players = HashMap::new();
+        away_players.insert(111, ("Jari".to_string(), "Kurri".to_string()));
+        away_players.insert(222, ("Ville".to_string(), "Peltonen".to_string()));
+
+        // Cache with disambiguation
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Retrieve and verify no disambiguation applied
+        let cached_players = get_cached_players(game_id).await.unwrap();
+
+        // All players should have last name only (no disambiguation)
+        assert_eq!(cached_players.get(&123), Some(&"Koivu".to_string()));
+        assert_eq!(cached_players.get(&456), Some(&"Selänne".to_string()));
+        assert_eq!(cached_players.get(&111), Some(&"Kurri".to_string()));
+        assert_eq!(cached_players.get(&222), Some(&"Peltonen".to_string()));
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_players_with_disambiguation_cross_team_same_names() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 102000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Create test data with same last names on different teams
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+        home_players.insert(456, ("Teemu".to_string(), "Selänne".to_string()));
+
+        let mut away_players = HashMap::new();
+        away_players.insert(111, ("Saku".to_string(), "Koivu".to_string())); // Same last name as home team
+        away_players.insert(222, ("Ville".to_string(), "Peltonen".to_string()));
+
+        // Cache with disambiguation
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Retrieve and verify team-scoped disambiguation
+        let cached_players = get_cached_players(game_id).await.unwrap();
+
+        // Players with same last name on different teams should NOT be disambiguated
+        assert_eq!(cached_players.get(&123), Some(&"Koivu".to_string())); // Home Koivu
+        assert_eq!(cached_players.get(&111), Some(&"Koivu".to_string())); // Away Koivu
+        assert_eq!(cached_players.get(&456), Some(&"Selänne".to_string()));
+        assert_eq!(cached_players.get(&222), Some(&"Peltonen".to_string()));
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_players_with_disambiguation_empty_first_names() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 103000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Create test data with empty first names
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("".to_string(), "Koivu".to_string()));
+        home_players.insert(456, ("Saku".to_string(), "Koivu".to_string()));
+
+        let away_players = HashMap::new(); // Empty away team
+
+        // Cache with disambiguation
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Retrieve and verify handling of empty first names
+        let cached_players = get_cached_players(game_id).await.unwrap();
+
+        // Player with empty first name should fall back to last name only
+        assert_eq!(cached_players.get(&123), Some(&"Koivu".to_string()));
+        // Player with valid first name should be disambiguated
+        assert_eq!(cached_players.get(&456), Some(&"Koivu S.".to_string()));
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_players_with_disambiguation_unicode_names() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 104000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Create test data with Finnish Unicode characters
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Äkäslompolo".to_string(), "Kärppä".to_string()));
+        home_players.insert(456, ("Östen".to_string(), "Kärppä".to_string()));
+        home_players.insert(789, ("Åke".to_string(), "Kärppä".to_string()));
+
+        let away_players = HashMap::new(); // Empty away team
+
+        // Cache with disambiguation
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Retrieve and verify Unicode handling
+        let cached_players = get_cached_players(game_id).await.unwrap();
+
+        // All players should be disambiguated with proper Unicode handling
+        assert_eq!(cached_players.get(&123), Some(&"Kärppä Ä.".to_string()));
+        assert_eq!(cached_players.get(&456), Some(&"Kärppä Ö.".to_string()));
+        assert_eq!(cached_players.get(&789), Some(&"Kärppä Å.".to_string()));
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_get_cached_disambiguated_players() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 105000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Test cache miss
+        let result = get_cached_disambiguated_players(game_id).await;
+        assert!(result.is_none());
+
+        // Add some disambiguated players
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+        home_players.insert(456, ("Saku".to_string(), "Koivu".to_string()));
+
+        let away_players = HashMap::new();
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Test cache hit
+        let result = get_cached_disambiguated_players(game_id).await;
+        assert!(result.is_some());
+        let players = result.unwrap();
+        assert_eq!(players.len(), 2);
+        assert_eq!(players.get(&123), Some(&"Koivu M.".to_string()));
+        assert_eq!(players.get(&456), Some(&"Koivu S.".to_string()));
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_get_cached_player_name() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 106000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Test cache miss for non-existent game
+        let result = get_cached_player_name(game_id, 123).await;
+        assert!(result.is_none());
+
+        // Add some disambiguated players
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+        home_players.insert(456, ("Saku".to_string(), "Koivu".to_string()));
+
+        let away_players = HashMap::new();
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Test cache hit for existing player
+        let result = get_cached_player_name(game_id, 123).await;
+        assert_eq!(result, Some("Koivu M.".to_string()));
+
+        let result = get_cached_player_name(game_id, 456).await;
+        assert_eq!(result, Some("Koivu S.".to_string()));
+
+        // Test cache miss for non-existent player
+        let result = get_cached_player_name(game_id, 999).await;
+        assert!(result.is_none());
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_has_cached_disambiguated_players() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 107000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Test cache miss
+        let result = has_cached_disambiguated_players(game_id).await;
+        assert!(!result);
+
+        // Add some disambiguated players
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+
+        let away_players = HashMap::new();
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Test cache hit
+        let result = has_cached_disambiguated_players(game_id).await;
+        assert!(result);
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_players_with_disambiguation_three_players_same_name() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 108000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Create test data with three players having the same last name
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+        home_players.insert(456, ("Saku".to_string(), "Koivu".to_string()));
+        home_players.insert(789, ("Antti".to_string(), "Koivu".to_string()));
+
+        let away_players = HashMap::new();
+
+        // Cache with disambiguation
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Retrieve and verify all three are disambiguated
+        let cached_players = get_cached_players(game_id).await.unwrap();
+
+        assert_eq!(cached_players.get(&123), Some(&"Koivu M.".to_string()));
+        assert_eq!(cached_players.get(&456), Some(&"Koivu S.".to_string()));
+        assert_eq!(cached_players.get(&789), Some(&"Koivu A.".to_string()));
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_players_with_disambiguation_mixed_scenario() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 109000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Create complex test scenario with mixed disambiguation needs
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+        home_players.insert(456, ("Saku".to_string(), "Koivu".to_string()));
+        home_players.insert(789, ("Teemu".to_string(), "Selänne".to_string()));
+        home_players.insert(101, ("Jari".to_string(), "Kurri".to_string()));
+
+        let mut away_players = HashMap::new();
+        away_players.insert(111, ("Jere".to_string(), "Kurri".to_string()));
+        away_players.insert(222, ("Ville".to_string(), "Peltonen".to_string()));
+        away_players.insert(333, ("Olli".to_string(), "Jokinen".to_string()));
+        away_players.insert(444, ("Jussi".to_string(), "Jokinen".to_string()));
+
+        // Cache with disambiguation
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Retrieve and verify mixed disambiguation
+        let cached_players = get_cached_players(game_id).await.unwrap();
+
+        // Home team: Koivu players disambiguated, others not
+        assert_eq!(cached_players.get(&123), Some(&"Koivu M.".to_string()));
+        assert_eq!(cached_players.get(&456), Some(&"Koivu S.".to_string()));
+        assert_eq!(cached_players.get(&789), Some(&"Selänne".to_string()));
+        assert_eq!(cached_players.get(&101), Some(&"Kurri".to_string()));
+
+        // Away team: Jokinen players disambiguated, others not
+        assert_eq!(cached_players.get(&111), Some(&"Kurri".to_string()));
+        assert_eq!(cached_players.get(&222), Some(&"Peltonen".to_string()));
+        assert_eq!(cached_players.get(&333), Some(&"Jokinen O.".to_string()));
+        assert_eq!(cached_players.get(&444), Some(&"Jokinen J.".to_string()));
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_cache_players_with_disambiguation_empty_teams() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 110000 + test_id as i32;
+
+        // Clear cache to ensure clean state
+        clear_cache().await;
+
+        // Test with empty teams
+        let home_players = HashMap::new();
+        let away_players = HashMap::new();
+
+        // Cache with disambiguation
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Retrieve and verify empty result
+        let cached_players = get_cached_players(game_id).await.unwrap();
+        assert!(cached_players.is_empty());
+
+        // Clear cache after test
+        clear_cache().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_api_integration_disambiguation_flow() {
+        let _guard = TEST_MUTEX.lock().await;
+        let test_id = get_unique_test_id();
+        let game_id = 111000 + test_id as i32;
+
+        // Clear cache before test
+        clear_cache().await;
+
+        // Simulate API response data with players that need disambiguation
+        let mut home_players = HashMap::new();
+        home_players.insert(123, ("Mikko".to_string(), "Koivu".to_string()));
+        home_players.insert(124, ("Saku".to_string(), "Koivu".to_string()));
+        home_players.insert(125, ("Teemu".to_string(), "Selänne".to_string()));
+
+        let mut away_players = HashMap::new();
+        away_players.insert(456, ("Mikko".to_string(), "Koivu".to_string())); // Same name as home team
+        away_players.insert(457, ("Jari".to_string(), "Kurri".to_string()));
+
+        // Apply team-scoped disambiguation (simulating API processing)
+        cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+        // Retrieve cached results (simulating goal event processing)
+        let cached_players = get_cached_players(game_id).await.unwrap();
+
+        // Verify team-scoped disambiguation results
+        assert_eq!(cached_players.get(&123), Some(&"Koivu M.".to_string()), "Home Mikko Koivu should be disambiguated");
+        assert_eq!(cached_players.get(&124), Some(&"Koivu S.".to_string()), "Home Saku Koivu should be disambiguated");
+        assert_eq!(cached_players.get(&125), Some(&"Selänne".to_string()), "Selänne should not be disambiguated");
+        assert_eq!(cached_players.get(&456), Some(&"Koivu".to_string()), "Away Mikko Koivu should not be disambiguated (different team)");
+        assert_eq!(cached_players.get(&457), Some(&"Kurri".to_string()), "Kurri should not be disambiguated");
+
+        // Verify total number of cached players
+        assert_eq!(cached_players.len(), 5);
+
+        // Clear cache after test
+        clear_cache().await;
     }
 }
