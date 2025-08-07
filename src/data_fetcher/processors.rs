@@ -32,24 +32,10 @@ const PRESEASON_END_MONTH: u32 = 9; // September
 /// - Maintains chronological order of goals from both teams
 ///
 /// # Example
-/// ```rust
-/// use liiga_teletext::data_fetcher::{GoalEventData, models::{HasTeams, HasGoalEvents, ScheduleGame, ScheduleTeam}};
-/// use liiga_teletext::data_fetcher::processors::process_goal_events_with_disambiguation;
-///
-/// let home_players = vec![
-///     (123, "Mikko".to_string(), "Koivu".to_string()),
-///     (124, "Saku".to_string(), "Koivu".to_string()),
-/// ];
-/// let away_players = vec![
-///     (456, "Teemu".to_string(), "Selänne".to_string()),
-/// ];
-///
-/// let game = ScheduleGame::default();
-/// let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
-/// // Events will contain disambiguated names:
-/// // - Home team: "Koivu M.", "Koivu S."
-/// // - Away team: "Selänne" (no disambiguation needed)
-/// ```
+/// This function is typically used with game data from the API to create
+/// disambiguated goal events that avoid confusion between players with similar names.
+/// When multiple players share the same last name on a team, their names are
+/// differentiated using first initials (e.g., "Koivu M." vs "Koivu S.").
 #[allow(dead_code)]
 pub fn process_goal_events_with_disambiguation<T>(
     game: &T,

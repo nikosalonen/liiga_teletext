@@ -172,17 +172,8 @@ pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<
 /// # Returns
 /// * `Vec<(i64, String)>` - A vector of (player_id, disambiguated_name) pairs
 ///
-/// # Examples
-/// ```
-/// use liiga_teletext::data_fetcher::player_names::apply_progressive_disambiguation;
-///
-/// let group = vec![
-///     (1, "Mikael".to_string(), "Granlund".to_string()),
-///     (2, "Markus".to_string(), "Granlund".to_string()),
-/// ];
-/// let result = apply_progressive_disambiguation(&group);
-/// // Result should be: [(1, "Granlund Mi."), (2, "Granlund Ma.")]
-/// ```
+/// # Note
+/// This is an internal function used by the disambiguation system.
 fn apply_progressive_disambiguation(group: &[(i64, String, String)]) -> Vec<(i64, String)> {
     let mut result = Vec::new();
     let formatted_last_name = format_for_display(&build_full_name("", &group[0].2));
@@ -355,8 +346,15 @@ pub fn extract_first_initial(first_name: &str) -> Option<String> {
 /// ```
 pub fn extract_first_chars(first_name: &str, length: usize) -> Option<String> {
     let length = length.clamp(1, 3); // Limit to reasonable range
-    let alphabetic_chars: Vec<char> = first_name
+
+    // Extract only the first word/part before any separator (space, hyphen, apostrophe)
+    let first_part = first_name
         .trim()
+        .split(&[' ', '-', '\''][..])
+        .next()
+        .unwrap_or("");
+
+    let alphabetic_chars: Vec<char> = first_part
         .chars()
         .filter(|c| c.is_alphabetic())
         .take(length)
