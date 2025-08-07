@@ -1468,7 +1468,7 @@ fn determine_tournaments_for_month(month: u32) -> Vec<TournamentType> {
 
     info!(
         "Tournaments to check: {:?}",
-        tournaments.iter().map(|t| t.as_str()).collect::<Vec<_>>()
+        tournaments.iter().map(TournamentType::as_str).collect::<Vec<_>>()
     );
     tournaments
 }
