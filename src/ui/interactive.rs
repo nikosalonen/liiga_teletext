@@ -128,11 +128,9 @@ fn manage_loading_indicators(
 ) -> bool {
     let mut needs_render = false;
 
-    if should_show_indicator {
-        if let Some(page) = current_page {
-            page.show_auto_refresh_indicator();
-            needs_render = true;
-        }
+    if should_show_indicator && let Some(page) = current_page {
+        page.show_auto_refresh_indicator();
+        needs_render = true;
     }
 
     if should_show_loading {
@@ -283,10 +281,10 @@ async fn create_or_restore_page(config: PageCreationConfig<'_>) -> Option<Telete
         .await;
 
         // Disable auto-refresh for historical dates
-        if let Some(date) = config.updated_current_date {
-            if is_historical_date(date) {
-                page.set_auto_refresh_disabled(true);
-            }
+        if let Some(date) = config.updated_current_date
+            && is_historical_date(date)
+        {
+            page.set_auto_refresh_disabled(true);
         }
 
         Some(page)
@@ -331,10 +329,10 @@ async fn create_or_restore_page(config: PageCreationConfig<'_>) -> Option<Telete
                     .await;
 
                     // Disable auto-refresh for historical dates
-                    if let Some(date) = config.updated_current_date {
-                        if is_historical_date(date) {
-                            page.set_auto_refresh_disabled(true);
-                        }
+                    if let Some(date) = config.updated_current_date
+                        && is_historical_date(date)
+                    {
+                        page.set_auto_refresh_disabled(true);
                     }
 
                     page
@@ -366,42 +364,42 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
     let mut needs_render = false;
 
     // If we showed a loading screen but data didn't change, we still need to restore pagination
-    if !params.data_changed && !params.had_error && params.preserved_page_for_restoration.is_some()
+    if !params.data_changed
+        && !params.had_error
+        && params.preserved_page_for_restoration.is_some()
+        && let Some(current) = params.current_page
     {
-        if let Some(current) = params.current_page {
-            // Check if current page is a loading page by checking if it has error messages
-            if current.has_error_messages() {
-                if let Some(preserved_page_for_restoration) = params.preserved_page_for_restoration
-                {
-                    let games_to_use = if params.games.is_empty() {
-                        params.last_games
-                    } else {
-                        params.games
-                    };
-                    let mut page = create_page(
-                        games_to_use,
-                        params.disable_links,
-                        true,
-                        false,
-                        params.compact_mode,
-                        params.wide_mode,
-                        false, // suppress_countdown - false for interactive mode
-                        Some(params.fetched_date.to_string()),
-                        Some(preserved_page_for_restoration),
-                    )
-                    .await;
+        // Check if current page is a loading page by checking if it has error messages
+        if current.has_error_messages()
+            && let Some(preserved_page_for_restoration) = params.preserved_page_for_restoration
+        {
+            let games_to_use = if params.games.is_empty() {
+                params.last_games
+            } else {
+                params.games
+            };
+            let mut page = create_page(
+                games_to_use,
+                params.disable_links,
+                true,
+                false,
+                params.compact_mode,
+                params.wide_mode,
+                false, // suppress_countdown - false for interactive mode
+                Some(params.fetched_date.to_string()),
+                Some(preserved_page_for_restoration),
+            )
+            .await;
 
-                    // Disable auto-refresh for historical dates
-                    if let Some(date) = params.updated_current_date {
-                        if is_historical_date(date) {
-                            page.set_auto_refresh_disabled(true);
-                        }
-                    }
-
-                    *params.current_page = Some(page);
-                    needs_render = true;
-                }
+            // Disable auto-refresh for historical dates
+            if let Some(date) = params.updated_current_date
+                && is_historical_date(date)
+            {
+                page.set_auto_refresh_disabled(true);
             }
+
+            *params.current_page = Some(page);
+            needs_render = true;
         }
     }
 
@@ -1040,11 +1038,11 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams) -> bool {
     }
 
     // Don't auto-refresh for historical dates
-    if let Some(date) = &params.current_date {
-        if is_historical_date(date) {
-            tracing::debug!("Auto-refresh skipped for historical date: {}", date);
-            return false;
-        }
+    if let Some(date) = &params.current_date
+        && is_historical_date(date)
+    {
+        tracing::debug!("Auto-refresh skipped for historical date: {}", date);
+        return false;
     }
 
     let has_ongoing_games = has_live_games_from_game_data(&params.games);
@@ -1442,19 +1440,19 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             }
             KeyCode::Char('r') => {
                 // Check if auto-refresh is disabled - ignore manual refresh too
-                if let Some(page) = params.current_page.as_ref() {
-                    if page.is_auto_refresh_disabled() {
-                        tracing::info!("Manual refresh ignored - auto-refresh is disabled");
-                        return Ok(false); // Skip refresh when auto-refresh is disabled
-                    }
+                if let Some(page) = params.current_page.as_ref()
+                    && page.is_auto_refresh_disabled()
+                {
+                    tracing::info!("Manual refresh ignored - auto-refresh is disabled");
+                    return Ok(false); // Skip refresh when auto-refresh is disabled
                 }
 
                 // Check if current date is historical - don't refresh historical data
-                if let Some(date) = params.current_date {
-                    if is_historical_date(date) {
-                        tracing::info!("Manual refresh skipped for historical date: {}", date);
-                        return Ok(false); // Skip refresh for historical dates
-                    }
+                if let Some(date) = params.current_date
+                    && is_historical_date(date)
+                {
+                    tracing::info!("Manual refresh skipped for historical date: {}", date);
+                    return Ok(false); // Skip refresh for historical dates
                 }
 
                 if params.last_manual_refresh.elapsed() >= Duration::from_secs(15) {
@@ -1507,11 +1505,11 @@ fn handle_resize_event(
 
 /// Update auto-refresh indicator animation
 fn update_auto_refresh_animation(current_page: &mut Option<TeletextPage>, needs_render: &mut bool) {
-    if let Some(page) = current_page {
-        if page.is_auto_refresh_indicator_active() {
-            page.update_auto_refresh_animation();
-            *needs_render = true;
-        }
+    if let Some(page) = current_page
+        && page.is_auto_refresh_indicator_active()
+    {
+        page.update_auto_refresh_animation();
+        *needs_render = true;
     }
 }
 
@@ -1675,7 +1673,7 @@ pub async fn run_interactive_ui(
             // Always preserve the current page number before refresh, regardless of loading screen
             preserved_page_for_restoration = current_page
                 .as_ref()
-                .map(|existing_page| existing_page.get_current_page());
+                .map(TeletextPage::get_current_page);
 
             // Handle data fetching using the helper function
             let (games, had_error, fetched_date, should_retry, new_page, _needs_render_update) =

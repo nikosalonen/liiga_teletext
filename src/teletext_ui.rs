@@ -830,7 +830,7 @@ impl TeletextPage {
         // Split message into lines and format each line
         let formatted_message = message
             .lines()
-            .map(|line| line.trim())
+            .map(str::trim)
             .collect::<Vec<_>>()
             .join("\n"); // Remove the indentation
         self.content_rows
