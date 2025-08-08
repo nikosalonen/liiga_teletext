@@ -557,7 +557,8 @@ async fn main() -> Result<(), AppError> {
 
                     // Disable auto-refresh for historical dates in --once mode too
                     if let Some(ref date) = args.date
-                        && is_historical_date(date) {
+                        && is_historical_date(date)
+                    {
                         page.set_auto_refresh_disabled(true);
                     }
 
