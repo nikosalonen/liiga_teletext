@@ -1337,7 +1337,6 @@ async fn handle_data_fetching(
 }
 
 /// Parameters for keyboard event handling
-#[allow(dead_code)]
 struct KeyEventParams<'a> {
     key_event: &'a crossterm::event::KeyEvent,
     current_date: &'a mut Option<String>,
@@ -1347,7 +1346,9 @@ struct KeyEventParams<'a> {
     last_manual_refresh: &'a mut Instant,
     last_page_change: &'a mut Instant,
     last_date_navigation: &'a mut Instant,
+    #[allow(dead_code)] // Kept for future functionality
     debug_mode: bool,
+    #[allow(dead_code)] // Kept for future functionality
     disable_links: bool,
 }
 
