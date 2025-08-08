@@ -36,7 +36,7 @@ const PRESEASON_END_MONTH: u32 = 9; // September
 /// disambiguated goal events that avoid confusion between players with similar names.
 /// When multiple players share the same last name on a team, their names are
 /// differentiated using first initials (e.g., "Koivu M." vs "Koivu S.").
-#[allow(dead_code)]
+#[allow(dead_code)] // Used in integration tests
 pub fn process_goal_events_with_disambiguation<T>(
     game: &T,
     home_players: &[(i64, String, String)], // (id, first_name, last_name)
@@ -154,7 +154,7 @@ where
 /// process_team_goals_with_disambiguation(&home_team, &context, true, &mut events);
 /// // Events will contain disambiguated names: "Koivu M.", "Koivu S."
 /// ```
-#[allow(dead_code)]
+#[allow(dead_code)] // Used in integration tests
 pub fn process_team_goals_with_disambiguation(
     team: &dyn HasGoalEvents,
     disambiguation_context: &DisambiguationContext,

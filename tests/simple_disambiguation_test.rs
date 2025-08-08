@@ -2,8 +2,10 @@
 //! Requirements: 3.1, 3.2, 3.3, 3.4
 //! This test verifies that the disambiguation logic works correctly and handles error scenarios
 
-use liiga_teletext::data_fetcher::player_names::{format_with_disambiguation, DisambiguationContext};
 use liiga_teletext::data_fetcher::GoalEventData;
+use liiga_teletext::data_fetcher::player_names::{
+    DisambiguationContext, format_with_disambiguation,
+};
 use liiga_teletext::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 
 #[test]
@@ -37,10 +39,22 @@ fn test_disambiguation_context_functionality() {
     let context = DisambiguationContext::new(players);
 
     // Test disambiguation results
-    assert_eq!(context.get_disambiguated_name(1), Some(&"Koivu M.".to_string()));
-    assert_eq!(context.get_disambiguated_name(2), Some(&"Koivu S.".to_string()));
-    assert_eq!(context.get_disambiguated_name(3), Some(&"Granlund Mi.".to_string()));
-    assert_eq!(context.get_disambiguated_name(4), Some(&"Granlund Ma.".to_string()));
+    assert_eq!(
+        context.get_disambiguated_name(1),
+        Some(&"Koivu M.".to_string())
+    );
+    assert_eq!(
+        context.get_disambiguated_name(2),
+        Some(&"Koivu S.".to_string())
+    );
+    assert_eq!(
+        context.get_disambiguated_name(3),
+        Some(&"Granlund Mi.".to_string())
+    );
+    assert_eq!(
+        context.get_disambiguated_name(4),
+        Some(&"Granlund Ma.".to_string())
+    );
 
     // Test disambiguation needed check
     assert!(context.needs_disambiguation("Koivu"));
@@ -155,7 +169,10 @@ fn test_disambiguation_error_scenarios() {
     // Test empty player list
     let empty_players: Vec<(i64, String, String)> = vec![];
     let empty_result = format_with_disambiguation(&empty_players);
-    assert!(empty_result.is_empty(), "Empty player list should return empty result");
+    assert!(
+        empty_result.is_empty(),
+        "Empty player list should return empty result"
+    );
 
     // Test single player (no disambiguation needed)
     let single_player = vec![(1, "Mikko".to_string(), "Koivu".to_string())];
@@ -170,7 +187,10 @@ fn test_disambiguation_error_scenarios() {
     ];
     let empty_name_result = format_with_disambiguation(&players_with_empty);
     // Should handle gracefully without panicking
-    assert!(empty_name_result.len() <= 3, "Should handle empty names gracefully");
+    assert!(
+        empty_name_result.len() <= 3,
+        "Should handle empty names gracefully"
+    );
 
     // Test players with identical first and last names
     let identical_players = vec![
@@ -219,7 +239,11 @@ fn test_disambiguation_error_scenarios() {
     error_page.add_game_result(error_game);
 
     // Should handle missing player ID gracefully without crashing
-    assert_eq!(error_page.total_pages(), 1, "Should handle missing player ID gracefully");
+    assert_eq!(
+        error_page.total_pages(),
+        1,
+        "Should handle missing player ID gracefully"
+    );
 
     println!("✓ Error scenarios handled gracefully");
 }
@@ -256,8 +280,16 @@ fn test_disambiguation_edge_cases() {
 
     // Test very long names
     let long_name_players = vec![
-        (1, "VeryLongFirstNameThatExceedsNormalLength".to_string(), "VeryLongLastNameThatAlsoExceedsNormalLength".to_string()),
-        (2, "AnotherVeryLongFirstName".to_string(), "VeryLongLastNameThatAlsoExceedsNormalLength".to_string()),
+        (
+            1,
+            "VeryLongFirstNameThatExceedsNormalLength".to_string(),
+            "VeryLongLastNameThatAlsoExceedsNormalLength".to_string(),
+        ),
+        (
+            2,
+            "AnotherVeryLongFirstName".to_string(),
+            "VeryLongLastNameThatAlsoExceedsNormalLength".to_string(),
+        ),
     ];
     let long_name_result = format_with_disambiguation(&long_name_players);
     assert_eq!(long_name_result.len(), 2);
@@ -302,10 +334,18 @@ fn test_name_truncation_with_disambiguation() {
     ];
 
     // Verify the names are distinct before adding to page
-    assert_ne!(long_disambiguated_names[0].scorer_name, long_disambiguated_names[1].scorer_name,
-               "Disambiguated names should be different");
-    assert!(long_disambiguated_names[0].scorer_name.contains("M."), "First name should contain disambiguation");
-    assert!(long_disambiguated_names[1].scorer_name.contains("K."), "Second name should contain disambiguation");
+    assert_ne!(
+        long_disambiguated_names[0].scorer_name, long_disambiguated_names[1].scorer_name,
+        "Disambiguated names should be different"
+    );
+    assert!(
+        long_disambiguated_names[0].scorer_name.contains("M."),
+        "First name should contain disambiguation"
+    );
+    assert!(
+        long_disambiguated_names[1].scorer_name.contains("K."),
+        "Second name should contain disambiguation"
+    );
 
     let truncation_game = GameResultData {
         home_team: "Tappara".to_string(),
@@ -333,7 +373,11 @@ fn test_name_truncation_with_disambiguation() {
     truncation_page.set_screen_height(25);
 
     // Verify the page can handle long names without crashing
-    assert_eq!(truncation_page.total_pages(), 1, "Should handle long names gracefully");
+    assert_eq!(
+        truncation_page.total_pages(),
+        1,
+        "Should handle long names gracefully"
+    );
 
     println!("✓ Name truncation preserves disambiguation information");
 }
@@ -350,20 +394,24 @@ fn test_disambiguation_consistency_across_modes() {
 
     let expected_disambiguation = format_with_disambiguation(&test_players);
 
-    let goal_events: Vec<GoalEventData> = test_players.iter().enumerate().map(|(i, (id, _first_name, _last_name))| {
-        let disambiguated_name = expected_disambiguation.get(id).unwrap().clone();
-        GoalEventData {
-            scorer_player_id: *id,
-            scorer_name: disambiguated_name,
-            minute: (i + 1) as i32 * 5,
-            home_team_score: i as i32 + 1,
-            away_team_score: 0,
-            is_winning_goal: false,
-            goal_types: vec![],
-            is_home_team: true,
-            video_clip_url: None,
-        }
-    }).collect();
+    let goal_events: Vec<GoalEventData> = test_players
+        .iter()
+        .enumerate()
+        .map(|(i, (id, _first_name, _last_name))| {
+            let disambiguated_name = expected_disambiguation.get(id).unwrap().clone();
+            GoalEventData {
+                scorer_player_id: *id,
+                scorer_name: disambiguated_name,
+                minute: (i + 1) as i32 * 5,
+                home_team_score: i as i32 + 1,
+                away_team_score: 0,
+                is_winning_goal: false,
+                goal_types: vec![],
+                is_home_team: true,
+                video_clip_url: None,
+            }
+        })
+        .collect();
 
     let game = GameResultData {
         home_team: "Tappara".to_string(),
@@ -398,9 +446,17 @@ fn test_disambiguation_consistency_across_modes() {
         page.add_game_result(game.clone());
 
         // Verify the page can be created and configured correctly
-        assert_eq!(page.is_compact_mode(), compact, "{mode_name} mode compact setting");
+        assert_eq!(
+            page.is_compact_mode(),
+            compact,
+            "{mode_name} mode compact setting"
+        );
         assert_eq!(page.is_wide_mode(), wide, "{mode_name} mode wide setting");
-        assert_eq!(page.total_pages(), 1, "{mode_name} mode should have one page");
+        assert_eq!(
+            page.total_pages(),
+            1,
+            "{mode_name} mode should have one page"
+        );
 
         // The key verification is that all modes use the same input data with proper disambiguation
         // (the goal_events vector already contains properly disambiguated names)

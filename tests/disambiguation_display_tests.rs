@@ -7,17 +7,24 @@
 //!
 //! Requirements tested: 3.1, 3.2, 3.3, 3.4
 
-use liiga_teletext::data_fetcher::models::{GoalEvent, ScheduleGame, ScheduleTeam};
-use liiga_teletext::data_fetcher::player_names::{format_with_disambiguation, DisambiguationContext};
-use liiga_teletext::data_fetcher::processors::process_goal_events_with_disambiguation;
 use liiga_teletext::data_fetcher::GoalEventData;
+use liiga_teletext::data_fetcher::models::{GoalEvent, ScheduleGame, ScheduleTeam};
+use liiga_teletext::data_fetcher::player_names::{
+    DisambiguationContext, format_with_disambiguation,
+};
+use liiga_teletext::data_fetcher::processors::process_goal_events_with_disambiguation;
 use liiga_teletext::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 
+/// Type alias for player data tuple: (id, first_name, last_name)
+type PlayerData = (i64, String, String);
+/// Type alias for team player lists: (home_players, away_players)
+type TeamPlayerData = (Vec<PlayerData>, Vec<PlayerData>);
+
 /// Creates raw player data that needs disambiguation (for testing actual logic)
-fn create_raw_test_players() -> (Vec<(i64, String, String)>, Vec<(i64, String, String)>) {
+fn create_raw_test_players() -> TeamPlayerData {
     let home_players = vec![
         (1, "Mikko".to_string(), "Koivu".to_string()),
-        (2, "Saku".to_string(), "Koivu".to_string()),  // Needs disambiguation
+        (2, "Saku".to_string(), "Koivu".to_string()), // Needs disambiguation
         (3, "Teemu".to_string(), "Selänne".to_string()), // Unique
     ];
 
@@ -74,21 +81,19 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
         },
     ];
 
-    let away_goals = vec![
-        GoalEvent {
-            scorer_player_id: 4, // Jari Kurri (will become "Kurri J.")
-            log_time: "19:15:00".to_string(),
-            game_time: 1500, // 25 minutes
-            period: 2,
-            event_id: 4,
-            home_team_score: 3,
-            away_team_score: 2,
-            winning_goal: true,
-            goal_types: vec!["YV".to_string()],
-            assistant_player_ids: vec![],
-            video_clip_url: None,
-        },
-    ];
+    let away_goals = vec![GoalEvent {
+        scorer_player_id: 4, // Jari Kurri (will become "Kurri J.")
+        log_time: "19:15:00".to_string(),
+        game_time: 1500, // 25 minutes
+        period: 2,
+        event_id: 4,
+        home_team_score: 3,
+        away_team_score: 2,
+        winning_goal: true,
+        goal_types: vec!["YV".to_string()],
+        assistant_player_ids: vec![],
+        video_clip_url: None,
+    }];
 
     ScheduleGame {
         id: 12345,
@@ -142,28 +147,48 @@ fn test_normal_mode_displays_disambiguated_names_correctly() {
         process_goal_events_with_disambiguation(&schedule_game, &home_players, &away_players);
 
     // Verify the disambiguation logic worked correctly
-    assert_eq!(disambiguated_goal_events.len(), 4, "Should have 4 goal events");
+    assert_eq!(
+        disambiguated_goal_events.len(),
+        4,
+        "Should have 4 goal events"
+    );
 
     // Check specific disambiguated names
-    let mikko_goal = disambiguated_goal_events.iter()
+    let mikko_goal = disambiguated_goal_events
+        .iter()
         .find(|event| event.scorer_player_id == 1)
         .expect("Should find Mikko Koivu's goal");
-    assert_eq!(mikko_goal.scorer_name, "Koivu M.", "Mikko Koivu should be disambiguated as 'Koivu M.'");
+    assert_eq!(
+        mikko_goal.scorer_name, "Koivu M.",
+        "Mikko Koivu should be disambiguated as 'Koivu M.'"
+    );
 
-    let saku_goal = disambiguated_goal_events.iter()
+    let saku_goal = disambiguated_goal_events
+        .iter()
         .find(|event| event.scorer_player_id == 2)
         .expect("Should find Saku Koivu's goal");
-    assert_eq!(saku_goal.scorer_name, "Koivu S.", "Saku Koivu should be disambiguated as 'Koivu S.'");
+    assert_eq!(
+        saku_goal.scorer_name, "Koivu S.",
+        "Saku Koivu should be disambiguated as 'Koivu S.'"
+    );
 
-    let selanne_goal = disambiguated_goal_events.iter()
+    let selanne_goal = disambiguated_goal_events
+        .iter()
         .find(|event| event.scorer_player_id == 3)
         .expect("Should find Selänne's goal");
-    assert_eq!(selanne_goal.scorer_name, "Selänne", "Selänne should not be disambiguated");
+    assert_eq!(
+        selanne_goal.scorer_name, "Selänne",
+        "Selänne should not be disambiguated"
+    );
 
-    let kurri_goal = disambiguated_goal_events.iter()
+    let kurri_goal = disambiguated_goal_events
+        .iter()
         .find(|event| event.scorer_player_id == 4)
         .expect("Should find Jari Kurri's goal");
-    assert_eq!(kurri_goal.scorer_name, "Kurri J.", "Jari Kurri should be disambiguated as 'Kurri J.'");
+    assert_eq!(
+        kurri_goal.scorer_name, "Kurri J.",
+        "Jari Kurri should be disambiguated as 'Kurri J.'"
+    );
 
     // Create a game result with the properly disambiguated events
     let game_result = GameResultData {
@@ -193,7 +218,10 @@ fn test_normal_mode_displays_disambiguated_names_correctly() {
     page.set_screen_height(25);
 
     // Verify the page was created successfully and is in normal mode
-    assert!(!page.is_compact_mode(), "Page should not be in compact mode");
+    assert!(
+        !page.is_compact_mode(),
+        "Page should not be in compact mode"
+    );
     assert!(!page.is_wide_mode(), "Page should not be in wide mode");
     assert_eq!(page.total_pages(), 1, "Should have one page");
 
@@ -216,19 +244,44 @@ fn test_compact_mode_handles_disambiguated_names_within_space_constraints() {
 
     // Test the disambiguation context handles multiple players correctly
     let home_context = DisambiguationContext::new(home_players.clone());
-    assert!(home_context.needs_disambiguation("Koivu"), "Should need disambiguation for Koivu");
+    assert!(
+        home_context.needs_disambiguation("Koivu"),
+        "Should need disambiguation for Koivu"
+    );
 
     // Verify the specific disambiguation results
-    assert_eq!(home_context.get_disambiguated_name(1), Some(&"Koivu Mi.".to_string()), "Mikko should be 'Koivu Mi.'");
-    assert_eq!(home_context.get_disambiguated_name(2), Some(&"Koivu S.".to_string()), "Saku should be 'Koivu S.'");
-    assert_eq!(home_context.get_disambiguated_name(3), Some(&"Koivu Ma.".to_string()), "Markus should be 'Koivu Ma.'");
+    assert_eq!(
+        home_context.get_disambiguated_name(1),
+        Some(&"Koivu Mi.".to_string()),
+        "Mikko should be 'Koivu Mi.'"
+    );
+    assert_eq!(
+        home_context.get_disambiguated_name(2),
+        Some(&"Koivu S.".to_string()),
+        "Saku should be 'Koivu S.'"
+    );
+    assert_eq!(
+        home_context.get_disambiguated_name(3),
+        Some(&"Koivu Ma.".to_string()),
+        "Markus should be 'Koivu Ma.'"
+    );
 
     let away_context = DisambiguationContext::new(away_players.clone());
-    assert_eq!(away_context.get_disambiguated_name(4), Some(&"Kurri J.".to_string()), "Jari should be 'Kurri J.'");
+    assert_eq!(
+        away_context.get_disambiguated_name(4),
+        Some(&"Kurri J.".to_string()),
+        "Jari should be 'Kurri J.'"
+    );
     // Both Jari and Jarkko start with 'J', so they might both get 'J.' if extended disambiguation isn't needed
     let jarkko_name = away_context.get_disambiguated_name(5).unwrap();
-    assert!(jarkko_name.starts_with("Kurri"), "Jarkko should start with 'Kurri'");
-    assert!(jarkko_name.ends_with("."), "Jarkko should end with disambiguation marker");
+    assert!(
+        jarkko_name.starts_with("Kurri"),
+        "Jarkko should start with 'Kurri'"
+    );
+    assert!(
+        jarkko_name.ends_with("."),
+        "Jarkko should end with disambiguation marker"
+    );
 
     // Create a game result for compact mode testing
     let game_result = GameResultData {
@@ -298,10 +351,10 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
     let home_players2 = vec![
         (7, "Mikael".to_string(), "Granlund".to_string()),
         (8, "Markus".to_string(), "Granlund".to_string()), // Needs disambiguation
-        (9, "Erik".to_string(), "Haula".to_string()), // Unique
+        (9, "Erik".to_string(), "Haula".to_string()),      // Unique
     ];
 
-    let _away_players2 = vec![
+    let _away_players2 = [
         (10, "Patrik".to_string(), "Laine".to_string()),
         (11, "Aleksander".to_string(), "Barkov".to_string()),
     ];
@@ -311,11 +364,19 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
         process_goal_events_with_disambiguation(&schedule_game1, &home_players1, &away_players1);
 
     // Verify the first game's disambiguation
-    assert_eq!(disambiguated_events1.len(), 4, "First game should have 4 goal events");
-    let koivu_goals_count = disambiguated_events1.iter()
+    assert_eq!(
+        disambiguated_events1.len(),
+        4,
+        "First game should have 4 goal events"
+    );
+    let koivu_goals_count = disambiguated_events1
+        .iter()
         .filter(|event| event.scorer_name.starts_with("Koivu"))
         .count();
-    assert_eq!(koivu_goals_count, 2, "Should have 2 Koivu goals with different disambiguation");
+    assert_eq!(
+        koivu_goals_count, 2,
+        "Should have 2 Koivu goals with different disambiguation"
+    );
 
     // Create second game data (simpler, with just one goal for testing)
     let game_result1 = GameResultData {
@@ -332,9 +393,20 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
 
     // Test disambiguation context for second game
     let home_context2 = DisambiguationContext::new(home_players2.clone());
-    assert!(home_context2.needs_disambiguation("Granlund"), "Should need disambiguation for Granlund");
-    assert_eq!(home_context2.get_disambiguated_name(7), Some(&"Granlund Mi.".to_string()), "Mikael should be 'Granlund Mi.'");
-    assert_eq!(home_context2.get_disambiguated_name(8), Some(&"Granlund Ma.".to_string()), "Markus should be 'Granlund Ma.'");
+    assert!(
+        home_context2.needs_disambiguation("Granlund"),
+        "Should need disambiguation for Granlund"
+    );
+    assert_eq!(
+        home_context2.get_disambiguated_name(7),
+        Some(&"Granlund Mi.".to_string()),
+        "Mikael should be 'Granlund Mi.'"
+    );
+    assert_eq!(
+        home_context2.get_disambiguated_name(8),
+        Some(&"Granlund Ma.".to_string()),
+        "Markus should be 'Granlund Ma.'"
+    );
 
     let game_result2 = GameResultData {
         home_team: "Ilves".to_string(),
@@ -344,19 +416,17 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
         score_type: ScoreType::Final,
         is_overtime: false,
         is_shootout: false,
-        goal_events: vec![
-            GoalEventData {
-                scorer_player_id: 7,
-                scorer_name: "Granlund Mi.".to_string(), // Disambiguated
-                minute: 25,
-                home_team_score: 1,
-                away_team_score: 0,
-                is_winning_goal: true,
-                goal_types: vec![],
-                is_home_team: true,
-                video_clip_url: None,
-            },
-        ],
+        goal_events: vec![GoalEventData {
+            scorer_player_id: 7,
+            scorer_name: "Granlund Mi.".to_string(), // Disambiguated
+            minute: 25,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: true,
+            goal_types: vec![],
+            is_home_team: true,
+            video_clip_url: None,
+        }],
         played_time: 60,
     };
 
@@ -376,7 +446,10 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
     page.set_screen_height(25);
 
     // Verify the page was created successfully and is in wide mode
-    assert!(!page.is_compact_mode(), "Page should not be in compact mode");
+    assert!(
+        !page.is_compact_mode(),
+        "Page should not be in compact mode"
+    );
     assert!(page.is_wide_mode(), "Page should be in wide mode");
     assert_eq!(page.total_pages(), 1, "Should have one page for wide mode");
 
@@ -387,19 +460,42 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
 fn test_name_truncation_works_properly_with_disambiguated_names() {
     // Test disambiguation with very long names that may need truncation
     let home_players = vec![
-        (1, "Maximilian-Alexander".to_string(), "Korhonen-Virtanen".to_string()),
-        (2, "Johannes-Sebastian".to_string(), "Korhonen-Virtanen".to_string()), // Same last name
-        (3, "Christopher-Benjamin".to_string(), "Korhonen-Virtanen".to_string()), // Three with same last name
+        (
+            1,
+            "Maximilian-Alexander".to_string(),
+            "Korhonen-Virtanen".to_string(),
+        ),
+        (
+            2,
+            "Johannes-Sebastian".to_string(),
+            "Korhonen-Virtanen".to_string(),
+        ), // Same last name
+        (
+            3,
+            "Christopher-Benjamin".to_string(),
+            "Korhonen-Virtanen".to_string(),
+        ), // Three with same last name
     ];
 
-    let _away_players = vec![
-        (4, "Alessandro-Giovanni".to_string(), "Bernardinelli-Rossi".to_string()),
-        (5, "Maximilian-Andreas".to_string(), "Bernardinelli-Rossi".to_string()),
+    let _away_players = [
+        (
+            4,
+            "Alessandro-Giovanni".to_string(),
+            "Bernardinelli-Rossi".to_string(),
+        ),
+        (
+            5,
+            "Maximilian-Andreas".to_string(),
+            "Bernardinelli-Rossi".to_string(),
+        ),
     ];
 
     // Test the disambiguation logic with long names
     let home_context = DisambiguationContext::new(home_players.clone());
-    assert!(home_context.needs_disambiguation("Korhonen-Virtanen"), "Should need disambiguation for long last name");
+    assert!(
+        home_context.needs_disambiguation("Korhonen-Virtanen"),
+        "Should need disambiguation for long last name"
+    );
 
     // Verify extended disambiguation is used when needed
     let disambiguated_names = format_with_disambiguation(&home_players);
@@ -408,9 +504,18 @@ fn test_name_truncation_works_properly_with_disambiguated_names() {
     let chr_name = disambiguated_names.get(&3).unwrap();
 
     // These should be distinct even with long names
-    assert_ne!(max_name, joh_name, "Maximilian and Johannes should have different disambiguated names");
-    assert_ne!(joh_name, chr_name, "Johannes and Christopher should have different disambiguated names");
-    assert_ne!(max_name, chr_name, "Maximilian and Christopher should have different disambiguated names");
+    assert_ne!(
+        max_name, joh_name,
+        "Maximilian and Johannes should have different disambiguated names"
+    );
+    assert_ne!(
+        joh_name, chr_name,
+        "Johannes and Christopher should have different disambiguated names"
+    );
+    assert_ne!(
+        max_name, chr_name,
+        "Maximilian and Christopher should have different disambiguated names"
+    );
 
     // All should contain some form of the last name or be properly disambiguated
     assert!(max_name.len() > 5, "Disambiguated name should not be empty");
@@ -418,7 +523,7 @@ fn test_name_truncation_works_properly_with_disambiguated_names() {
     assert!(chr_name.len() > 5, "Disambiguated name should not be empty");
 
     // Check that they all contain some recognizable part of the name or proper disambiguation
-    println!("Disambiguated names: {}, {}, {}", max_name, joh_name, chr_name);
+    println!("Disambiguated names: {max_name}, {joh_name}, {chr_name}");
 
     // Create game with long disambiguated names
     let game = GameResultData {
@@ -471,7 +576,10 @@ fn test_name_truncation_works_properly_with_disambiguated_names() {
     page.set_screen_height(25);
 
     // Verify the page can handle long disambiguated names without crashing
-    assert!(!page.is_compact_mode(), "Page should not be in compact mode");
+    assert!(
+        !page.is_compact_mode(),
+        "Page should not be in compact mode"
+    );
     assert!(!page.is_wide_mode(), "Page should not be in wide mode");
     assert_eq!(page.total_pages(), 1, "Should have one page");
 
@@ -488,15 +596,21 @@ fn test_all_modes_handle_unicode_disambiguated_names() {
         (4, "Äiti".to_string(), "Mäkelä".to_string()), // Needs disambiguation
     ];
 
-    let _away_players = vec![
+    let _away_players = [
         (5, "Björn".to_string(), "Ström".to_string()),
         (6, "Östen".to_string(), "Björkström".to_string()),
     ];
 
     // Test disambiguation with Unicode characters
     let home_context = DisambiguationContext::new(home_players.clone());
-    assert!(home_context.needs_disambiguation("Kärppä"), "Should need disambiguation for Kärppä");
-    assert!(home_context.needs_disambiguation("Mäkelä"), "Should need disambiguation for Mäkelä");
+    assert!(
+        home_context.needs_disambiguation("Kärppä"),
+        "Should need disambiguation for Kärppä"
+    );
+    assert!(
+        home_context.needs_disambiguation("Mäkelä"),
+        "Should need disambiguation for Mäkelä"
+    );
 
     // Verify Unicode handling in disambiguation
     let disambiguated_names = format_with_disambiguation(&home_players);
@@ -506,10 +620,22 @@ fn test_all_modes_handle_unicode_disambiguated_names() {
     let aiti_name = disambiguated_names.get(&4).unwrap();
 
     // Verify names are distinct and contain Unicode properly
-    assert_ne!(aatonk_name, oljyen_name, "Unicode names should be disambiguated differently");
-    assert_ne!(ake_name, aiti_name, "Unicode Mäkelä names should be disambiguated differently");
-    assert!(aatonk_name.contains("Kärppä"), "Should contain Unicode last name");
-    assert!(oljyen_name.contains("Kärppä"), "Should contain Unicode last name");
+    assert_ne!(
+        aatonk_name, oljyen_name,
+        "Unicode names should be disambiguated differently"
+    );
+    assert_ne!(
+        ake_name, aiti_name,
+        "Unicode Mäkelä names should be disambiguated differently"
+    );
+    assert!(
+        aatonk_name.contains("Kärppä"),
+        "Should contain Unicode last name"
+    );
+    assert!(
+        oljyen_name.contains("Kärppä"),
+        "Should contain Unicode last name"
+    );
 
     let goal_events = vec![
         GoalEventData {
@@ -619,7 +745,11 @@ fn test_disambiguation_error_scenarios_in_display() {
     // Should handle gracefully without panicking
     let _empty_context = DisambiguationContext::new(empty_name_players.clone());
     let empty_disambiguated = format_with_disambiguation(&empty_name_players);
-    assert_eq!(empty_disambiguated.len(), 3, "Should handle empty names gracefully");
+    assert_eq!(
+        empty_disambiguated.len(),
+        3,
+        "Should handle empty names gracefully"
+    );
 
     // Test players with identical first and last names
     let identical_players = vec![
@@ -628,9 +758,16 @@ fn test_disambiguation_error_scenarios_in_display() {
     ];
 
     let identical_context = DisambiguationContext::new(identical_players.clone());
-    assert!(identical_context.needs_disambiguation("Koivu"), "Should still need disambiguation for identical names");
+    assert!(
+        identical_context.needs_disambiguation("Koivu"),
+        "Should still need disambiguation for identical names"
+    );
     let identical_disambiguated = format_with_disambiguation(&identical_players);
-    assert_eq!(identical_disambiguated.len(), 2, "Should handle identical names");
+    assert_eq!(
+        identical_disambiguated.len(),
+        2,
+        "Should handle identical names"
+    );
 
     // Test missing player IDs in goal events with page display
     let error_game = GameResultData {
@@ -641,19 +778,17 @@ fn test_disambiguation_error_scenarios_in_display() {
         score_type: ScoreType::Final,
         is_overtime: false,
         is_shootout: false,
-        goal_events: vec![
-            GoalEventData {
-                scorer_player_id: 999, // Non-existent ID
-                scorer_name: "Unknown Player".to_string(),
-                minute: 5,
-                home_team_score: 1,
-                away_team_score: 0,
-                is_winning_goal: false,
-                goal_types: vec![],
-                is_home_team: true,
-                video_clip_url: None,
-            },
-        ],
+        goal_events: vec![GoalEventData {
+            scorer_player_id: 999, // Non-existent ID
+            scorer_name: "Unknown Player".to_string(),
+            minute: 5,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec![],
+            is_home_team: true,
+            video_clip_url: None,
+        }],
         played_time: 60,
     };
 
@@ -680,9 +815,21 @@ fn test_disambiguation_error_scenarios_in_display() {
         page.set_screen_height(25);
 
         // Should handle error data gracefully without crashing
-        assert_eq!(page.total_pages(), 1, "{mode_name} mode should handle error data gracefully");
-        assert_eq!(page.is_compact_mode(), compact, "{mode_name} mode should maintain correct compact setting");
-        assert_eq!(page.is_wide_mode(), wide, "{mode_name} mode should maintain correct wide setting");
+        assert_eq!(
+            page.total_pages(),
+            1,
+            "{mode_name} mode should handle error data gracefully"
+        );
+        assert_eq!(
+            page.is_compact_mode(),
+            compact,
+            "{mode_name} mode should maintain correct compact setting"
+        );
+        assert_eq!(
+            page.is_wide_mode(),
+            wide,
+            "{mode_name} mode should maintain correct wide setting"
+        );
     }
 
     println!("✓ All UI modes handle disambiguation error scenarios gracefully");
@@ -711,15 +858,29 @@ fn test_disambiguation_performance_with_many_players() {
     let disambiguation_time = start.elapsed();
 
     // Verify disambiguation works correctly even with many players
-    assert!(home_context.needs_disambiguation("Koivu"), "Should need disambiguation for Koivu");
-    assert!(away_context.needs_disambiguation("Selänne"), "Should need disambiguation for Selänne");
+    assert!(
+        home_context.needs_disambiguation("Koivu"),
+        "Should need disambiguation for Koivu"
+    );
+    assert!(
+        away_context.needs_disambiguation("Selänne"),
+        "Should need disambiguation for Selänne"
+    );
 
     // Check that some reasonable number of players are disambiguated
     let home_disambiguated = format_with_disambiguation(&home_players);
     let away_disambiguated = format_with_disambiguation(&away_players);
 
-    assert_eq!(home_disambiguated.len(), 50, "Should disambiguate all home players");
-    assert_eq!(away_disambiguated.len(), 50, "Should disambiguate all away players");
+    assert_eq!(
+        home_disambiguated.len(),
+        50,
+        "Should disambiguate all home players"
+    );
+    assert_eq!(
+        away_disambiguated.len(),
+        50,
+        "Should disambiguate all away players"
+    );
 
     // Create a game with a subset of these players
     let large_game = GameResultData {
@@ -775,7 +936,10 @@ fn test_disambiguation_performance_with_many_players() {
     assert_eq!(page.total_pages(), 1, "Should handle large player datasets");
 
     // Performance should be reasonable (less than 1 second for 100 players)
-    assert!(disambiguation_time.as_secs() < 1, "Disambiguation should be fast even with many players");
+    assert!(
+        disambiguation_time.as_secs() < 1,
+        "Disambiguation should be fast even with many players"
+    );
 
     println!("✓ Disambiguation performance is acceptable with large player datasets");
 }

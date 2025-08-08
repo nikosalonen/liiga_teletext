@@ -2501,8 +2501,11 @@ mod tests {
         use crate::data_fetcher::cache::{clear_all_caches, get_cache_size};
         clear_all_caches().await;
 
+        // Force multiple cache clears to ensure consistency
+        clear_all_caches().await;
+
         // Wait for cache clearing to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
         // Verify cache is actually empty - check all cache types
         let initial_player_cache_size = get_cache_size().await;

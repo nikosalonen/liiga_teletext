@@ -250,7 +250,7 @@ impl Config {
     }
 
     /// Loads configuration from a custom file path (for testing).
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub async fn load_from_path(path: &str) -> Result<Self, AppError> {
         let content = fs::read_to_string(path).await?;
         let config: Config = toml::from_str(&content)?;
