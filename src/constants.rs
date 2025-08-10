@@ -218,7 +218,7 @@ mod tests {
         let min_time = validation::MIN_GAME_TIME_MINUTES;
         let max_score = validation::MAX_TEAM_SCORE;
         let max_team_name = validation::MAX_TEAM_NAME_LENGTH;
-        let max_player_name = validation::MAX_PLAYER_NAME_LENGTH;
+        let max_player_name = MAX_PLAYER_NAME_LENGTH;
 
         assert!(max_time > min_time);
         assert!(max_score > 0);
