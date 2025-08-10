@@ -785,12 +785,12 @@ fn test_disambiguation_performance_with_many_players() {
     // Create a large set of players that need disambiguation
     let mut home_players = Vec::new();
     for i in 0..50 {
-        home_players.push((i, format!("Player{i}"), "Koivu".to_string()));
+        home_players.push((i as i64, format!("Player{i}"), "Koivu".to_string()));
     }
 
     let mut away_players = Vec::new();
     for i in 50..100 {
-        away_players.push((i, format!("Player{i}"), "Selänne".to_string()));
+        away_players.push((i as i64, format!("Player{i}"), "Selänne".to_string()));
     }
 
     // Create disambiguation contexts for testing
