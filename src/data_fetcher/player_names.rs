@@ -133,28 +133,29 @@ pub fn format_for_display_with_first_initial(first_name: &str, last_name: &str) 
 /// ```
 pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<i64, String> {
     let mut result = HashMap::new();
-    let mut last_name_groups: HashMap<String, Vec<(i64, String, String)>> = HashMap::new();
+    let mut last_name_groups: HashMap<String, Vec<usize>> = HashMap::new();
 
-    // Group players by last name (case-insensitive)
-    for (id, first_name, last_name) in players {
+    // Group players by last name (case-insensitive) using indices instead of cloning
+    for (index, (_, _, last_name)) in players.iter().enumerate() {
         let normalized_last_name = last_name.to_lowercase();
         last_name_groups
             .entry(normalized_last_name)
             .or_default()
-            .push((*id, first_name.clone(), last_name.clone()));
+            .push(index);
     }
 
     // Apply disambiguation rules
-    for (_, group) in last_name_groups {
-        if group.len() > 1 {
+    for (_, group_indices) in last_name_groups {
+        if group_indices.len() > 1 {
             // Multiple players with same last name - apply progressive disambiguation
-            let disambiguated_group = apply_progressive_disambiguation(&group);
+            let disambiguated_group = apply_progressive_disambiguation_by_indices(players, &group_indices);
             for (id, disambiguated_name) in disambiguated_group {
                 result.insert(id, disambiguated_name);
             }
         } else {
             // Single player with this last name - use last name only
-            let (id, _, last_name) = &group[0];
+            let index = group_indices[0];
+            let (id, _, last_name) = &players[index];
             let display_name = format_for_display(&build_full_name("", last_name));
             result.insert(*id, display_name);
         }
@@ -163,31 +164,36 @@ pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<
     result
 }
 
-/// Applies progressive disambiguation to a group of players with the same last name.
+
+
+/// Applies progressive disambiguation to a group of players with the same last name using indices.
+/// This is an optimized version that avoids cloning strings by using indices into the original slice.
 /// If single initials are sufficient, uses them. If not, extends to 2-3 characters as needed.
 ///
 /// # Arguments
-/// * `group` - A slice of players with the same last name: (player_id, first_name, last_name)
+/// * `players` - The original slice of players: (player_id, first_name, last_name)
+/// * `group_indices` - Indices of players with the same last name
 ///
 /// # Returns
 /// * `Vec<(i64, String)>` - A vector of (player_id, disambiguated_name) pairs
 ///
 /// # Note
-/// This is an internal function used by the disambiguation system.
-fn apply_progressive_disambiguation(group: &[(i64, String, String)]) -> Vec<(i64, String)> {
+/// This is an internal function used by the optimized disambiguation system.
+fn apply_progressive_disambiguation_by_indices(
+    players: &[(i64, String, String)],
+    group_indices: &[usize],
+) -> Vec<(i64, String)> {
     let mut result = Vec::new();
-    let formatted_last_name = format_for_display(&build_full_name("", &group[0].2));
+    let first_index = group_indices[0];
+    let formatted_last_name = format_for_display(&build_full_name("", &players[first_index].2));
 
-    // Step 1: Try single initials
-    let mut initial_groups: HashMap<String, Vec<(i64, String, String)>> = HashMap::new();
+    // Step 1: Try single initials - group by initial using indices
+    let mut initial_groups: HashMap<String, Vec<usize>> = HashMap::new();
 
-    for (id, first_name, last_name) in group {
+    for &index in group_indices {
+        let (id, first_name, _) = &players[index];
         if let Some(initial) = extract_first_initial(first_name) {
-            initial_groups.entry(initial).or_default().push((
-                *id,
-                first_name.clone(),
-                last_name.clone(),
-            ));
+            initial_groups.entry(initial).or_default().push(index);
         } else {
             // No valid initial - use last name only
             result.push((*id, formatted_last_name.clone()));
@@ -195,15 +201,16 @@ fn apply_progressive_disambiguation(group: &[(i64, String, String)]) -> Vec<(i64
     }
 
     // Step 2: Process each initial group
-    for (initial, players_with_same_initial) in initial_groups {
-        if players_with_same_initial.len() == 1 {
+    for (initial, player_indices) in initial_groups {
+        if player_indices.len() == 1 {
             // Single player with this initial - use single initial
-            let (id, _, _) = &players_with_same_initial[0];
+            let index = player_indices[0];
+            let (id, _, _) = &players[index];
             result.push((*id, format!("{formatted_last_name} {initial}.")));
         } else {
             // Multiple players with same initial - try extended disambiguation
             let extended_disambiguated =
-                apply_extended_disambiguation(&players_with_same_initial, &formatted_last_name);
+                apply_extended_disambiguation_by_indices(players, &player_indices, &formatted_last_name);
 
             // Check if extended disambiguation actually creates unique identifiers
             let mut unique_names: std::collections::HashSet<String> =
@@ -222,7 +229,8 @@ fn apply_progressive_disambiguation(group: &[(i64, String, String)]) -> Vec<(i64
                 result.extend(extended_disambiguated);
             } else {
                 // Extended disambiguation didn't help - fall back to single initial
-                for (id, _, _) in &players_with_same_initial {
+                for &index in &player_indices {
+                    let (id, _, _) = &players[index];
                     result.push((*id, format!("{formatted_last_name} {initial}.")));
                 }
             }
@@ -232,30 +240,31 @@ fn apply_progressive_disambiguation(group: &[(i64, String, String)]) -> Vec<(i64
     result
 }
 
-/// Applies extended disambiguation when players share the same last name and first initial.
+/// Applies extended disambiguation when players share the same last name and first initial using indices.
+/// This is an optimized version that avoids cloning strings by using indices into the original slice.
 /// Uses 2-3 characters from the first name to create unique identifiers.
 ///
 /// # Arguments
-/// * `players` - Players with the same last name and first initial
+/// * `players` - The original slice of players
+/// * `player_indices` - Indices of players with the same last name and first initial
 /// * `formatted_last_name` - The already formatted last name
 ///
 /// # Returns
 /// * `Vec<(i64, String)>` - Disambiguated names using extended prefixes
-fn apply_extended_disambiguation(
+fn apply_extended_disambiguation_by_indices(
     players: &[(i64, String, String)],
+    player_indices: &[usize],
     formatted_last_name: &str,
 ) -> Vec<(i64, String)> {
     let mut result = Vec::new();
 
     // Try 2 characters first
-    let mut char2_groups: HashMap<String, Vec<(i64, String)>> = HashMap::new();
+    let mut char2_groups: HashMap<String, Vec<usize>> = HashMap::new();
 
-    for (id, first_name, _) in players {
+    for &index in player_indices {
+        let (id, first_name, _) = &players[index];
         if let Some(chars2) = extract_first_chars(first_name, 2) {
-            char2_groups
-                .entry(chars2)
-                .or_default()
-                .push((*id, first_name.clone()));
+            char2_groups.entry(chars2).or_default().push(index);
         } else {
             // Fallback to single initial or last name only
             if let Some(initial) = extract_first_initial(first_name) {
@@ -267,16 +276,18 @@ fn apply_extended_disambiguation(
     }
 
     // Process 2-character groups
-    for (chars2, players_with_same_2chars) in char2_groups {
-        if players_with_same_2chars.len() == 1 {
+    for (chars2, indices_with_same_2chars) in char2_groups {
+        if indices_with_same_2chars.len() == 1 {
             // Unique with 2 characters
-            let (id, _) = &players_with_same_2chars[0];
+            let index = indices_with_same_2chars[0];
+            let (id, _, _) = &players[index];
             result.push((*id, format!("{formatted_last_name} {chars2}.")));
         } else {
             // Still conflicts, try 3 characters
             let mut char3_groups: HashMap<String, Vec<i64>> = HashMap::new();
 
-            for (id, first_name) in &players_with_same_2chars {
+            for &index in &indices_with_same_2chars {
+                let (id, first_name, _) = &players[index];
                 if let Some(chars3) = extract_first_chars(first_name, 3) {
                     char3_groups.entry(chars3).or_default().push(*id);
                 } else {
@@ -296,6 +307,8 @@ fn apply_extended_disambiguation(
 
     result
 }
+
+
 
 /// Extracts the first initial from a first name with proper Unicode support.
 /// This helper function handles edge cases like empty names, multiple words, and special characters.
@@ -447,6 +460,44 @@ pub fn group_players_by_last_name(
             first_name.clone(),
             last_name.clone(),
         ));
+    }
+
+    groups
+}
+
+/// Groups players by their last name within a team using indices to avoid cloning.
+/// This optimized helper function creates a mapping from normalized last names to lists of indices
+/// that reference the original player data.
+///
+/// # Arguments
+/// * `players` - A slice of tuples containing (player_id, first_name, last_name)
+///
+/// # Returns
+/// * `HashMap<String, Vec<usize>>` - A mapping from normalized last names to player indices
+///
+/// # Examples
+/// ```
+/// use liiga_teletext::data_fetcher::player_names::group_players_by_last_name_indices;
+///
+/// let players = vec![
+///     (1, "Mikko".to_string(), "Koivu".to_string()),
+///     (2, "Saku".to_string(), "Koivu".to_string()),
+///     (3, "Teemu".to_string(), "Selänne".to_string()),
+/// ];
+///
+/// let groups = group_players_by_last_name_indices(&players);
+/// assert_eq!(groups.get("koivu").unwrap().len(), 2);
+/// assert_eq!(groups.get("selänne").unwrap().len(), 1);
+/// ```
+#[allow(dead_code)]
+pub fn group_players_by_last_name_indices(
+    players: &[(i64, String, String)],
+) -> HashMap<String, Vec<usize>> {
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+
+    for (index, (_, _, last_name)) in players.iter().enumerate() {
+        let normalized_last_name = last_name.to_lowercase();
+        groups.entry(normalized_last_name).or_default().push(index);
     }
 
     groups
