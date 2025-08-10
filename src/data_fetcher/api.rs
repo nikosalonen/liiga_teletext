@@ -2158,6 +2158,14 @@ mod tests {
         }
     }
 
+    fn create_mock_empty_schedule_response_no_next_date() -> ScheduleResponse {
+        ScheduleResponse {
+            games: vec![],
+            previous_game_date: Some("2024-01-14".to_string()),
+            next_game_date: None, // No next game date to force fallback usage
+        }
+    }
+
     fn create_mock_detailed_game_response() -> DetailedGameResponse {
         DetailedGameResponse {
             game: DetailedGame {
@@ -3525,7 +3533,7 @@ mod tests {
         let client = Client::new();
 
         // Mock empty response for all dates
-        let mock_response = create_mock_empty_schedule_response();
+        let mock_response = create_mock_empty_schedule_response_no_next_date();
 
         Mock::given(method("GET"))
             .and(path("/games"))
