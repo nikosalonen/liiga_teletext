@@ -549,15 +549,14 @@ pub async fn get_cached_tournament_data_with_start_check(
 
     if let Some(cached_entry) = cache.get(key) {
         // Check if we have any games that might be starting
-        let has_starting_games = current_games.iter().any(|game| {
-            game.score_type == ScoreType::Scheduled && !game.start.is_empty()
-        });
+        let has_starting_games = current_games
+            .iter()
+            .any(|game| game.score_type == ScoreType::Scheduled && !game.start.is_empty());
 
         // If we have starting games, consider cache expired more aggressively
         if has_starting_games {
             let age = cached_entry.cached_at.elapsed();
-            let aggressive_ttl =
-                Duration::from_secs(cache_ttl::STARTING_GAMES_SECONDS); // 10 seconds for starting games
+            let aggressive_ttl = Duration::from_secs(cache_ttl::STARTING_GAMES_SECONDS); // 10 seconds for starting games
 
             if age > aggressive_ttl {
                 info!(

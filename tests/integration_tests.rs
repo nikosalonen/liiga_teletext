@@ -152,10 +152,7 @@ async fn test_game_result_data_creation() {
     assert_eq!(game_result.away_team, "Tappara");
     assert_eq!(game_result.time, "18:30");
     assert_eq!(game_result.result, "3-2");
-    assert!(matches!(
-        game_result.score_type,
-        ScoreType::Final
-    ));
+    assert!(matches!(game_result.score_type, ScoreType::Final));
     assert!(game_result.is_overtime);
     assert!(!game_result.is_shootout);
 }
@@ -343,10 +340,7 @@ async fn test_ongoing_games() {
     // Verify game data
     assert_eq!(ongoing_game.result, "2-1");
     assert_eq!(ongoing_game.time, "18:30");
-    assert!(matches!(
-        ongoing_game.score_type,
-        ScoreType::Ongoing
-    ));
+    assert!(matches!(ongoing_game.score_type, ScoreType::Ongoing));
 }
 
 /// Test games with special situations (overtime, shootout)
@@ -1075,7 +1069,11 @@ async fn test_wide_mode_game_distribution_integration() {
 
     // Verify games are distributed
     assert!(!left_games.is_empty(), "Left column should have games");
-    assert_eq!(left_games.len() + right_games.len(), teams.len(), "All games should be distributed between columns");
+    assert_eq!(
+        left_games.len() + right_games.len(),
+        teams.len(),
+        "All games should be distributed between columns"
+    );
 
     // Left column should typically have equal or one more game than right
     // (left-column-first distribution)

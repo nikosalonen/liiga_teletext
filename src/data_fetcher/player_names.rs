@@ -316,8 +316,7 @@ fn apply_progressive_disambiguation_by_indices(
             );
 
             // Check if extended disambiguation actually creates unique identifiers
-            let mut unique_names: HashSet<String> =
-                HashSet::new();
+            let mut unique_names: HashSet<String> = HashSet::new();
             let mut all_unique = true;
 
             for (_, name) in &extended_disambiguated {

@@ -633,7 +633,7 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
             } else {
                 // For other reqwest errors, keep the original behavior
                 Err(AppError::ApiFetch(e))
-            }
+            };
         }
     };
 
@@ -1149,11 +1149,9 @@ async fn fetch_game_data(
 
             // Transform API not found errors to game-specific errors
             return match &e {
-                AppError::ApiNotFound { .. } => {
-                    Err(AppError::api_game_not_found(game_id, season))
-                }
+                AppError::ApiNotFound { .. } => Err(AppError::api_game_not_found(game_id, season)),
                 _ => Err(e),
-            }
+            };
         }
     };
 
