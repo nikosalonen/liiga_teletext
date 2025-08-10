@@ -502,6 +502,27 @@ fn test_name_truncation_works_properly_with_disambiguated_names() {
     // Check that they all contain some recognizable part of the name or proper disambiguation
     println!("Disambiguated names: {max_name}, {joh_name}, {chr_name}");
 
+    // Verify that disambiguated names do not exceed UI width limit
+    use liiga_teletext::constants::validation::MAX_PLAYER_NAME_LENGTH;
+    use unicode_width::UnicodeWidthStr;
+
+    let max_name_width = max_name.width();
+    let joh_name_width = joh_name.width();
+    let chr_name_width = chr_name.width();
+
+    assert!(
+        max_name_width <= MAX_PLAYER_NAME_LENGTH,
+        "Maximilian's disambiguated name width ({max_name_width}) exceeds limit ({MAX_PLAYER_NAME_LENGTH})"
+    );
+    assert!(
+        joh_name_width <= MAX_PLAYER_NAME_LENGTH,
+        "Johannes's disambiguated name width ({joh_name_width}) exceeds limit ({MAX_PLAYER_NAME_LENGTH})"
+    );
+    assert!(
+        chr_name_width <= MAX_PLAYER_NAME_LENGTH,
+        "Christopher's disambiguated name width ({chr_name_width}) exceeds limit ({MAX_PLAYER_NAME_LENGTH})"
+    );
+
     // Create game with long disambiguated names
     let game = GameResultData {
         home_team: "Tappara".to_string(),
