@@ -229,8 +229,6 @@ fn test_normal_mode_displays_disambiguated_names_correctly() {
     );
     assert!(!page.is_wide_mode(), "Page should not be in wide mode");
     assert_eq!(page.total_pages(), 1, "Should have one page");
-
-    println!("✓ Normal mode displays correctly disambiguated names");
 }
 
 #[test]
@@ -333,8 +331,6 @@ fn test_compact_mode_handles_disambiguated_names_within_space_constraints() {
     assert!(page.is_compact_mode(), "Page should be in compact mode");
     assert!(!page.is_wide_mode(), "Page should not be in wide mode");
     assert_eq!(page.total_pages(), 1, "Should have one page");
-
-    println!("✓ Compact mode handles complex disambiguation correctly within space constraints");
 }
 
 #[test]
@@ -439,8 +435,6 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
     );
     assert!(page.is_wide_mode(), "Page should be in wide mode");
     assert_eq!(page.total_pages(), 1, "Should have one page for wide mode");
-
-    println!("✓ Wide mode maintains consistent disambiguation logic across multiple games");
 }
 
 #[test]
@@ -560,8 +554,6 @@ fn test_name_truncation_works_properly_with_disambiguated_names() {
     );
     assert!(!page.is_wide_mode(), "Page should not be in wide mode");
     assert_eq!(page.total_pages(), 1, "Should have one page");
-
-    println!("✓ Name truncation handling verified for long disambiguated names");
 }
 
 #[test]
@@ -678,8 +670,6 @@ fn test_all_modes_handle_unicode_disambiguated_names() {
         !wide_page.is_compact_mode() && wide_page.is_wide_mode(),
         "Wide mode configured correctly"
     );
-
-    println!("✓ All modes handle Unicode disambiguated names correctly");
 }
 
 #[test]
@@ -775,8 +765,6 @@ fn test_disambiguation_error_scenarios_in_display() {
             assert!(!page.is_wide_mode(), "{mode_name} mode should maintain correct wide setting");
         }
     }
-
-    println!("✓ All UI modes handle disambiguation error scenarios gracefully");
 }
 
 #[test]
@@ -865,6 +853,4 @@ fn test_disambiguation_performance_with_many_players() {
     page.set_screen_height(25);
 
     assert_eq!(page.total_pages(), 1, "Should handle large player datasets");
-
-    println!("✓ Disambiguation performance is acceptable with large player datasets");
 }
