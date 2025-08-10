@@ -71,7 +71,6 @@ const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal 
 /// assert_eq!(get_team_abbreviation("HC Blues"), "HCB");
 /// assert_eq!(get_team_abbreviation("K-Espoo"), "KES");
 /// ```
-#[allow(dead_code)]
 pub fn get_team_abbreviation(team_name: &str) -> String {
     match team_name {
         // Current Liiga teams (2024-25 season)
@@ -134,7 +133,6 @@ pub fn get_team_abbreviation(team_name: &str) -> String {
 /// This struct defines the layout parameters used when rendering games
 /// in compact mode, including spacing, width constraints, and formatting options.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct CompactDisplayConfig {
     /// Maximum number of games to display per line
     pub max_games_per_line: usize,
@@ -172,7 +170,7 @@ impl CompactDisplayConfig {
     ///
     /// # Returns
     /// * `CompactDisplayConfig` - New configuration instance
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn new(
         max_games_per_line: usize,
         team_name_width: usize,
@@ -198,7 +196,6 @@ impl CompactDisplayConfig {
     ///
     /// # Returns
     /// * `usize` - Optimal number of games that can fit per line
-    #[allow(dead_code)]
     pub fn calculate_games_per_line(&self, terminal_width: usize) -> usize {
         if terminal_width == 0 {
             return 1;
@@ -239,7 +236,7 @@ impl CompactDisplayConfig {
     ///
     /// # Returns
     /// * `bool` - True if terminal is wide enough for compact mode
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn is_terminal_width_sufficient(&self, terminal_width: usize) -> bool {
         terminal_width >= self.get_minimum_terminal_width()
     }
@@ -271,12 +268,14 @@ impl CompactDisplayConfig {
 
 /// Terminal width validation result
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum TerminalWidthValidation {
     /// Terminal width is sufficient for compact mode
     Sufficient {
+        #[allow(dead_code)] // Used in tests for validation
         current_width: usize,
+        #[allow(dead_code)] // Used in tests for validation
         required_width: usize,
+        #[allow(dead_code)] // Used in tests for validation
         excess: usize,
     },
     /// Terminal width is insufficient for compact mode
@@ -289,13 +288,13 @@ pub enum TerminalWidthValidation {
 
 /// Compact mode compatibility validation result
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum CompactModeValidation {
     /// Compact mode is fully compatible
     Compatible,
     /// Compact mode is compatible but with warnings
     CompatibleWithWarnings { warnings: Vec<String> },
     /// Compact mode is incompatible
+    #[allow(dead_code)] // For future compatibility validation
     Incompatible { issues: Vec<String> },
 }
 
@@ -378,7 +377,6 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
 /// Simple ASCII loading indicator with rotating animation
 #[derive(Debug, Clone)]
 pub struct LoadingIndicator {
-    #[allow(dead_code)]
     message: String,
     frame: usize,
     frames: Vec<&'static str>,
@@ -400,7 +398,6 @@ impl LoadingIndicator {
     }
 
     /// Gets the loading message
-    #[allow(dead_code)]
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -414,7 +411,7 @@ impl LoadingIndicator {
 /// Configuration for creating a TeletextPage.
 /// Provides a more ergonomic API for functions with many parameters.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Used in tests
 pub struct TeletextPageConfig {
     pub page_number: u16,
     pub title: String,
@@ -427,7 +424,7 @@ pub struct TeletextPageConfig {
 }
 
 impl TeletextPageConfig {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn new(page_number: u16, title: String, subheader: String) -> Self {
         Self {
             page_number,
@@ -446,7 +443,7 @@ impl TeletextPageConfig {
     ///
     /// # Arguments
     /// * `compact` - Whether to enable compact mode
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn set_compact_mode(&mut self, compact: bool) {
         self.compact_mode = compact;
         if compact && self.wide_mode {
@@ -459,7 +456,7 @@ impl TeletextPageConfig {
     ///
     /// # Arguments
     /// * `wide` - Whether to enable wide mode
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn set_wide_mode(&mut self, wide: bool) {
         self.wide_mode = wide;
         if wide && self.compact_mode {
@@ -472,7 +469,7 @@ impl TeletextPageConfig {
     ///
     /// # Returns
     /// * `Result<(), &'static str>` - Ok if valid, Err with message if invalid
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn validate_mode_exclusivity(&self) -> Result<(), &'static str> {
         if self.compact_mode && self.wide_mode {
             Err("compact_mode and wide_mode cannot be enabled simultaneously")
@@ -672,7 +669,7 @@ impl TeletextPage {
     ///
     /// # Errors
     /// Returns an error if both compact_mode and wide_mode are enabled in the configuration.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn from_config(config: TeletextPageConfig) -> Result<Self, crate::AppError> {
         // Validate mode exclusivity before creating the page
         if let Err(msg) = config.validate_mode_exclusivity() {
@@ -830,7 +827,7 @@ impl TeletextPage {
         // Split message into lines and format each line
         let formatted_message = message
             .lines()
-            .map(|line| line.trim())
+            .map(str::trim)
             .collect::<Vec<_>>()
             .join("\n"); // Remove the indentation
         self.content_rows
@@ -866,7 +863,7 @@ impl TeletextPage {
 
     /// Sets the screen height for testing purposes.
     /// This method is primarily used in tests to avoid terminal size detection issues.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in integration tests
     pub fn set_screen_height(&mut self, height: u16) {
         self.screen_height = height;
     }
@@ -888,7 +885,7 @@ impl TeletextPage {
     }
 
     /// Updates the loading indicator animation frame
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests and future UI updates
     pub fn update_loading_animation(&mut self) {
         if let Some(ref mut indicator) = self.loading_indicator {
             indicator.next_frame();
@@ -921,7 +918,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `bool` - True if compact mode is enabled, false otherwise
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn is_compact_mode(&self) -> bool {
         self.compact_mode
     }
@@ -934,7 +931,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `Result<(), &'static str>` - Ok if successful, Err with message if there's a conflict
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn set_compact_mode(&mut self, compact: bool) -> Result<(), &'static str> {
         if compact && self.wide_mode {
             // Automatically disable wide mode
@@ -949,9 +946,25 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `bool` - True if wide mode is enabled, false otherwise
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn is_wide_mode(&self) -> bool {
         self.wide_mode
+    }
+
+    /// Test-friendly accessor to check if the page contains an error message with specific text.
+    /// This method is primarily intended for testing to avoid exposing private content_rows.
+    ///
+    /// # Arguments
+    /// * `message` - The error message text to search for
+    ///
+    /// # Returns
+    /// * `bool` - True if an error message containing the specified text is found
+    #[allow(dead_code)]
+    pub fn has_error_message(&self, message: &str) -> bool {
+        self.content_rows.iter().any(|row| match row {
+            TeletextRow::ErrorMessage(msg) => msg.contains(message),
+            _ => false,
+        })
     }
 
     /// Sets the wide mode state.
@@ -962,7 +975,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `Result<(), &'static str>` - Ok if successful, Err with message if there's a conflict
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn set_wide_mode(&mut self, wide: bool) -> Result<(), &'static str> {
         if wide && self.compact_mode {
             // Automatically disable compact mode
@@ -978,7 +991,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `Result<(), &'static str>` - Ok if valid, Err with message if invalid
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn validate_mode_exclusivity(&self) -> Result<(), &'static str> {
         if self.compact_mode && self.wide_mode {
             Err("compact_mode and wide_mode cannot be enabled simultaneously")
@@ -1017,7 +1030,6 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `(Vec<&TeletextRow>, Vec<&TeletextRow>)` - Left and right column games
-    #[allow(dead_code)]
     pub fn distribute_games_for_wide_display(&self) -> (Vec<&TeletextRow>, Vec<&TeletextRow>) {
         if !self.wide_mode || !self.can_fit_two_pages() {
             // If not in wide mode or can't fit two columns, return all games in left column
@@ -1886,7 +1898,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `usize` - Optimal number of games per line
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn calculate_compact_games_per_line(&self, terminal_width: usize) -> usize {
         let config = CompactDisplayConfig::default();
         config.calculate_games_per_line(terminal_width)
@@ -1899,7 +1911,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `bool` - True if terminal is wide enough for compact mode
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn is_terminal_suitable_for_compact(&self, terminal_width: usize) -> bool {
         let config = CompactDisplayConfig::default();
         config.is_terminal_width_sufficient(terminal_width)
@@ -1944,7 +1956,7 @@ impl TeletextPage {
     }
 
     /// Renders only the loading indicator area without redrawing the entire screen
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Method for future use
     pub fn render_loading_indicator_only(&self, stdout: &mut Stdout) -> Result<(), AppError> {
         if !self.show_footer {
             return Ok(());
