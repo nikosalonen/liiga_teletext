@@ -3500,8 +3500,11 @@ mod tests {
         // Mock response for a future date
         let mock_response = create_mock_schedule_response();
 
+        // Mock for the specific request that will be made (first day will be 2024-01-15)
         Mock::given(method("GET"))
             .and(path("/games"))
+            .and(query_param("tournament", "runkosarja"))
+            .and(query_param("date", "2024-01-15"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&mock_response))
             .mount(&mock_server)
             .await;
