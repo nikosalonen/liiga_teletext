@@ -88,7 +88,7 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
             event_id: 3,
             home_team_score: 3,
             away_team_score: 1,
-            winning_goal: false,
+            winning_goal: true, // This goal made it 3-1, which was the winning margin
             goal_types: vec![],
             assistant_player_ids: vec![],
             video_clip_url: None,
@@ -103,7 +103,7 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
         event_id: 4,
         home_team_score: 3,
         away_team_score: 2,
-        winning_goal: true,
+        winning_goal: false, // This goal only narrowed the score to 3-2, didn't win the game
         goal_types: vec!["YV".to_string()],
         assistant_player_ids: vec![],
         video_clip_url: None,
@@ -275,15 +275,11 @@ fn test_compact_mode_handles_disambiguated_names_within_space_constraints() {
         Some(&"Kurri J.".to_string()),
         "Jari should be 'Kurri J.'"
     );
-    // Both Jari and Jarkko start with 'J', so they might both get 'J.' if extended disambiguation isn't needed
-    let jarkko_name = away_context.get_disambiguated_name(5).unwrap();
-    assert!(
-        jarkko_name.starts_with("Kurri"),
-        "Jarkko should start with 'Kurri'"
-    );
-    assert!(
-        jarkko_name.ends_with("."),
-        "Jarkko should end with disambiguation marker"
+    // Extended disambiguation up to 3 letters still ambiguous ("Jar"), so fallback must be single initial "J."
+    assert_eq!(
+        away_context.get_disambiguated_name(5).map(|s| s.as_str()),
+        Some("Kurri J."),
+        "Jarkko should be 'Kurri J.' per fallback-to-initial rule"
     );
 
     // Create a game result for compact mode testing
