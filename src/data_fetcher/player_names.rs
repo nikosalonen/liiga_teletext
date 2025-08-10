@@ -6,7 +6,7 @@
 //! - Creating fallback names for missing player data
 //! - Player name disambiguation for teams with multiple players sharing the same last name
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Builds a full name from first and last name components.
 ///
@@ -189,7 +189,80 @@ pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<
     result
 }
 
+/// Check which players in a list need disambiguation.
+/// This function efficiently determines which player IDs will be affected by disambiguation
+/// without performing the actual disambiguation computation.
+///
+/// # Arguments
+/// * `players` - A slice of tuples containing (player_id, first_name, last_name)
+///
+/// # Returns
+/// * `HashSet<i64>` - Set of player IDs that will need disambiguation (have conflicting last names)
+///
+/// # Examples
+/// ```
+/// use liiga_teletext::data_fetcher::player_names::get_players_needing_disambiguation;
+/// use std::collections::HashSet;
+///
+/// let players = vec![
+///     (1, "Mikko".to_string(), "Koivu".to_string()),
+///     (2, "Saku".to_string(), "Koivu".to_string()),
+///     (3, "Teemu".to_string(), "Selänne".to_string()),
+/// ];
+///
+/// let needing_disambiguation = get_players_needing_disambiguation(&players);
+///
+/// // Players 1 and 2 (both Koivu) need disambiguation
+/// assert!(needing_disambiguation.contains(&1));
+/// assert!(needing_disambiguation.contains(&2));
+/// // Player 3 (Selänne) does not need disambiguation
+/// assert!(!needing_disambiguation.contains(&3));
+/// assert_eq!(needing_disambiguation.len(), 2);
+/// ```
+#[allow(dead_code)]
+pub fn get_players_needing_disambiguation(players: &[(i64, String, String)]) -> HashSet<i64> {
+    let mut result = HashSet::new();
 
+    // Fast path: if 0-1 players, no disambiguation needed
+    if players.len() <= 1 {
+        return result;
+    }
+
+    // Fast path: if exactly 2 players with different last names, no disambiguation needed
+    if players.len() == 2 {
+        let (_, _, last1) = &players[0];
+        let (_, _, last2) = &players[1];
+        if last1.to_lowercase() != last2.to_lowercase() {
+            return result;
+        }
+        // If both have same last name, both need disambiguation
+        result.insert(players[0].0);
+        result.insert(players[1].0);
+        return result;
+    }
+
+    // Group players by last name (case-insensitive) using indices for efficiency
+    let mut last_name_groups: HashMap<String, Vec<usize>> = HashMap::new();
+
+    for (index, (_, _, last_name)) in players.iter().enumerate() {
+        let normalized_last_name = last_name.to_lowercase();
+        last_name_groups
+            .entry(normalized_last_name)
+            .or_default()
+            .push(index);
+    }
+
+    // Add player IDs from groups that have conflicts (more than one player)
+    for group_indices in last_name_groups.values() {
+        if group_indices.len() > 1 {
+            for &index in group_indices {
+                result.insert(players[index].0);
+            }
+        }
+    }
+
+    result
+}
 
 /// Applies progressive disambiguation to a group of players with the same last name using indices.
 /// This is an optimized version that avoids cloning strings by using indices into the original slice.
@@ -2067,6 +2140,191 @@ mod tests {
         expected.insert(1, "Koivu".to_string());
         expected.insert(2, "Selänne".to_string());
         assert_eq!(fast_result, expected);
+    }
+
+    // Batch disambiguation check tests
+    #[test]
+    fn test_get_players_needing_disambiguation_empty() {
+        // Test empty input
+        let players = vec![];
+        let result = get_players_needing_disambiguation(&players);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_single_player() {
+        // Test single player - no disambiguation needed
+        let players = vec![(1, "Mikko".to_string(), "Koivu".to_string())];
+        let result = get_players_needing_disambiguation(&players);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_two_different() {
+        // Test two players with different last names - no disambiguation needed
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Teemu".to_string(), "Selänne".to_string()),
+        ];
+        let result = get_players_needing_disambiguation(&players);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_two_same() {
+        // Test two players with same last name - both need disambiguation
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Saku".to_string(), "Koivu".to_string()),
+        ];
+        let result = get_players_needing_disambiguation(&players);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&1));
+        assert!(result.contains(&2));
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_mixed_scenario() {
+        // Test mixed scenario: some conflicts, some unique
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Saku".to_string(), "Koivu".to_string()),
+            (3, "Teemu".to_string(), "Selänne".to_string()),
+            (4, "Jari".to_string(), "Kurri".to_string()),
+            (5, "Jere".to_string(), "Kurri".to_string()),
+        ];
+        let result = get_players_needing_disambiguation(&players);
+        assert_eq!(result.len(), 4);
+        // Koivu players need disambiguation
+        assert!(result.contains(&1));
+        assert!(result.contains(&2));
+        // Selänne does not need disambiguation (unique)
+        assert!(!result.contains(&3));
+        // Kurri players need disambiguation
+        assert!(result.contains(&4));
+        assert!(result.contains(&5));
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_case_insensitive() {
+        // Test case-insensitive last name matching
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Saku".to_string(), "KOIVU".to_string()),
+            (3, "Antti".to_string(), "koivu".to_string()),
+        ];
+        let result = get_players_needing_disambiguation(&players);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains(&1));
+        assert!(result.contains(&2));
+        assert!(result.contains(&3));
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_unicode() {
+        // Test Unicode characters in last names
+        let players = vec![
+            (1, "Mikko".to_string(), "Kärppä".to_string()),
+            (2, "Saku".to_string(), "Kärppä".to_string()),
+            (3, "Teemu".to_string(), "Björklund".to_string()),
+        ];
+        let result = get_players_needing_disambiguation(&players);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&1));
+        assert!(result.contains(&2));
+        assert!(!result.contains(&3));
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_all_unique() {
+        // Test all players with unique last names
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Teemu".to_string(), "Selänne".to_string()),
+            (3, "Jari".to_string(), "Kurri".to_string()),
+            (4, "Sami".to_string(), "Kapanen".to_string()),
+        ];
+        let result = get_players_needing_disambiguation(&players);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_all_same() {
+        // Test all players with same last name
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Saku".to_string(), "Koivu".to_string()),
+            (3, "Antti".to_string(), "Koivu".to_string()),
+            (4, "Petri".to_string(), "Koivu".to_string()),
+        ];
+        let result = get_players_needing_disambiguation(&players);
+        assert_eq!(result.len(), 4);
+        assert!(result.contains(&1));
+        assert!(result.contains(&2));
+        assert!(result.contains(&3));
+        assert!(result.contains(&4));
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_large_dataset() {
+        // Test with larger dataset for performance
+        let mut players = Vec::new();
+
+        // Add 50 players: 10 Koivus, 10 Selännes, 30 unique names
+        for i in 0..10 {
+            players.push((i, format!("First{i}"), "Koivu".to_string()));
+        }
+        for i in 10..20 {
+            players.push((i, format!("First{i}"), "Selänne".to_string()));
+        }
+        for i in 20..50 {
+            players.push((i, format!("First{i}"), format!("Unique{i}")));
+        }
+
+        let result = get_players_needing_disambiguation(&players);
+        assert_eq!(result.len(), 20); // 10 Koivus + 10 Selännes
+
+        // Check that all Koivus and Selännes are marked as needing disambiguation
+        for i in 0..20 {
+            assert!(result.contains(&i));
+        }
+        // Check that unique names are not marked
+        for i in 20..50 {
+            assert!(!result.contains(&i));
+        }
+    }
+
+    #[test]
+    fn test_get_players_needing_disambiguation_consistency_with_format_function() {
+        // Test that this function is consistent with actual disambiguation behavior
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Saku".to_string(), "Koivu".to_string()),
+            (3, "Teemu".to_string(), "Selänne".to_string()),
+            (4, "Jari".to_string(), "Kurri".to_string()),
+            (5, "Jere".to_string(), "Kurri".to_string()),
+        ];
+
+        let needing_disambiguation = get_players_needing_disambiguation(&players);
+        let actual_disambiguation = format_with_disambiguation(&players);
+
+        // Every player that needs disambiguation should appear in the actual result
+        for &player_id in &needing_disambiguation {
+            assert!(actual_disambiguation.contains_key(&player_id));
+            // And their name should include disambiguation (contain ".")
+            let name = actual_disambiguation.get(&player_id).unwrap();
+            assert!(name.contains('.'), "Player {player_id} name '{name}' should be disambiguated");
+        }
+
+        // Every player that doesn't need disambiguation should not have "." in their name
+        for (player_id, name) in &actual_disambiguation {
+            if !needing_disambiguation.contains(player_id) {
+                assert!(!name.contains('.'), "Player {player_id} name '{name}' should not be disambiguated");
+            }
+        }
+
+        // The total number of players should match
+        assert_eq!(actual_disambiguation.len(), players.len());
     }
 
     #[test]
