@@ -820,16 +820,18 @@ fn test_disambiguation_error_scenarios_in_display() {
             1,
             "{mode_name} mode should handle error data gracefully"
         );
-        assert_eq!(
-            page.is_compact_mode(),
-            compact,
-            "{mode_name} mode should maintain correct compact setting"
-        );
-        assert_eq!(
-            page.is_wide_mode(),
-            wide,
-            "{mode_name} mode should maintain correct wide setting"
-        );
+
+        if compact {
+            assert!(page.is_compact_mode(), "{mode_name} mode should maintain correct compact setting");
+        } else {
+            assert!(!page.is_compact_mode(), "{mode_name} mode should maintain correct compact setting");
+        }
+
+        if wide {
+            assert!(page.is_wide_mode(), "{mode_name} mode should maintain correct wide setting");
+        } else {
+            assert!(!page.is_wide_mode(), "{mode_name} mode should maintain correct wide setting");
+        }
     }
 
     println!("✓ All UI modes handle disambiguation error scenarios gracefully");
