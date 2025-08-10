@@ -47,7 +47,7 @@ const PLAYOFFS_END_MONTH: u32 = 6; // June
 /// * HTTP/2 multiplexing when available
 /// * Automatic retry logic for transient failures
 fn create_http_client() -> Client {
-    reqwest::Client::builder()
+    Client::builder()
         .timeout(Duration::from_secs(30))
         .pool_max_idle_per_host(100)
         .build()
@@ -512,7 +512,7 @@ async fn process_single_game(
                     );
                 }
             }
-            crate::data_fetcher::processors::process_goal_events(&game, &player_names)
+            process_goal_events(&game, &player_names)
         } else {
             info!("No detailed data needed for this game");
             Vec::new()
@@ -626,14 +626,14 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
             error!("Request failed for URL {}: {}", url, e);
 
             // Categorize reqwest errors into specific types
-            if e.is_timeout() {
-                return Err(AppError::network_timeout(url));
+            return if e.is_timeout() {
+                Err(AppError::network_timeout(url))
             } else if e.is_connect() {
-                return Err(AppError::network_connection(url, e.to_string()));
+                Err(AppError::network_connection(url, e.to_string()))
             } else {
                 // For other reqwest errors, keep the original behavior
-                return Err(AppError::ApiFetch(e));
-            }
+                Err(AppError::ApiFetch(e))
+            };
         }
     };
 
@@ -1148,12 +1148,10 @@ async fn fetch_game_data(
             );
 
             // Transform API not found errors to game-specific errors
-            match &e {
-                AppError::ApiNotFound { .. } => {
-                    return Err(AppError::api_game_not_found(game_id, season));
-                }
-                _ => return Err(e),
-            }
+            return match &e {
+                AppError::ApiNotFound { .. } => Err(AppError::api_game_not_found(game_id, season)),
+                _ => Err(e),
+            };
         }
     };
 
@@ -2018,17 +2016,17 @@ async fn process_goal_events_for_historical_game_with_players(
     let mut all_goal_events = Vec::new();
 
     // Create player lookup maps for efficient name resolution
-    let home_player_map: std::collections::HashMap<i64, &Player> = home_team_players
+    let home_player_map: HashMap<i64, &Player> = home_team_players
         .iter()
         .map(|player| (player.id, player))
         .collect();
-    let away_player_map: std::collections::HashMap<i64, &Player> = away_team_players
+    let away_player_map: HashMap<i64, &Player> = away_team_players
         .iter()
         .map(|player| (player.id, player))
         .collect();
 
     // Helper function to get player name with fallback
-    let get_player_name = |player_id: i64, player_map: &std::collections::HashMap<i64, &Player>| {
+    let get_player_name = |player_id: i64, player_map: &HashMap<i64, &Player>| {
         player_map
             .get(&player_id)
             .map(|player| format!("{} {}", player.first_name, player.last_name))
@@ -2513,7 +2511,7 @@ mod tests {
         clear_all_caches().await;
 
         // Wait for cache clearing to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Verify cache is actually empty - check all cache types
         let initial_player_cache_size = get_cache_size().await;
