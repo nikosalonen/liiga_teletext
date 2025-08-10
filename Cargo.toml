@@ -8,6 +8,7 @@ license = "MIT"
 repository = "https://github.com/nikosalonen/liiga_teletext"
 homepage = "https://github.com/nikosalonen/liiga_teletext"
 documentation = "https://github.com/nikosalonen/liiga_teletext#readme"
+rust-version = "1.85"
 include = [
     "src/**/*",
     "Cargo.toml",
