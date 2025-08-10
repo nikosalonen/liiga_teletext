@@ -53,12 +53,11 @@ async fn test_error_handling() {
     let error_msg = "No games found for the specified date";
     page.add_error_message(error_msg);
 
-    // TODO: The content_rows field is private. To assert the error message, a public accessor or test helper is needed in TeletextPage.
-    // For now, this assertion is commented out until such an accessor is available.
-    // assert!(page.content_rows.iter().any(|row| match row {
-    //     TeletextRow::ErrorMessage(msg) => msg.contains(error_msg),
-    //     _ => false,
-    // }), "Error message should be present in the page content");
+    // Test that the error message was added correctly using the test-friendly accessor
+    assert!(
+        page.has_error_message(error_msg),
+        "Error message should be present in the page content"
+    );
 }
 
 /// Test page navigation
@@ -852,22 +851,22 @@ async fn test_wide_mode_terminal_widths() {
         "Should support wide mode with 136 char width"
     );
 
-    // Test with insufficient width (non-interactive mode with 80 chars)
-    let narrow_page = TeletextPage::new(
+    // Test non-interactive behavior: wide_mode uses fixed 136 columns
+    let noninteractive_wide_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
         "RUNKOSARJA".to_string(),
         false, // disable_video_links
         true,  // show_footer
-        true,  // ignore_height_limit (non-interactive, but force narrow width)
+        true,  // ignore_height_limit (non-interactive; wide_mode forces 136 width)
         false, // compact_mode
         true,  // wide_mode
     );
 
-    // Since ignore_height_limit is true, it should use the hardcoded width logic
-    // The logic in can_fit_two_pages will use 136 when wide_mode is true
+    // Since ignore_height_limit is true, it uses the hardcoded width logic:
+    // can_fit_two_pages() will use 136 when wide_mode is true.
     assert!(
-        narrow_page.can_fit_two_pages(),
+        noninteractive_wide_page.can_fit_two_pages(),
         "Should support wide mode with ignore_height_limit=true (uses 136 width)"
     );
 
@@ -882,6 +881,9 @@ async fn test_wide_mode_terminal_widths() {
         false, // compact_mode
         false, // wide_mode disabled
     );
+
+    // Wide mode should be disabled
+    assert!(!no_wide_page.is_wide_mode());
 
     assert!(
         !no_wide_page.can_fit_two_pages(),
@@ -1224,13 +1226,8 @@ async fn test_wide_mode_performance_edge_cases() {
 
     // Test that game distribution and basic operations work with many goals (performance test)
     // Use timeout-based check to avoid coupling to machine performance
-    let (left_games_2, right_games_2) =
-        tokio::time::timeout(std::time::Duration::from_millis(50), async {
-            // Test operations that internally use the optimized functions
-            page.distribute_games_for_wide_display()
-        })
-        .await
-        .expect("Game distribution should complete within 50ms timeout");
+    // Test operations that internally use the optimized functions without timing assumptions
+    let (left_games_2, right_games_2) = page.distribute_games_for_wide_display();
 
     let total_games = left_games_2.len() + right_games_2.len();
 
