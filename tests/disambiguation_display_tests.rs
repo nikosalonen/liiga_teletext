@@ -434,6 +434,102 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
 }
 
 #[test]
+fn test_disambiguation_scoped_per_team_no_cross_team_escalation() {
+    // Test that disambiguation is scoped per team and doesn't escalate across teams
+    // when players share the same last name and first initial
+
+    // Create home team players with identical last names and first initials
+    let home_players = vec![
+        (1, "John".to_string(), "Smith".to_string()),
+        (2, "James".to_string(), "Smith".to_string()), // Same last name, both start with 'J'
+    ];
+
+    // Create away team players with identical last names and first initials
+    // (same pattern as home team)
+    let away_players = vec![
+        (3, "John".to_string(), "Smith".to_string()),   // Same last name, same first initial as home
+        (4, "James".to_string(), "Smith".to_string()),  // Same last name, same first initial as home
+    ];
+
+    // Create separate disambiguation contexts for each team
+    let home_context = DisambiguationContext::new(home_players.clone());
+    let away_context = DisambiguationContext::new(away_players.clone());
+
+    // Verify both contexts need disambiguation for "Smith"
+    assert!(
+        home_context.needs_disambiguation("Smith"),
+        "Home team should need disambiguation for Smith"
+    );
+    assert!(
+        away_context.needs_disambiguation("Smith"),
+        "Away team should need disambiguation for Smith"
+    );
+
+    // Verify home team disambiguation uses single initials independently
+    assert_eq!(
+        home_context.get_disambiguated_name(1),
+        Some(&"Smith Jo.".to_string()),
+        "Home John Smith should be 'Smith Jo.' (using extended initial)"
+    );
+    assert_eq!(
+        home_context.get_disambiguated_name(2),
+        Some(&"Smith Ja.".to_string()),
+        "Home James Smith should be 'Smith Ja.' (using extended initial)"
+    );
+
+    // Verify away team disambiguation uses single initials independently
+    assert_eq!(
+        away_context.get_disambiguated_name(3),
+        Some(&"Smith Jo.".to_string()),
+        "Away John Smith should be 'Smith Jo.' (using extended initial)"
+    );
+    assert_eq!(
+        away_context.get_disambiguated_name(4),
+        Some(&"Smith Ja.".to_string()),
+        "Away James Smith should be 'Smith Ja.' (using extended initial)"
+    );
+
+    // Test with format_with_disambiguation to ensure consistent behavior
+    let home_disambiguated = format_with_disambiguation(&home_players);
+    let away_disambiguated = format_with_disambiguation(&away_players);
+
+    // Verify that both teams produce the same disambiguation pattern independently
+    assert_eq!(
+        home_disambiguated.get(&1).unwrap(),
+        "Smith Jo.",
+        "Home John should be consistently disambiguated"
+    );
+    assert_eq!(
+        home_disambiguated.get(&2).unwrap(),
+        "Smith Ja.",
+        "Home James should be consistently disambiguated"
+    );
+    assert_eq!(
+        away_disambiguated.get(&3).unwrap(),
+        "Smith Jo.",
+        "Away John should be consistently disambiguated"
+    );
+    assert_eq!(
+        away_disambiguated.get(&4).unwrap(),
+        "Smith Ja.",
+        "Away James should be consistently disambiguated"
+    );
+
+    // Verify no cross-team contamination: each team's disambiguation
+    // should be identical since they have the same player name patterns
+    assert_eq!(
+        home_disambiguated.get(&1).unwrap(),
+        away_disambiguated.get(&3).unwrap(),
+        "Both Johns should have identical disambiguation since contexts are separate"
+    );
+    assert_eq!(
+        home_disambiguated.get(&2).unwrap(),
+        away_disambiguated.get(&4).unwrap(),
+        "Both James should have identical disambiguation since contexts are separate"
+    );
+}
+
+#[test]
 fn test_name_truncation_works_properly_with_disambiguated_names() {
     // Test disambiguation with very long names that may need truncation
     let home_players = vec![
