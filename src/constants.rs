@@ -122,6 +122,10 @@ pub mod retry {
     pub const NETWORK_CONNECTION_DELAY_SECONDS: u64 = 10;
 }
 
+// Re-export commonly used validation constants at the module level for convenience
+#[allow(unused_imports)]
+pub use validation::MAX_PLAYER_NAME_LENGTH;
+
 /// Validation limits
 pub mod validation {
     /// Maximum reasonable game time in minutes

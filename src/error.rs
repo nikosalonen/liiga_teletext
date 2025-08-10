@@ -216,7 +216,7 @@ impl AppError {
     }
 
     /// Check if error is retryable (network issues, server errors, rate limits)
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -230,7 +230,7 @@ impl AppError {
 
     /// Get suggested retry delay in seconds based on error type
     /// Values are defined in src/constants.rs retry module for consistency
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub fn retry_delay_seconds(&self) -> Option<u64> {
         match self {
             AppError::ApiRateLimit { .. } => Some(60), // constants::retry::RATE_LIMIT_DELAY_SECONDS
@@ -243,7 +243,7 @@ impl AppError {
     }
 
     /// Check if error indicates data not found (business logic, not technical error)
-    #[allow(dead_code)] // Utility method for future error handling patterns
+    #[allow(dead_code)] // Used in tests
     pub fn is_not_found(&self) -> bool {
         matches!(
             self,

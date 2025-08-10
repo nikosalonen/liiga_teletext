@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response,
-    cache_players_with_formatting, cache_tournament_data, clear_goal_events_cache_for_game,
+    cache_players_with_disambiguation, cache_tournament_data, clear_goal_events_cache_for_game,
     get_cached_detailed_game_data, get_cached_goal_events_data, get_cached_goal_events_entry,
     get_cached_http_response, get_cached_players, get_cached_tournament_data_with_start_check,
     has_live_games, should_bypass_cache_for_starting_games,
@@ -14,7 +14,7 @@ use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
     ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
-use crate::data_fetcher::player_names::{build_full_name, format_for_display};
+use crate::data_fetcher::player_names::format_for_display;
 use crate::data_fetcher::processors::{
     create_basic_goal_events, determine_game_status, format_time, process_goal_events,
     should_show_todays_games,
@@ -1168,7 +1168,7 @@ async fn fetch_game_data(
     Ok(events)
 }
 
-/// Helper function to process game response with player caching
+/// Helper function to process game response with player caching and team-scoped disambiguation
 async fn process_game_response_with_cache(
     game_response: DetailedGameResponse,
     game_id: i32,
@@ -1188,55 +1188,126 @@ async fn process_game_response_with_cache(
         return events;
     }
 
-    // Build player names map if not in cache
-    debug!("No cached player data found, building player names map");
-    let mut player_names = HashMap::new();
+    // Build separate player data for home and away teams with proper error handling
+    debug!("No cached player data found, building player data with disambiguation");
+
+    let mut home_players = HashMap::new();
+    let mut away_players = HashMap::new();
+
     info!(
-        "Processing {} home team players",
+        "Processing {} home team players for disambiguation",
         game_response.home_team_players.len()
     );
+
+    // Process home team players with error handling for missing data
     for player in &game_response.home_team_players {
-        player_names.insert(
-            player.id,
-            build_full_name(&player.first_name, &player.last_name),
-        );
+        if player.first_name.trim().is_empty() && player.last_name.trim().is_empty() {
+            warn!(
+                "Player {} has empty first and last name, skipping disambiguation",
+                player.id
+            );
+            continue;
+        }
+
+        let first_name = if player.first_name.trim().is_empty() {
+            debug!(
+                "Player {} has empty first name, using empty string for disambiguation",
+                player.id
+            );
+            String::new()
+        } else {
+            player.first_name.clone()
+        };
+
+        let last_name = if player.last_name.trim().is_empty() {
+            warn!("Player {} has empty last name, using fallback", player.id);
+            format!("Player{}", player.id)
+        } else {
+            player.last_name.clone()
+        };
+
+        home_players.insert(player.id, (first_name, last_name));
     }
 
     info!(
-        "Processing {} away team players",
+        "Processing {} away team players for disambiguation",
         game_response.away_team_players.len()
     );
+
+    // Process away team players with error handling for missing data
     for player in &game_response.away_team_players {
-        player_names.insert(
-            player.id,
-            build_full_name(&player.first_name, &player.last_name),
-        );
+        if player.first_name.trim().is_empty() && player.last_name.trim().is_empty() {
+            warn!(
+                "Player {} has empty first and last name, skipping disambiguation",
+                player.id
+            );
+            continue;
+        }
+
+        let first_name = if player.first_name.trim().is_empty() {
+            debug!(
+                "Player {} has empty first name, using empty string for disambiguation",
+                player.id
+            );
+            String::new()
+        } else {
+            player.first_name.clone()
+        };
+
+        let last_name = if player.last_name.trim().is_empty() {
+            warn!("Player {} has empty last name, using fallback", player.id);
+            format!("Player{}", player.id)
+        } else {
+            player.last_name.clone()
+        };
+
+        away_players.insert(player.id, (first_name, last_name));
     }
-    info!("Built player names map with {} players", player_names.len());
 
-    // Update cache with formatted names
-    debug!("Updating player cache for game ID: {}", game_id);
-    cache_players_with_formatting(game_id, player_names.clone()).await;
+    info!(
+        "Built player data: {} home players, {} away players",
+        home_players.len(),
+        away_players.len()
+    );
 
-    // Get the formatted names from cache for processing
-    let formatted_players = match get_cached_players(game_id).await {
+    // Apply team-scoped disambiguation and cache the results
+    debug!(
+        "Applying team-scoped disambiguation for game ID: {}",
+        game_id
+    );
+    cache_players_with_disambiguation(game_id, home_players, away_players).await;
+
+    // Get the disambiguated names from cache for processing
+    let disambiguated_players = match get_cached_players(game_id).await {
         Some(players) => players,
         None => {
             error!(
-                "Failed to retrieve cached player data for game ID {} after caching. This should not happen.",
+                "Failed to retrieve cached player data for game ID {} after disambiguation caching. This should not happen.",
                 game_id
             );
-            // Fallback: use the raw player names and format them on-the-fly
-            let fallback_players: HashMap<i64, String> = player_names
-                .into_iter()
-                .map(|(id, full_name)| (id, format_for_display(&full_name)))
-                .collect();
+            // Fallback: create basic player names without disambiguation
+            let mut fallback_players = HashMap::new();
+            for player in &game_response.home_team_players {
+                if !player.last_name.trim().is_empty() {
+                    fallback_players.insert(player.id, format_for_display(&player.last_name));
+                } else {
+                    fallback_players.insert(player.id, format!("Player{}", player.id));
+                }
+            }
+            for player in &game_response.away_team_players {
+                if !player.last_name.trim().is_empty() {
+                    fallback_players.insert(player.id, format_for_display(&player.last_name));
+                } else {
+                    fallback_players.insert(player.id, format!("Player{}", player.id));
+                }
+            }
             fallback_players
         }
     };
-    let events = process_goal_events(&game_response.game, &formatted_players);
+
+    let events = process_goal_events(&game_response.game, &disambiguated_players);
     info!(
-        "Processed {} goal events for game ID: {}",
+        "Processed {} goal events with team-scoped disambiguation for game ID: {}",
         events.len(),
         game_id
     );
@@ -1397,7 +1468,10 @@ fn determine_tournaments_for_month(month: u32) -> Vec<TournamentType> {
 
     info!(
         "Tournaments to check: {:?}",
-        tournaments.iter().map(|t| t.as_str()).collect::<Vec<_>>()
+        tournaments
+            .iter()
+            .map(TournamentType::as_str)
+            .collect::<Vec<_>>()
     );
     tournaments
 }
@@ -2084,6 +2158,14 @@ mod tests {
         }
     }
 
+    fn create_mock_empty_schedule_response_no_next_date() -> ScheduleResponse {
+        ScheduleResponse {
+            games: vec![],
+            previous_game_date: Some("2024-01-14".to_string()),
+            next_game_date: None, // No next game date to force fallback usage
+        }
+    }
+
     fn create_mock_detailed_game_response() -> DetailedGameResponse {
         DetailedGameResponse {
             game: DetailedGame {
@@ -2427,8 +2509,11 @@ mod tests {
         use crate::data_fetcher::cache::{clear_all_caches, get_cache_size};
         clear_all_caches().await;
 
+        // Force multiple cache clears to ensure consistency
+        clear_all_caches().await;
+
         // Wait for cache clearing to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
         // Verify cache is actually empty - check all cache types
         let initial_player_cache_size = get_cache_size().await;
@@ -3448,7 +3533,7 @@ mod tests {
         let client = Client::new();
 
         // Mock empty response for all dates
-        let mock_response = create_mock_empty_schedule_response();
+        let mock_response = create_mock_empty_schedule_response_no_next_date();
 
         Mock::given(method("GET"))
             .and(path("/games"))

@@ -105,17 +105,17 @@ impl Config {
             }
 
             // Check if parent directory exists or can be created
-            if let Some(parent) = Path::new(log_path).parent() {
-                if !parent.exists() {
-                    // Try to create the directory to validate the path
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        AppError::config_error(format!(
-                            "Cannot create log directory '{}': {}",
-                            parent.display(),
-                            e
-                        ))
-                    })?;
-                }
+            if let Some(parent) = Path::new(log_path).parent()
+                && !parent.exists()
+            {
+                // Try to create the directory to validate the path
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    AppError::config_error(format!(
+                        "Cannot create log directory '{}': {}",
+                        parent.display(),
+                        e
+                    ))
+                })?;
             }
         }
 
@@ -250,7 +250,7 @@ impl Config {
     }
 
     /// Loads configuration from a custom file path (for testing).
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used in tests
     pub async fn load_from_path(path: &str) -> Result<Self, AppError> {
         let content = fs::read_to_string(path).await?;
         let config: Config = toml::from_str(&content)?;
