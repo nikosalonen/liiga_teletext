@@ -20,6 +20,20 @@ type PlayerData = (i64, String, String);
 /// Type alias for team player lists: (home_players, away_players)
 type TeamPlayerData = (Vec<PlayerData>, Vec<PlayerData>);
 
+/// Creates a TeletextPage with standard test configuration, varying only the display modes.
+fn create_test_page(compact_mode: bool, wide_mode: bool) -> TeletextPage {
+    TeletextPage::new(
+        221,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        false, // disable_video_links
+        true,  // show_footer
+        true,  // ignore_height_limit for testing
+        compact_mode,
+        wide_mode,
+    )
+}
+
 /// Creates raw player data that needs disambiguation (for testing actual logic)
 fn create_raw_test_players() -> TeamPlayerData {
     let home_players = vec![
@@ -203,16 +217,7 @@ fn test_normal_mode_displays_disambiguated_names_correctly() {
         played_time: 60,
     };
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit for testing
-        false, // compact_mode
-        false, // wide_mode
-    );
+    let mut page = create_test_page(false, false); // normal mode
 
     page.add_game_result(game_result);
     page.set_screen_height(25);
@@ -319,16 +324,7 @@ fn test_compact_mode_handles_disambiguated_names_within_space_constraints() {
         played_time: 60,
     };
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit for testing
-        true,  // compact_mode
-        false, // wide_mode
-    );
+    let mut page = create_test_page(true, false); // compact mode
 
     page.add_game_result(game_result);
     page.set_screen_height(25);
@@ -430,16 +426,7 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
         played_time: 60,
     };
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit for testing
-        false, // compact_mode
-        true,  // wide_mode
-    );
+    let mut page = create_test_page(false, true); // wide mode
 
     page.add_game_result(game_result1);
     page.add_game_result(game_result2);
@@ -561,16 +548,7 @@ fn test_name_truncation_works_properly_with_disambiguated_names() {
         played_time: 60,
     };
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit for testing
-        false, // compact_mode
-        false, // wide_mode
-    );
+    let mut page = create_test_page(false, false); // normal mode
 
     page.add_game_result(game);
     page.set_screen_height(25);
@@ -675,16 +653,7 @@ fn test_all_modes_handle_unicode_disambiguated_names() {
     };
 
     // Test normal mode
-    let mut normal_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true, // ignore_height_limit for testing
-        false,
-        false,
-    );
+    let mut normal_page = create_test_page(false, false);
     normal_page.add_game_result(game.clone());
     normal_page.set_screen_height(25);
     assert!(
@@ -693,16 +662,7 @@ fn test_all_modes_handle_unicode_disambiguated_names() {
     );
 
     // Test compact mode
-    let mut compact_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true, // ignore_height_limit for testing
-        true,
-        false,
-    );
+    let mut compact_page = create_test_page(true, false);
     compact_page.add_game_result(game.clone());
     compact_page.set_screen_height(25);
     assert!(
@@ -711,16 +671,7 @@ fn test_all_modes_handle_unicode_disambiguated_names() {
     );
 
     // Test wide mode
-    let mut wide_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true, // ignore_height_limit for testing
-        false,
-        true,
-    );
+    let mut wide_page = create_test_page(false, true);
     wide_page.add_game_result(game);
     wide_page.set_screen_height(25);
     assert!(
@@ -800,16 +751,7 @@ fn test_disambiguation_error_scenarios_in_display() {
     ];
 
     for (mode_name, compact, wide) in modes {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            true, // ignore_height_limit for testing
-            compact,
-            wide,
-        );
+        let mut page = create_test_page(compact, wide);
 
         page.add_game_result(error_game.clone());
         page.set_screen_height(25);
@@ -917,16 +859,7 @@ fn test_disambiguation_performance_with_many_players() {
     };
 
     // Test that UI can handle large player sets
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true,
-        false,
-        false,
-    );
+    let mut page = create_test_page(false, false); // normal mode
 
     page.add_game_result(large_game);
     page.set_screen_height(25);
