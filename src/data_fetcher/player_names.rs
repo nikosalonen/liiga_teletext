@@ -132,6 +132,31 @@ pub fn format_for_display_with_first_initial(first_name: &str, last_name: &str) 
 /// assert_eq!(result.get(&3), Some(&"Selänne".to_string()));
 /// ```
 pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<i64, String> {
+    // Fast path: handle trivial cases without grouping overhead
+    match players.len() {
+        0 => return HashMap::new(),
+        1 => {
+            let (id, _, last_name) = &players[0];
+            let display_name = format_for_display(&build_full_name("", last_name));
+            return [(*id, display_name)].into_iter().collect();
+        }
+        2 => {
+            // Fast path: if two players have different last names, no disambiguation needed
+            let (_, _, last1) = &players[0];
+            let (_, _, last2) = &players[1];
+            if last1.to_lowercase() != last2.to_lowercase() {
+                return players.iter()
+                    .map(|(id, _, last_name)| {
+                        let display_name = format_for_display(&build_full_name("", last_name));
+                        (*id, display_name)
+                    })
+                    .collect();
+            }
+            // Fall through to full algorithm if both players have same last name
+        }
+        _ => {} // Continue to full algorithm for 3+ players
+    }
+
     let mut result = HashMap::new();
     let mut last_name_groups: HashMap<String, Vec<usize>> = HashMap::new();
 
@@ -1944,6 +1969,104 @@ mod tests {
         assert_eq!(extract_first_chars("M", 2), Some("M".to_string())); // Short name
         assert_eq!(extract_first_chars("", 2), None); // Empty name
         assert_eq!(extract_first_chars("123John", 2), Some("Jo".to_string())); // Skip non-alphabetic
+    }
+
+    // Fast path optimization tests
+    #[test]
+    fn test_fast_path_empty_players() {
+        // Test fast path for empty input
+        let players = vec![];
+        let result = format_with_disambiguation(&players);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_fast_path_single_player() {
+        // Test fast path for single player
+        let players = vec![(1, "Mikko".to_string(), "Koivu".to_string())];
+        let result = format_with_disambiguation(&players);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get(&1), Some(&"Koivu".to_string()));
+    }
+
+    #[test]
+    fn test_fast_path_two_different_players() {
+        // Test fast path for two players with different last names
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Teemu".to_string(), "Selänne".to_string()),
+        ];
+        let result = format_with_disambiguation(&players);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.get(&1), Some(&"Koivu".to_string()));
+        assert_eq!(result.get(&2), Some(&"Selänne".to_string()));
+    }
+
+    #[test]
+    fn test_fast_path_two_same_players_falls_through() {
+        // Test that two players with same last name fall through to full algorithm
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Saku".to_string(), "Koivu".to_string()),
+        ];
+        let result = format_with_disambiguation(&players);
+        assert_eq!(result.len(), 2);
+        // Should get disambiguation (not fast path)
+        assert_eq!(result.get(&1), Some(&"Koivu M.".to_string()));
+        assert_eq!(result.get(&2), Some(&"Koivu S.".to_string()));
+    }
+
+    #[test]
+    fn test_fast_path_case_insensitive_matching() {
+        // Test that fast path correctly handles case-insensitive last name comparison
+        let players = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Saku".to_string(), "KOIVU".to_string()),
+        ];
+        let result = format_with_disambiguation(&players);
+        assert_eq!(result.len(), 2);
+        // Should fall through to full algorithm and get disambiguation
+        assert_eq!(result.get(&1), Some(&"Koivu M.".to_string()));
+        assert_eq!(result.get(&2), Some(&"Koivu S.".to_string()));
+    }
+
+    #[test]
+    fn test_fast_path_unicode_last_names() {
+        // Test fast path with Unicode last names
+        let players = vec![
+            (1, "Mikko".to_string(), "Kärppä".to_string()),
+            (2, "Teemu".to_string(), "Selänne".to_string()),
+        ];
+        let result = format_with_disambiguation(&players);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.get(&1), Some(&"Kärppä".to_string()));
+        assert_eq!(result.get(&2), Some(&"Selänne".to_string()));
+    }
+
+    #[test]
+    fn test_fast_path_vs_full_algorithm_consistency() {
+        // Verify fast path produces identical results to full algorithm for edge cases
+
+        // Single player case
+        let single_player = vec![(1, "Mikko".to_string(), "Koivu".to_string())];
+        let fast_result = format_with_disambiguation(&single_player);
+
+        // Manually compute what full algorithm would produce
+        let mut expected = HashMap::new();
+        expected.insert(1, "Koivu".to_string());
+        assert_eq!(fast_result, expected);
+
+        // Two different players case
+        let two_different = vec![
+            (1, "Mikko".to_string(), "Koivu".to_string()),
+            (2, "Teemu".to_string(), "Selänne".to_string()),
+        ];
+        let fast_result = format_with_disambiguation(&two_different);
+
+        let mut expected = HashMap::new();
+        expected.insert(1, "Koivu".to_string());
+        expected.insert(2, "Selänne".to_string());
+        assert_eq!(fast_result, expected);
     }
 
     #[test]
