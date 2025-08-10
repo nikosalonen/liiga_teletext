@@ -145,7 +145,8 @@ pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<
             let (_, _, last1) = &players[0];
             let (_, _, last2) = &players[1];
             if last1.to_lowercase() != last2.to_lowercase() {
-                return players.iter()
+                return players
+                    .iter()
                     .map(|(id, _, last_name)| {
                         let display_name = format_for_display(&build_full_name("", last_name));
                         (*id, display_name)
@@ -173,7 +174,8 @@ pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<
     for (_, group_indices) in last_name_groups {
         if group_indices.len() > 1 {
             // Multiple players with same last name - apply progressive disambiguation
-            let disambiguated_group = apply_progressive_disambiguation_by_indices(players, &group_indices);
+            let disambiguated_group =
+                apply_progressive_disambiguation_by_indices(players, &group_indices);
             for (id, disambiguated_name) in disambiguated_group {
                 result.insert(id, disambiguated_name);
             }
@@ -307,8 +309,11 @@ fn apply_progressive_disambiguation_by_indices(
             result.push((*id, format!("{formatted_last_name} {initial}.")));
         } else {
             // Multiple players with same initial - try extended disambiguation
-            let extended_disambiguated =
-                apply_extended_disambiguation_by_indices(players, &player_indices, &formatted_last_name);
+            let extended_disambiguated = apply_extended_disambiguation_by_indices(
+                players,
+                &player_indices,
+                &formatted_last_name,
+            );
 
             // Check if extended disambiguation actually creates unique identifiers
             let mut unique_names: std::collections::HashSet<String> =
@@ -405,8 +410,6 @@ fn apply_extended_disambiguation_by_indices(
 
     result
 }
-
-
 
 /// Extracts the first initial from a first name with proper Unicode support.
 /// This helper function handles edge cases like empty names, multiple words, and special characters.
@@ -2313,13 +2316,19 @@ mod tests {
             assert!(actual_disambiguation.contains_key(&player_id));
             // And their name should include disambiguation (contain ".")
             let name = actual_disambiguation.get(&player_id).unwrap();
-            assert!(name.contains('.'), "Player {player_id} name '{name}' should be disambiguated");
+            assert!(
+                name.contains('.'),
+                "Player {player_id} name '{name}' should be disambiguated"
+            );
         }
 
         // Every player that doesn't need disambiguation should not have "." in their name
         for (player_id, name) in &actual_disambiguation {
             if !needing_disambiguation.contains(player_id) {
-                assert!(!name.contains('.'), "Player {player_id} name '{name}' should not be disambiguated");
+                assert!(
+                    !name.contains('.'),
+                    "Player {player_id} name '{name}' should not be disambiguated"
+                );
             }
         }
 
