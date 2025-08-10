@@ -4397,7 +4397,11 @@ mod tests {
         let (left_games, right_games) = page.distribute_games_for_wide_display();
 
         // Should have games distributed (exact distribution depends on content size)
-        assert_eq!(left_games.len() + right_games.len(), 2, "Should have both games distributed");
+        assert_eq!(
+            left_games.len() + right_games.len(),
+            2,
+            "Should have both games distributed"
+        );
         assert!(
             !left_games.is_empty(),
             "Should have at least one game in left column"
