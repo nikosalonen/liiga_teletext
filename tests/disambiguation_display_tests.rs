@@ -447,8 +447,8 @@ fn test_disambiguation_scoped_per_team_no_cross_team_escalation() {
     // Create away team players with identical last names and first initials
     // (same pattern as home team)
     let away_players = vec![
-        (3, "John".to_string(), "Smith".to_string()),   // Same last name, same first initial as home
-        (4, "James".to_string(), "Smith".to_string()),  // Same last name, same first initial as home
+        (3, "John".to_string(), "Smith".to_string()), // Same last name, same first initial as home
+        (4, "James".to_string(), "Smith".to_string()), // Same last name, same first initial as home
     ];
 
     // Create separate disambiguation contexts for each team
@@ -599,7 +599,7 @@ fn test_name_truncation_works_properly_with_disambiguated_names() {
     println!("Disambiguated names: {max_name}, {joh_name}, {chr_name}");
 
     // Verify that disambiguated names do not exceed UI width limit
-    use liiga_teletext::constants::validation::MAX_PLAYER_NAME_LENGTH;
+    use liiga_teletext::constants::MAX_PLAYER_NAME_LENGTH;
     use unicode_width::UnicodeWidthStr;
 
     let max_name_width = max_name.width();
