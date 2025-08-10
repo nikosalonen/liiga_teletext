@@ -851,23 +851,26 @@ async fn test_wide_mode_terminal_widths() {
         "Should support wide mode with 136 char width"
     );
 
-    // Test non-interactive behavior: wide_mode uses fixed 136 columns
-    let noninteractive_wide_page = TeletextPage::new(
+    // Test insufficient width scenario: interactive mode falls back to 80 columns
+    let insufficient_width_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
         "RUNKOSARJA".to_string(),
         false, // disable_video_links
         true,  // show_footer
-        true,  // ignore_height_limit (non-interactive; wide_mode forces 136 width)
+        false, // ignore_height_limit (interactive mode - falls back to 80 columns)
         false, // compact_mode
         true,  // wide_mode
     );
 
-    // Since ignore_height_limit is true, it uses the hardcoded width logic:
-    // can_fit_two_pages() will use 136 when wide_mode is true.
+    // Confirm the page is in wide mode
+    assert!(insufficient_width_page.is_wide_mode());
+
+    // Since ignore_height_limit is false, it falls back to 80 columns in interactive mode:
+    // can_fit_two_pages() should return false because 80 columns is insufficient for two-page layout.
     assert!(
-        noninteractive_wide_page.can_fit_two_pages(),
-        "Should support wide mode with ignore_height_limit=true (uses 136 width)"
+        !insufficient_width_page.can_fit_two_pages(),
+        "Should not support two-page layout with 80 column fallback in interactive mode"
     );
 
     // Test with wide mode disabled
