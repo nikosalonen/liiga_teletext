@@ -851,27 +851,43 @@ async fn test_wide_mode_terminal_widths() {
         "Should support wide mode with 136 char width"
     );
 
-    // Test insufficient width scenario: interactive mode falls back to 80 columns
-    let insufficient_width_page = TeletextPage::new(
+    // Test interactive mode behavior: uses actual terminal width
+    let interactive_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
         "RUNKOSARJA".to_string(),
         false, // disable_video_links
         true,  // show_footer
-        false, // ignore_height_limit (interactive mode - falls back to 80 columns)
+        false, // ignore_height_limit (interactive mode - uses actual terminal width)
         false, // compact_mode
         true,  // wide_mode
     );
 
     // Confirm the page is in wide mode
-    assert!(insufficient_width_page.is_wide_mode());
+    assert!(interactive_page.is_wide_mode());
 
-    // Since ignore_height_limit is false, it falls back to 80 columns in interactive mode:
-    // can_fit_two_pages() should return false because 80 columns is insufficient for two-page layout.
-    assert!(
-        !insufficient_width_page.can_fit_two_pages(),
-        "Should not support two-page layout with 80 column fallback in interactive mode"
-    );
+    // In interactive mode, can_fit_two_pages() depends on actual terminal width:
+    // - If terminal width >= 128: returns true (supports two-page layout)
+    // - If terminal width < 128: returns false (insufficient width)
+    // This test verifies the behavior is consistent with the terminal environment
+    let can_fit = interactive_page.can_fit_two_pages();
+
+    // Get actual terminal width to verify the behavior is correct
+    let actual_width = crossterm::terminal::size()
+        .map(|(width, _)| width as usize)
+        .unwrap_or(80);
+
+    if actual_width >= 128 {
+        assert!(
+            can_fit,
+            "Should support two-page layout when terminal width ({actual_width}) >= 128"
+        );
+    } else {
+        assert!(
+            !can_fit,
+            "Should not support two-page layout when terminal width ({actual_width}) < 128"
+        );
+    }
 
     // Test with wide mode disabled
     let no_wide_page = TeletextPage::new(
