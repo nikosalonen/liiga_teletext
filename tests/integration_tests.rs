@@ -82,7 +82,7 @@ async fn test_page_navigation() {
             away_team: format!("Team {}", i * 2 + 1),
             time: "18:30".to_string(),
             result: "1-0".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+            score_type: ScoreType::Final,
             is_overtime: false,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -135,7 +135,7 @@ async fn test_game_result_data_creation() {
         away_team: "Tappara".to_string(),
         time: "18:30".to_string(),
         result: "3-2".to_string(),
-        score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+        score_type: ScoreType::Final,
         is_overtime: true,
         is_shootout: false,
         serie: "runkosarja".to_string(),
@@ -154,7 +154,7 @@ async fn test_game_result_data_creation() {
     assert_eq!(game_result.result, "3-2");
     assert!(matches!(
         game_result.score_type,
-        liiga_teletext::teletext_ui::ScoreType::Final
+        ScoreType::Final
     ));
     assert!(game_result.is_overtime);
     assert!(!game_result.is_shootout);
@@ -169,7 +169,7 @@ async fn test_teletext_ui_generation() {
         away_team: "Tappara".to_string(),
         time: "18:30".to_string(),
         result: "3-2".to_string(),
-        score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+        score_type: ScoreType::Final,
         is_overtime: false,
         is_shootout: false,
         serie: "runkosarja".to_string(),
@@ -239,7 +239,7 @@ async fn test_end_to_end_multiple_games() {
             away_team: "Tappara".to_string(),
             time: "18:30".to_string(),
             result: "3-2".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+            score_type: ScoreType::Final,
             is_overtime: false,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -252,7 +252,7 @@ async fn test_end_to_end_multiple_games() {
             away_team: "Lukko".to_string(),
             time: "19:00".to_string(),
             result: "1-4".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+            score_type: ScoreType::Final,
             is_overtime: false,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -293,7 +293,7 @@ async fn test_different_tournament_types() {
         away_team: "Tappara".to_string(),
         time: "18:30".to_string(),
         result: "2-1".to_string(),
-        score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+        score_type: ScoreType::Final,
         is_overtime: false,
         is_shootout: false,
         serie: "playoffs".to_string(),
@@ -331,7 +331,7 @@ async fn test_ongoing_games() {
         away_team: "Tappara".to_string(),
         time: "18:30".to_string(),
         result: "2-1".to_string(),
-        score_type: liiga_teletext::teletext_ui::ScoreType::Ongoing,
+        score_type: ScoreType::Ongoing,
         is_overtime: false,
         is_shootout: false,
         serie: "runkosarja".to_string(),
@@ -345,7 +345,7 @@ async fn test_ongoing_games() {
     assert_eq!(ongoing_game.time, "18:30");
     assert!(matches!(
         ongoing_game.score_type,
-        liiga_teletext::teletext_ui::ScoreType::Ongoing
+        ScoreType::Ongoing
     ));
 }
 
@@ -358,7 +358,7 @@ async fn test_special_situations() {
         away_team: "Tappara".to_string(),
         time: "18:30".to_string(),
         result: "3-2".to_string(),
-        score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+        score_type: ScoreType::Final,
         is_overtime: true,
         is_shootout: false,
         serie: "runkosarja".to_string(),
@@ -382,7 +382,7 @@ async fn test_compact_mode_non_interactive() {
             away_team: "Tappara".to_string(),
             time: "18:30".to_string(),
             result: "3-2".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+            score_type: ScoreType::Final,
             is_overtime: true,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -395,7 +395,7 @@ async fn test_compact_mode_non_interactive() {
             away_team: "Lukko".to_string(),
             time: "19:00".to_string(),
             result: "1-4".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+            score_type: ScoreType::Final,
             is_overtime: false,
             is_shootout: true,
             serie: "runkosarja".to_string(),
@@ -408,7 +408,7 @@ async fn test_compact_mode_non_interactive() {
             away_team: "JYP".to_string(),
             time: "19:30".to_string(),
             result: "".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Scheduled,
+            score_type: ScoreType::Scheduled,
             is_overtime: false,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -466,7 +466,7 @@ async fn test_compact_mode_with_dates() {
         away_team: "Tappara".to_string(),
         time: "18:30".to_string(),
         result: "3-2".to_string(),
-        score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+        score_type: ScoreType::Final,
         is_overtime: false,
         is_shootout: false,
         serie: "runkosarja".to_string(),
@@ -480,7 +480,7 @@ async fn test_compact_mode_with_dates() {
         away_team: "Lukko".to_string(),
         time: "19:00".to_string(),
         result: "".to_string(),
-        score_type: liiga_teletext::teletext_ui::ScoreType::Scheduled,
+        score_type: ScoreType::Scheduled,
         is_overtime: false,
         is_shootout: false,
         serie: "runkosarja".to_string(),
@@ -602,7 +602,7 @@ async fn test_compact_mode_preserves_styling() {
             away_team: "Tappara".to_string(),
             time: "18:30".to_string(),
             result: "3-2".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+            score_type: ScoreType::Final,
             is_overtime: true,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -615,7 +615,7 @@ async fn test_compact_mode_preserves_styling() {
             away_team: "Lukko".to_string(),
             time: "19:00".to_string(),
             result: "1-0".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Ongoing,
+            score_type: ScoreType::Ongoing,
             is_overtime: false,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -628,7 +628,7 @@ async fn test_compact_mode_preserves_styling() {
             away_team: "JYP".to_string(),
             time: "19:30".to_string(),
             result: "".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Scheduled,
+            score_type: ScoreType::Scheduled,
             is_overtime: false,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -759,7 +759,7 @@ async fn test_compact_mode_basic_functionality() {
             away_team: "HIFK".to_string(),
             time: "18:30".to_string(),
             result: "3-2".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Final,
+            score_type: ScoreType::Final,
             is_overtime: true,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -772,7 +772,7 @@ async fn test_compact_mode_basic_functionality() {
             away_team: "Lukko".to_string(),
             time: "19:00".to_string(),
             result: "".to_string(),
-            score_type: liiga_teletext::teletext_ui::ScoreType::Scheduled,
+            score_type: ScoreType::Scheduled,
             is_overtime: false,
             is_shootout: false,
             serie: "runkosarja".to_string(),
@@ -1075,10 +1075,7 @@ async fn test_wide_mode_game_distribution_integration() {
 
     // Verify games are distributed
     assert!(!left_games.is_empty(), "Left column should have games");
-    assert!(
-        left_games.len() + right_games.len() == teams.len(),
-        "All games should be distributed between columns"
-    );
+    assert_eq!(left_games.len() + right_games.len(), teams.len(), "All games should be distributed between columns");
 
     // Left column should typically have equal or one more game than right
     // (left-column-first distribution)

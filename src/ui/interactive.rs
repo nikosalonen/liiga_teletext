@@ -505,7 +505,7 @@ fn is_future_game(game: &GameData) -> bool {
     // Expected format: YYYY-MM-DDThh:mm:ssZ
     match chrono::DateTime::parse_from_rfc3339(&game.start) {
         Ok(game_start) => {
-            let now = chrono::Utc::now();
+            let now = Utc::now();
             let is_future = game_start > now;
 
             if !is_future {
@@ -533,7 +533,7 @@ fn is_game_near_start_time(game: &GameData) -> bool {
 
     match chrono::DateTime::parse_from_rfc3339(&game.start) {
         Ok(game_start) => {
-            let now = chrono::Utc::now();
+            let now = Utc::now();
             let time_diff = now.signed_duration_since(game_start);
 
             // Extended window: Check if game should start within the next 5 minutes or started within the last 10 minutes
@@ -618,7 +618,7 @@ pub async fn create_future_games_page(
 
 /// Checks if the given key event matches the date navigation shortcut.
 /// Uses Shift + Left/Right for all platforms (works reliably in all terminals)
-fn is_date_navigation_key(key_event: &crossterm::event::KeyEvent, is_left: bool) -> bool {
+fn is_date_navigation_key(key_event: &event::KeyEvent, is_left: bool) -> bool {
     let expected_code = if is_left {
         KeyCode::Left
     } else {
@@ -710,7 +710,7 @@ fn would_be_previous_season(date: &str) -> bool {
 /// Returns None if no games are found within the current season or a reasonable time range.
 /// Prevents navigation to previous season games for better UX.
 async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
-    let current_parsed = match chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d") {
+    let current_parsed = match NaiveDate::parse_from_str(current_date, "%Y-%m-%d") {
         Ok(date) => date,
         Err(_) => return None,
     };
@@ -745,7 +745,7 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
 
             // Add timeout to the fetch operation (shorter timeout for faster navigation)
             let fetch_future = fetch_liiga_data(Some(date_string.clone()));
-            let timeout_duration = tokio::time::Duration::from_secs(5);
+            let timeout_duration = Duration::from_secs(5);
 
             match tokio::time::timeout(timeout_duration, fetch_future).await {
                 Ok(Ok((games, fetched_date))) if !games.is_empty() => {
@@ -785,7 +785,7 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
             }
 
             // Small delay to prevent API spam
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 
@@ -799,7 +799,7 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
 /// Finds the next date with games by checking dates going forwards.
 /// Returns None if no games are found within a reasonable time range.
 async fn find_next_date_with_games(current_date: &str) -> Option<String> {
-    let current_parsed = match chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d") {
+    let current_parsed = match NaiveDate::parse_from_str(current_date, "%Y-%m-%d") {
         Ok(date) => date,
         Err(_) => return None,
     };
@@ -825,7 +825,7 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
 
             // Add timeout to the fetch operation (shorter timeout for faster navigation)
             let fetch_future = fetch_liiga_data(Some(date_string.clone()));
-            let timeout_duration = tokio::time::Duration::from_secs(5);
+            let timeout_duration = Duration::from_secs(5);
 
             match tokio::time::timeout(timeout_duration, fetch_future).await {
                 Ok(Ok((games, fetched_date))) if !games.is_empty() => {
@@ -865,7 +865,7 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
             }
 
             // Small delay to prevent API spam
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 
@@ -1090,20 +1090,20 @@ async fn fetch_data_with_timeout(
 
                 // Log specific error context for debugging
                 match &e {
-                    crate::error::AppError::NetworkTimeout { url } => {
+                    AppError::NetworkTimeout { url } => {
                         tracing::warn!(
                             "Auto-refresh timeout for URL: {}, will retry on next cycle",
                             url
                         );
                     }
-                    crate::error::AppError::NetworkConnection { url, message } => {
+                    AppError::NetworkConnection { url, message } => {
                         tracing::warn!(
                             "Auto-refresh connection error for URL: {}, details: {}, will retry on next cycle",
                             url,
                             message
                         );
                     }
-                    crate::error::AppError::ApiServerError {
+                    AppError::ApiServerError {
                         status,
                         message,
                         url,
@@ -1115,7 +1115,7 @@ async fn fetch_data_with_timeout(
                             url
                         );
                     }
-                    crate::error::AppError::ApiServiceUnavailable {
+                    AppError::ApiServiceUnavailable {
                         status,
                         message,
                         url,
@@ -1127,7 +1127,7 @@ async fn fetch_data_with_timeout(
                             url
                         );
                     }
-                    crate::error::AppError::ApiRateLimit { message, url } => {
+                    AppError::ApiRateLimit { message, url } => {
                         tracing::warn!(
                             "Auto-refresh rate limited: {} (URL: {}), will retry on next cycle",
                             message,
@@ -1266,7 +1266,7 @@ async fn handle_data_fetching(
     );
 
     // Fetch data with timeout
-    let timeout_duration = tokio::time::Duration::from_secs(15);
+    let timeout_duration = Duration::from_secs(15);
     let (games, had_error, fetched_date, should_retry) =
         fetch_data_with_timeout(current_date.clone(), timeout_duration).await;
 
@@ -1338,7 +1338,7 @@ async fn handle_data_fetching(
 
 /// Parameters for keyboard event handling
 struct KeyEventParams<'a> {
-    key_event: &'a crossterm::event::KeyEvent,
+    key_event: &'a event::KeyEvent,
     current_date: &'a mut Option<String>,
     current_page: &'a mut Option<TeletextPage>,
     needs_refresh: &'a mut bool,
@@ -1372,7 +1372,7 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             if let Some(page) = params.current_page.as_mut() {
                 page.show_loading("Etsitään edellisiä otteluita...".to_string());
                 // Force immediate render to show loading indicator
-                let mut stdout = std::io::stdout();
+                let mut stdout = stdout();
                 let _ = page.render_buffered(&mut stdout);
                 *params.needs_render = true;
             }
@@ -1409,7 +1409,7 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
             if let Some(page) = params.current_page.as_mut() {
                 page.show_loading("Etsitään seuraavia otteluita...".to_string());
                 // Force immediate render to show loading indicator
-                let mut stdout = std::io::stdout();
+                let mut stdout = stdout();
                 let _ = page.render_buffered(&mut stdout);
                 *params.needs_render = true;
             }

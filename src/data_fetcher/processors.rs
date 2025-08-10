@@ -359,7 +359,7 @@ pub fn format_time(timestamp: &str) -> Result<String, AppError> {
 /// Checks if a game has recent events indicating it's actually live
 /// even if the started field hasn't been updated yet
 fn has_recent_events(game: &ScheduleGame) -> bool {
-    let now = chrono::Utc::now();
+    let now = Utc::now();
     let recent_threshold = chrono::Duration::minutes(5); // Events within 5 minutes
 
     // Check for recent goal events from both teams
@@ -368,7 +368,7 @@ fn has_recent_events(game: &ScheduleGame) -> bool {
         .flat_map(|events| events.iter())
         .any(|event| {
             if let Ok(event_time) = chrono::DateTime::parse_from_rfc3339(&event.log_time) {
-                let time_diff = now.signed_duration_since(event_time.with_timezone(&chrono::Utc));
+                let time_diff = now.signed_duration_since(event_time.with_timezone(&Utc));
                 time_diff >= chrono::Duration::zero() && time_diff <= recent_threshold
             } else {
                 false
@@ -385,10 +385,10 @@ fn has_recent_events(game: &ScheduleGame) -> bool {
 
 /// Determines if a game with game_time > 0 is likely actually live
 fn is_game_likely_live(game: &ScheduleGame) -> bool {
-    let now = chrono::Utc::now();
+    let now = Utc::now();
 
     if let Ok(game_start) = chrono::DateTime::parse_from_rfc3339(&game.start) {
-        let time_since_start = now.signed_duration_since(game_start.with_timezone(&chrono::Utc));
+        let time_since_start = now.signed_duration_since(game_start.with_timezone(&Utc));
 
         // Only consider it live if:
         // 1. Game was supposed to start within the last 3 hours (not old data)
