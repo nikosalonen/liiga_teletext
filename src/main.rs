@@ -361,7 +361,7 @@ async fn main() -> Result<(), AppError> {
             registry
                 .with(
                     fmt::Layer::new()
-                        .with_writer(std::io::stdout)
+                        .with_writer(stdout)
                         .with_ansi(true)
                         .with_filter(
                             EnvFilter::from_default_env()

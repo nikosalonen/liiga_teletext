@@ -853,7 +853,7 @@ fn test_disambiguation_error_scenarios_in_display() {
         ("wide", false, true),
     ];
 
-    for (mode_name, compact, wide) in modes {
+    for (_mode_name, compact, wide) in modes {
         let mut page = create_test_page(compact, wide);
 
         page.add_game_result(error_game.clone());
@@ -863,30 +863,30 @@ fn test_disambiguation_error_scenarios_in_display() {
         assert_eq!(
             page.total_pages(),
             1,
-            "{mode_name} mode should handle error data gracefully"
+            "{_mode_name} mode should handle error data gracefully"
         );
 
         if compact {
             assert!(
                 page.is_compact_mode(),
-                "{mode_name} mode should maintain correct compact setting"
+                "{_mode_name} mode should maintain correct compact setting"
             );
         } else {
             assert!(
                 !page.is_compact_mode(),
-                "{mode_name} mode should maintain correct compact setting"
+                "{_mode_name} mode should maintain correct compact setting"
             );
         }
 
         if wide {
             assert!(
                 page.is_wide_mode(),
-                "{mode_name} mode should maintain correct wide setting"
+                "{_mode_name} mode should maintain correct wide setting"
             );
         } else {
             assert!(
                 !page.is_wide_mode(),
-                "{mode_name} mode should maintain correct wide setting"
+                "{_mode_name} mode should maintain correct wide setting"
             );
         }
     }

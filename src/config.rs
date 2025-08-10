@@ -669,7 +669,7 @@ another_extra = 123
         assert!(config_path.ends_with("config.toml"));
 
         // Verify it's a valid path (doesn't test if it exists, just that it's a valid path format)
-        let path = std::path::Path::new(&config_path);
+        let path = Path::new(&config_path);
         assert!(path.is_absolute() || path.is_relative());
     }
 
@@ -682,7 +682,7 @@ another_extra = 123
         assert!(log_dir_path.ends_with("logs"));
 
         // Verify it's a valid path
-        let path = std::path::Path::new(&log_dir_path);
+        let path = Path::new(&log_dir_path);
         assert!(path.is_absolute() || path.is_relative());
     }
 

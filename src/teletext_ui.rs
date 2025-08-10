@@ -670,10 +670,10 @@ impl TeletextPage {
     /// # Errors
     /// Returns an error if both compact_mode and wide_mode are enabled in the configuration.
     #[allow(dead_code)] // Used in tests
-    pub fn from_config(config: TeletextPageConfig) -> Result<Self, crate::AppError> {
+    pub fn from_config(config: TeletextPageConfig) -> Result<Self, AppError> {
         // Validate mode exclusivity before creating the page
         if let Err(msg) = config.validate_mode_exclusivity() {
-            return Err(crate::AppError::config_error(format!(
+            return Err(AppError::config_error(format!(
                 "Invalid TeletextPageConfig: {msg}"
             )));
         }
@@ -2953,7 +2953,7 @@ mod tests {
                 },
             ];
 
-            page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            page.add_game_result(GameResultData::new(&GameData {
                 home_team: format!("Home {i}"),
                 away_team: format!("Away {i}"),
                 time: "18.00".to_string(),
@@ -3020,7 +3020,7 @@ mod tests {
                 },
             ];
 
-            page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+            page.add_game_result(GameResultData::new(&GameData {
                 home_team: format!("Home {i}"),
                 away_team: format!("Away {i}"),
                 time: "18.00".to_string(),
@@ -3067,7 +3067,7 @@ mod tests {
         );
 
         // Test game without goals
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+        page.add_game_result(GameResultData::new(&GameData {
             home_team: "Home".to_string(),
             away_team: "Away".to_string(),
             time: "18.00".to_string(),
@@ -3094,7 +3094,7 @@ mod tests {
             video_clip_url: None,
         }];
 
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+        page.add_game_result(GameResultData::new(&GameData {
             home_team: "Home".to_string(),
             away_team: "Away".to_string(),
             time: "18.00".to_string(),
@@ -3149,7 +3149,7 @@ mod tests {
         );
 
         // Test scheduled game display
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+        page.add_game_result(GameResultData::new(&GameData {
             home_team: "Home".to_string(),
             away_team: "Away".to_string(),
             time: "18.00".to_string(),
@@ -3189,7 +3189,7 @@ mod tests {
             },
         ];
 
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+        page.add_game_result(GameResultData::new(&GameData {
             home_team: "Home".to_string(),
             away_team: "Away".to_string(),
             time: "".to_string(),
@@ -3204,7 +3204,7 @@ mod tests {
         }));
 
         // Test finished game with overtime
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+        page.add_game_result(GameResultData::new(&GameData {
             home_team: "Home OT".to_string(),
             away_team: "Away OT".to_string(),
             time: "".to_string(),
@@ -3219,7 +3219,7 @@ mod tests {
         }));
 
         // Test finished game with shootout
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+        page.add_game_result(GameResultData::new(&GameData {
             home_team: "Home SO".to_string(),
             away_team: "Away SO".to_string(),
             time: "".to_string(),
@@ -3295,7 +3295,7 @@ mod tests {
             video_clip_url: Some("http://example.com".to_string()),
         }];
 
-        page.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+        page.add_game_result(GameResultData::new(&GameData {
             home_team: "Home".to_string(),
             away_team: "Away".to_string(),
             time: "".to_string(),
@@ -3321,7 +3321,7 @@ mod tests {
             false,
         );
 
-        page_no_video.add_game_result(GameResultData::new(&crate::data_fetcher::GameData {
+        page_no_video.add_game_result(GameResultData::new(&GameData {
             home_team: "Home".to_string(),
             away_team: "Away".to_string(),
             time: "".to_string(),
@@ -4199,7 +4199,7 @@ mod tests {
         );
 
         // Add some test games using GameData -> GameResultData
-        let test_game = crate::data_fetcher::GameData {
+        let test_game = GameData {
             home_team: "HIFK".to_string(),
             away_team: "Tappara".to_string(),
             time: "18:30".to_string(),
@@ -4236,7 +4236,7 @@ mod tests {
         );
 
         // Add some test games
-        let test_game = crate::data_fetcher::GameData {
+        let test_game = GameData {
             home_team: "HIFK".to_string(),
             away_team: "Tappara".to_string(),
             time: "18:30".to_string(),
@@ -4274,7 +4274,7 @@ mod tests {
 
         // Add multiple test games to test distribution
         for i in 0..4 {
-            let test_game = crate::data_fetcher::GameData {
+            let test_game = GameData {
                 home_team: format!("Team{i}A"),
                 away_team: format!("Team{i}B"),
                 time: "18:30".to_string(),
@@ -4318,7 +4318,7 @@ mod tests {
 
         // Add 3 test games (odd number)
         for i in 0..3 {
-            let test_game = crate::data_fetcher::GameData {
+            let test_game = GameData {
                 home_team: format!("Team{i}A"),
                 away_team: format!("Team{i}B"),
                 time: "18:30".to_string(),
@@ -4362,7 +4362,7 @@ mod tests {
         );
 
         // Add test games
-        let test_game1 = crate::data_fetcher::GameData {
+        let test_game1 = GameData {
             home_team: "HIFK".to_string(),
             away_team: "Tappara".to_string(),
             time: "18:30".to_string(),
@@ -4376,7 +4376,7 @@ mod tests {
             start: "2024-01-15T18:30:00Z".to_string(),
         };
 
-        let test_game2 = crate::data_fetcher::GameData {
+        let test_game2 = GameData {
             home_team: "TPS".to_string(),
             away_team: "KalPa".to_string(),
             time: "19:00".to_string(),
@@ -4397,10 +4397,7 @@ mod tests {
         let (left_games, right_games) = page.distribute_games_for_wide_display();
 
         // Should have games distributed (exact distribution depends on content size)
-        assert!(
-            left_games.len() + right_games.len() == 2,
-            "Should have both games distributed"
-        );
+        assert_eq!(left_games.len() + right_games.len(), 2, "Should have both games distributed");
         assert!(
             !left_games.is_empty(),
             "Should have at least one game in left column"
@@ -4548,7 +4545,7 @@ mod tests {
         assert!(result.is_err());
 
         let error = result.unwrap_err();
-        assert!(matches!(error, crate::AppError::Config(_)));
+        assert!(matches!(error, AppError::Config(_)));
         assert!(
             error
                 .to_string()
