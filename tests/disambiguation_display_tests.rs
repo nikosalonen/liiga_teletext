@@ -309,7 +309,7 @@ fn test_compact_mode_handles_disambiguated_names_within_space_constraints() {
             },
             GoalEventData {
                 scorer_player_id: 4,
-                scorer_name: jarkko_name.clone(), // Use actual disambiguated name
+                scorer_name: "Kurri J.".to_string(), // Use correct disambiguated name for Jari Kurri (ID 4)
                 minute: 15,
                 home_team_score: 1,
                 away_team_score: 1,
