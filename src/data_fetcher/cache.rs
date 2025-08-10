@@ -1,7 +1,7 @@
-use lazy_static::lazy_static;
 use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, trace, warn};
@@ -15,34 +15,24 @@ use crate::teletext_ui::ScoreType;
 
 // LRU cache structure for formatted player information
 // Using LRU ensures that when we need to evict entries, we remove the least recently used ones
-lazy_static! {
-    pub static ref PLAYER_CACHE: RwLock<LruCache<i32, HashMap<i64, String>>> =
-        RwLock::new(LruCache::new(NonZeroUsize::new(100).unwrap()));
-}
+pub static PLAYER_CACHE: LazyLock<RwLock<LruCache<i32, HashMap<i64, String>>>> =
+    LazyLock::new(|| RwLock::new(LruCache::new(NonZeroUsize::new(100).unwrap())));
 
 // LRU cache structure for tournament data with TTL support
-lazy_static! {
-    pub static ref TOURNAMENT_CACHE: RwLock<LruCache<String, CachedTournamentData>> =
-        RwLock::new(LruCache::new(NonZeroUsize::new(50).unwrap()));
-}
+pub static TOURNAMENT_CACHE: LazyLock<RwLock<LruCache<String, CachedTournamentData>>> =
+    LazyLock::new(|| RwLock::new(LruCache::new(NonZeroUsize::new(50).unwrap())));
 
 // LRU cache structure for detailed game responses to avoid repeated API calls
-lazy_static! {
-    pub static ref DETAILED_GAME_CACHE: RwLock<LruCache<String, CachedDetailedGameData>> =
-        RwLock::new(LruCache::new(NonZeroUsize::new(200).unwrap()));
-}
+pub static DETAILED_GAME_CACHE: LazyLock<RwLock<LruCache<String, CachedDetailedGameData>>> =
+    LazyLock::new(|| RwLock::new(LruCache::new(NonZeroUsize::new(200).unwrap())));
 
 // LRU cache structure for processed goal events to avoid reprocessing
-lazy_static! {
-    pub static ref GOAL_EVENTS_CACHE: RwLock<LruCache<String, CachedGoalEventsData>> =
-        RwLock::new(LruCache::new(NonZeroUsize::new(300).unwrap()));
-}
+pub static GOAL_EVENTS_CACHE: LazyLock<RwLock<LruCache<String, CachedGoalEventsData>>> =
+    LazyLock::new(|| RwLock::new(LruCache::new(NonZeroUsize::new(300).unwrap())));
 
 // LRU cache structure for HTTP responses with TTL support
-lazy_static! {
-    pub static ref HTTP_RESPONSE_CACHE: RwLock<LruCache<String, CachedHttpResponse>> =
-        RwLock::new(LruCache::new(NonZeroUsize::new(100).unwrap()));
-}
+pub static HTTP_RESPONSE_CACHE: LazyLock<RwLock<LruCache<String, CachedHttpResponse>>> =
+    LazyLock::new(|| RwLock::new(LruCache::new(NonZeroUsize::new(100).unwrap())));
 
 /// Cached tournament data with TTL support
 #[derive(Debug, Clone)]
@@ -319,14 +309,14 @@ pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
             "Live game cache entry created: key={}, games={}, ttl={}s",
             key,
             games_count,
-            crate::constants::cache_ttl::LIVE_GAMES_SECONDS
+            cache_ttl::LIVE_GAMES_SECONDS
         );
     } else {
         info!(
             "Completed game cache entry created: key={}, games={}, ttl={}s",
             key,
             games_count,
-            crate::constants::cache_ttl::COMPLETED_GAMES_SECONDS
+            cache_ttl::COMPLETED_GAMES_SECONDS
         );
     }
 }
@@ -514,7 +504,7 @@ pub async fn invalidate_cache_for_games_near_start_time(date: &str) {
 pub async fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> bool {
     // Check if any games are near their start time
     let has_starting_games = current_games.iter().any(|game| {
-        if game.score_type != crate::teletext_ui::ScoreType::Scheduled || game.start.is_empty() {
+        if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
             return false;
         }
 
@@ -560,14 +550,14 @@ pub async fn get_cached_tournament_data_with_start_check(
     if let Some(cached_entry) = cache.get(key) {
         // Check if we have any games that might be starting
         let has_starting_games = current_games.iter().any(|game| {
-            game.score_type == crate::teletext_ui::ScoreType::Scheduled && !game.start.is_empty()
+            game.score_type == ScoreType::Scheduled && !game.start.is_empty()
         });
 
         // If we have starting games, consider cache expired more aggressively
         if has_starting_games {
             let age = cached_entry.cached_at.elapsed();
             let aggressive_ttl =
-                Duration::from_secs(crate::constants::cache_ttl::STARTING_GAMES_SECONDS); // 10 seconds for starting games
+                Duration::from_secs(cache_ttl::STARTING_GAMES_SECONDS); // 10 seconds for starting games
 
             if age > aggressive_ttl {
                 info!(
@@ -1509,7 +1499,7 @@ mod tests {
         clear_all_caches().await;
 
         // Wait a bit to ensure cache is cleared
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
         // Add one entry with unique ID
         let mut players = HashMap::new();
@@ -1555,7 +1545,7 @@ mod tests {
         clear_all_caches().await;
 
         // Wait a bit to ensure cache is cleared
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
         // Add exactly 99 entries to leave room for one more
         for i in 0..99 {
@@ -1979,7 +1969,7 @@ mod tests {
         clear_http_response_cache().await;
 
         // Wait a bit to ensure cache is cleared
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
         let url = format!("https://api.example.com/test-{test_id}");
         let response_data = format!(r#"{{"test": "data-{test_id}"}}"#);
@@ -2008,7 +1998,7 @@ mod tests {
         clear_all_caches().await;
 
         // Wait a bit to ensure cache is cleared and verify it's actually empty
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Verify caches are actually empty before starting
         let initial_stats = get_all_cache_stats().await;
@@ -2117,7 +2107,7 @@ mod tests {
         );
 
         // Wait a bit to ensure all async operations complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Final verification that all entries still exist before checking stats
         assert!(
