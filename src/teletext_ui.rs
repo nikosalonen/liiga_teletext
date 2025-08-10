@@ -951,6 +951,22 @@ impl TeletextPage {
         self.wide_mode
     }
 
+    /// Test-friendly accessor to check if the page contains an error message with specific text.
+    /// This method is primarily intended for testing to avoid exposing private content_rows.
+    ///
+    /// # Arguments
+    /// * `message` - The error message text to search for
+    ///
+    /// # Returns
+    /// * `bool` - True if an error message containing the specified text is found
+    #[allow(dead_code)]
+    pub fn has_error_message(&self, message: &str) -> bool {
+        self.content_rows.iter().any(|row| match row {
+            TeletextRow::ErrorMessage(msg) => msg.contains(message),
+            _ => false,
+        })
+    }
+
     /// Sets the wide mode state.
     /// Compact mode and wide mode are mutually exclusive.
     ///
