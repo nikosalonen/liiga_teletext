@@ -1119,7 +1119,7 @@ async fn fetch_detailed_game_data(
                     "Game ID {} has score {}:{} but detailed API returned 0 goal events - creating placeholder events",
                     game.id, game.home_team.goals, game.away_team.goals
                 );
-                let basic_events = create_basic_goal_events(game);
+                let basic_events = create_basic_goal_events(game).await;
                 info!(
                     "Created {} placeholder goal events for game ID {} with missing detailed data",
                     basic_events.len(),
@@ -1142,7 +1142,7 @@ async fn fetch_detailed_game_data(
                 game.season,
                 game.id
             );
-            let basic_events = create_basic_goal_events(game);
+            let basic_events = create_basic_goal_events(game).await;
             info!(
                 "Created {} basic goal events as fallback for game ID {}",
                 basic_events.len(),
