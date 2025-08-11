@@ -665,7 +665,7 @@ fn get_target_date_for_navigation(current_date: &Option<String>) -> String {
 }
 
 /// Checks if a date would require historical/schedule endpoint (from previous season).
-/// This prevents navigation to previous season games via arrow keys.
+/// This prevents navigation to very old games via arrow keys, but allows reasonable historical access.
 fn would_be_previous_season(date: &str) -> bool {
     let now = Utc::now().with_timezone(&Local);
 
@@ -680,25 +680,35 @@ fn would_be_previous_season(date: &str) -> bool {
     let current_year = now.year();
     let current_month = now.month();
 
-    // If date is from a previous year, it's definitely previous season
-    if date_year < current_year {
+    // Allow navigation within the past 2 years for reasonable historical access
+    // This covers the current season and the previous season
+    if date_year < current_year - 1 {
         return true;
     }
 
-    // If same year, check hockey season logic
+    // If date is from 2+ years ago, it's definitely too old
+    if date_year < current_year - 1 {
+        return true;
+    }
+
+    // For dates within the past 2 years, use more nuanced season logic
     if date_year == current_year {
+        // Same year - check if we're trying to go to off-season of previous season
         // Hockey season: September-February (regular), March-May (playoffs/playout)
         // Off-season: June-August
 
-        // If we're in new regular season (September-December) and date is from previous season
-        // (January-August), it's from the previous season
-        if (9..=12).contains(&current_month) && date_month <= 8 {
+        // If we're in new regular season (September-December) and date is from off-season
+        // (June-August), it's from the previous season
+        if (9..=12).contains(&current_month) && (6..=8).contains(&date_month) {
             return true;
         }
-
-        // If we're in early regular season (January-February) and date is from off-season
-        // (June-August), it's from the previous season
-        if (1..=2).contains(&current_month) && (6..=8).contains(&date_month) {
+    } else if date_year == current_year - 1 {
+        // Previous year - allow access to recent hockey season games
+        // Only block if we're trying to access very old off-season games
+        
+        // If we're currently in the new season (September+) and trying to access
+        // off-season games from the previous year (June-August), block it
+        if current_month >= 9 && (6..=8).contains(&date_month) {
             return true;
         }
     }
@@ -743,9 +753,9 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
                 );
             }
 
-            // Add timeout to the fetch operation (shorter timeout for faster navigation)
+            // Add timeout to the fetch operation (allow enough time for detailed game data including goal scorers)
             let fetch_future = fetch_liiga_data(Some(date_string.clone()));
-            let timeout_duration = Duration::from_secs(5);
+            let timeout_duration = Duration::from_secs(15);
 
             match tokio::time::timeout(timeout_duration, fetch_future).await {
                 Ok(Ok((games, fetched_date))) if !games.is_empty() => {
@@ -823,9 +833,9 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
                 );
             }
 
-            // Add timeout to the fetch operation (shorter timeout for faster navigation)
+            // Add timeout to the fetch operation (allow enough time for detailed game data including goal scorers)
             let fetch_future = fetch_liiga_data(Some(date_string.clone()));
-            let timeout_duration = Duration::from_secs(5);
+            let timeout_duration = Duration::from_secs(15);
 
             match tokio::time::timeout(timeout_duration, fetch_future).await {
                 Ok(Ok((games, fetched_date))) if !games.is_empty() => {
@@ -1220,15 +1230,22 @@ fn create_error_page(
 
     if fetched_date == today {
         error_page.add_error_message("Ei otteluita tänään");
+        error_page.add_error_message("");
+        error_page.add_error_message("Käytä Shift + nuolinäppäimiä");
+        error_page.add_error_message("siirtyäksesi toiseen päivään");
     } else {
         error_page.add_error_message(&format!(
             "Ei otteluita {} päivälle",
             format_date_for_display(fetched_date)
         ));
+        error_page.add_error_message("");
+        error_page.add_error_message("Käytä Shift + nuolinäppäimiä");
+        error_page.add_error_message("siirtyäksesi toiseen päivään");
     }
 
     error_page
 }
+
 
 /// Handle data fetching and page creation
 async fn handle_data_fetching(
@@ -1281,7 +1298,9 @@ async fn handle_data_fetching(
     let data_changed = detect_and_log_changes(&games, last_games);
 
     // Handle page creation/restoration based on data changes and errors
-    if data_changed && !had_error {
+    // Always create a page if we have no games (to show the error message with navigation hints)
+    // or if data changed and there was no error
+    if (data_changed || games.is_empty()) && !had_error {
         if let Some(page) = create_or_restore_page(PageCreationConfig {
             games: &games,
             disable_links,
