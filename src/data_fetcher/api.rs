@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
-    cache_detailed_game_data, cache_goal_events_data, cache_http_response,
+    cache_detailed_game_data, cache_goal_events_data, cache_http_response, cache_players,
     cache_players_with_disambiguation, cache_tournament_data, clear_goal_events_cache_for_game,
     get_cached_detailed_game_data, get_cached_goal_events_data, get_cached_goal_events_entry,
     get_cached_http_response, get_cached_players, get_cached_tournament_data_with_start_check,
@@ -390,7 +390,14 @@ fn has_actual_goals(game: &ScheduleGame) -> bool {
 /// Determines if detailed game data should be fetched based on game state.
 fn should_fetch_detailed_data(game: &ScheduleGame) -> bool {
     if game.started {
-        has_actual_goals(game) || !game.ended
+        // For finished games, fetch detailed data if either:
+        // 1. The game has actual goal events in the response, OR
+        // 2. The game has a non-zero score (indicating goals were scored, even if goal_events is empty/incomplete), OR
+        // 3. The game is still ongoing
+        has_actual_goals(game)
+            || game.home_team.goals > 0
+            || game.away_team.goals > 0
+            || !game.ended
     } else {
         false
     }
@@ -435,7 +442,16 @@ async fn process_single_game(
     debug!("Game result: {}", result);
 
     let goal_events = if should_fetch_detailed_data(&game) {
-        debug!("Fetching detailed game data");
+        info!(
+            "Game #{}: {} vs {} ({}:{}) - Fetching detailed game data (ID: {}, Season: {})",
+            game_idx + 1,
+            home_team_name,
+            away_team_name,
+            game.home_team.goals,
+            game.away_team.goals,
+            game.id,
+            game.season
+        );
 
         // Check if score has changed since last fetch to force refresh goal events
         let current_score = format!("{}-{}", game.home_team.goals, game.away_team.goals);
@@ -490,9 +506,27 @@ async fn process_single_game(
 
         fetch_detailed_game_data(client, config, &game).await
     } else {
+        warn!(
+            "Game #{}: {} vs {} ({}:{}) - NOT fetching detailed data (ID: {}, Season: {}) - Reason: started={}, ended={}, has_goals={}, has_goal_events={}",
+            game_idx + 1,
+            home_team_name,
+            away_team_name,
+            game.home_team.goals,
+            game.away_team.goals,
+            game.id,
+            game.season,
+            game.started,
+            game.ended,
+            game.home_team.goals > 0 || game.away_team.goals > 0,
+            !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty()
+        );
+
         // Fallback: process goal events from schedule response if available
         if has_actual_goals(&game) {
-            debug!("Processing goal events from schedule response");
+            info!(
+                "Processing goal events from schedule response for game ID: {}",
+                game.id
+            );
             // Create a simple player name mapping for basic goal events
             let mut player_names = HashMap::new();
             // For schedule response, we don't have detailed player data, so use fallback names
@@ -512,9 +546,18 @@ async fn process_single_game(
                     );
                 }
             }
-            process_goal_events(&game, &player_names)
+            let events = process_goal_events(&game, &player_names);
+            info!(
+                "Created {} goal events from schedule response for game ID: {}",
+                events.len(),
+                game.id
+            );
+            events
         } else {
-            info!("No detailed data needed for this game");
+            warn!(
+                "Game ID: {} has no goal events in schedule response, but has score {}:{} - will create placeholder events",
+                game.id, game.home_team.goals, game.away_team.goals
+            );
             Vec::new()
         }
     };
@@ -1080,17 +1123,39 @@ async fn fetch_detailed_game_data(
                 "Successfully fetched detailed game data: {} goal events",
                 detailed_data.len()
             );
-            detailed_data
+
+            // Check if we got 0 goal events for a game that has a score
+            let has_score = game.home_team.goals > 0 || game.away_team.goals > 0;
+            if detailed_data.is_empty() && has_score {
+                warn!(
+                    "Game ID {} has score {}:{} but detailed API returned 0 goal events - creating placeholder events",
+                    game.id, game.home_team.goals, game.away_team.goals
+                );
+                let basic_events = create_basic_goal_events(game).await;
+                info!(
+                    "Created {} placeholder goal events for game ID {} with missing detailed data",
+                    basic_events.len(),
+                    game.id
+                );
+                basic_events
+            } else {
+                detailed_data
+            }
         }
         Err(e) => {
             error!(
-                "Failed to fetch detailed game data for game ID {}: {}. Using basic game data.",
-                game.id, e
+                "Failed to fetch detailed game data for game ID {} (season {}): {}. Using basic game data.",
+                game.id, game.season, e
             );
-            let basic_events = create_basic_goal_events(game);
+            warn!(
+                "API call failed for game ID {} - URL would be: {}/games/{}/{}",
+                game.id, config.api_domain, game.season, game.id
+            );
+            let basic_events = create_basic_goal_events(game).await;
             info!(
-                "Created {} basic goal events as fallback",
-                basic_events.len()
+                "Created {} basic goal events as fallback for game ID {}",
+                basic_events.len(),
+                game.id
             );
             basic_events
         }
@@ -1714,7 +1779,21 @@ async fn convert_api_game_to_schedule_game(
     let detailed_game_data =
         fetch_and_convert_detailed_game_data(client, config, season, api_game.id).await;
 
-    // 2. Convert goal events for home and away teams
+    // 2. Create a player name mapping from the resolved goal events to preserve player names
+    // Only cache if we don't already have player data (to avoid overwriting detailed disambiguation)
+    if get_cached_players(api_game.id).await.is_none() {
+        // Format the names properly for teletext display (last name only, properly capitalized)
+        let mut player_names = HashMap::new();
+        for event in &detailed_game_data.goal_events {
+            let formatted_name = format_for_display(&event.scorer_name);
+            player_names.insert(event.scorer_player_id, formatted_name);
+        }
+
+        // 3. Cache the player names for this game so they're available during later processing
+        cache_players(api_game.id, player_names).await;
+    }
+
+    // 4. Convert goal events for home and away teams
     let home_goal_events = convert_goal_events_for_team(
         &detailed_game_data.goal_events,
         true,
@@ -1726,7 +1805,7 @@ async fn convert_api_game_to_schedule_game(
         &detailed_game_data.detailed_game,
     );
 
-    // 3. Build ScheduleTeam structs
+    // 5. Build ScheduleTeam structs
     let home_team = build_schedule_team_from_api_and_detailed(
         api_game.home_team_name.clone(),
         detailed_game_data.home_goals,
@@ -2960,6 +3039,51 @@ mod tests {
             serie: "runkosarja".to_string(),
         };
         assert!(!should_fetch_detailed_data(&game));
+    }
+
+    #[test]
+    fn test_should_fetch_detailed_data_finished_with_score() {
+        // Test that finished games with non-zero scores fetch detailed data even without goal_events
+        let game = ScheduleGame {
+            id: 1,
+            season: 2024,
+            start: "2024-01-15T18:30:00Z".to_string(),
+            end: Some("2024-01-15T20:30:00Z".to_string()),
+            home_team: ScheduleTeam {
+                team_id: Some("team1".to_string()),
+                team_placeholder: None,
+                team_name: Some("HIFK".to_string()),
+                goals: 3,
+                time_out: None,
+                powerplay_instances: 0,
+                powerplay_goals: 0,
+                short_handed_instances: 0,
+                short_handed_goals: 0,
+                ranking: None,
+                game_start_date_time: None,
+                goal_events: vec![], // Empty goal_events but non-zero score
+            },
+            away_team: ScheduleTeam {
+                team_id: Some("team2".to_string()),
+                team_placeholder: None,
+                team_name: Some("Tappara".to_string()),
+                goals: 2,
+                time_out: None,
+                powerplay_instances: 0,
+                powerplay_goals: 0,
+                short_handed_instances: 0,
+                short_handed_goals: 0,
+                ranking: None,
+                game_start_date_time: None,
+                goal_events: vec![],
+            },
+            finished_type: Some("normal".to_string()),
+            started: true,
+            ended: true,
+            game_time: 3600,
+            serie: "runkosarja".to_string(),
+        };
+        assert!(should_fetch_detailed_data(&game));
     }
 
     #[tokio::test]

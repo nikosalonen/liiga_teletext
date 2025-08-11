@@ -17,10 +17,7 @@ fn test_create_error_page_includes_navigation_hint_for_specific_date() {
     let formatted_date = "01.07.";
 
     // Simulate the logic from create_error_page function
-    error_page.add_error_message(&format!(
-        "Ei otteluita {} päivälle",
-        formatted_date
-    ));
+    error_page.add_error_message(&format!("Ei otteluita {formatted_date} päivälle"));
     error_page.add_error_message("");
     error_page.add_error_message("Käytä Shift + nuolinäppäimiä");
     error_page.add_error_message("siirtyäksesi toiseen päivään");
