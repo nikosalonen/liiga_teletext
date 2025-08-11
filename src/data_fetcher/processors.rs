@@ -412,21 +412,100 @@ fn is_game_likely_live(game: &ScheduleGame) -> bool {
     false
 }
 
-pub fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
-    let mut basic_names = HashMap::new();
-    for goal in &game.home_team.goal_events {
-        basic_names.insert(
-            goal.scorer_player_id,
-            create_fallback_name(goal.scorer_player_id),
+pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
+    use crate::data_fetcher::cache::get_cached_players;
+    use tracing::{info, warn};
+
+    // If the game has goal events in the response, use them with cached names if available
+    if !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty() {
+        info!(
+            "Game ID {}: Using goal events from schedule response ({} home, {} away)",
+            game.id,
+            game.home_team.goal_events.len(),
+            game.away_team.goal_events.len()
+        );
+
+        // First, try to get cached player names
+        let cached_players = get_cached_players(game.id).await;
+        let mut basic_names = HashMap::new();
+
+        for goal in &game.home_team.goal_events {
+            let player_name = if let Some(ref cached) = cached_players {
+                cached
+                    .get(&goal.scorer_player_id)
+                    .cloned()
+                    .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
+            } else {
+                create_fallback_name(goal.scorer_player_id)
+            };
+            basic_names.insert(goal.scorer_player_id, player_name);
+        }
+
+        for goal in &game.away_team.goal_events {
+            let player_name = if let Some(ref cached) = cached_players {
+                cached
+                    .get(&goal.scorer_player_id)
+                    .cloned()
+                    .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
+            } else {
+                create_fallback_name(goal.scorer_player_id)
+            };
+            basic_names.insert(goal.scorer_player_id, player_name);
+        }
+
+        return process_goal_events(game, &basic_names);
+    }
+
+    // If no goal events but game has scores, create placeholder events
+    warn!(
+        "Game ID {}: No goal events in schedule response, creating {} placeholder events for score {}:{}",
+        game.id,
+        game.home_team.goals + game.away_team.goals,
+        game.home_team.goals,
+        game.away_team.goals
+    );
+
+    let mut events = Vec::new();
+
+    // Create placeholder events for home team goals
+    for i in 0..game.home_team.goals {
+        events.push(GoalEventData {
+            scorer_player_id: 0,                           // Unknown player ID
+            scorer_name: "Tuntematon pelaaja".to_string(), // "Unknown player" in Finnish
+            minute: 0,                                     // Unknown time
+            home_team_score: i + 1,
+            away_team_score: 0, // We don't know the exact progression
+            is_winning_goal: false,
+            goal_types: vec![],
+            is_home_team: true,
+            video_clip_url: None,
+        });
+    }
+
+    // Create placeholder events for away team goals
+    for i in 0..game.away_team.goals {
+        events.push(GoalEventData {
+            scorer_player_id: 0,                           // Unknown player ID
+            scorer_name: "Tuntematon pelaaja".to_string(), // "Unknown player" in Finnish
+            minute: 0,                                     // Unknown time
+            home_team_score: 0,                            // We don't know the exact progression
+            away_team_score: i + 1,
+            is_winning_goal: false,
+            goal_types: vec![],
+            is_home_team: false,
+            video_clip_url: None,
+        });
+    }
+
+    if !events.is_empty() {
+        info!(
+            "Game ID {}: Created {} placeholder goal events",
+            game.id,
+            events.len()
         );
     }
-    for goal in &game.away_team.goal_events {
-        basic_names.insert(
-            goal.scorer_player_id,
-            create_fallback_name(goal.scorer_player_id),
-        );
-    }
-    process_goal_events(game, &basic_names)
+
+    events
 }
 
 #[cfg(test)]
@@ -698,14 +777,14 @@ mod tests {
         assert!(matches!(result.unwrap_err(), AppError::DateTimeParse(_)));
     }
 
-    #[test]
-    fn test_create_basic_goal_events() {
+    #[tokio::test]
+    async fn test_create_basic_goal_events() {
         let home_goal = create_test_goal_event(123, 600, 1, 0, vec!["EV".to_string()]);
         let away_goal = create_test_goal_event(456, 900, 1, 1, vec!["YV".to_string()]);
 
         let game = create_test_game(vec![home_goal], vec![away_goal]);
 
-        let events = create_basic_goal_events(&game);
+        let events = create_basic_goal_events(&game).await;
 
         assert_eq!(events.len(), 2);
 
@@ -714,11 +793,39 @@ mod tests {
         assert_eq!(events[1].scorer_name, "Pelaaja 456");
     }
 
-    #[test]
-    fn test_create_basic_goal_events_empty_game() {
+    #[tokio::test]
+    async fn test_create_basic_goal_events_empty_game() {
         let game = create_test_game(vec![], vec![]);
-        let events = create_basic_goal_events(&game);
+        let events = create_basic_goal_events(&game).await;
         assert!(events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_create_basic_goal_events_with_scores_but_no_events() {
+        // Test the new fallback logic for games with scores but no goal events
+        let mut game = create_test_game(vec![], vec![]);
+
+        // Set scores but keep goal_events empty (simulates schedule response)
+        game.home_team.goals = 2;
+        game.away_team.goals = 1;
+
+        let events = create_basic_goal_events(&game).await;
+
+        // Should create placeholder events based on scores
+        assert_eq!(events.len(), 3); // 2 home + 1 away
+
+        // Check home team events
+        let home_events: Vec<_> = events.iter().filter(|e| e.is_home_team).collect();
+        assert_eq!(home_events.len(), 2);
+        assert_eq!(home_events[0].scorer_name, "Tuntematon pelaaja");
+        assert_eq!(home_events[0].home_team_score, 1);
+        assert_eq!(home_events[1].home_team_score, 2);
+
+        // Check away team events
+        let away_events: Vec<_> = events.iter().filter(|e| !e.is_home_team).collect();
+        assert_eq!(away_events.len(), 1);
+        assert_eq!(away_events[0].scorer_name, "Tuntematon pelaaja");
+        assert_eq!(away_events[0].away_team_score, 1);
     }
 
     #[test]
