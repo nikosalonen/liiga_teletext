@@ -97,7 +97,7 @@ liiga_teletext --compact --once  # Quick compact view
 Side-by-side two-column layout for wide terminals (128+ characters). Shows full game details in each column.
 
 ```bash
-liiga_teletext --wide --date 2024-01-15  # Wide view for specific date
+liiga_teletext --wide --date 2025-03-21  # Wide view for specific date
 ```
 
 ## Player Name Disambiguation
