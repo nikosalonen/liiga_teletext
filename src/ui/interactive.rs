@@ -705,7 +705,7 @@ fn would_be_previous_season(date: &str) -> bool {
     } else if date_year == current_year - 1 {
         // Previous year - allow access to recent hockey season games
         // Only block if we're trying to access very old off-season games
-        
+
         // If we're currently in the new season (September+) and trying to access
         // off-season games from the previous year (June-August), block it
         if current_month >= 9 && (6..=8).contains(&date_month) {
@@ -1245,7 +1245,6 @@ fn create_error_page(
 
     error_page
 }
-
 
 /// Handle data fetching and page creation
 async fn handle_data_fetching(

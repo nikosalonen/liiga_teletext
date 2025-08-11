@@ -394,7 +394,10 @@ fn should_fetch_detailed_data(game: &ScheduleGame) -> bool {
         // 1. The game has actual goal events in the response, OR
         // 2. The game has a non-zero score (indicating goals were scored, even if goal_events is empty/incomplete), OR
         // 3. The game is still ongoing
-        has_actual_goals(game) || game.home_team.goals > 0 || game.away_team.goals > 0 || !game.ended
+        has_actual_goals(game)
+            || game.home_team.goals > 0
+            || game.away_team.goals > 0
+            || !game.ended
     } else {
         false
     }
@@ -520,7 +523,10 @@ async fn process_single_game(
 
         // Fallback: process goal events from schedule response if available
         if has_actual_goals(&game) {
-            info!("Processing goal events from schedule response for game ID: {}", game.id);
+            info!(
+                "Processing goal events from schedule response for game ID: {}",
+                game.id
+            );
             // Create a simple player name mapping for basic goal events
             let mut player_names = HashMap::new();
             // For schedule response, we don't have detailed player data, so use fallback names
@@ -541,11 +547,17 @@ async fn process_single_game(
                 }
             }
             let events = process_goal_events(&game, &player_names);
-            info!("Created {} goal events from schedule response for game ID: {}", events.len(), game.id);
+            info!(
+                "Created {} goal events from schedule response for game ID: {}",
+                events.len(),
+                game.id
+            );
             events
         } else {
-            warn!("Game ID: {} has no goal events in schedule response, but has score {}:{} - will create placeholder events",
-                  game.id, game.home_team.goals, game.away_team.goals);
+            warn!(
+                "Game ID: {} has no goal events in schedule response, but has score {}:{} - will create placeholder events",
+                game.id, game.home_team.goals, game.away_team.goals
+            );
             Vec::new()
         }
     };
@@ -1137,10 +1149,7 @@ async fn fetch_detailed_game_data(
             );
             warn!(
                 "API call failed for game ID {} - URL would be: {}/games/{}/{}",
-                game.id,
-                config.api_domain,
-                game.season,
-                game.id
+                game.id, config.api_domain, game.season, game.id
             );
             let basic_events = create_basic_goal_events(game).await;
             info!(
