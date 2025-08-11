@@ -413,8 +413,8 @@ fn is_game_likely_live(game: &ScheduleGame) -> bool {
 }
 
 pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
-    use tracing::{info, warn};
     use crate::data_fetcher::cache::get_cached_players;
+    use tracing::{info, warn};
 
     // If the game has goal events in the response, use them with cached names if available
     if !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty() {
@@ -424,31 +424,35 @@ pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData>
             game.home_team.goal_events.len(),
             game.away_team.goal_events.len()
         );
-        
+
         // First, try to get cached player names
         let cached_players = get_cached_players(game.id).await;
         let mut basic_names = HashMap::new();
-        
+
         for goal in &game.home_team.goal_events {
             let player_name = if let Some(ref cached) = cached_players {
-                cached.get(&goal.scorer_player_id).cloned()
+                cached
+                    .get(&goal.scorer_player_id)
+                    .cloned()
                     .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
             } else {
                 create_fallback_name(goal.scorer_player_id)
             };
             basic_names.insert(goal.scorer_player_id, player_name);
         }
-        
+
         for goal in &game.away_team.goal_events {
             let player_name = if let Some(ref cached) = cached_players {
-                cached.get(&goal.scorer_player_id).cloned()
+                cached
+                    .get(&goal.scorer_player_id)
+                    .cloned()
                     .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
             } else {
                 create_fallback_name(goal.scorer_player_id)
             };
             basic_names.insert(goal.scorer_player_id, player_name);
         }
-        
+
         return process_goal_events(game, &basic_names);
     }
 
@@ -466,9 +470,9 @@ pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData>
     // Create placeholder events for home team goals
     for i in 0..game.home_team.goals {
         events.push(GoalEventData {
-            scorer_player_id: 0, // Unknown player ID
+            scorer_player_id: 0,                           // Unknown player ID
             scorer_name: "Tuntematon pelaaja".to_string(), // "Unknown player" in Finnish
-            minute: 0, // Unknown time
+            minute: 0,                                     // Unknown time
             home_team_score: i + 1,
             away_team_score: 0, // We don't know the exact progression
             is_winning_goal: false,
@@ -481,10 +485,10 @@ pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData>
     // Create placeholder events for away team goals
     for i in 0..game.away_team.goals {
         events.push(GoalEventData {
-            scorer_player_id: 0, // Unknown player ID
+            scorer_player_id: 0,                           // Unknown player ID
             scorer_name: "Tuntematon pelaaja".to_string(), // "Unknown player" in Finnish
-            minute: 0, // Unknown time
-            home_team_score: 0, // We don't know the exact progression
+            minute: 0,                                     // Unknown time
+            home_team_score: 0,                            // We don't know the exact progression
             away_team_score: i + 1,
             is_winning_goal: false,
             goal_types: vec![],
@@ -494,7 +498,11 @@ pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData>
     }
 
     if !events.is_empty() {
-        info!("Game ID {}: Created {} placeholder goal events", game.id, events.len());
+        info!(
+            "Game ID {}: Created {} placeholder goal events",
+            game.id,
+            events.len()
+        );
     }
 
     events
