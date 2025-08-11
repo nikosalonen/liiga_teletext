@@ -412,10 +412,11 @@ fn is_game_likely_live(game: &ScheduleGame) -> bool {
     false
 }
 
-pub fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
+pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
     use tracing::{info, warn};
+    use crate::data_fetcher::cache::get_cached_players;
 
-    // If the game has goal events in the response, use them with fallback names
+    // If the game has goal events in the response, use them with cached names if available
     if !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty() {
         info!(
             "Game ID {}: Using goal events from schedule response ({} home, {} away)",
@@ -423,19 +424,31 @@ pub fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
             game.home_team.goal_events.len(),
             game.away_team.goal_events.len()
         );
+        
+        // First, try to get cached player names
+        let cached_players = get_cached_players(game.id).await;
         let mut basic_names = HashMap::new();
+        
         for goal in &game.home_team.goal_events {
-            basic_names.insert(
-                goal.scorer_player_id,
-                create_fallback_name(goal.scorer_player_id),
-            );
+            let player_name = if let Some(ref cached) = cached_players {
+                cached.get(&goal.scorer_player_id).cloned()
+                    .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
+            } else {
+                create_fallback_name(goal.scorer_player_id)
+            };
+            basic_names.insert(goal.scorer_player_id, player_name);
         }
+        
         for goal in &game.away_team.goal_events {
-            basic_names.insert(
-                goal.scorer_player_id,
-                create_fallback_name(goal.scorer_player_id),
-            );
+            let player_name = if let Some(ref cached) = cached_players {
+                cached.get(&goal.scorer_player_id).cloned()
+                    .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
+            } else {
+                create_fallback_name(goal.scorer_player_id)
+            };
+            basic_names.insert(goal.scorer_player_id, player_name);
         }
+        
         return process_goal_events(game, &basic_names);
     }
 
@@ -756,14 +769,14 @@ mod tests {
         assert!(matches!(result.unwrap_err(), AppError::DateTimeParse(_)));
     }
 
-    #[test]
-    fn test_create_basic_goal_events() {
+    #[tokio::test]
+    async fn test_create_basic_goal_events() {
         let home_goal = create_test_goal_event(123, 600, 1, 0, vec!["EV".to_string()]);
         let away_goal = create_test_goal_event(456, 900, 1, 1, vec!["YV".to_string()]);
 
         let game = create_test_game(vec![home_goal], vec![away_goal]);
 
-        let events = create_basic_goal_events(&game);
+        let events = create_basic_goal_events(&game).await;
 
         assert_eq!(events.len(), 2);
 
@@ -772,15 +785,15 @@ mod tests {
         assert_eq!(events[1].scorer_name, "Pelaaja 456");
     }
 
-    #[test]
-    fn test_create_basic_goal_events_empty_game() {
+    #[tokio::test]
+    async fn test_create_basic_goal_events_empty_game() {
         let game = create_test_game(vec![], vec![]);
-        let events = create_basic_goal_events(&game);
+        let events = create_basic_goal_events(&game).await;
         assert!(events.is_empty());
     }
 
-    #[test]
-    fn test_create_basic_goal_events_with_scores_but_no_events() {
+    #[tokio::test]
+    async fn test_create_basic_goal_events_with_scores_but_no_events() {
         // Test the new fallback logic for games with scores but no goal events
         let mut game = create_test_game(vec![], vec![]);
 
@@ -788,7 +801,7 @@ mod tests {
         game.home_team.goals = 2;
         game.away_team.goals = 1;
 
-        let events = create_basic_goal_events(&game);
+        let events = create_basic_goal_events(&game).await;
 
         // Should create placeholder events based on scores
         assert_eq!(events.len(), 3); // 2 home + 1 away
