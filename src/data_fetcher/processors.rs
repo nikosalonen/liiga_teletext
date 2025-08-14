@@ -241,9 +241,13 @@ pub fn process_team_goals(
 }
 
 /// Determines whether to show today's games or yesterday's games.
-/// During preseason (May-September), always shows today's games since practice games
-/// might be scheduled at any time of day. During regular season and playoffs,
-/// uses a 14:00 cutoff time.
+/// Uses a consistent 12:00 (noon) cutoff time year-round for authentic teletext-style behavior.
+///
+/// Before noon: Shows yesterday's games (morning preference)
+/// After noon: Shows today's games
+///
+/// This provides consistent user experience regardless of season, allowing users to see
+/// previous day's results in the morning and current day's games in the afternoon.
 ///
 /// # Returns
 ///
@@ -267,6 +271,30 @@ pub fn should_show_todays_games() -> bool {
     // Convert to local time for date and time comparisons
     let now_local = now_utc.with_timezone(&Local);
 
+    should_show_todays_games_with_time(now_local)
+}
+
+/// Determines whether to show today's games or yesterday's games based on a specific time.
+/// This is a deterministic helper function that takes a local time and computes the noon cutoff.
+///
+/// # Arguments
+///
+/// * `now_local` - The local time to evaluate against the noon cutoff
+///
+/// # Returns
+///
+/// `true` if the given time is after noon (12:00), `false` if before noon
+///
+/// # Examples
+///
+/// ```
+/// use liiga_teletext::data_fetcher::processors::should_show_todays_games_with_time;
+/// use chrono::{Local, TimeZone};
+///
+/// let now_local = Local::now();
+/// let show_today = should_show_todays_games_with_time(now_local);
+/// ```
+pub fn should_show_todays_games_with_time(now_local: DateTime<Local>) -> bool {
     // For all seasons (including preseason), use the 12:00 (noon) cutoff time
     // This provides consistent teletext-style behavior year-round
     let cutoff_time = NaiveTime::from_hms_opt(12, 0, 0).unwrap();
@@ -652,7 +680,7 @@ mod tests {
     #[test]
     fn test_noon_cutoff_behavior() {
         // Test that we use noon (12:00) cutoff year-round for consistent teletext behavior
-        // Note: This test is time-dependent, but documents the expected behavior
+        // This test is now deterministic by capturing the time once and using the helper function
 
         use chrono::{Local, NaiveTime};
 
@@ -661,8 +689,8 @@ mod tests {
         let noon_today = now_local.date_naive().and_time(noon_time);
         let is_after_noon = now_local.naive_local() >= noon_today;
 
-        // The function should return true if after noon, false if before noon
-        let result = should_show_todays_games();
+        // Use the helper function with the captured time to ensure deterministic behavior
+        let result = should_show_todays_games_with_time(now_local);
 
         // Year-round behavior: result should match whether we're after noon
         if is_after_noon {
