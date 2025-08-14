@@ -665,15 +665,25 @@ mod tests {
         use chrono::{Local, NaiveTime, TimeZone};
         let today = Local::now();
 
-        let morning_naive = today.date_naive().and_time(NaiveTime::from_hms_opt(11, 59, 59).unwrap());
-        let morning_dt = chrono::Local.from_local_datetime(&morning_naive).single().unwrap();
+        let morning_naive = today
+            .date_naive()
+            .and_time(NaiveTime::from_hms_opt(11, 59, 59).unwrap());
+        let morning_dt = chrono::Local
+            .from_local_datetime(&morning_naive)
+            .single()
+            .unwrap();
         assert!(
             !should_show_todays_games_with_time(morning_dt),
             "Before noon should show yesterday's games"
         );
 
-        let noon_naive = today.date_naive().and_time(NaiveTime::from_hms_opt(12, 0, 0).unwrap());
-        let noon_dt = chrono::Local.from_local_datetime(&noon_naive).single().unwrap();
+        let noon_naive = today
+            .date_naive()
+            .and_time(NaiveTime::from_hms_opt(12, 0, 0).unwrap());
+        let noon_dt = chrono::Local
+            .from_local_datetime(&noon_naive)
+            .single()
+            .unwrap();
         assert!(
             should_show_todays_games_with_time(noon_dt),
             "At/after noon should show today's games"
