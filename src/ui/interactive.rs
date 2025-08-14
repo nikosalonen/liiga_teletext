@@ -1978,7 +1978,10 @@ mod tests {
 
         // Test games later today should NOT be considered future games for "Seuraavat ottelut"
         let now = chrono::Local::now();
-        let today_later = now.date_naive().and_hms_opt(23, 59, 59).unwrap()
+        let today_later = now
+            .date_naive()
+            .and_hms_opt(23, 59, 59)
+            .unwrap()
             .and_local_timezone(chrono::Local::now().timezone())
             .single()
             .unwrap()
@@ -2002,8 +2005,10 @@ mod tests {
         assert!(!is_future_game(&game_later_today));
 
         // Test games tomorrow should be considered future games
-        let tomorrow = (now + chrono::Duration::days(1)).date_naive()
-            .and_hms_opt(18, 30, 0).unwrap()
+        let tomorrow = (now + chrono::Duration::days(1))
+            .date_naive()
+            .and_hms_opt(18, 30, 0)
+            .unwrap()
             .and_local_timezone(chrono::Local::now().timezone())
             .single()
             .unwrap()
