@@ -174,27 +174,31 @@ fn get_team_name(team: &ScheduleTeam) -> &str {
 /// Determines the date to fetch data for based on custom date or current time.
 /// Returns today's date if games should be shown today, otherwise yesterday's date.
 /// Uses UTC internally for consistent calculations, formats as local date for display.
-fn determine_fetch_date(custom_date: Option<String>) -> String {
-    custom_date.unwrap_or_else(|| {
-        // Use UTC for internal calculations to avoid DST issues
-        let now_utc = Utc::now();
-        // Convert to local time for the date decision logic
-        let now_local = now_utc.with_timezone(&Local);
+/// Also returns whether this date was chosen due to morning cutoff logic.
+fn determine_fetch_date(custom_date: Option<String>) -> (String, bool) {
+    match custom_date {
+        Some(date) => (date, false), // Custom date provided, not due to cutoff
+        None => {
+            // Use UTC for internal calculations to avoid DST issues
+            let now_utc = Utc::now();
+            // Convert to local time for the date decision logic
+            let now_local = now_utc.with_timezone(&Local);
 
-        if should_show_todays_games() {
-            let date_str = now_local.format("%Y-%m-%d").to_string();
-            info!("Using today's date: {}", date_str);
-            date_str
-        } else {
-            let yesterday = now_local
-                .date_naive()
-                .pred_opt()
-                .expect("Date underflow cannot happen with valid date");
-            let date_str = yesterday.format("%Y-%m-%d").to_string();
-            info!("Using yesterday's date: {}", date_str);
-            date_str
+            if should_show_todays_games() {
+                let date_str = now_local.format("%Y-%m-%d").to_string();
+                info!("Using today's date: {}", date_str);
+                (date_str, false)
+            } else {
+                let yesterday = now_local
+                    .date_naive()
+                    .pred_opt()
+                    .expect("Date underflow cannot happen with valid date");
+                let date_str = yesterday.format("%Y-%m-%d").to_string();
+                info!("Using yesterday's date due to morning cutoff: {}", date_str);
+                (date_str, true) // This was chosen due to morning cutoff
+            }
         }
-    })
+    }
 }
 
 /// Builds the list of tournaments to fetch based on the month.
@@ -910,8 +914,19 @@ async fn handle_no_games_found(
     tournaments: &[&str],
     date: &str,
     tournament_responses: HashMap<String, ScheduleResponse>,
+    is_morning_cutoff: bool,
 ) -> Result<(Vec<ScheduleResponse>, Option<String>), AppError> {
-    info!("No games found for the current date, checking for next game dates");
+    if is_morning_cutoff {
+        info!(
+            "No games found for {} (morning cutoff date). Searching for today's/future games as fallback.",
+            date
+        );
+        // During morning cutoff, we tried yesterday first but found no games
+        // Now fall back to today's games or future games for better UX
+    } else {
+        info!("No games found for the current date, checking for next game dates");
+    }
+
     let (next_date, next_responses) =
         process_next_game_dates(client, config, tournaments, date, tournament_responses).await?;
 
@@ -1035,7 +1050,7 @@ pub async fn fetch_liiga_data(
     let client = create_http_client();
 
     // Determine the date to fetch data for
-    let date = determine_fetch_date(custom_date);
+    let (date, is_morning_cutoff) = determine_fetch_date(custom_date);
 
     // Check if this is a historical date (previous season) or requires schedule endpoint for playoffs
     let is_historical = is_historical_date(&date);
@@ -1077,7 +1092,15 @@ pub async fn fetch_liiga_data(
         );
         (responses, None)
     } else {
-        handle_no_games_found(&client, &config, &tournaments, &date, tournament_responses).await?
+        handle_no_games_found(
+            &client,
+            &config,
+            &tournaments,
+            &date,
+            tournament_responses,
+            is_morning_cutoff,
+        )
+        .await?
     };
 
     // Process games if we found any

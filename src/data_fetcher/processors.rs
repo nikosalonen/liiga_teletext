@@ -2,13 +2,11 @@ use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, Schedu
 use crate::data_fetcher::player_names::{DisambiguationContext, create_fallback_name};
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
-use chrono::{DateTime, Datelike, Local, NaiveTime, Utc};
+use chrono::{DateTime, Local, NaiveTime, Utc};
 use std::collections::HashMap;
 use tracing;
 
-// Tournament season constants for month-based logic
-const PRESEASON_START_MONTH: u32 = 6; // June
-const PRESEASON_END_MONTH: u32 = 9; // September
+// Note: Previously had preseason-specific logic, now uses consistent year-round noon cutoff
 
 /// Processes goal events for both teams in a game with team-scoped disambiguation.
 /// This enhanced version applies disambiguation separately for home and away teams,
@@ -269,16 +267,9 @@ pub fn should_show_todays_games() -> bool {
     // Convert to local time for date and time comparisons
     let now_local = now_utc.with_timezone(&Local);
 
-    // Check if we're in preseason (May-September)
-    let current_month = now_local.month();
-    if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&current_month) {
-        // During preseason, always show today's games since practice games
-        // might be scheduled at any time of day
-        return true;
-    }
-
-    // For regular season and playoffs, use the 14:00 cutoff time
-    let cutoff_time = NaiveTime::from_hms_opt(14, 0, 0).unwrap();
+    // For all seasons (including preseason), use the 12:00 (noon) cutoff time
+    // This provides consistent teletext-style behavior year-round
+    let cutoff_time = NaiveTime::from_hms_opt(12, 0, 0).unwrap();
     let today_cutoff = now_local.date_naive().and_time(cutoff_time);
     now_local.naive_local() >= today_cutoff
 }
@@ -656,6 +647,32 @@ mod tests {
         let result1 = should_show_todays_games();
         let result2 = should_show_todays_games();
         assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn test_noon_cutoff_behavior() {
+        // Test that we use noon (12:00) cutoff year-round for consistent teletext behavior
+        // Note: This test is time-dependent, but documents the expected behavior
+
+        use chrono::{Local, NaiveTime};
+
+        let now_local = Local::now();
+        let noon_time = NaiveTime::from_hms_opt(12, 0, 0).unwrap();
+        let noon_today = now_local.date_naive().and_time(noon_time);
+        let is_after_noon = now_local.naive_local() >= noon_today;
+
+        // The function should return true if after noon, false if before noon
+        let result = should_show_todays_games();
+
+        // Year-round behavior: result should match whether we're after noon
+        if is_after_noon {
+            assert!(result, "Should show today's games after noon (year-round)");
+        } else {
+            assert!(
+                !result,
+                "Should show yesterday's games before noon (year-round)"
+            );
+        }
     }
 
     #[test]
