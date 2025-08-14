@@ -661,19 +661,31 @@ mod tests {
     }
 
     #[test]
-    fn test_should_show_todays_games() {
-        // This function depends on current time, so we test the logic indirectly
-        // by checking that it returns a boolean
-        let result = should_show_todays_games();
-        // Just verify it returns a boolean value (no assertion needed)
-        let _: bool = result;
+    fn test_should_show_todays_games_deterministic_examples() {
+        use chrono::{Local, NaiveTime, TimeZone};
+        let today = Local::now();
+
+        let morning_naive = today.date_naive().and_time(NaiveTime::from_hms_opt(11, 59, 59).unwrap());
+        let morning_dt = chrono::Local.from_local_datetime(&morning_naive).single().unwrap();
+        assert!(
+            !should_show_todays_games_with_time(morning_dt),
+            "Before noon should show yesterday's games"
+        );
+
+        let noon_naive = today.date_naive().and_time(NaiveTime::from_hms_opt(12, 0, 0).unwrap());
+        let noon_dt = chrono::Local.from_local_datetime(&noon_naive).single().unwrap();
+        assert!(
+            should_show_todays_games_with_time(noon_dt),
+            "At/after noon should show today's games"
+        );
     }
 
     #[test]
     fn test_should_show_todays_games_consistency() {
-        // Multiple calls should return the same result within a short time frame
-        let result1 = should_show_todays_games();
-        let result2 = should_show_todays_games();
+        // Multiple evaluations against the same captured time must be equal
+        let now_local = chrono::Local::now();
+        let result1 = should_show_todays_games_with_time(now_local);
+        let result2 = should_show_todays_games_with_time(now_local);
         assert_eq!(result1, result2);
     }
 

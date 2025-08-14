@@ -17,7 +17,7 @@ use crate::data_fetcher::models::{
 use crate::data_fetcher::player_names::format_for_display;
 use crate::data_fetcher::processors::{
     create_basic_goal_events, determine_game_status, format_time, process_goal_events,
-    should_show_todays_games,
+    should_show_todays_games_with_time,
 };
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
@@ -184,7 +184,7 @@ fn determine_fetch_date(custom_date: Option<String>) -> (String, bool) {
             // Convert to local time for the date decision logic
             let now_local = now_utc.with_timezone(&Local);
 
-            if should_show_todays_games() {
+            if should_show_todays_games_with_time(now_local) {
                 let date_str = now_local.format("%Y-%m-%d").to_string();
                 info!("Using today's date: {}", date_str);
                 (date_str, false)
