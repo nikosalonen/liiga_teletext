@@ -2,11 +2,9 @@ use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, Schedu
 use crate::data_fetcher::player_names::{DisambiguationContext, create_fallback_name};
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
-use chrono::{DateTime, Local, NaiveTime, Utc};
+use chrono::{DateTime, Local, NaiveTime, TimeZone, Utc};
 use std::collections::HashMap;
 use tracing;
-
-// Note: Previously had preseason-specific logic, now uses consistent year-round noon cutoff
 
 /// Processes goal events for both teams in a game with team-scoped disambiguation.
 /// This enhanced version applies disambiguation separately for home and away teams,
@@ -241,7 +239,10 @@ pub fn process_team_goals(
 }
 
 /// Determines whether to show today's games or yesterday's games.
-/// Uses a consistent 12:00 (noon) cutoff time year-round for authentic teletext-style behavior.
+/// Uses a consistent 12:00 (noon) local-time cutoff year-round (chrono::Local) for authentic teletext-style behavior.
+///
+/// The cutoff is evaluated in the system's local timezone; noon is treated as the instant the
+/// local clock shows 12:00. This matches user expectations and is stable across DST transitions.
 ///
 /// Before noon: Shows yesterday's games (morning preference)
 /// After noon: Shows today's games
@@ -295,11 +296,14 @@ pub fn should_show_todays_games() -> bool {
 /// let show_today = should_show_todays_games_with_time(now_local);
 /// ```
 pub fn should_show_todays_games_with_time(now_local: DateTime<Local>) -> bool {
-    // For all seasons (including preseason), use the 12:00 (noon) cutoff time
-    // This provides consistent teletext-style behavior year-round
+    // Year-round cutoff at 12:00 local time (timezone-aware)
     let cutoff_time = NaiveTime::from_hms_opt(12, 0, 0).unwrap();
-    let today_cutoff = now_local.date_naive().and_time(cutoff_time);
-    now_local.naive_local() >= today_cutoff
+    let naive_cutoff = now_local.date_naive().and_time(cutoff_time);
+    match now_local.timezone().from_local_datetime(&naive_cutoff) {
+        chrono::LocalResult::Single(cutoff) => now_local >= cutoff,
+        chrono::LocalResult::Ambiguous(_, latest) => now_local >= latest, // prefer later instant
+        chrono::LocalResult::None => true, // defensive; noon should exist in all tz rules
+    }
 }
 
 pub fn determine_game_status(game: &ScheduleGame) -> (ScoreType, bool, bool) {
@@ -715,14 +719,10 @@ mod tests {
         let result = should_show_todays_games_with_time(now_local);
 
         // Year-round behavior: result should match whether we're after noon
-        if is_after_noon {
-            assert!(result, "Should show today's games after noon (year-round)");
-        } else {
-            assert!(
-                !result,
-                "Should show yesterday's games before noon (year-round)"
-            );
-        }
+        assert_eq!(
+            result, is_after_noon,
+            "Year-round: result should match whether we're after noon"
+        );
     }
 
     #[test]
