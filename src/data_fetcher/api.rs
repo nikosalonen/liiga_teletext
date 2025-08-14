@@ -176,14 +176,30 @@ fn get_team_name(team: &ScheduleTeam) -> &str {
 /// Uses UTC internally for consistent calculations, formats as local date for display.
 /// Also returns whether this date was chosen due to pre-noon cutoff logic.
 fn determine_fetch_date(custom_date: Option<String>) -> (String, bool) {
+    // Use UTC for internal calculations to avoid DST issues
+    let now_utc = Utc::now();
+    // Convert to local time for the date decision logic
+    let now_local = now_utc.with_timezone(&Local);
+
+    determine_fetch_date_with_time(custom_date, now_local)
+}
+
+/// Internal helper function for determining fetch date with injected time.
+/// This allows for deterministic testing by accepting a specific time instead of using the current time.
+///
+/// # Arguments
+/// * `custom_date` - Optional custom date to use instead of time-based logic
+/// * `now_local` - The local time to use for cutoff decisions
+///
+/// # Returns
+/// * `(String, bool)` - Tuple of (date_string, is_pre_noon_cutoff)
+fn determine_fetch_date_with_time(
+    custom_date: Option<String>,
+    now_local: chrono::DateTime<chrono::Local>,
+) -> (String, bool) {
     match custom_date {
         Some(date) => (date, false), // Custom date provided, not due to cutoff
         None => {
-            // Use UTC for internal calculations to avoid DST issues
-            let now_utc = Utc::now();
-            // Convert to local time for the date decision logic
-            let now_local = now_utc.with_timezone(&Local);
-
             if should_show_todays_games_with_time(now_local) {
                 let date_str = now_local.format("%Y-%m-%d").to_string();
                 info!("Using today's date: {}", date_str);
@@ -3756,5 +3772,53 @@ mod tests {
         // The cutoff flag should be either true or false based on current time
         // This assertion is always true for boolean values, but documents the expected type
         let _: bool = is_cutoff;
+    }
+
+    #[test]
+    fn test_determine_fetch_date_with_time_deterministic() {
+        use chrono::{Local, TimeZone};
+
+        // Create a fixed date for deterministic testing
+        let _base_date = Local.with_ymd_and_hms(2024, 1, 15, 0, 0, 0).unwrap();
+
+        // Test morning time (before noon) - should show yesterday's games
+        let morning_time = Local.with_ymd_and_hms(2024, 1, 15, 11, 59, 59).unwrap();
+        let (date, is_cutoff) = determine_fetch_date_with_time(None, morning_time);
+
+        assert_eq!(date, "2024-01-14"); // Yesterday's date
+        assert!(is_cutoff); // Should be marked as pre-noon cutoff
+
+        // Test noon time (at/after noon) - should show today's games
+        let noon_time = Local.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
+        let (date, is_cutoff) = determine_fetch_date_with_time(None, noon_time);
+
+        assert_eq!(date, "2024-01-15"); // Today's date
+        assert!(!is_cutoff); // Should not be marked as pre-noon cutoff
+
+        // Test custom date - should override time logic
+        let custom_date = Some("2024-02-20".to_string());
+        let (date, is_cutoff) = determine_fetch_date_with_time(custom_date, morning_time);
+
+        assert_eq!(date, "2024-02-20"); // Custom date should be used
+        assert!(!is_cutoff); // Custom date should not trigger cutoff logic
+    }
+
+    #[test]
+    fn test_determine_fetch_date_with_time_edge_cases() {
+        use chrono::{Local, TimeZone};
+
+        // Test edge case: exactly at noon
+        let exactly_noon = Local.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
+        let (date, is_cutoff) = determine_fetch_date_with_time(None, exactly_noon);
+
+        assert_eq!(date, "2024-01-15"); // Today's date at noon
+        assert!(!is_cutoff); // Noon is considered "after noon"
+
+        // Test edge case: one second before noon
+        let one_second_before_noon = Local.with_ymd_and_hms(2024, 1, 15, 11, 59, 59).unwrap();
+        let (date, is_cutoff) = determine_fetch_date_with_time(None, one_second_before_noon);
+
+        assert_eq!(date, "2024-01-14"); // Yesterday's date before noon
+        assert!(is_cutoff); // Should be marked as pre-noon cutoff
     }
 }
