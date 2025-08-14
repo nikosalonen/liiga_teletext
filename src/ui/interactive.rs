@@ -501,18 +501,25 @@ fn is_future_game(game: &GameData) -> bool {
         return false;
     }
 
-    // Parse the start date to validate it's in the future
+    // Parse the start date to validate it's on a future date (not just future time today)
     // Expected format: YYYY-MM-DDThh:mm:ssZ
     match chrono::DateTime::parse_from_rfc3339(&game.start) {
         Ok(game_start) => {
-            let now = Utc::now();
-            let is_future = game_start > now;
+            // Convert to local timezone for date comparison
+            let game_local = game_start.with_timezone(&chrono::Local);
+            let now_local = chrono::Local::now();
+
+            // Extract just the date parts for comparison
+            let game_date = game_local.date_naive();
+            let today = now_local.date_naive();
+
+            let is_future = game_date > today;
 
             if !is_future {
                 tracing::debug!(
-                    "Game start time {} is not in the future (current: {})",
-                    game_start,
-                    now
+                    "Game date {} is not in the future (today: {})",
+                    game_date,
+                    today
                 );
             }
 
@@ -1935,7 +1942,7 @@ mod tests {
 
     #[test]
     fn test_is_future_game() {
-        // Create a future game
+        // Create a future game (different date)
         let future_game = GameData {
             home_team: "Team A".to_string(),
             away_team: "Team B".to_string(),
@@ -1968,6 +1975,56 @@ mod tests {
         };
 
         assert!(!is_future_game(&past_game));
+
+        // Test games later today should NOT be considered future games for "Seuraavat ottelut"
+        let now = chrono::Local::now();
+        let today_later = now.date_naive().and_hms_opt(23, 59, 59).unwrap()
+            .and_local_timezone(chrono::Local::now().timezone())
+            .single()
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+
+        let game_later_today = GameData {
+            home_team: "Team A".to_string(),
+            away_team: "Team B".to_string(),
+            time: "23:59".to_string(),
+            result: "".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 0,
+            start: today_later.to_rfc3339(),
+        };
+
+        // Should NOT be considered a future game (same date)
+        assert!(!is_future_game(&game_later_today));
+
+        // Test games tomorrow should be considered future games
+        let tomorrow = (now + chrono::Duration::days(1)).date_naive()
+            .and_hms_opt(18, 30, 0).unwrap()
+            .and_local_timezone(chrono::Local::now().timezone())
+            .single()
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+
+        let game_tomorrow = GameData {
+            home_team: "Team A".to_string(),
+            away_team: "Team B".to_string(),
+            time: "18:30".to_string(),
+            result: "".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 0,
+            start: tomorrow.to_rfc3339(),
+        };
+
+        // Should be considered a future game (different date)
+        assert!(is_future_game(&game_tomorrow));
     }
 
     #[test]
