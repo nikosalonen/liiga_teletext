@@ -15,6 +15,21 @@ A Rust terminal application that displays Finnish Liiga hockey results in authen
 - **Configuration system** - Platform-specific storage, customizable settings
 - **Performance optimized** - Caching, request deduplication, intelligent refresh intervals
 
+## Requirements
+
+- **Rust 1.89 or newer** - This project uses modern Rust features including if-let chains
+- Terminal with Unicode support for best display experience
+
+You can check your Rust version with:
+```bash
+rustc --version
+```
+
+If you need to update Rust, visit [rustup.rs](https://rustup.rs/) or run:
+```bash
+rustup update
+```
+
 ## Installation
 
 ### Install from crates.io
