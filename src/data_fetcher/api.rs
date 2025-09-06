@@ -45,7 +45,7 @@ const PLAYOFFS_END_MONTH: u32 = 6; // June
 /// * 30-second timeout for requests
 /// * Connection pooling with up to 100 connections per host
 /// * HTTP/2 multiplexing when available
-/// * Automatic retry logic for transient failures
+/// * Automatic retry logic for transient failures (implemented in fetch function)
 fn create_http_client() -> Client {
     Client::builder()
         .timeout(Duration::from_secs(30))
@@ -848,21 +848,62 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
         }
     }
 
-    // Handle reqwest errors with specific error types
-    let response = match client.get(url).send().await {
-        Ok(response) => response,
-        Err(e) => {
-            error!("Request failed for URL {}: {}", url, e);
-
-            // Categorize reqwest errors into specific types
-            return if e.is_timeout() {
-                Err(AppError::network_timeout(url))
-            } else if e.is_connect() {
-                Err(AppError::network_connection(url, e.to_string()))
-            } else {
-                // For other reqwest errors, keep the original behavior
-                Err(AppError::ApiFetch(e))
-            };
+    // Handle reqwest errors with retries/backoff for transient failures
+    let mut attempt = 0u32;
+    let max_retries = 3u32;
+    let mut backoff = Duration::from_millis(250);
+    let response = loop {
+        match client.get(url).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if (status.as_u16() == 429 || status.is_server_error()) && attempt < max_retries {
+                    // Respect Retry-After if provided
+                    let retry_after = resp
+                        .headers()
+                        .get(reqwest::header::RETRY_AFTER)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map(Duration::from_secs);
+                    let wait = retry_after.unwrap_or(backoff);
+                    warn!(
+                        "Transient {} from {}. Retrying in {:?} (attempt {}/{})",
+                        status,
+                        url,
+                        wait,
+                        attempt + 1,
+                        max_retries
+                    );
+                    tokio::time::sleep(wait).await;
+                    attempt += 1;
+                    backoff = backoff.saturating_mul(2);
+                    continue;
+                }
+                break resp;
+            }
+            Err(e) => {
+                if (e.is_timeout() || e.is_connect()) && attempt < max_retries {
+                    warn!(
+                        "Request error {} for {}. Retrying in {:?} (attempt {}/{})",
+                        e,
+                        url,
+                        backoff,
+                        attempt + 1,
+                        max_retries
+                    );
+                    tokio::time::sleep(backoff).await;
+                    attempt += 1;
+                    backoff = backoff.saturating_mul(2);
+                    continue;
+                }
+                error!("Request failed for URL {}: {}", url, e);
+                return if e.is_timeout() {
+                    Err(AppError::network_timeout(url))
+                } else if e.is_connect() {
+                    Err(AppError::network_connection(url, e.to_string()))
+                } else {
+                    Err(AppError::ApiFetch(e))
+                };
+            }
         }
     };
 
