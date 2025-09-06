@@ -220,9 +220,93 @@ fn determine_fetch_date_with_time(
     }
 }
 
-/// Builds the list of tournaments to fetch based on the month.
-/// Different tournaments are active during different parts of the season.
-fn build_tournament_list(date: &str) -> Vec<&'static str> {
+/// Determines which tournaments are active by checking each tournament type in sequence.
+/// Uses the API's nextGameDate to determine when tournaments transition.
+/// - Try preseason first, if no future games, try regular season
+/// - Try regular season, if no future games, try playoffs
+/// - This naturally handles tournament transitions using API data
+async fn determine_active_tournaments(
+    client: &Client,
+    config: &Config,
+    date: &str,
+) -> Result<Vec<&'static str>, AppError> {
+    info!(
+        "Determining active tournaments for date: {} using API nextGameDate logic",
+        date
+    );
+
+    // List of tournament types to try in order
+    let tournament_candidates = [
+        "valmistavat_ottelut", // Preseason
+        "runkosarja",          // Regular season
+        "playoffs",            // Playoffs
+        "playout",             // Playout
+        "qualifications",      // Qualifications
+    ];
+
+    for &tournament in &tournament_candidates {
+        info!("Checking tournament: {}", tournament);
+
+        // Fetch the tournament data to check nextGameDate
+        let url = build_tournament_url(&config.api_domain, tournament, date);
+
+        match fetch::<ScheduleResponse>(client, &url).await {
+            Ok(response) => {
+                // If there are games on this date, use this tournament
+                if !response.games.is_empty() {
+                    info!(
+                        "Found {} games for tournament {} on date {}",
+                        response.games.len(),
+                        tournament,
+                        date
+                    );
+                    return Ok(vec![tournament]);
+                }
+
+                // If no games but has a future nextGameDate, use this tournament
+                if let Some(next_date) = &response.next_game_date {
+                    if let (Ok(next_parsed), Ok(current_parsed)) = (
+                        chrono::NaiveDate::parse_from_str(next_date, "%Y-%m-%d"),
+                        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                    ) {
+                        if next_parsed > current_parsed {
+                            info!(
+                                "Tournament {} has future games on {}, using this tournament",
+                                tournament, next_date
+                            );
+                            return Ok(vec![tournament]);
+                        } else {
+                            info!(
+                                "Tournament {} nextGameDate {} is in the past, trying next tournament type",
+                                tournament, next_date
+                            );
+                        }
+                    }
+                } else {
+                    info!(
+                        "Tournament {} has no nextGameDate, trying next tournament type",
+                        tournament
+                    );
+                }
+            }
+            Err(e) => {
+                info!(
+                    "Failed to fetch tournament {}: {}, trying next tournament type",
+                    tournament, e
+                );
+                continue;
+            }
+        }
+    }
+
+    // If no tournament has future games, fall back to regular season as default
+    warn!("No tournaments have future games, falling back to regular season");
+    Ok(vec!["runkosarja"])
+}
+
+/// Fallback tournament selection based on calendar months when API data is not available.
+/// This is the old logic preserved as a fallback.
+fn build_tournament_list_fallback(date: &str) -> Vec<&'static str> {
     // Parse the date to get the month
     let date_parts: Vec<&str> = date.split('-').collect();
     let month = if date_parts.len() >= 2 {
@@ -266,8 +350,84 @@ fn build_tournament_list(date: &str) -> Vec<&'static str> {
     tournaments
 }
 
+/// Builds the list of tournaments to fetch based on the month.
+/// Different tournaments are active during different parts of the season.
+/// This is now a wrapper around the lifecycle-based logic with fallback to month-based logic.
+async fn build_tournament_list(
+    client: &Client,
+    config: &Config,
+    date: &str,
+) -> Result<Vec<&'static str>, AppError> {
+    match determine_active_tournaments(client, config, date).await {
+        Ok(tournaments) => Ok(tournaments),
+        Err(e) => {
+            warn!(
+                "Failed to determine tournaments via lifecycle logic, falling back to month-based: {}",
+                e
+            );
+            Ok(build_tournament_list_fallback(date))
+        }
+    }
+}
+
+/// Determines if a candidate date should be used as the best date for showing games.
+/// Prioritizes future games over past games, and regular season over preseason when close to season start.
+fn should_use_this_date(
+    current_best: &Option<String>,
+    candidate_date: &str,
+    tournament: &str,
+    today: &str,
+) -> bool {
+    let current_best = match current_best {
+        Some(date) => date,
+        None => return true, // First date is always accepted
+    };
+
+    // Parse dates for comparison
+    let today_parsed = today.parse::<chrono::NaiveDate>();
+    let candidate_parsed = candidate_date.parse::<chrono::NaiveDate>();
+    let current_parsed = current_best.parse::<chrono::NaiveDate>();
+
+    if let (Ok(today_date), Ok(candidate), Ok(current)) =
+        (today_parsed, candidate_parsed, current_parsed)
+    {
+        let is_candidate_future = candidate >= today_date;
+        let is_current_future = current >= today_date;
+        let is_candidate_regular_season = tournament == "runkosarja";
+
+        // If only one is a future date, prioritize the future one
+        if is_candidate_future && !is_current_future {
+            return true;
+        }
+        if !is_candidate_future && is_current_future {
+            return false;
+        }
+
+        // If both are future dates or both are past dates:
+        if is_candidate_future && is_current_future {
+            // Both are future: prefer regular season if close to today, otherwise prefer earlier
+            if is_candidate_regular_season {
+                // Prefer regular season if it's within 7 days of today
+                let days_from_today = (candidate - today_date).num_days();
+                if days_from_today <= 7 {
+                    return true;
+                }
+            }
+            // For future dates, prefer the earlier one
+            return candidate < current;
+        } else {
+            // Both are past dates: prefer the later one (closer to today)
+            return candidate > current;
+        }
+    }
+
+    // Fallback to string comparison if date parsing fails
+    candidate_date < current_best.as_str()
+}
+
 /// Processes next game dates when no games are found for the current date.
-/// Returns the earliest next game date and tournaments that have games on that date.
+/// Returns the best next game date and tournaments that have games on that date.
+/// Uses simple date comparison logic to find the best upcoming games.
 async fn process_next_game_dates(
     client: &Client,
     config: &Config,
@@ -276,7 +436,7 @@ async fn process_next_game_dates(
     tournament_responses: HashMap<String, ScheduleResponse>,
 ) -> Result<(Option<String>, Vec<ScheduleResponse>), AppError> {
     let mut tournament_next_dates: HashMap<&str, String> = HashMap::new();
-    let mut earliest_date: Option<String> = None;
+    let mut best_date: Option<String> = None;
 
     // Check for next game dates using the tournament responses we already have
     for tournament in tournaments {
@@ -284,10 +444,13 @@ async fn process_next_game_dates(
 
         if let Some(response) = tournament_responses.get(&tournament_key) {
             if let Some(next_date) = &response.next_game_date {
-                // Update earliest date if this is the first date or earlier than current earliest
-                if earliest_date.is_none() || next_date < earliest_date.as_ref().unwrap() {
-                    earliest_date = Some(next_date.clone());
-                    info!("Updated earliest date to: {}", next_date);
+                // Simple date selection logic
+                if should_use_this_date(&best_date, next_date, tournament, date) {
+                    best_date = Some(next_date.clone());
+                    info!(
+                        "Updated best date to: {} from tournament: {}",
+                        next_date, tournament
+                    );
                 }
                 tournament_next_dates.insert(*tournament, next_date.clone());
                 info!(
@@ -302,14 +465,14 @@ async fn process_next_game_dates(
         }
     }
 
-    if let Some(next_date) = earliest_date.clone() {
-        info!("Found earliest next game date: {}", next_date);
-        // Only fetch tournaments that have games on the earliest date
+    if let Some(next_date) = best_date.clone() {
+        info!("Found best next game date: {}", next_date);
+        // Only fetch tournaments that have games on the best date
         let tournaments_to_fetch: Vec<&str> = tournament_next_dates
             .iter()
             .filter_map(|(tournament, date)| {
                 if date == &next_date {
-                    info!("Tournament {} has games on the earliest date", tournament);
+                    info!("Tournament {} has games on the best date", tournament);
                     Some(*tournament)
                 } else {
                     info!(
@@ -1093,8 +1256,8 @@ pub async fn fetch_liiga_data(
         return Ok((historical_games, date));
     }
 
-    // Build the list of tournaments to fetch based on the month
-    let tournaments = build_tournament_list(&date);
+    // Build the list of tournaments to fetch based on tournament lifecycle
+    let tournaments = build_tournament_list(&client, &config, &date).await?;
 
     // First try to fetch data for the current date
     info!(
@@ -2798,7 +2961,7 @@ mod tests {
 
     #[test]
     fn test_build_tournament_list_preseason() {
-        let tournaments = build_tournament_list("2024-08-15");
+        let tournaments = build_tournament_list_fallback("2024-08-15");
         assert!(tournaments.contains(&"valmistavat_ottelut"));
         assert!(tournaments.contains(&"runkosarja"));
         assert!(!tournaments.contains(&"playoffs"));
@@ -2808,7 +2971,7 @@ mod tests {
 
     #[test]
     fn test_build_tournament_list_regular_season() {
-        let tournaments = build_tournament_list("2024-12-15");
+        let tournaments = build_tournament_list_fallback("2024-12-15");
         assert!(!tournaments.contains(&"valmistavat_ottelut"));
         assert!(tournaments.contains(&"runkosarja"));
         assert!(!tournaments.contains(&"playoffs"));
@@ -2818,7 +2981,7 @@ mod tests {
 
     #[test]
     fn test_build_tournament_list_playoffs() {
-        let tournaments = build_tournament_list("2024-04-15");
+        let tournaments = build_tournament_list_fallback("2024-04-15");
         assert!(!tournaments.contains(&"valmistavat_ottelut"));
         assert!(tournaments.contains(&"runkosarja"));
         assert!(tournaments.contains(&"playoffs"));
