@@ -247,7 +247,7 @@ async fn determine_active_tournaments(
 
     let mut active: Vec<&'static str> = Vec::with_capacity(tournament_candidates.len());
     let mut cached_responses: HashMap<String, ScheduleResponse> = HashMap::new();
-    
+
     for &tournament in &tournament_candidates {
         info!("Checking tournament: {}", tournament);
 
@@ -259,7 +259,7 @@ async fn determine_active_tournaments(
                 // Cache the response for downstream reuse
                 let cache_key = create_tournament_key(tournament, date);
                 cached_responses.insert(cache_key, response.clone());
-                
+
                 // If there are games on this date, mark this tournament active
                 if !response.games.is_empty() {
                     info!(
@@ -548,7 +548,16 @@ async fn process_next_game_dates(
             // If we didn't find any games with direct fetching, try the regular fetch_day_data
             if response_data.is_empty() {
                 info!("No games found with direct tournament fetching, trying fetch_day_data");
-                match fetch_day_data(client, config, &tournaments_to_fetch, &next_date, &[], &HashMap::new()).await {
+                match fetch_day_data(
+                    client,
+                    config,
+                    &tournaments_to_fetch,
+                    &next_date,
+                    &[],
+                    &HashMap::new(),
+                )
+                .await
+                {
                     Ok((next_games_option, _)) => {
                         if let Some(responses) = next_games_option {
                             info!("Found {} responses with fetch_day_data", responses.len());
@@ -1135,12 +1144,21 @@ async fn fetch_day_data(
         // Check if we have cached response first
         let cache_key = create_tournament_key(tournament, date);
         let response = if let Some(cached_response) = cached_responses.get(&cache_key) {
-            info!("Using cached response for tournament {} on date {}", tournament, date);
+            info!(
+                "Using cached response for tournament {} on date {}",
+                tournament, date
+            );
             cached_response.clone()
         } else {
             // Fall back to fetching if not cached
-            match fetch_tournament_data_with_cache_check(client, config, tournament, date, current_games)
-                .await
+            match fetch_tournament_data_with_cache_check(
+                client,
+                config,
+                tournament,
+                date,
+                current_games,
+            )
+            .await
             {
                 Ok(resp) => resp,
                 Err(_) => continue, // Skip this tournament if fetch fails
@@ -1340,8 +1358,15 @@ pub async fn fetch_liiga_data(
         "Fetching data for date: {} with tournaments: {:?}",
         date, tournaments
     );
-    let (games_option, tournament_responses) =
-        fetch_day_data(&client, &config, &tournaments, &date, &[], &cached_responses).await?;
+    let (games_option, tournament_responses) = fetch_day_data(
+        &client,
+        &config,
+        &tournaments,
+        &date,
+        &[],
+        &cached_responses,
+    )
+    .await?;
 
     let (response_data, earliest_date) = if let Some(responses) = games_option {
         info!(
@@ -2739,7 +2764,15 @@ mod tests {
         test_config.api_domain = mock_server.uri();
 
         let tournaments = vec!["runkosarja"];
-        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15", &[], &HashMap::new()).await;
+        let result = fetch_day_data(
+            &client,
+            &test_config,
+            &tournaments,
+            "2024-01-15",
+            &[],
+            &HashMap::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
         let (responses, _) = result.unwrap();
@@ -2771,7 +2804,15 @@ mod tests {
         test_config.api_domain = mock_server.uri();
 
         let tournaments = vec!["runkosarja"];
-        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15", &[], &HashMap::new()).await;
+        let result = fetch_day_data(
+            &client,
+            &test_config,
+            &tournaments,
+            "2024-01-15",
+            &[],
+            &HashMap::new(),
+        )
+        .await;
 
         assert!(result.is_ok());
         let (responses, _) = result.unwrap();
