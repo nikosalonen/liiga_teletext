@@ -382,7 +382,7 @@ fn should_use_this_date(
     current_best: &Option<String>,
     candidate_date: &str,
     tournament: &str,
-    today: &str,
+    baseline_date: &str,
 ) -> bool {
     let current_best = match current_best {
         Some(date) => date,
@@ -390,15 +390,15 @@ fn should_use_this_date(
     };
 
     // Parse dates for comparison
-    let today_parsed = today.parse::<chrono::NaiveDate>();
+    let baseline_date_parsed = baseline_date.parse::<chrono::NaiveDate>();
     let candidate_parsed = candidate_date.parse::<chrono::NaiveDate>();
     let current_parsed = current_best.parse::<chrono::NaiveDate>();
 
-    if let (Ok(today_date), Ok(candidate), Ok(current)) =
-        (today_parsed, candidate_parsed, current_parsed)
+    if let (Ok(baseline_date_val), Ok(candidate), Ok(current)) =
+        (baseline_date_parsed, candidate_parsed, current_parsed)
     {
-        let is_candidate_future = candidate >= today_date;
-        let is_current_future = current >= today_date;
+        let is_candidate_future = candidate >= baseline_date_val;
+        let is_current_future = current >= baseline_date_val;
         let is_candidate_regular_season = tournament == "runkosarja";
 
         // If only one is a future date, prioritize the future one
@@ -414,7 +414,7 @@ fn should_use_this_date(
             // Both are future: prefer regular season if close to today, otherwise prefer earlier
             if is_candidate_regular_season {
                 // Prefer regular season if it's within 7 days of today
-                let days_from_today = (candidate - today_date).num_days();
+                let days_from_today = (candidate - baseline_date_val).num_days();
                 if days_from_today <= 7 {
                     return true;
                 }
@@ -427,8 +427,12 @@ fn should_use_this_date(
         }
     }
 
-    // Fallback to string comparison if date parsing fails
-    candidate_date < current_best.as_str()
+    // Fallback to string comparison if date parsing fails; prefer regular season on ties
+    if candidate_date == current_best.as_str() && tournament == "runkosarja" {
+        true
+    } else {
+        candidate_date < current_best.as_str()
+    }
 }
 
 /// Processes next game dates when no games are found for the current date.
@@ -500,8 +504,14 @@ async fn process_next_game_dates(
             let futs = tournaments_to_fetch.iter().map(|t| {
                 let next_date_clone = next_date.clone();
                 async move {
-                    info!("Fetching data for tournament {} on date {}", t, next_date_clone);
-                    (*t, fetch_tournament_data(client, config, t, &next_date_clone).await)
+                    info!(
+                        "Fetching data for tournament {} on date {}",
+                        t, next_date_clone
+                    );
+                    (
+                        *t,
+                        fetch_tournament_data(client, config, t, &next_date_clone).await,
+                    )
                 }
             });
             let mut response_data = Vec::new();
