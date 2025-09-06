@@ -257,7 +257,7 @@ async fn determine_active_tournaments(
         match fetch::<ScheduleResponse>(client, &url).await {
             Ok(response) => {
                 // Cache the response for downstream reuse
-                let cache_key = format!("{}:{}", tournament, date);
+                let cache_key = create_tournament_key(tournament, date);
                 cached_responses.insert(cache_key, response.clone());
                 
                 // If there are games on this date, mark this tournament active
@@ -1130,7 +1130,7 @@ async fn fetch_day_data(
     // Process tournaments sequentially to respect priority order
     for tournament in tournaments {
         // Check if we have cached response first
-        let cache_key = format!("{}:{}", tournament, date);
+        let cache_key = create_tournament_key(tournament, date);
         let response = if let Some(cached_response) = cached_responses.get(&cache_key) {
             info!("Using cached response for tournament {} on date {}", tournament, date);
             cached_response.clone()
