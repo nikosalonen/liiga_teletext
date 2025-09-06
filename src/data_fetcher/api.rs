@@ -244,6 +244,7 @@ async fn determine_active_tournaments(
         "qualifications",      // Qualifications
     ];
 
+    let mut active: Vec<&'static str> = Vec::with_capacity(tournament_candidates.len());
     for &tournament in &tournament_candidates {
         info!("Checking tournament: {}", tournament);
 
@@ -252,7 +253,7 @@ async fn determine_active_tournaments(
 
         match fetch::<ScheduleResponse>(client, &url).await {
             Ok(response) => {
-                // If there are games on this date, use this tournament
+                // If there are games on this date, mark this tournament active
                 if !response.games.is_empty() {
                     info!(
                         "Found {} games for tournament {} on date {}",
@@ -260,7 +261,8 @@ async fn determine_active_tournaments(
                         tournament,
                         date
                     );
-                    return Ok(vec![tournament]);
+                    active.push(tournament);
+                    continue;
                 }
 
                 // If no games but has a future nextGameDate, use this tournament
@@ -269,12 +271,12 @@ async fn determine_active_tournaments(
                         chrono::NaiveDate::parse_from_str(next_date, "%Y-%m-%d"),
                         chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
                     ) {
-                        if next_parsed > current_parsed {
+                        if next_parsed >= current_parsed {
                             info!(
                                 "Tournament {} has future games on {}, using this tournament",
                                 tournament, next_date
                             );
-                            return Ok(vec![tournament]);
+                            active.push(tournament);
                         } else {
                             info!(
                                 "Tournament {} nextGameDate {} is in the past, trying next tournament type",
@@ -299,9 +301,13 @@ async fn determine_active_tournaments(
         }
     }
 
-    // If no tournament has future games, fall back to regular season as default
-    warn!("No tournaments have future games, falling back to regular season");
-    Ok(vec!["runkosarja"])
+    if active.is_empty() {
+        warn!("No tournaments have future games, falling back to regular season");
+        Ok(vec!["runkosarja"])
+    } else {
+        info!("Active tournaments selected: {:?}", active);
+        Ok(active)
+    }
 }
 
 /// Fallback tournament selection based on calendar months when API data is not available.
