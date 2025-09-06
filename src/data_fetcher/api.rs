@@ -222,6 +222,7 @@ fn determine_fetch_date_with_time(
 
 /// Determines which tournaments are active by checking each tournament type in sequence.
 /// Uses the API's nextGameDate to determine when tournaments transition.
+/// Returns both the active tournaments and cached API responses to avoid double-fetching.
 /// - Try preseason first, if no future games, try regular season
 /// - Try regular season, if no future games, try playoffs
 /// - This naturally handles tournament transitions using API data
@@ -229,7 +230,7 @@ async fn determine_active_tournaments(
     client: &Client,
     config: &Config,
     date: &str,
-) -> Result<Vec<&'static str>, AppError> {
+) -> Result<(Vec<&'static str>, HashMap<String, ScheduleResponse>), AppError> {
     info!(
         "Determining active tournaments for date: {} using API nextGameDate logic",
         date
@@ -245,6 +246,8 @@ async fn determine_active_tournaments(
     ];
 
     let mut active: Vec<&'static str> = Vec::with_capacity(tournament_candidates.len());
+    let mut cached_responses: HashMap<String, ScheduleResponse> = HashMap::new();
+    
     for &tournament in &tournament_candidates {
         info!("Checking tournament: {}", tournament);
 
@@ -253,6 +256,10 @@ async fn determine_active_tournaments(
 
         match fetch::<ScheduleResponse>(client, &url).await {
             Ok(response) => {
+                // Cache the response for downstream reuse
+                let cache_key = format!("{}:{}", tournament, date);
+                cached_responses.insert(cache_key, response.clone());
+                
                 // If there are games on this date, mark this tournament active
                 if !response.games.is_empty() {
                     info!(
@@ -303,10 +310,10 @@ async fn determine_active_tournaments(
 
     if active.is_empty() {
         warn!("No tournaments have future games, falling back to regular season");
-        Ok(vec!["runkosarja"])
+        Ok((vec!["runkosarja"], cached_responses))
     } else {
         info!("Active tournaments selected: {:?}", active);
-        Ok(active)
+        Ok((active, cached_responses))
     }
 }
 
@@ -358,20 +365,21 @@ fn build_tournament_list_fallback(date: &str) -> Vec<&'static str> {
 
 /// Builds the list of tournaments to fetch based on the month.
 /// Different tournaments are active during different parts of the season.
+/// Returns both the active tournaments and cached API responses to avoid double-fetching.
 /// This is now a wrapper around the lifecycle-based logic with fallback to month-based logic.
 async fn build_tournament_list(
     client: &Client,
     config: &Config,
     date: &str,
-) -> Result<Vec<&'static str>, AppError> {
+) -> Result<(Vec<&'static str>, HashMap<String, ScheduleResponse>), AppError> {
     match determine_active_tournaments(client, config, date).await {
-        Ok(tournaments) => Ok(tournaments),
+        Ok((tournaments, cached_responses)) => Ok((tournaments, cached_responses)),
         Err(e) => {
             warn!(
                 "Failed to determine tournaments via lifecycle logic, falling back to month-based: {}",
                 e
             );
-            Ok(build_tournament_list_fallback(date))
+            Ok((build_tournament_list_fallback(date), HashMap::new()))
         }
     }
 }
@@ -540,7 +548,7 @@ async fn process_next_game_dates(
             // If we didn't find any games with direct fetching, try the regular fetch_day_data
             if response_data.is_empty() {
                 info!("No games found with direct tournament fetching, trying fetch_day_data");
-                match fetch_day_data(client, config, &tournaments_to_fetch, &next_date, &[]).await {
+                match fetch_day_data(client, config, &tournaments_to_fetch, &next_date, &[], &HashMap::new()).await {
                     Ok((next_games_option, _)) => {
                         if let Some(responses) = next_games_option {
                             info!("Found {} responses with fetch_day_data", responses.len());
@@ -1107,6 +1115,7 @@ async fn fetch_day_data(
     tournaments: &[&str],
     date: &str,
     current_games: &[GameData],
+    cached_responses: &HashMap<String, ScheduleResponse>,
 ) -> Result<
     (
         Option<Vec<ScheduleResponse>>,
@@ -1120,18 +1129,28 @@ async fn fetch_day_data(
 
     // Process tournaments sequentially to respect priority order
     for tournament in tournaments {
-        if let Ok(response) =
-            fetch_tournament_data_with_cache_check(client, config, tournament, date, current_games)
+        // Check if we have cached response first
+        let cache_key = format!("{}:{}", tournament, date);
+        let response = if let Some(cached_response) = cached_responses.get(&cache_key) {
+            info!("Using cached response for tournament {} on date {}", tournament, date);
+            cached_response.clone()
+        } else {
+            // Fall back to fetching if not cached
+            match fetch_tournament_data_with_cache_check(client, config, tournament, date, current_games)
                 .await
-        {
-            // Store all responses in the HashMap for potential reuse
-            let tournament_key = create_tournament_key(tournament, date);
-            tournament_responses.insert(tournament_key, response.clone());
-
-            if !response.games.is_empty() {
-                responses.push(response);
-                found_games = true;
+            {
+                Ok(resp) => resp,
+                Err(_) => continue, // Skip this tournament if fetch fails
             }
+        };
+
+        // Store all responses in the HashMap for potential reuse
+        let tournament_key = create_tournament_key(tournament, date);
+        tournament_responses.insert(tournament_key, response.clone());
+
+        if !response.games.is_empty() {
+            responses.push(response);
+            found_games = true;
         }
     }
 
@@ -1234,7 +1253,7 @@ async fn find_future_games_fallback(
         info!("Checking for games on date: {}", date_str);
 
         // Try to fetch games for this date
-        match fetch_day_data(client, config, tournaments, &date_str, &[]).await {
+        match fetch_day_data(client, config, tournaments, &date_str, &[], &HashMap::new()).await {
             Ok((Some(responses), _)) => {
                 if !responses.is_empty() {
                     info!(
@@ -1311,7 +1330,7 @@ pub async fn fetch_liiga_data(
     }
 
     // Build the list of tournaments to fetch based on tournament lifecycle
-    let tournaments = build_tournament_list(&client, &config, &date).await?;
+    let (tournaments, cached_responses) = build_tournament_list(&client, &config, &date).await?;
 
     // First try to fetch data for the current date
     info!(
@@ -1319,7 +1338,7 @@ pub async fn fetch_liiga_data(
         date, tournaments
     );
     let (games_option, tournament_responses) =
-        fetch_day_data(&client, &config, &tournaments, &date, &[]).await?;
+        fetch_day_data(&client, &config, &tournaments, &date, &[], &cached_responses).await?;
 
     let (response_data, earliest_date) = if let Some(responses) = games_option {
         info!(
@@ -2717,7 +2736,7 @@ mod tests {
         test_config.api_domain = mock_server.uri();
 
         let tournaments = vec!["runkosarja"];
-        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15", &[]).await;
+        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15", &[], &HashMap::new()).await;
 
         assert!(result.is_ok());
         let (responses, _) = result.unwrap();
@@ -2749,7 +2768,7 @@ mod tests {
         test_config.api_domain = mock_server.uri();
 
         let tournaments = vec!["runkosarja"];
-        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15", &[]).await;
+        let result = fetch_day_data(&client, &test_config, &tournaments, "2024-01-15", &[], &HashMap::new()).await;
 
         assert!(result.is_ok());
         let (responses, _) = result.unwrap();
@@ -4177,7 +4196,7 @@ mod tests {
         let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
 
         assert!(result.is_ok());
-        let active_tournaments = result.unwrap();
+        let (active_tournaments, _cached_responses) = result.unwrap();
 
         // Should contain all three active tournaments in priority order
         assert_eq!(active_tournaments.len(), 3);
@@ -4257,7 +4276,7 @@ mod tests {
         let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
 
         assert!(result.is_ok());
-        let active_tournaments = result.unwrap();
+        let (active_tournaments, _cached_responses) = result.unwrap();
 
         // Should contain only the regular season tournament
         assert_eq!(active_tournaments.len(), 1);
@@ -4338,7 +4357,7 @@ mod tests {
         let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
 
         assert!(result.is_ok());
-        let active_tournaments = result.unwrap();
+        let (active_tournaments, _cached_responses) = result.unwrap();
 
         // Should include playoffs due to >= comparison (same date as next_game_date)
         assert_eq!(active_tournaments.len(), 1);
@@ -4414,7 +4433,7 @@ mod tests {
         let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
 
         assert!(result.is_ok());
-        let active_tournaments = result.unwrap();
+        let (active_tournaments, _cached_responses) = result.unwrap();
 
         // Should fall back to regular season when no tournaments are active
         assert_eq!(active_tournaments.len(), 1);
@@ -4494,7 +4513,7 @@ mod tests {
         let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
 
         assert!(result.is_ok());
-        let active_tournaments = result.unwrap();
+        let (active_tournaments, _cached_responses) = result.unwrap();
 
         // Should maintain priority order: valmistavat_ottelut, runkosarja, qualifications
         assert_eq!(active_tournaments.len(), 3);
@@ -4572,7 +4591,7 @@ mod tests {
         let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
 
         assert!(result.is_ok());
-        let active_tournaments = result.unwrap();
+        let (active_tournaments, _cached_responses) = result.unwrap();
 
         // Should continue processing despite API error and return runkosarja
         assert_eq!(active_tournaments.len(), 1);
