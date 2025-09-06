@@ -269,7 +269,7 @@ async fn determine_active_tournaments(
                 if let Some(next_date) = &response.next_game_date {
                     if let (Ok(next_parsed), Ok(current_parsed)) = (
                         chrono::NaiveDate::parse_from_str(next_date, "%Y-%m-%d"),
-                        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d"),
                     ) {
                         if next_parsed >= current_parsed {
                             info!(
@@ -4113,8 +4113,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_with_games()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_with_games()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4123,8 +4125,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_with_games()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_with_games()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4133,8 +4137,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_future_date()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_future_date()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4143,8 +4149,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4152,8 +4160,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4161,10 +4171,13 @@ mod tests {
 
         assert!(result.is_ok());
         let active_tournaments = result.unwrap();
-        
+
         // Should contain all three active tournaments in priority order
         assert_eq!(active_tournaments.len(), 3);
-        assert_eq!(active_tournaments, vec!["playoffs", "playout", "qualifications"]);
+        assert_eq!(
+            active_tournaments,
+            vec!["playoffs", "playout", "qualifications"]
+        );
     }
 
     #[tokio::test]
@@ -4182,8 +4195,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_with_games()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_with_games()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4192,8 +4207,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4201,8 +4218,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4210,8 +4229,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4219,8 +4240,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4228,7 +4251,7 @@ mod tests {
 
         assert!(result.is_ok());
         let active_tournaments = result.unwrap();
-        
+
         // Should contain only the regular season tournament
         assert_eq!(active_tournaments.len(), 1);
         assert_eq!(active_tournaments, vec!["runkosarja"]);
@@ -4256,8 +4279,7 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&same_date_response))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&same_date_response))
             .mount(&mock_server)
             .await;
 
@@ -4266,8 +4288,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4275,8 +4299,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4284,8 +4310,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4293,8 +4321,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4302,7 +4332,7 @@ mod tests {
 
         assert!(result.is_ok());
         let active_tournaments = result.unwrap();
-        
+
         // Should include playoffs due to >= comparison (same date as next_game_date)
         assert_eq!(active_tournaments.len(), 1);
         assert_eq!(active_tournaments, vec!["playoffs"]);
@@ -4323,8 +4353,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4332,8 +4364,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4341,8 +4375,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4350,8 +4386,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4359,8 +4397,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4368,7 +4408,7 @@ mod tests {
 
         assert!(result.is_ok());
         let active_tournaments = result.unwrap();
-        
+
         // Should fall back to regular season when no tournaments are active
         assert_eq!(active_tournaments.len(), 1);
         assert_eq!(active_tournaments, vec!["runkosarja"]);
@@ -4390,8 +4430,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_with_games()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_with_games()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4400,8 +4442,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_with_games()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_with_games()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4410,8 +4454,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_with_games()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_with_games()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4420,8 +4466,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4429,8 +4477,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4438,10 +4488,13 @@ mod tests {
 
         assert!(result.is_ok());
         let active_tournaments = result.unwrap();
-        
+
         // Should maintain priority order: valmistavat_ottelut, runkosarja, qualifications
         assert_eq!(active_tournaments.len(), 3);
-        assert_eq!(active_tournaments, vec!["valmistavat_ottelut", "runkosarja", "qualifications"]);
+        assert_eq!(
+            active_tournaments,
+            vec!["valmistavat_ottelut", "runkosarja", "qualifications"]
+        );
     }
 
     #[tokio::test]
@@ -4468,8 +4521,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_with_games()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_with_games()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4478,8 +4533,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4487,8 +4544,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4496,8 +4555,10 @@ mod tests {
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
             .and(query_param("date", "2024-01-15"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(&create_mock_schedule_response_no_games_no_future()))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -4505,7 +4566,7 @@ mod tests {
 
         assert!(result.is_ok());
         let active_tournaments = result.unwrap();
-        
+
         // Should continue processing despite API error and return runkosarja
         assert_eq!(active_tournaments.len(), 1);
         assert_eq!(active_tournaments, vec!["runkosarja"]);
