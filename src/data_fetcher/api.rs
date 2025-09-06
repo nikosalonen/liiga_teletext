@@ -496,37 +496,34 @@ async fn process_next_game_dates(
                 next_date, tournaments_to_fetch
             );
 
+            use futures::future::join_all;
+            let futs = tournaments_to_fetch.iter().map(|t| {
+                let next_date_clone = next_date.clone();
+                async move {
+                    info!("Fetching data for tournament {} on date {}", t, next_date_clone);
+                    (*t, fetch_tournament_data(client, config, t, &next_date_clone).await)
+                }
+            });
             let mut response_data = Vec::new();
-
-            // Directly fetch tournament data for each tournament
-            for tournament in &tournaments_to_fetch {
-                info!(
-                    "Fetching data for tournament {} on date {}",
-                    tournament, next_date
-                );
-                match fetch_tournament_data(client, config, tournament, &next_date).await {
-                    Ok(response) => {
-                        if !response.games.is_empty() {
-                            info!(
-                                "Found {} games for tournament {} on date {}",
-                                response.games.len(),
-                                tournament,
-                                next_date
-                            );
-                            response_data.push(response);
-                        } else {
-                            info!(
-                                "No games found for tournament {} on date {} despite next_game_date indicating games should exist",
-                                tournament, next_date
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        error!(
-                            "Failed to fetch tournament data for {} on date {}: {}",
-                            tournament, next_date, e
+            for (t, res) in join_all(futs).await {
+                match res {
+                    Ok(resp) if !resp.games.is_empty() => {
+                        info!(
+                            "Found {} games for tournament {} on date {}",
+                            resp.games.len(),
+                            t,
+                            next_date
                         );
+                        response_data.push(resp);
                     }
+                    Ok(_) => info!(
+                        "No games found for tournament {} on date {} despite next_game_date indicating games should exist",
+                        t, next_date
+                    ),
+                    Err(e) => error!(
+                        "Failed to fetch tournament data for {} on date {}: {}",
+                        t, next_date, e
+                    ),
                 }
             }
 
@@ -4115,7 +4112,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_with_games()),
+                    .set_body_json(create_mock_schedule_response_with_games()),
             )
             .mount(&mock_server)
             .await;
@@ -4127,7 +4124,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_with_games()),
+                    .set_body_json(create_mock_schedule_response_with_games()),
             )
             .mount(&mock_server)
             .await;
@@ -4139,7 +4136,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_future_date()),
+                    .set_body_json(create_mock_schedule_response_no_games_future_date()),
             )
             .mount(&mock_server)
             .await;
@@ -4151,7 +4148,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4162,7 +4159,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4197,7 +4194,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_with_games()),
+                    .set_body_json(create_mock_schedule_response_with_games()),
             )
             .mount(&mock_server)
             .await;
@@ -4209,7 +4206,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4220,7 +4217,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4231,7 +4228,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4242,7 +4239,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4290,7 +4287,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4301,7 +4298,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4312,7 +4309,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4323,7 +4320,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4355,7 +4352,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4366,7 +4363,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4377,7 +4374,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4388,7 +4385,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4399,7 +4396,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4432,7 +4429,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_with_games()),
+                    .set_body_json(create_mock_schedule_response_with_games()),
             )
             .mount(&mock_server)
             .await;
@@ -4444,7 +4441,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_with_games()),
+                    .set_body_json(create_mock_schedule_response_with_games()),
             )
             .mount(&mock_server)
             .await;
@@ -4456,7 +4453,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_with_games()),
+                    .set_body_json(create_mock_schedule_response_with_games()),
             )
             .mount(&mock_server)
             .await;
@@ -4468,7 +4465,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4479,7 +4476,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4523,7 +4520,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_with_games()),
+                    .set_body_json(create_mock_schedule_response_with_games()),
             )
             .mount(&mock_server)
             .await;
@@ -4535,7 +4532,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4546,7 +4543,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
@@ -4557,7 +4554,7 @@ mod tests {
             .and(query_param("date", "2024-01-15"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(&create_mock_schedule_response_no_games_no_future()),
+                    .set_body_json(create_mock_schedule_response_no_games_no_future()),
             )
             .mount(&mock_server)
             .await;
