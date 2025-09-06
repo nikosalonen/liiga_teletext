@@ -522,7 +522,7 @@ async fn process_next_game_dates(
                     )
                 }
             });
-            let mut response_data = Vec::new();
+            let mut response_data = Vec::with_capacity(tournaments_to_fetch.len());
             for (t, res) in join_all(futs).await {
                 match res {
                     Ok(resp) if !resp.games.is_empty() => {
@@ -965,9 +965,10 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
     };
 
     debug!("Response length: {} bytes", response_text.len());
-    debug!("Response text: {}", response_text);
+    let preview: String = response_text.chars().take(1024).collect();
+    debug!("Response text (first 1024 chars): {}", preview);
 
-    // Cache successful HTTP responses with appropriate TTL
+    // Determine TTL for successful HTTP responses
     let ttl_seconds = if url.contains("/games/") {
         300 // 5 minutes for game data
     } else if url.contains("/schedule") {
@@ -1002,11 +1003,13 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
             ttl_seconds // Use default TTL for other URLs
         };
 
-    cache_http_response(url.to_string(), response_text.clone(), final_ttl).await;
-
     // Enhanced JSON parsing with more specific error handling
     match serde_json::from_str::<T>(&response_text) {
-        Ok(parsed) => Ok(parsed),
+        Ok(parsed) => {
+            // Cache only valid/parsable payloads; move the body (no clone)
+            cache_http_response(url.to_string(), response_text, final_ttl).await;
+            Ok(parsed)
+        }
         Err(e) => {
             error!("Failed to parse API response: {} (URL: {})", e, url);
             error!(
