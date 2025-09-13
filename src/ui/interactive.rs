@@ -1025,9 +1025,9 @@ fn calculate_min_refresh_interval(
 }
 
 /// Parameters for auto-refresh checking
-struct AutoRefreshParams {
+struct AutoRefreshParams<'a> {
     needs_refresh: bool,
-    games: Vec<GameData>,
+    games: &'a [GameData],
     last_auto_refresh: Instant,
     auto_refresh_interval: Duration,
     min_interval_between_refreshes: Duration,
@@ -1037,7 +1037,7 @@ struct AutoRefreshParams {
 }
 
 /// Check if auto-refresh should be triggered
-fn should_trigger_auto_refresh(params: AutoRefreshParams) -> bool {
+fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool {
     if params.needs_refresh {
         return false;
     }
@@ -1068,7 +1068,7 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams) -> bool {
         return true;
     }
 
-    let has_ongoing_games = has_live_games_from_game_data(&params.games);
+    let has_ongoing_games = has_live_games_from_game_data(params.games);
     let all_scheduled = !params.games.is_empty() && params.games.iter().all(is_future_game);
 
     if has_ongoing_games {
@@ -1687,7 +1687,7 @@ pub async fn run_interactive_ui(
 
         if should_trigger_auto_refresh(AutoRefreshParams {
             needs_refresh,
-            games: last_games.clone(),
+            games: &last_games,
             last_auto_refresh,
             auto_refresh_interval,
             min_interval_between_refreshes,
