@@ -1041,11 +1041,6 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams) -> bool {
     if params.needs_refresh {
         return false;
     }
-    // If we have no games loaded, trigger a refresh to recover from empty state
-    if params.games.is_empty() {
-        tracing::debug!("Auto-refresh triggered: games list empty");
-        return true;
-    }
 
     if params.last_auto_refresh.elapsed() < params.auto_refresh_interval {
         return false;
@@ -1065,6 +1060,12 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams) -> bool {
     {
         tracing::debug!("Auto-refresh skipped for historical date: {}", date);
         return false;
+    }
+
+    // After respecting timing/backoff/historical checks, recover from empty state
+    if params.games.is_empty() {
+        tracing::debug!("Auto-refresh triggered: games list empty (after guards)");
+        return true;
     }
 
     let has_ongoing_games = has_live_games_from_game_data(&params.games);
