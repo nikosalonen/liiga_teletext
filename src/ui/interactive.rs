@@ -1038,8 +1038,13 @@ struct AutoRefreshParams {
 
 /// Check if auto-refresh should be triggered
 fn should_trigger_auto_refresh(params: AutoRefreshParams) -> bool {
-    if params.needs_refresh || params.games.is_empty() {
+    if params.needs_refresh {
         return false;
+    }
+    // If we have no games loaded, trigger a refresh to recover from empty state
+    if params.games.is_empty() {
+        tracing::debug!("Auto-refresh triggered: games list empty");
+        return true;
     }
 
     if params.last_auto_refresh.elapsed() < params.auto_refresh_interval {
@@ -1792,9 +1797,15 @@ pub async fn run_interactive_ui(
                 tracing::debug!("No data changes detected, skipping UI update");
             }
 
-            // Update change detection variables
-            last_games_hash = games_hash;
-            last_games = games.clone();
+            // Update change detection variables only on successful fetch
+            if !had_error {
+                last_games_hash = games_hash;
+                last_games = games.clone();
+            } else {
+                tracing::debug!(
+                    "Preserving last_games due to fetch error; will retry without clearing state"
+                );
+            }
 
             needs_refresh = false;
 
