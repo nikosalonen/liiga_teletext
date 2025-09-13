@@ -692,8 +692,6 @@ fn would_be_previous_season(date: &str) -> bool {
         return true;
     }
 
-
-
     // For dates within the past 2 years, use more nuanced season logic
     if date_year == current_year {
         // Same year - check if we're trying to go to off-season of previous season
@@ -1796,7 +1794,9 @@ pub async fn run_interactive_ui(
 
             // Update change detection variables only on successful fetch
             if !had_error {
-                if let Some(page) = current_page.as_mut() && page.is_error_warning_active() {
+                if let Some(page) = current_page.as_mut()
+                    && page.is_error_warning_active()
+                {
                     page.hide_error_warning();
                     needs_render = true;
                 }
