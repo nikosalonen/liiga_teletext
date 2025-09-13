@@ -1652,9 +1652,9 @@ pub async fn run_interactive_ui(
     // Adaptive polling configuration
     let mut last_activity = Instant::now();
 
-    // Rate limiting protection
-    let _rate_limit_backoff = Duration::from_secs(0);
-    let _last_rate_limit_hit = Instant::now()
+    // Backoff on consecutive fetch errors to avoid tight retry loops
+    let mut retry_backoff = Duration::from_secs(0);
+    let mut last_backoff_hit = Instant::now()
         .checked_sub(Duration::from_secs(60))
         .unwrap_or_else(Instant::now);
 
@@ -1668,19 +1668,15 @@ pub async fn run_interactive_ui(
         let min_interval_between_refreshes =
             calculate_min_refresh_interval(last_games.len(), min_refresh_interval);
 
-        // Rate limiting protection: don't refresh too frequently if we have many games
-        let _rate_limit_backoff = Duration::from_secs(0);
-
-        // Debug logging for rate limit backoff enforcement
-        if _rate_limit_backoff > Duration::from_secs(0) {
-            let backoff_remaining =
-                _rate_limit_backoff.saturating_sub(_last_rate_limit_hit.elapsed());
+        // Debug logging for backoff enforcement
+        if retry_backoff > Duration::from_secs(0) {
+            let backoff_remaining = retry_backoff.saturating_sub(last_backoff_hit.elapsed());
             if backoff_remaining > Duration::from_secs(0) {
                 tracing::debug!(
-                    "Rate limit backoff active: {}s remaining (total backoff: {}s, elapsed since rate limit: {}s)",
+                    "Retry backoff active: {}s remaining (total backoff: {}s, elapsed since error: {}s)",
                     backoff_remaining.as_secs(),
-                    _rate_limit_backoff.as_secs(),
-                    _last_rate_limit_hit.elapsed().as_secs()
+                    retry_backoff.as_secs(),
+                    last_backoff_hit.elapsed().as_secs()
                 );
             }
         }
@@ -1691,8 +1687,8 @@ pub async fn run_interactive_ui(
             last_auto_refresh,
             auto_refresh_interval,
             min_interval_between_refreshes,
-            last_rate_limit_hit: _last_rate_limit_hit,
-            rate_limit_backoff: _rate_limit_backoff,
+            last_rate_limit_hit: last_backoff_hit,
+            rate_limit_backoff: retry_backoff,
             current_date: current_date.clone(),
         }) {
             needs_refresh = true;
@@ -1814,10 +1810,25 @@ pub async fn run_interactive_ui(
             // This ensures that failed auto-refresh attempts will be retried on the next cycle
             if !should_retry {
                 last_auto_refresh = Instant::now();
+                // Reset backoff window after a successful cycle
+                if retry_backoff > Duration::from_secs(0) {
+                    tracing::debug!("Resetting retry backoff after successful refresh");
+                }
+                retry_backoff = Duration::from_secs(0);
                 tracing::trace!("Auto-refresh cycle completed successfully");
             } else {
+                // Increase backoff to avoid tight retry loops while allowing quick recovery
+                let next = if retry_backoff.is_zero() {
+                    Duration::from_secs(2)
+                } else {
+                    retry_backoff.saturating_mul(2)
+                };
+                // Cap the backoff at 10 seconds
+                retry_backoff = std::cmp::min(next, Duration::from_secs(10));
+                last_backoff_hit = Instant::now();
                 tracing::debug!(
-                    "Auto-refresh failed, will retry on next cycle (not updating last_auto_refresh timer)"
+                    "Auto-refresh failed; applying retry backoff of {}s",
+                    retry_backoff.as_secs()
                 );
             }
         }
