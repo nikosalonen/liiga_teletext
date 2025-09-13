@@ -495,6 +495,7 @@ pub struct TeletextPage {
     fetched_date: Option<String>, // Date for which data was fetched
     loading_indicator: Option<LoadingIndicator>,
     auto_refresh_indicator: Option<LoadingIndicator>, // Subtle indicator for auto-refresh
+    error_warning_active: bool,                       // Show footer warning when true
     compact_mode: bool,                               // Enable compact display mode
     wide_mode: bool,                                  // Enable wide display mode
 }
@@ -645,6 +646,7 @@ impl TeletextPage {
             fetched_date: None,
             loading_indicator: None,
             auto_refresh_indicator: None,
+            error_warning_active: false,
             compact_mode,
             wide_mode,
         }
@@ -912,6 +914,22 @@ impl TeletextPage {
     /// Checks if the auto-refresh indicator is active
     pub fn is_auto_refresh_indicator_active(&self) -> bool {
         self.auto_refresh_indicator.is_some()
+    }
+
+    /// Shows an error warning indicator in the footer
+    pub fn show_error_warning(&mut self) {
+        self.error_warning_active = true;
+    }
+
+    /// Hides the error warning indicator in the footer
+    pub fn hide_error_warning(&mut self) {
+        self.error_warning_active = false;
+    }
+
+    /// Returns whether the error warning indicator is active
+    #[allow(dead_code)] // Reserved for future use/tests
+    pub fn is_error_warning_active(&self) -> bool {
+        self.error_warning_active
     }
 
     /// Returns whether compact mode is enabled.
@@ -2771,7 +2789,7 @@ impl TeletextPage {
             }
 
             // Add loading indicator or auto-refresh indicator if active
-            let footer_text = if let Some(ref loading) = self.loading_indicator {
+            let mut footer_text = if let Some(ref loading) = self.loading_indicator {
                 let loading_frame = loading.current_frame();
                 format!("{controls} {} {}", loading_frame, loading.message())
             } else if let Some(ref indicator) = self.auto_refresh_indicator {
@@ -2780,6 +2798,11 @@ impl TeletextPage {
             } else {
                 controls.to_string()
             };
+
+            // Append error warning if active
+            if self.error_warning_active {
+                footer_text.push_str("  ⚠️");
+            }
 
             buffer.push_str(&format!(
                 "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
