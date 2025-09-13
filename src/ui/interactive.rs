@@ -540,8 +540,7 @@ fn is_game_near_start_time(game: &GameData) -> bool {
 
     match chrono::DateTime::parse_from_rfc3339(&game.start) {
         Ok(game_start) => {
-            let now = Utc::now();
-            let time_diff = now.signed_duration_since(game_start);
+            let time_diff = Utc::now().signed_duration_since(game_start.with_timezone(&Utc));
 
             // Extended window: Check if game should start within the next 5 minutes or started within the last 10 minutes
             // This is more aggressive to catch games that should have started but haven't updated their status yet
@@ -689,11 +688,6 @@ fn would_be_previous_season(date: &str) -> bool {
 
     // Allow navigation within the past 2 years for reasonable historical access
     // This covers the current season and the previous season
-    if date_year < current_year - 1 {
-        return true;
-    }
-
-    // If date is from 2+ years ago, it's definitely too old
     if date_year < current_year - 1 {
         return true;
     }
@@ -1025,20 +1019,20 @@ fn calculate_min_refresh_interval(
 }
 
 /// Parameters for auto-refresh checking
-struct AutoRefreshParams {
+struct AutoRefreshParams<'a> {
     needs_refresh: bool,
-    games: Vec<GameData>,
+    games: &'a [GameData],
     last_auto_refresh: Instant,
     auto_refresh_interval: Duration,
     min_interval_between_refreshes: Duration,
     last_rate_limit_hit: Instant,
     rate_limit_backoff: Duration,
-    current_date: Option<String>,
+    current_date: &'a Option<String>,
 }
 
 /// Check if auto-refresh should be triggered
-fn should_trigger_auto_refresh(params: AutoRefreshParams) -> bool {
-    if params.needs_refresh || params.games.is_empty() {
+fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool {
+    if params.needs_refresh {
         return false;
     }
 
@@ -1055,14 +1049,20 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams) -> bool {
     }
 
     // Don't auto-refresh for historical dates
-    if let Some(date) = &params.current_date
+    if let Some(date) = params.current_date.as_deref()
         && is_historical_date(date)
     {
         tracing::debug!("Auto-refresh skipped for historical date: {}", date);
         return false;
     }
 
-    let has_ongoing_games = has_live_games_from_game_data(&params.games);
+    // After respecting timing/backoff/historical checks, recover from empty state
+    if params.games.is_empty() {
+        tracing::debug!("Auto-refresh triggered: games list empty (after guards)");
+        return true;
+    }
+
+    let has_ongoing_games = has_live_games_from_game_data(params.games);
     let all_scheduled = !params.games.is_empty() && params.games.iter().all(is_future_game);
 
     if has_ongoing_games {
@@ -1646,9 +1646,9 @@ pub async fn run_interactive_ui(
     // Adaptive polling configuration
     let mut last_activity = Instant::now();
 
-    // Rate limiting protection
-    let _rate_limit_backoff = Duration::from_secs(0);
-    let _last_rate_limit_hit = Instant::now()
+    // Backoff on consecutive fetch errors to avoid tight retry loops
+    let mut retry_backoff = Duration::from_secs(0);
+    let mut last_backoff_hit = Instant::now()
         .checked_sub(Duration::from_secs(60))
         .unwrap_or_else(Instant::now);
 
@@ -1662,32 +1662,28 @@ pub async fn run_interactive_ui(
         let min_interval_between_refreshes =
             calculate_min_refresh_interval(last_games.len(), min_refresh_interval);
 
-        // Rate limiting protection: don't refresh too frequently if we have many games
-        let _rate_limit_backoff = Duration::from_secs(0);
-
-        // Debug logging for rate limit backoff enforcement
-        if _rate_limit_backoff > Duration::from_secs(0) {
-            let backoff_remaining =
-                _rate_limit_backoff.saturating_sub(_last_rate_limit_hit.elapsed());
+        // Debug logging for backoff enforcement
+        if retry_backoff > Duration::from_secs(0) {
+            let backoff_remaining = retry_backoff.saturating_sub(last_backoff_hit.elapsed());
             if backoff_remaining > Duration::from_secs(0) {
-                tracing::debug!(
-                    "Rate limit backoff active: {}s remaining (total backoff: {}s, elapsed since rate limit: {}s)",
+                tracing::trace!(
+                    "Retry backoff active: {}s remaining (total backoff: {}s, elapsed since error: {}s)",
                     backoff_remaining.as_secs(),
-                    _rate_limit_backoff.as_secs(),
-                    _last_rate_limit_hit.elapsed().as_secs()
+                    retry_backoff.as_secs(),
+                    last_backoff_hit.elapsed().as_secs()
                 );
             }
         }
 
         if should_trigger_auto_refresh(AutoRefreshParams {
             needs_refresh,
-            games: last_games.clone(),
+            games: &last_games,
             last_auto_refresh,
             auto_refresh_interval,
             min_interval_between_refreshes,
-            last_rate_limit_hit: _last_rate_limit_hit,
-            rate_limit_backoff: _rate_limit_backoff,
-            current_date: current_date.clone(),
+            last_rate_limit_hit: last_backoff_hit,
+            rate_limit_backoff: retry_backoff,
+            current_date: &current_date,
         }) {
             needs_refresh = true;
         }
@@ -1753,6 +1749,10 @@ pub async fn run_interactive_ui(
                 tracing::debug!(
                     "Auto-refresh failed but no data changes detected, continuing with existing UI"
                 );
+                if let Some(page) = current_page.as_mut() {
+                    page.show_error_warning();
+                    needs_render = true;
+                }
             } else {
                 // Track ongoing games with static time to confirm API limitations
                 let ongoing_games: Vec<_> = games
@@ -1792,9 +1792,21 @@ pub async fn run_interactive_ui(
                 tracing::debug!("No data changes detected, skipping UI update");
             }
 
-            // Update change detection variables
-            last_games_hash = games_hash;
-            last_games = games.clone();
+            // Update change detection variables only on successful fetch
+            if !had_error {
+                if let Some(page) = current_page.as_mut()
+                    && page.is_error_warning_active()
+                {
+                    page.hide_error_warning();
+                    needs_render = true;
+                }
+                last_games_hash = games_hash;
+                last_games = games;
+            } else {
+                tracing::debug!(
+                    "Preserving last_games due to fetch error; will retry without clearing state"
+                );
+            }
 
             needs_refresh = false;
 
@@ -1802,10 +1814,37 @@ pub async fn run_interactive_ui(
             // This ensures that failed auto-refresh attempts will be retried on the next cycle
             if !should_retry {
                 last_auto_refresh = Instant::now();
+                // Reset backoff window after a successful cycle
+                if retry_backoff > Duration::from_secs(0) {
+                    tracing::debug!("Resetting retry backoff after successful refresh");
+                }
+                retry_backoff = Duration::from_secs(0);
                 tracing::trace!("Auto-refresh cycle completed successfully");
             } else {
+                // Increase backoff to avoid tight retry loops while allowing quick recovery
+                let base_next = if retry_backoff.is_zero() {
+                    Duration::from_secs(2)
+                } else {
+                    retry_backoff.saturating_mul(2)
+                };
+                // Cap the backoff at 10 seconds (base before jitter)
+                let capped_next = std::cmp::min(base_next, Duration::from_secs(10));
+
+                // Apply ±20% jitter to avoid synchronized retries across clients
+                // Use system time nanoseconds as a lightweight entropy source
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.subsec_nanos())
+                    .unwrap_or(0);
+                let rand_fraction = (nanos % 1000) as f64 / 1000.0; // 0.0..1.0
+                let jitter_factor = 0.8_f64 + 0.4_f64 * rand_fraction; // 0.8..1.2
+                let jittered_secs = (capped_next.as_secs_f64() * jitter_factor).min(10.0);
+
+                retry_backoff = Duration::from_secs_f64(jittered_secs);
+                last_backoff_hit = Instant::now();
+                let base_secs = capped_next.as_secs_f64();
                 tracing::debug!(
-                    "Auto-refresh failed, will retry on next cycle (not updating last_auto_refresh timer)"
+                    "Auto-refresh failed; applying retry backoff of {jittered_secs:.2}s (base {base_secs:.2}s, jitter {jitter_factor:.2})"
                 );
             }
         }
