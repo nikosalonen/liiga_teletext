@@ -1033,7 +1033,7 @@ struct AutoRefreshParams<'a> {
     min_interval_between_refreshes: Duration,
     last_rate_limit_hit: Instant,
     rate_limit_backoff: Duration,
-    current_date: Option<String>,
+    current_date: &'a Option<String>,
 }
 
 /// Check if auto-refresh should be triggered
@@ -1055,7 +1055,7 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool {
     }
 
     // Don't auto-refresh for historical dates
-    if let Some(date) = &params.current_date
+    if let Some(date) = params.current_date.as_deref()
         && is_historical_date(date)
     {
         tracing::debug!("Auto-refresh skipped for historical date: {}", date);
@@ -1672,7 +1672,7 @@ pub async fn run_interactive_ui(
         if retry_backoff > Duration::from_secs(0) {
             let backoff_remaining = retry_backoff.saturating_sub(last_backoff_hit.elapsed());
             if backoff_remaining > Duration::from_secs(0) {
-                tracing::debug!(
+                tracing::trace!(
                     "Retry backoff active: {}s remaining (total backoff: {}s, elapsed since error: {}s)",
                     backoff_remaining.as_secs(),
                     retry_backoff.as_secs(),
@@ -1689,7 +1689,7 @@ pub async fn run_interactive_ui(
             min_interval_between_refreshes,
             last_rate_limit_hit: last_backoff_hit,
             rate_limit_backoff: retry_backoff,
-            current_date: current_date.clone(),
+            current_date: &current_date,
         }) {
             needs_refresh = true;
         }
@@ -1818,17 +1818,29 @@ pub async fn run_interactive_ui(
                 tracing::trace!("Auto-refresh cycle completed successfully");
             } else {
                 // Increase backoff to avoid tight retry loops while allowing quick recovery
-                let next = if retry_backoff.is_zero() {
+                let base_next = if retry_backoff.is_zero() {
                     Duration::from_secs(2)
                 } else {
                     retry_backoff.saturating_mul(2)
                 };
-                // Cap the backoff at 10 seconds
-                retry_backoff = std::cmp::min(next, Duration::from_secs(10));
+                // Cap the backoff at 10 seconds (base before jitter)
+                let capped_next = std::cmp::min(base_next, Duration::from_secs(10));
+
+                // Apply ±20% jitter to avoid synchronized retries across clients
+                // Use system time nanoseconds as a lightweight entropy source
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.subsec_nanos())
+                    .unwrap_or(0);
+                let rand_fraction = (nanos % 1000) as f64 / 1000.0; // 0.0..1.0
+                let jitter_factor = 0.8_f64 + 0.4_f64 * rand_fraction; // 0.8..1.2
+                let jittered_secs = (capped_next.as_secs_f64() * jitter_factor).min(10.0);
+
+                retry_backoff = Duration::from_secs_f64(jittered_secs);
                 last_backoff_hit = Instant::now();
+                let base_secs = capped_next.as_secs_f64();
                 tracing::debug!(
-                    "Auto-refresh failed; applying retry backoff of {}s",
-                    retry_backoff.as_secs()
+                    "Auto-refresh failed; applying retry backoff of {jittered_secs:.2}s (base {base_secs:.2}s, jitter {jitter_factor:.2})"
                 );
             }
         }
