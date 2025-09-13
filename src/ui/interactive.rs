@@ -1797,7 +1797,7 @@ pub async fn run_interactive_ui(
             // Update change detection variables only on successful fetch
             if !had_error {
                 last_games_hash = games_hash;
-                last_games = games.clone();
+                last_games = games;
             } else {
                 tracing::debug!(
                     "Preserving last_games due to fetch error; will retry without clearing state"
