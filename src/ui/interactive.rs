@@ -540,8 +540,7 @@ fn is_game_near_start_time(game: &GameData) -> bool {
 
     match chrono::DateTime::parse_from_rfc3339(&game.start) {
         Ok(game_start) => {
-            let now = Utc::now();
-            let time_diff = now.signed_duration_since(game_start);
+            let time_diff = Utc::now().signed_duration_since(game_start.with_timezone(&Utc));
 
             // Extended window: Check if game should start within the next 5 minutes or started within the last 10 minutes
             // This is more aggressive to catch games that should have started but haven't updated their status yet
@@ -693,10 +692,7 @@ fn would_be_previous_season(date: &str) -> bool {
         return true;
     }
 
-    // If date is from 2+ years ago, it's definitely too old
-    if date_year < current_year - 1 {
-        return true;
-    }
+
 
     // For dates within the past 2 years, use more nuanced season logic
     if date_year == current_year {
@@ -1755,6 +1751,10 @@ pub async fn run_interactive_ui(
                 tracing::debug!(
                     "Auto-refresh failed but no data changes detected, continuing with existing UI"
                 );
+                if let Some(page) = current_page.as_mut() {
+                    page.show_error_warning();
+                    needs_render = true;
+                }
             } else {
                 // Track ongoing games with static time to confirm API limitations
                 let ongoing_games: Vec<_> = games
@@ -1796,6 +1796,10 @@ pub async fn run_interactive_ui(
 
             // Update change detection variables only on successful fetch
             if !had_error {
+                if let Some(page) = current_page.as_mut() && page.is_error_warning_active() {
+                    page.hide_error_warning();
+                    needs_render = true;
+                }
                 last_games_hash = games_hash;
                 last_games = games;
             } else {
