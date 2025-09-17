@@ -236,6 +236,9 @@ impl GoalEventData {
         if self.goal_types.contains(&"VT".to_string()) {
             indicators.push("VT");
         }
+        if self.goal_types.contains(&"AV".to_string()) {
+            indicators.push("AV");
+        }
         if self.goal_types.contains(&"TM".to_string()) {
             indicators.push("TM");
         }
@@ -847,6 +850,20 @@ mod tests {
             video_clip_url: None,
         };
         assert_eq!(combo_type.get_goal_type_display(), "YV VT TM");
+
+        // Test AV (short-handed) goal type
+        let av_type = GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Player".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["AV".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        };
+        assert_eq!(av_type.get_goal_type_display(), "AV");
 
         // Test empty goal types
         let no_types = GoalEventData {
