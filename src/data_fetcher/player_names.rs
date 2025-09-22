@@ -223,7 +223,7 @@ pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<
 /// ```
 #[allow(dead_code)]
 pub fn get_players_needing_disambiguation(players: &[(i64, String, String)]) -> HashSet<i64> {
-    let mut result = HashSet::new();
+    let mut result = HashSet::with_capacity(players.len());
 
     // Fast path: if 0-1 players, no disambiguation needed
     if players.len() <= 1 {
@@ -316,7 +316,8 @@ fn apply_progressive_disambiguation_by_indices(
             );
 
             // Check if extended disambiguation actually creates unique identifiers
-            let mut unique_names: HashSet<String> = HashSet::new();
+            let mut unique_names: HashSet<String> =
+                HashSet::with_capacity(extended_disambiguated.len());
             let mut all_unique = true;
 
             for (_, name) in &extended_disambiguated {

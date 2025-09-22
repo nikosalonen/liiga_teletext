@@ -20,6 +20,7 @@ The application uses only authentic teletext colors with ANSI values that match 
 ### Color Usage Guidelines
 
 #### Text Colors
+
 - **Main text**: White (231) - All regular content
 - **Headers**: Green (46) - Page titles and section headers
 - **Results**: Green (46) - Game scores and final results
@@ -29,6 +30,7 @@ The application uses only authentic teletext colors with ANSI values that match 
 - **Error messages**: Red (196) - Error and warning text
 
 #### Background Colors
+
 - **Page headers**: Blue (21) - Background for page numbers and titles
 - **Title backgrounds**: Green (46) - Background for main titles
 
@@ -90,6 +92,7 @@ The application uses the terminal's default monospace font, which matches the or
 ## Authenticity Verification
 
 This color scheme has been verified against:
+
 - Original YLE Teksti-TV channel 221 specifications
 - Historical teletext color standards
 - Finnish broadcasting authority guidelines
@@ -97,6 +100,7 @@ This color scheme has been verified against:
 ## Compliance
 
 The application now uses **only** authentic teletext colors:
+
 - ✅ No RGB colors (except in tests)
 - ✅ No named colors (Color::White, Color::Cyan, etc.)
 - ✅ All colors use ANSI values that match original teletext
@@ -106,6 +110,7 @@ The application now uses **only** authentic teletext colors:
 ## Maintenance
 
 When adding new UI elements:
+
 1. Use only the defined color functions
 2. Follow the color usage guidelines above
 3. Test with different terminal types
@@ -115,6 +120,7 @@ When adding new UI elements:
 ## Testing
 
 The color scheme is tested through:
+
 - Unit tests for color function values
 - Integration tests for UI rendering
 - Manual verification against original teletext displays

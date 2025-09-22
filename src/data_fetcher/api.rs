@@ -1321,6 +1321,24 @@ pub async fn fetch_liiga_data(
     custom_date: Option<String>,
 ) -> Result<(Vec<GameData>, String), AppError> {
     info!("Starting to fetch Liiga data");
+
+    // Early check: prevent network calls if API domain is not properly configured
+    // This prevents CI hangs when LIIGA_API_DOMAIN is unset or invalid
+    if let Ok(api_domain) = std::env::var("LIIGA_API_DOMAIN")
+        && (api_domain.is_empty()
+            || api_domain == "placeholder"
+            || api_domain == "test"
+            || api_domain == "unset")
+    {
+        warn!(
+            "LIIGA_API_DOMAIN is set to '{}' - skipping network calls to prevent CI hangs",
+            api_domain
+        );
+        return Err(AppError::config_error(
+            "API domain is not properly configured - network calls skipped",
+        ));
+    }
+
     let config = Config::load().await?;
     info!("Config loaded successfully");
     let client = create_http_client();
@@ -1437,7 +1455,7 @@ async fn fetch_detailed_game_data(
                     "Game ID {} has score {}:{} but detailed API returned 0 goal events - creating placeholder events",
                     game.id, game.home_team.goals, game.away_team.goals
                 );
-                let basic_events = create_basic_goal_events(game).await;
+                let basic_events = create_basic_goal_events(game, &config.api_domain).await;
                 info!(
                     "Created {} placeholder goal events for game ID {} with missing detailed data",
                     basic_events.len(),
@@ -1457,7 +1475,7 @@ async fn fetch_detailed_game_data(
                 "API call failed for game ID {} - URL would be: {}/games/{}/{}",
                 game.id, config.api_domain, game.season, game.id
             );
-            let basic_events = create_basic_goal_events(game).await;
+            let basic_events = create_basic_goal_events(game, &config.api_domain).await;
             info!(
                 "Created {} basic goal events as fallback for game ID {}",
                 basic_events.len(),

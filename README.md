@@ -21,11 +21,13 @@ A Rust terminal application that displays Finnish Liiga hockey results in authen
 - Terminal with Unicode support for best display experience
 
 You can check your Rust version with:
+
 ```bash
 rustc --version
 ```
 
 If you need to update Rust, visit [rustup.rs](https://rustup.rs/) or run:
+
 ```bash
 rustup update
 ```
@@ -65,6 +67,7 @@ cargo run --release
 ## Usage
 
 ### Interactive Mode (Default)
+
 - Press `q` to quit the application
 - Use left/right arrow keys to navigate between pages
 - Use **Shift+Left/Right** to navigate between dates with games
@@ -78,6 +81,7 @@ cargo run --release
 ### Command Line Options
 
 #### Display Options
+
 - `-d, --date <DATE>` - Show games for a specific date in YYYY-MM-DD format
 - `-o, --once` - Show scores once and exit immediately (useful for scripts)
 - `-p, --plain` - Disable clickable video links in the output
@@ -86,6 +90,7 @@ cargo run --release
 - `--min-refresh-interval <SECONDS>` - Set minimum refresh interval in seconds (default: auto-detect based on game count). Higher values reduce API calls but may miss updates. Use with caution.
 
 #### Configuration
+
 - `--config [DOMAIN]` - Update API domain in config (prompts if not provided)
   - **Breaking Change**: The `-c` short flag has been removed to avoid conflict with `--compact`. Use the full `--config` flag instead.
 - `--set-log-file <PATH>` - Set a persistent custom log file location
@@ -93,15 +98,18 @@ cargo run --release
 - `-l, --list-config` - List current configuration settings
 
 #### Debug Options
+
 - `--debug` - Enable debug mode (doesn't clear terminal, logs to file)
 - `--log-file <PATH>` - Specify a custom log file path for this session
 
 #### Info
+
 - `-V, --version` - Show version information
 
 ### Display Modes
 
 #### Compact Mode (`--compact`)
+
 Space-efficient multi-column layout with team abbreviations. Adapts from 1-3 columns based on terminal width.
 
 ```bash
@@ -109,6 +117,7 @@ liiga_teletext --compact --once  # Quick compact view
 ```
 
 #### Wide Mode (`--wide`)
+
 Side-by-side two-column layout for wide terminals (128+ characters). Shows full game details in each column.
 
 ```bash
@@ -180,6 +189,7 @@ Uses Rust 2024 edition with modular architecture: CLI/main, data fetcher, telete
 Contributions are welcome! Please feel free to submit a Pull Request. See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines including commit message format and development workflow.
 
 **Important**: Before submitting any changes, please ensure:
+
 - All tests pass: `cargo test --all-features`
 - Code is formatted: `cargo fmt`
 - No clippy warnings: `cargo clippy --all-features --all-targets -- -D warnings`
