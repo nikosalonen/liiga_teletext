@@ -1,9 +1,11 @@
 use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, ScheduleGame};
-use crate::data_fetcher::player_names::{DisambiguationContext, create_fallback_name};
+use crate::data_fetcher::player_names::{
+    DisambiguationContext, build_full_name, create_fallback_name, format_for_display,
+};
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{DateTime, Local, NaiveTime, TimeZone, Utc};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tracing;
 
 /// Processes goal events for both teams in a game with team-scoped disambiguation.
@@ -435,6 +437,112 @@ fn is_game_likely_live(game: &ScheduleGame) -> bool {
     false
 }
 
+/// Try to fetch player names for specific player IDs with a reduced timeout
+/// This is used as a fallback when cached player names are missing
+async fn try_fetch_player_names_for_game(
+    game_id: i32,
+    player_ids: &[i64],
+) -> Option<HashMap<i64, String>> {
+    use crate::config::Config;
+    use crate::data_fetcher::api::build_game_url;
+    use crate::data_fetcher::models::{DetailedGameResponse, Player};
+    use reqwest::Client;
+    use std::time::Duration;
+    use tracing::{debug, warn};
+
+    if player_ids.is_empty() {
+        return Some(HashMap::new());
+    }
+
+    debug!(
+        "Attempting to fetch player names for {} players in game ID {}",
+        player_ids.len(),
+        game_id
+    );
+
+    // Create a client with a very short timeout for this fallback attempt
+    let client = match Client::builder()
+        .timeout(Duration::from_secs(5)) // Short timeout for fallback
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            warn!("Failed to create HTTP client for player name fetch: {}", e);
+            return None;
+        }
+    };
+
+    // Try to get config - if this fails, we can't fetch
+    let config = match Config::load().await {
+        Ok(config) => config,
+        Err(e) => {
+            warn!("Failed to load config for player name fetch: {}", e);
+            return None;
+        }
+    };
+
+    // Assume current season (this could be improved to detect season from game_id)
+    let season = {
+        use chrono::Datelike;
+        chrono::Utc::now().year()
+    };
+    let url = build_game_url(&config.api_domain, season, game_id);
+
+    match client.get(&url).send().await {
+        Ok(response) => match response.json::<DetailedGameResponse>().await {
+            Ok(game_response) => {
+                debug!(
+                    "Successfully fetched detailed game data for player name lookup (game ID: {})",
+                    game_id
+                );
+
+                let mut player_names = HashMap::new();
+
+                // Helper to process players and extract names for the requested IDs
+                let mut process_players = |players: &[Player]| {
+                    for player in players {
+                        if player_ids.contains(&player.id) {
+                            let full_name = build_full_name(&player.first_name, &player.last_name);
+                            let display_name = format_for_display(&full_name);
+                            player_names.insert(player.id, display_name);
+                        }
+                    }
+                };
+
+                // Process both home and away team players
+                process_players(&game_response.home_team_players);
+                process_players(&game_response.away_team_players);
+
+                if !player_names.is_empty() {
+                    debug!(
+                        "Successfully fetched {} player names for game ID {}",
+                        player_names.len(),
+                        game_id
+                    );
+                    Some(player_names)
+                } else {
+                    debug!(
+                        "No player names found for requested IDs in game ID {}",
+                        game_id
+                    );
+                    None
+                }
+            }
+            Err(e) => {
+                debug!("Failed to parse game response for player names: {}", e);
+                None
+            }
+        },
+        Err(e) => {
+            debug!(
+                "Failed to fetch game data for player names (game ID {}): {}",
+                game_id, e
+            );
+            None
+        }
+    }
+}
+
 pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
     use crate::data_fetcher::cache::get_cached_players;
     use tracing::{info, warn};
@@ -448,31 +556,96 @@ pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData>
             game.away_team.goal_events.len()
         );
 
+        // Collect all player IDs that need names
+        let mut player_ids_needing_names = HashSet::new();
+        for goal in &game.home_team.goal_events {
+            player_ids_needing_names.insert(goal.scorer_player_id);
+        }
+        for goal in &game.away_team.goal_events {
+            player_ids_needing_names.insert(goal.scorer_player_id);
+        }
+
         // First, try to get cached player names
         let cached_players = get_cached_players(game.id).await;
-        let mut basic_names = HashMap::new();
+        let mut player_names = HashMap::new();
 
+        match cached_players {
+            Some(cached) => {
+                // Use cached names for available players
+                for (&player_id, name) in &cached {
+                    if player_ids_needing_names.contains(&player_id) {
+                        player_names.insert(player_id, name.clone());
+                    }
+                }
+
+                // Find missing player names
+                let missing_players: Vec<i64> = player_ids_needing_names
+                    .iter()
+                    .filter(|&&id| !cached.contains_key(&id))
+                    .copied()
+                    .collect();
+
+                if !missing_players.is_empty() {
+                    info!(
+                        "Game ID {}: {} player names missing from cache, attempting to fetch them",
+                        game.id,
+                        missing_players.len()
+                    );
+
+                    // Try to fetch missing player names
+                    if let Some(additional_names) =
+                        try_fetch_player_names_for_game(game.id, &missing_players).await
+                    {
+                        for (id, name) in additional_names {
+                            player_names.insert(id, name);
+                        }
+                    }
+                }
+            }
+            None => {
+                info!(
+                    "Game ID {}: No cached player data, attempting to fetch player names for {} players",
+                    game.id,
+                    player_ids_needing_names.len()
+                );
+
+                // Try to fetch all player names
+                let all_players: Vec<i64> = player_ids_needing_names.into_iter().collect();
+                if let Some(fetched_names) =
+                    try_fetch_player_names_for_game(game.id, &all_players).await
+                {
+                    player_names = fetched_names;
+                }
+            }
+        }
+
+        // Build basic_names with priority: fetched names > cached names > fallback
+        let mut basic_names = HashMap::new();
         for goal in &game.home_team.goal_events {
-            let player_name = if let Some(ref cached) = cached_players {
-                cached
-                    .get(&goal.scorer_player_id)
-                    .cloned()
-                    .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
-            } else {
-                create_fallback_name(goal.scorer_player_id)
-            };
+            let player_name = player_names
+                .get(&goal.scorer_player_id)
+                .cloned()
+                .unwrap_or_else(|| {
+                    warn!(
+                        "Using fallback name for player ID {} in game ID {} - could not fetch actual name",
+                        goal.scorer_player_id, game.id
+                    );
+                    create_fallback_name(goal.scorer_player_id)
+                });
             basic_names.insert(goal.scorer_player_id, player_name);
         }
 
         for goal in &game.away_team.goal_events {
-            let player_name = if let Some(ref cached) = cached_players {
-                cached
-                    .get(&goal.scorer_player_id)
-                    .cloned()
-                    .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
-            } else {
-                create_fallback_name(goal.scorer_player_id)
-            };
+            let player_name = player_names
+                .get(&goal.scorer_player_id)
+                .cloned()
+                .unwrap_or_else(|| {
+                    warn!(
+                        "Using fallback name for player ID {} in game ID {} - could not fetch actual name",
+                        goal.scorer_player_id, game.id
+                    );
+                    create_fallback_name(goal.scorer_player_id)
+                });
             basic_names.insert(goal.scorer_player_id, player_name);
         }
 
