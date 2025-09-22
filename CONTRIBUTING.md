@@ -6,14 +6,18 @@ Thank you for your interest in contributing to this project! This document provi
 
 1. Fork the repository
 2. Create a feature branch from the main branch
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
+
 3. Make your changes
 4. Run tests to ensure everything works
+
    ```bash
    cargo test --all-features
    ```
+
 5. Commit your changes (see Commit Guidelines below)
 6. Push to your fork and submit a Pull Request
 
