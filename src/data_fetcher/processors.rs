@@ -441,10 +441,11 @@ fn is_game_likely_live(game: &ScheduleGame) -> bool {
 /// Try to fetch player names for specific player IDs with a reduced timeout
 /// This is used as a fallback when cached player names are missing
 async fn try_fetch_player_names_for_game(
+    api_domain: &str,
+    season: i32,
     game_id: i32,
     player_ids: &[i64],
 ) -> Option<HashMap<i64, String>> {
-    use crate::config::Config;
     use crate::data_fetcher::api::build_game_url;
     use crate::data_fetcher::models::{DetailedGameResponse, Player};
     use reqwest::Client;
@@ -456,16 +457,18 @@ async fn try_fetch_player_names_for_game(
     }
 
     debug!(
-        "Attempting to fetch player names for {} players in game ID {}",
+        "Attempting to fetch player names for {} players in game ID {} (season {})",
         player_ids.len(),
-        game_id
+        game_id,
+        season
     );
 
-    // Get timeout from env var with 5 second default
+    // Get timeout from env var with 5 second default, clamped to safe range (1-30 seconds)
     let timeout_secs = std::env::var(env_vars::API_FETCH_TIMEOUT)
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(5);
+        .unwrap_or(5)
+        .clamp(1, 30);
 
     // Create a client with a configurable timeout for this fallback attempt
     let client = match Client::builder()
@@ -479,73 +482,71 @@ async fn try_fetch_player_names_for_game(
         }
     };
 
-    // Try to get config - if this fails, we can't fetch
-    let config = match Config::load().await {
-        Ok(config) => config,
-        Err(e) => {
-            warn!("Failed to load config for player name fetch: {}", e);
-            return None;
-        }
-    };
-
-    // Determine season based on current date
-    // Hockey seasons typically start in September and span two calendar years
-    let season = {
-        use chrono::{Datelike, Utc};
-        let now = Utc::now();
-        if now.month() >= 9 {
-            now.year()
-        } else {
-            now.year() - 1
-        }
-    };
-    let url = build_game_url(&config.api_domain, season, game_id);
+    // Use the provided API domain and season
+    let url = build_game_url(api_domain, season, game_id);
 
     match client.get(&url).send().await {
-        Ok(response) => match response.json::<DetailedGameResponse>().await {
-            Ok(game_response) => {
-                debug!(
-                    "Successfully fetched detailed game data for player name lookup (game ID: {})",
-                    game_id
-                );
+        Ok(response) => {
+            // Check for HTTP errors before trying to parse JSON
+            let response = match response.error_for_status() {
+                Ok(response) => response,
+                Err(e) => {
+                    debug!(
+                        "HTTP error for player name fetch (game ID {}): {}",
+                        game_id, e
+                    );
+                    return None;
+                }
+            };
 
-                let mut player_names = HashMap::new();
+            match response.json::<DetailedGameResponse>().await {
+                Ok(game_response) => {
+                    debug!(
+                        "Successfully fetched detailed game data for player name lookup (game ID: {})",
+                        game_id
+                    );
 
-                // Helper to process players and extract names for the requested IDs
-                let mut process_players = |players: &[Player]| {
-                    for player in players {
-                        if player_ids.contains(&player.id) {
-                            let full_name = build_full_name(&player.first_name, &player.last_name);
-                            let display_name = format_for_display(&full_name);
-                            player_names.insert(player.id, display_name);
+                    let mut player_names = HashMap::new();
+                    // Convert player_ids to HashSet for O(1) lookup instead of O(n) contains()
+                    let wanted_ids: HashSet<i64> = player_ids.iter().copied().collect();
+
+                    // Helper to process players and extract names for the requested IDs
+                    let mut process_players = |players: &[Player]| {
+                        for player in players {
+                            if wanted_ids.contains(&player.id) {
+                                let full_name =
+                                    build_full_name(&player.first_name, &player.last_name);
+                                let display_name = format_for_display(&full_name);
+                                player_names.insert(player.id, display_name);
+                            }
                         }
+                    };
+
+                    // Process both home and away team players
+                    process_players(&game_response.home_team_players);
+                    process_players(&game_response.away_team_players);
+
+                    if !player_names.is_empty() {
+                        debug!(
+                            "Successfully fetched {} player names for game ID {}",
+                            player_names.len(),
+                            game_id
+                        );
+                        Some(player_names)
+                    } else {
+                        debug!(
+                            "No player names found for requested IDs in game ID {}",
+                            game_id
+                        );
+                        None
                     }
-                };
-
-                // Process both home and away team players
-                process_players(&game_response.home_team_players);
-                process_players(&game_response.away_team_players);
-
-                if !player_names.is_empty() {
-                    debug!(
-                        "Successfully fetched {} player names for game ID {}",
-                        player_names.len(),
-                        game_id
-                    );
-                    Some(player_names)
-                } else {
-                    debug!(
-                        "No player names found for requested IDs in game ID {}",
-                        game_id
-                    );
+                }
+                Err(e) => {
+                    debug!("Failed to parse game response for player names: {}", e);
                     None
                 }
             }
-            Err(e) => {
-                debug!("Failed to parse game response for player names: {}", e);
-                None
-            }
-        },
+        }
         Err(e) => {
             debug!(
                 "Failed to fetch game data for player names (game ID {}): {}",
@@ -556,7 +557,7 @@ async fn try_fetch_player_names_for_game(
     }
 }
 
-pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData> {
+pub async fn create_basic_goal_events(game: &ScheduleGame, api_domain: &str) -> Vec<GoalEventData> {
     use crate::data_fetcher::cache::get_cached_players;
     use tracing::{info, warn};
 
@@ -606,8 +607,13 @@ pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData>
                     );
 
                     // Try to fetch missing player names
-                    if let Some(additional_names) =
-                        try_fetch_player_names_for_game(game.id, &missing_players).await
+                    if let Some(additional_names) = try_fetch_player_names_for_game(
+                        api_domain,
+                        game.season,
+                        game.id,
+                        &missing_players,
+                    )
+                    .await
                     {
                         for (id, name) in additional_names {
                             player_names.insert(id, name);
@@ -625,7 +631,8 @@ pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData>
                 // Try to fetch all player names
                 let all_players: Vec<i64> = player_ids_needing_names.into_iter().collect();
                 if let Some(fetched_names) =
-                    try_fetch_player_names_for_game(game.id, &all_players).await
+                    try_fetch_player_names_for_game(api_domain, game.season, game.id, &all_players)
+                        .await
                 {
                     player_names = fetched_names;
                 }
@@ -1033,7 +1040,7 @@ mod tests {
 
         let game = create_test_game(vec![home_goal], vec![away_goal]);
 
-        let events = create_basic_goal_events(&game).await;
+        let events = create_basic_goal_events(&game, "test-api.example.com").await;
 
         assert_eq!(events.len(), 2);
 
@@ -1045,7 +1052,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_basic_goal_events_empty_game() {
         let game = create_test_game(vec![], vec![]);
-        let events = create_basic_goal_events(&game).await;
+        let events = create_basic_goal_events(&game, "test-api.example.com").await;
         assert!(events.is_empty());
     }
 
@@ -1058,7 +1065,7 @@ mod tests {
         game.home_team.goals = 2;
         game.away_team.goals = 1;
 
-        let events = create_basic_goal_events(&game).await;
+        let events = create_basic_goal_events(&game, "test-api.example.com").await;
 
         // Should create placeholder events based on scores
         assert_eq!(events.len(), 3); // 2 home + 1 away
