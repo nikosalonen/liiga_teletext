@@ -12,6 +12,7 @@ use crossterm::{
 };
 use reqwest::Client;
 use std::io::{Stdout, Write};
+use tracing::debug;
 
 // Constants for teletext appearance
 fn header_bg() -> Color {
@@ -310,22 +311,21 @@ fn get_ansi_code(color: Color, fallback: u8) -> u8 {
 /// Calculates the number of days until the regular season starts.
 /// Returns None if the regular season has already started or if we can't determine the start date.
 /// Uses UTC internally for consistent calculations across timezone changes.
-async fn calculate_days_until_regular_season() -> Option<i64> {
-    // Try to fetch the actual season start date from the API
-    let config = match Config::load().await {
-        Ok(config) => config,
-        Err(_) => {
-            // If config loading fails, we can't determine the start date
-            return None;
-        }
-    };
-
-    let client = Client::new();
+///
+/// # Arguments
+/// * `client` - HTTP client for API requests
+/// * `config` - Configuration containing API domain
+/// * `current_year` - Optional current year (defaults to current UTC year)
+async fn calculate_days_until_regular_season(
+    client: &Client,
+    config: &Config,
+    current_year: Option<i32>,
+) -> Option<i64> {
     // Use UTC for consistent year calculation, convert to local for display logic
-    let current_year = Utc::now().with_timezone(&Local).year();
+    let current_year = current_year.unwrap_or_else(|| Utc::now().with_timezone(&Local).year());
 
     // Try current year first
-    match fetch_regular_season_start_date(&client, &config, current_year).await {
+    match fetch_regular_season_start_date(client, config, current_year).await {
         Ok(Some(start_date)) => {
             // Parse the ISO 8601 date from the API
             if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
@@ -348,7 +348,7 @@ async fn calculate_days_until_regular_season() -> Option<i64> {
     }
 
     // Try next year if current year failed or no games found
-    match fetch_regular_season_start_date(&client, &config, current_year + 1).await {
+    match fetch_regular_season_start_date(client, config, current_year + 1).await {
         Ok(Some(start_date)) => {
             // Parse the ISO 8601 date from the API
             if let Ok(season_start) = DateTime::parse_from_rfc3339(&start_date) {
@@ -2041,9 +2041,32 @@ impl TeletextPage {
         }
 
         // Find the earliest regular season game by fetching future regular season games
-        if let Some(days_until_season) = calculate_days_until_regular_season().await {
-            let countdown_text = format!("Runkosarjan alkuun {days_until_season} päivää");
-            self.season_countdown = Some(countdown_text);
+        // Only attempt countdown calculation if we can load config without user interaction
+        match tokio::task::spawn_blocking(|| std::env::var("LIIGA_API_DOMAIN")).await {
+            Ok(Ok(api_domain))
+                if !api_domain.is_empty()
+                    && api_domain != "placeholder"
+                    && api_domain != "test"
+                    && api_domain != "unset" =>
+            {
+                // Config is available via environment variable, safe to calculate countdown
+                let client = reqwest::Client::new();
+                let config = match Config::load().await {
+                    Ok(config) => config,
+                    Err(_) => return, // Skip countdown if config loading fails
+                };
+
+                if let Some(days_until_season) =
+                    calculate_days_until_regular_season(&client, &config, None).await
+                {
+                    let countdown_text = format!("Runkosarjan alkuun {days_until_season} päivää");
+                    self.season_countdown = Some(countdown_text);
+                }
+            }
+            _ => {
+                // No valid API domain available, skip countdown to prevent interactive config reads
+                debug!("Skipping season countdown due to missing or invalid LIIGA_API_DOMAIN");
+            }
         }
     }
 
