@@ -1,3 +1,4 @@
+use crate::constants::env_vars;
 use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, ScheduleGame};
 use crate::data_fetcher::player_names::{
     DisambiguationContext, build_full_name, create_fallback_name, format_for_display,
@@ -460,9 +461,15 @@ async fn try_fetch_player_names_for_game(
         game_id
     );
 
-    // Create a client with a very short timeout for this fallback attempt
+    // Get timeout from env var with 5 second default
+    let timeout_secs = std::env::var(env_vars::API_FETCH_TIMEOUT)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5);
+
+    // Create a client with a configurable timeout for this fallback attempt
     let client = match Client::builder()
-        .timeout(Duration::from_secs(5)) // Short timeout for fallback
+        .timeout(Duration::from_secs(timeout_secs))
         .build()
     {
         Ok(client) => client,
@@ -481,10 +488,16 @@ async fn try_fetch_player_names_for_game(
         }
     };
 
-    // Assume current season (this could be improved to detect season from game_id)
+    // Determine season based on current date
+    // Hockey seasons typically start in September and span two calendar years
     let season = {
-        use chrono::Datelike;
-        chrono::Utc::now().year()
+        use chrono::{Datelike, Utc};
+        let now = Utc::now();
+        if now.month() >= 9 {
+            now.year()
+        } else {
+            now.year() - 1
+        }
     };
     let url = build_game_url(&config.api_domain, season, game_id);
 
@@ -619,33 +632,29 @@ pub async fn create_basic_goal_events(game: &ScheduleGame) -> Vec<GoalEventData>
             }
         }
 
-        // Build basic_names with priority: fetched names > cached names > fallback
-        let mut basic_names = HashMap::new();
-        for goal in &game.home_team.goal_events {
-            let player_name = player_names
-                .get(&goal.scorer_player_id)
+        // Helper closure for consistent fallback handling
+        let get_player_name_with_fallback = |player_id: i64| -> String {
+            player_names
+                .get(&player_id)
                 .cloned()
                 .unwrap_or_else(|| {
                     warn!(
                         "Using fallback name for player ID {} in game ID {} - could not fetch actual name",
-                        goal.scorer_player_id, game.id
+                        player_id, game.id
                     );
-                    create_fallback_name(goal.scorer_player_id)
-                });
+                    create_fallback_name(player_id)
+                })
+        };
+
+        // Build basic_names with priority: fetched names > cached names > fallback
+        let mut basic_names = HashMap::new();
+        for goal in &game.home_team.goal_events {
+            let player_name = get_player_name_with_fallback(goal.scorer_player_id);
             basic_names.insert(goal.scorer_player_id, player_name);
         }
 
         for goal in &game.away_team.goal_events {
-            let player_name = player_names
-                .get(&goal.scorer_player_id)
-                .cloned()
-                .unwrap_or_else(|| {
-                    warn!(
-                        "Using fallback name for player ID {} in game ID {} - could not fetch actual name",
-                        goal.scorer_player_id, game.id
-                    );
-                    create_fallback_name(goal.scorer_player_id)
-                });
+            let player_name = get_player_name_with_fallback(goal.scorer_player_id);
             basic_names.insert(goal.scorer_player_id, player_name);
         }
 

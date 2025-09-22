@@ -93,6 +93,10 @@ pub mod env_vars {
 
     /// Environment variable for cache size override
     pub const CACHE_SIZE: &str = "LIIGA_CACHE_SIZE";
+
+    /// Environment variable for API fetch timeout in seconds (default: 5)
+    /// Used for fallback player name fetching when cached names are missing
+    pub const API_FETCH_TIMEOUT: &str = "LIIGA_API_FETCH_TIMEOUT";
 }
 
 /// Retry configuration
