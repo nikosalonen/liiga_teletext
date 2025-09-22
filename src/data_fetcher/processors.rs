@@ -508,7 +508,8 @@ async fn try_fetch_player_names_for_game(
 
                     let mut player_names = HashMap::new();
                     // Convert player_ids to HashSet for O(1) lookup instead of O(n) contains()
-                    let wanted_ids: HashSet<i64> = player_ids.iter().copied().collect();
+                    let mut wanted_ids: HashSet<i64> = HashSet::with_capacity(player_ids.len());
+                    wanted_ids.extend(player_ids.iter().copied());
 
                     // Helper to process players and extract names for the requested IDs
                     let mut process_players = |players: &[Player]| {
@@ -571,7 +572,9 @@ pub async fn create_basic_goal_events(game: &ScheduleGame, api_domain: &str) -> 
         );
 
         // Collect all player IDs that need names
-        let mut player_ids_needing_names = HashSet::new();
+        let mut player_ids_needing_names = HashSet::with_capacity(
+            game.home_team.goal_events.len() + game.away_team.goal_events.len(),
+        );
         for goal in &game.home_team.goal_events {
             player_ids_needing_names.insert(goal.scorer_player_id);
         }
