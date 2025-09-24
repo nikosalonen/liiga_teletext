@@ -1088,14 +1088,14 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool {
 async fn fetch_data_with_timeout(
     current_date: Option<String>,
     timeout_duration: Duration,
-) -> (Vec<GameData>, bool, String, bool) {
+) -> (Vec<GameData>, bool, String, bool, Option<String>) {
     let fetch_future = fetch_liiga_data(current_date.clone());
 
     match tokio::time::timeout(timeout_duration, fetch_future).await {
         Ok(fetch_result) => match fetch_result {
             Ok((games, fetched_date)) => {
                 tracing::debug!("Auto-refresh successful: fetched {} games", games.len());
-                (games, false, fetched_date, false)
+                (games, false, fetched_date, false, None)
             }
             Err(e) => {
                 tracing::error!("Auto-refresh failed: {}", e);
@@ -1165,12 +1165,13 @@ async fn fetch_data_with_timeout(
                 // Graceful degradation: continue with existing data instead of showing error page
                 tracing::info!("Continuing with existing data due to auto-refresh failure");
 
-                // Return a short note that can be shown in the loading/error area
+                // Return a short note via separate field; keep fetched_date empty on error
                 (
                     Vec::new(),
                     true,
-                    "(API rajoitus – yritetään hetken kuluttua)".to_string(),
+                    String::new(),
                     true,
+                    Some("(API rajoitus – yritetään hetken kuluttua)".to_string()),
                 )
             }
         },
@@ -1180,7 +1181,7 @@ async fn fetch_data_with_timeout(
                 "Auto-refresh timeout after {:?}, continuing with existing data",
                 timeout_duration
             );
-            (Vec::new(), true, String::new(), true)
+            (Vec::new(), true, String::new(), true, None)
         }
     }
 }
@@ -1302,7 +1303,7 @@ async fn handle_data_fetching(
 
     // Fetch data with timeout
     let timeout_duration = Duration::from_secs(15);
-    let (games, had_error, fetched_date, should_retry) =
+    let (games, had_error, fetched_date, should_retry, ui_note) =
         fetch_data_with_timeout(current_date.clone(), timeout_duration).await;
 
     // Update current_date to track the actual date being displayed
@@ -1361,6 +1362,13 @@ async fn handle_data_fetching(
     if let Some(page) = &mut current_page {
         page.hide_auto_refresh_indicator();
         needs_render = true;
+        // If we received a UI note (e.g., rate limit), render it briefly
+        if had_error {
+            if let Some(note) = ui_note {
+                page.add_error_message(&note);
+                needs_render = true;
+            }
+        }
     }
 
     Ok((
