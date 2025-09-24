@@ -23,7 +23,7 @@ use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{Datelike, Local, Utc};
 use once_cell::sync::Lazy;
-use rand::{Rng, rngs::SmallRng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::SmallRng};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
