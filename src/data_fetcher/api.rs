@@ -22,9 +22,13 @@ use crate::data_fetcher::processors::{
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{Datelike, Local, Utc};
+use once_cell::sync::Lazy;
+use rand::{Rng, rngs::SmallRng, SeedableRng};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
+//
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
 
@@ -52,6 +56,17 @@ fn create_http_client() -> Client {
         .pool_max_idle_per_host(100)
         .build()
         .expect("Failed to create HTTP client")
+}
+
+// Global rate-limit cooldown until timestamp (milliseconds since Unix epoch)
+static RATE_LIMIT_COOLDOWN_UNTIL_MS: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(0));
+
+fn now_millis() -> u64 {
+    // Use std::time::SystemTime to avoid async clock issues here
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_else(|_| std::time::Duration::from_millis(0));
+    now.as_millis() as u64
 }
 
 /// Builds a tournament URL for fetching game data.
@@ -882,7 +897,19 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
     let mut attempt = 0u32;
     let max_retries = 3u32;
     let mut backoff = Duration::from_millis(250);
+    let mut rng = SmallRng::seed_from_u64(now_millis());
     let response = loop {
+        // If we are in cooldown due to previous 429, wait until cooldown expires
+        let cooldown_until = RATE_LIMIT_COOLDOWN_UNTIL_MS.load(Ordering::Relaxed);
+        let now = now_millis();
+        if now < cooldown_until {
+            let sleep_ms = cooldown_until - now;
+            warn!(
+                "Rate limit cooldown active for {:?}ms; deferring request to {}",
+                sleep_ms, url
+            );
+            tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
+        }
         match client.get(url).send().await {
             Ok(resp) => {
                 let status = resp.status();
@@ -894,7 +921,17 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
                         .and_then(|h| h.to_str().ok())
                         .and_then(|s| s.parse::<u64>().ok())
                         .map(Duration::from_secs);
-                    let wait = retry_after.unwrap_or(backoff);
+                    // Jitter: randomize +/- 20% to avoid thundering herd
+                    let base_wait = retry_after.unwrap_or(backoff);
+                    let jitter_factor: f64 = rng.random_range(0.8..1.2);
+                    let wait = Duration::from_millis(
+                        (base_wait.as_millis() as f64 * jitter_factor) as u64,
+                    );
+                    if status.as_u16() == 429 {
+                        // Set cooldown so subsequent requests back off globally
+                        let until = now_millis() + wait.as_millis() as u64;
+                        RATE_LIMIT_COOLDOWN_UNTIL_MS.store(until, Ordering::Relaxed);
+                    }
                     warn!(
                         "Transient {} from {}. Retrying in {:?} (attempt {}/{})",
                         status,
@@ -952,7 +989,14 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
         // Return specific error types based on HTTP status code
         return Err(match status_code {
             404 => AppError::api_not_found(url),
-            429 => AppError::api_rate_limit(reason, url),
+            429 => {
+                // On final 429, enforce a slightly longer cooldown (at least RATE_LIMIT_DELAY_SECONDS)
+                let min_cooldown =
+                    Duration::from_secs(crate::constants::retry::RATE_LIMIT_DELAY_SECONDS);
+                let until = now_millis() + min_cooldown.as_millis() as u64;
+                RATE_LIMIT_COOLDOWN_UNTIL_MS.store(until, Ordering::Relaxed);
+                AppError::api_rate_limit(reason, url)
+            }
             400..=499 => AppError::api_client_error(status_code, reason, url),
             500..=599 => {
                 if status_code == 502 || status_code == 503 {
