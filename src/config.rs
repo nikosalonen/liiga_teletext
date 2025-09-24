@@ -71,6 +71,15 @@ impl Config {
             config.log_file_path = Some(log_file_path);
         }
 
+        // Normalize API domain to ensure https:// prefix is present at runtime
+        // This mirrors save() behavior and prevents invalid URL errors in HTTP calls
+        if !config.api_domain.starts_with("https://") {
+            config.api_domain = format!(
+                "https://{}",
+                config.api_domain.trim_start_matches("http://")
+            );
+        }
+
         // Validate configuration
         config.validate()?;
 

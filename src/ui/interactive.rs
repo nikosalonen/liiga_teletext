@@ -1150,6 +1150,12 @@ async fn fetch_data_with_timeout(
                             message,
                             url
                         );
+                        // Add a concise on-screen notice during rate-limit cooldown
+                        // The page will still continue with existing data
+                        // Note: keep brief to preserve teletext layout
+                        // SAFETY: this runs in the UI loop and page exists here
+                        // We simply annotate the header/footer with a short hint
+                        // by returning a flag to the caller to render the note
                     }
                     _ => {
                         tracing::warn!("Auto-refresh error: {}, will retry on next cycle", e);
@@ -1159,7 +1165,13 @@ async fn fetch_data_with_timeout(
                 // Graceful degradation: continue with existing data instead of showing error page
                 tracing::info!("Continuing with existing data due to auto-refresh failure");
 
-                (Vec::new(), true, String::new(), true)
+                // Return a short note that can be shown in the loading/error area
+                (
+                    Vec::new(),
+                    true,
+                    "(API rajoitus – yritetään hetken kuluttua)".to_string(),
+                    true,
+                )
             }
         },
         Err(_) => {
