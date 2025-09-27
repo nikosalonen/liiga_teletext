@@ -8,6 +8,7 @@ use tracing::{debug, info, instrument, trace, warn};
 
 use crate::constants::cache_ttl;
 use crate::data_fetcher::models::{GameData, GoalEventData, ScheduleResponse};
+#[cfg(test)]
 use crate::data_fetcher::player_names::format_for_display;
 use crate::teletext_ui::ScoreType;
 
@@ -44,9 +45,8 @@ pub struct CachedGoalEventsData {
     pub game_id: i32,
     pub season: i32,
     pub is_live_game: bool,
-    #[allow(dead_code)]
     pub last_known_score: Option<String>, // Store the last known score when cache was cleared
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub was_cleared: bool, // Flag to indicate if cache was intentionally cleared
 }
 
@@ -97,7 +97,7 @@ impl CachedTournamentData {
     }
 
     /// Gets the remaining time until expiration
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn time_until_expiry(&self) -> Duration {
         let ttl = self.get_ttl();
         let elapsed = self.cached_at.elapsed();
@@ -107,7 +107,7 @@ impl CachedTournamentData {
 
 impl CachedGoalEventsData {
     /// Creates a new cached goal events data entry
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn new(data: Vec<GoalEventData>, game_id: i32, season: i32, is_live_game: bool) -> Self {
         Self {
             data,
@@ -121,7 +121,7 @@ impl CachedGoalEventsData {
     }
 
     /// Creates a cleared cache entry with the last known score
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn new_cleared(game_id: i32, season: i32, last_known_score: String) -> Self {
         Self {
             data: Vec::new(),
@@ -154,7 +154,6 @@ impl CachedGoalEventsData {
     }
 
     /// Gets the TTL duration for this cache entry
-    #[allow(dead_code)]
     pub fn get_ttl(&self) -> Duration {
         if self.is_live_game {
             Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS)
@@ -282,7 +281,7 @@ pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
 
 /// Retrieves cached tournament data if it's not expired
 #[instrument(skip(key), fields(cache_key = %key))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
     debug!(
         "Attempting to retrieve tournament data from cache for key: {}",
@@ -336,7 +335,7 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
 }
 
 /// Retrieves cached tournament data with custom live game state check
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_tournament_data_with_live_check(
     key: &str,
     current_games: &[GameData],
@@ -385,7 +384,7 @@ pub async fn get_cached_tournament_data_with_live_check(
 
 /// Retrieves cached tournament data specifically for auto-refresh scenarios
 /// This function provides enhanced logging and ensures proper cache bypass for expired entries
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_tournament_data_for_auto_refresh(key: &str) -> Option<ScheduleResponse> {
     debug!(
         "Auto-refresh: Attempting to retrieve tournament data from cache for key: {}",
@@ -442,7 +441,7 @@ pub async fn get_cached_tournament_data_for_auto_refresh(key: &str) -> Option<Sc
 }
 
 /// Invalidates all tournament cache entries for a specific date
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn invalidate_tournament_cache_for_date(date: &str) {
     let mut cache = TOURNAMENT_CACHE.write().await;
 
@@ -460,7 +459,7 @@ pub async fn invalidate_tournament_cache_for_date(date: &str) {
 
 /// Aggressively invalidates cache for games that should be starting soon
 /// This is called when we detect games are near their scheduled start time
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn invalidate_cache_for_games_near_start_time(date: &str) {
     let mut cache = TOURNAMENT_CACHE.write().await;
 
@@ -561,13 +560,13 @@ pub async fn get_cached_tournament_data_with_start_check(
 }
 
 /// Gets the current tournament cache size for monitoring purposes
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_tournament_cache_size() -> usize {
     TOURNAMENT_CACHE.read().await.len()
 }
 
 /// Gets the tournament cache capacity for monitoring purposes
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_tournament_cache_capacity() -> usize {
     TOURNAMENT_CACHE.read().await.cap().get()
 }
@@ -599,7 +598,7 @@ pub async fn clear_tournament_cache() {
 /// }
 /// ```
 #[instrument(skip(game_id), fields(game_id = %game_id))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
     debug!(
         "Attempting to retrieve cached players for game_id: {}",
@@ -680,7 +679,7 @@ pub async fn cache_players(game_id: i32, players: HashMap<i64, String>) {
 ///     // Names will be cached as "Koivu" and "Selänne"
 /// }
 /// ```
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i64, String>) {
     let formatted_players: HashMap<i64, String> = raw_players
         .into_iter()
@@ -718,7 +717,7 @@ pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i6
 /// }
 /// ```
 #[instrument(skip(game_id, home_players, away_players), fields(game_id = %game_id))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn cache_players_with_disambiguation(
     game_id: i32,
     home_players: HashMap<i64, (String, String)>, // (first_name, last_name)
@@ -794,7 +793,7 @@ pub async fn cache_players_with_disambiguation(
 /// }
 /// ```
 #[instrument(skip(game_id), fields(game_id = %game_id))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_disambiguated_players(game_id: i32) -> Option<HashMap<i64, String>> {
     debug!(
         "Attempting to retrieve cached disambiguated players for game_id: {}",
@@ -838,7 +837,7 @@ pub async fn get_cached_disambiguated_players(game_id: i32) -> Option<HashMap<i6
 /// }
 /// ```
 #[instrument(skip(game_id, player_id), fields(game_id = %game_id, player_id = %player_id))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_player_name(game_id: i32, player_id: i64) -> Option<String> {
     debug!(
         "Attempting to retrieve cached player name: game_id={}, player_id={}",
@@ -891,7 +890,7 @@ pub async fn get_cached_player_name(game_id: i32, player_id: i64) -> Option<Stri
 /// }
 /// ```
 #[instrument(skip(game_id), fields(game_id = %game_id))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn has_cached_disambiguated_players(game_id: i32) -> bool {
     debug!(
         "Checking if disambiguated players exist in cache: game_id={}",
@@ -907,13 +906,13 @@ pub async fn has_cached_disambiguated_players(game_id: i32) -> bool {
 }
 
 /// Gets the current cache size for monitoring purposes
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cache_size() -> usize {
     PLAYER_CACHE.read().await.len()
 }
 
 /// Gets the cache capacity for monitoring purposes
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cache_capacity() -> usize {
     PLAYER_CACHE.read().await.cap().get()
 }
@@ -928,14 +927,14 @@ pub async fn clear_cache() {
 // Goal Events Cache Functions
 
 /// Creates a cache key for goal events data
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn create_goal_events_key(season: i32, game_id: i32) -> String {
     format!("goal_events_{season}_{game_id}")
 }
 
 /// Caches processed goal events data
 #[instrument(skip(season, game_id, data), fields(season = %season, game_id = %game_id))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn cache_goal_events_data(
     season: i32,
     game_id: i32,
@@ -961,7 +960,7 @@ pub async fn cache_goal_events_data(
 
 /// Retrieves cached goal events data if it's not expired
 #[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Vec<GoalEventData>> {
     let key = create_goal_events_key(season, game_id);
     debug!(
@@ -1010,7 +1009,7 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
 
 /// Retrieves the full cached goal events entry structure for metadata access
 #[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_goal_events_entry(
     season: i32,
     game_id: i32,
@@ -1073,13 +1072,13 @@ pub async fn get_cached_goal_events_entry(
 }
 
 /// Gets the current goal events cache size for monitoring purposes
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_goal_events_cache_size() -> usize {
     GOAL_EVENTS_CACHE.read().await.len()
 }
 
 /// Gets the goal events cache capacity for monitoring purposes
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_goal_events_cache_capacity() -> usize {
     GOAL_EVENTS_CACHE.read().await.cap().get()
 }
@@ -1091,7 +1090,7 @@ pub async fn clear_goal_events_cache() {
 }
 
 /// Clears goal events cache for a specific game
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn clear_goal_events_cache_for_game(season: i32, game_id: i32) {
     let key = create_goal_events_key(season, game_id);
     let mut cache = GOAL_EVENTS_CACHE.write().await;
@@ -1197,13 +1196,13 @@ pub async fn get_cached_http_response(url: &str) -> Option<String> {
 }
 
 /// Gets the current HTTP response cache size for monitoring purposes
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_http_response_cache_size() -> usize {
     HTTP_RESPONSE_CACHE.read().await.len()
 }
 
 /// Gets the HTTP response cache capacity for monitoring purposes
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_http_response_cache_capacity() -> usize {
     HTTP_RESPONSE_CACHE.read().await.cap().get()
 }
