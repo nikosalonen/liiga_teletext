@@ -52,7 +52,7 @@ pub mod ui;
 // Re-export commonly used types for convenience
 pub use config::Config;
 pub use data_fetcher::api::fetch_liiga_data;
-pub use data_fetcher::models::{DetailedGameResponse, GameData, ScheduleResponse};
+pub use data_fetcher::models::{DetailedGameResponse, EmbeddedPlayer, GameData, ScheduleResponse};
 pub use error::AppError;
 pub use teletext_ui::{
     CompactDisplayConfig, GameResultData, TeletextPage, TeletextPageConfig, get_team_abbreviation,

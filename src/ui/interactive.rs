@@ -4,7 +4,7 @@
 //! It handles user input, screen updates, page creation, and the main application flow.
 
 use crate::data_fetcher::cache::has_live_games_from_game_data;
-use crate::data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
+use crate::data_fetcher::{GameData, fetch_liiga_data};
 use crate::error::AppError;
 use crate::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use chrono::{Datelike, Local, NaiveDate, Utc};
@@ -97,9 +97,9 @@ fn determine_indicator_states(
     let has_ongoing_games = has_live_games_from_game_data(last_games);
 
     // Show loading indicator only in specific cases
-    let should_show_loading = if let Some(date) = current_date {
+    let should_show_loading = if let Some(_date) = current_date {
         // Only show loading for historical dates
-        is_historical_date(date)
+        false // Historical games disabled
     } else {
         // Show loading for initial load when no specific date is requested
         true
@@ -107,8 +107,8 @@ fn determine_indicator_states(
 
     // Show auto-refresh indicator whenever auto-refresh is active
     let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
-    let should_show_indicator = if let Some(date) = current_date {
-        !is_historical_date(date) && (has_ongoing_games || !all_scheduled)
+    let should_show_indicator = if let Some(_date) = current_date {
+        has_ongoing_games || !all_scheduled // Historical games disabled (simplified from !false &&)
     } else {
         has_ongoing_games || !all_scheduled
     };
@@ -281,8 +281,9 @@ async fn create_or_restore_page(config: PageCreationConfig<'_>) -> Option<Telete
         .await;
 
         // Disable auto-refresh for historical dates
-        if let Some(date) = config.updated_current_date
-            && is_historical_date(date)
+        if let Some(_date) = config.updated_current_date
+            && false
+        // Historical games disabled
         {
             page.set_auto_refresh_disabled(true);
         }
@@ -329,8 +330,9 @@ async fn create_or_restore_page(config: PageCreationConfig<'_>) -> Option<Telete
                     .await;
 
                     // Disable auto-refresh for historical dates
-                    if let Some(date) = config.updated_current_date
-                        && is_historical_date(date)
+                    if let Some(_date) = config.updated_current_date
+                        && false
+                    // Historical games disabled
                     {
                         page.set_auto_refresh_disabled(true);
                     }
@@ -392,8 +394,9 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
             .await;
 
             // Disable auto-refresh for historical dates
-            if let Some(date) = params.updated_current_date
-                && is_historical_date(date)
+            if let Some(_date) = params.updated_current_date
+                && false
+            // Historical games disabled
             {
                 page.set_auto_refresh_disabled(true);
             }
@@ -896,7 +899,7 @@ async fn monitor_cache_usage() {
     let stats = get_all_cache_stats().await;
 
     tracing::debug!(
-        "Cache status - Player: {}/{} ({}%), Tournament: {}/{} ({}%), Detailed Game: {}/{} ({}%), Goal Events: {}/{} ({}%), HTTP Response: {}/{} ({}%)",
+        "Cache status - Player: {}/{} ({}%), Tournament: {}/{} ({}%), Goal Events: {}/{} ({}%), HTTP Response: {}/{} ({}%)",
         stats.player_cache.size,
         stats.player_cache.capacity,
         if stats.player_cache.capacity > 0 {
@@ -908,13 +911,6 @@ async fn monitor_cache_usage() {
         stats.tournament_cache.capacity,
         if stats.tournament_cache.capacity > 0 {
             (stats.tournament_cache.size * 100) / stats.tournament_cache.capacity
-        } else {
-            0
-        },
-        stats.detailed_game_cache.size,
-        stats.detailed_game_cache.capacity,
-        if stats.detailed_game_cache.capacity > 0 {
-            (stats.detailed_game_cache.size * 100) / stats.detailed_game_cache.capacity
         } else {
             0
         },
@@ -1050,7 +1046,8 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool {
 
     // Don't auto-refresh for historical dates
     if let Some(date) = params.current_date.as_deref()
-        && is_historical_date(date)
+        && false
+    // Historical games disabled
     {
         tracing::debug!("Auto-refresh skipped for historical date: {}", date);
         return false;
@@ -1205,7 +1202,8 @@ fn create_loading_page(
     );
 
     if let Some(date) = current_date {
-        if is_historical_date(date) {
+        if false {
+            // Historical games disabled
             loading_page.add_error_message(&format!(
                 "Haetaan historiallista dataa päivälle {}...",
                 format_date_for_display(date)
@@ -1363,11 +1361,9 @@ async fn handle_data_fetching(
         page.hide_auto_refresh_indicator();
         needs_render = true;
         // If we received a UI note (e.g., rate limit), render it briefly
-        if had_error {
-            if let Some(note) = ui_note {
-                page.add_error_message(&note);
-                needs_render = true;
-            }
+        if had_error && let Some(note) = ui_note {
+            page.add_error_message(&note);
+            needs_render = true;
         }
     }
 
@@ -1495,7 +1491,8 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
 
                 // Check if current date is historical - don't refresh historical data
                 if let Some(date) = params.current_date
-                    && is_historical_date(date)
+                    && false
+                // Historical games disabled
                 {
                     tracing::info!("Manual refresh skipped for historical date: {}", date);
                     return Ok(false); // Skip refresh for historical dates

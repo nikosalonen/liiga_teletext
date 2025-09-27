@@ -55,7 +55,8 @@ fn create_raw_test_players() -> TeamPlayerData {
 fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
     let home_goals = vec![
         GoalEvent {
-            scorer_player_id: 1, // Mikko Koivu (will become "Koivu M.")
+            scorer_player_id: 1,
+            scorer_player: None,
             log_time: "18:35:00".to_string(),
             game_time: 300, // 5 minutes
             period: 1,
@@ -65,10 +66,12 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
             winning_goal: false,
             goal_types: vec![],
             assistant_player_ids: vec![],
+            assistant_players: vec![],
             video_clip_url: None,
         },
         GoalEvent {
-            scorer_player_id: 2, // Saku Koivu (will become "Koivu S.")
+            scorer_player_id: 2,
+            scorer_player: None,
             log_time: "18:42:00".to_string(),
             game_time: 720, // 12 minutes
             period: 1,
@@ -78,10 +81,12 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
             winning_goal: false,
             goal_types: vec![],
             assistant_player_ids: vec![],
+            assistant_players: vec![],
             video_clip_url: None,
         },
         GoalEvent {
-            scorer_player_id: 3, // Teemu Selänne (will become "Selänne")
+            scorer_player_id: 3,
+            scorer_player: None,
             log_time: "19:08:00".to_string(),
             game_time: 1080, // 18 minutes
             period: 2,
@@ -91,12 +96,14 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
             winning_goal: true, // This goal made it 3-1, which was the winning margin
             goal_types: vec![],
             assistant_player_ids: vec![],
+            assistant_players: vec![],
             video_clip_url: None,
         },
     ];
 
     let away_goals = vec![GoalEvent {
-        scorer_player_id: 4, // Jari Kurri (will become "Kurri J.")
+        scorer_player_id: 4,
+        scorer_player: None,
         log_time: "19:15:00".to_string(),
         game_time: 1500, // 25 minutes
         period: 2,
@@ -106,6 +113,7 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
         winning_goal: false, // This goal only narrowed the score to 3-2, didn't win the game
         goal_types: vec!["YV".to_string()],
         assistant_player_ids: vec![],
+        assistant_players: vec![],
         video_clip_url: None,
     }];
 
@@ -833,7 +841,7 @@ fn test_disambiguation_error_scenarios_in_display() {
         is_overtime: false,
         is_shootout: false,
         goal_events: vec![GoalEventData {
-            scorer_player_id: 999, // Non-existent ID
+            scorer_player_id: 999,
             scorer_name: "Unknown Player".to_string(),
             minute: 5,
             home_team_score: 1,
