@@ -845,6 +845,34 @@ impl TeletextPage {
             .push(TeletextRow::ErrorMessage(formatted_message));
     }
 
+    /// Clears all error messages from the page.
+    /// This removes all ErrorMessage rows from the content, useful for preventing
+    /// accumulation of repeated error messages like rate-limit notifications.
+    ///
+    /// # Example
+    /// ```
+    /// use liiga_teletext::TeletextPage;
+    ///
+    /// let mut page = TeletextPage::new(
+    ///     221,
+    ///     "JÄÄKIEKKO".to_string(),
+    ///     "SM-LIIGA".to_string(),
+    ///     false,
+    ///     true,
+    ///     false,
+    ///     false,
+    ///     false, // wide_mode
+    /// );
+    ///
+    /// page.add_error_message("Error 1");
+    /// page.add_error_message("Error 2");
+    /// page.clear_error_messages(); // Removes both error messages
+    /// ```
+    pub fn clear_error_messages(&mut self) {
+        self.content_rows
+            .retain(|row| !matches!(row, TeletextRow::ErrorMessage(_)));
+    }
+
     /// Adds a header row indicating future games with the specified text.
     /// Typically used to display "Seuraavat ottelut" (Next games) with a date.
     pub fn add_future_games_header(&mut self, header_text: String) {

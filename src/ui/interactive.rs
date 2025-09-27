@@ -1362,6 +1362,7 @@ async fn handle_data_fetching(
         needs_render = true;
         // If we received a UI note (e.g., rate limit), render it briefly
         if had_error && let Some(note) = ui_note {
+            page.clear_error_messages(); // Clear previous error messages to prevent accumulation
             page.add_error_message(&note);
             needs_render = true;
         }
