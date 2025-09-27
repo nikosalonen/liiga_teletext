@@ -1280,6 +1280,7 @@ async fn handle_data_fetching(
         bool,
         Option<TeletextPage>,
         bool,
+        Option<String>,
     ),
     AppError,
 > {
@@ -1360,12 +1361,6 @@ async fn handle_data_fetching(
     if let Some(page) = &mut current_page {
         page.hide_auto_refresh_indicator();
         needs_render = true;
-        // If we received a UI note (e.g., rate limit), render it briefly
-        if had_error && let Some(note) = ui_note {
-            page.clear_error_messages(); // Clear previous error messages to prevent accumulation
-            page.add_error_message(&note);
-            needs_render = true;
-        }
     }
 
     Ok((
@@ -1375,6 +1370,7 @@ async fn handle_data_fetching(
         should_retry,
         current_page,
         needs_render,
+        ui_note,
     ))
 }
 
@@ -1715,16 +1711,23 @@ pub async fn run_interactive_ui(
                 current_page.as_ref().map(TeletextPage::get_current_page);
 
             // Handle data fetching using the helper function
-            let (games, had_error, fetched_date, should_retry, new_page, _needs_render_update) =
-                handle_data_fetching(
-                    &current_date,
-                    &last_games,
-                    disable_links,
-                    compact_mode,
-                    wide_mode,
-                    preserved_page_for_restoration,
-                )
-                .await?;
+            let (
+                games,
+                had_error,
+                fetched_date,
+                should_retry,
+                new_page,
+                _needs_render_update,
+                ui_note,
+            ) = handle_data_fetching(
+                &current_date,
+                &last_games,
+                disable_links,
+                compact_mode,
+                wide_mode,
+                preserved_page_for_restoration,
+            )
+            .await?;
 
             // Update current_date to track the actual date being displayed
             if !had_error && !fetched_date.is_empty() {
@@ -1770,6 +1773,12 @@ pub async fn run_interactive_ui(
                 if let Some(page) = current_page.as_mut() {
                     page.show_error_warning();
                     needs_render = true;
+
+                    // If we received a UI note (e.g., rate limit), display it on the existing page
+                    if let Some(note) = ui_note {
+                        page.clear_error_messages(); // Clear previous error messages to prevent accumulation
+                        page.add_error_message(&note);
+                    }
                 }
             } else {
                 // Track ongoing games with static time to confirm API limitations

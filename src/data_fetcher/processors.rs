@@ -257,14 +257,15 @@ pub fn process_team_goals_with_disambiguation(
 ///
 /// This function handles:
 /// - Filtering out cancelled and removed goals
-/// - Using embedded player names when available (direct from API)
-/// - Falling back to cached formatted names when embedded names unavailable
+/// - Prioritizing cached disambiguated names from player_names for consistency
+/// - Falling back to embedded player names when cached names unavailable
+/// - Rejecting stale fallback names (e.g., "Pelaaja {id}") in favor of embedded data
 /// - Handling missing player names gracefully
 /// - Preserving goal metadata like timing and special types
 ///
 /// # Arguments
 /// * `team` - Team data implementing HasGoalEvents trait
-/// * `player_names` - HashMap mapping player IDs to their formatted names (e.g., "Koivu" instead of "Mikko Koivu")
+/// * `player_names` - HashMap mapping player IDs to their formatted names (e.g., "Koivu M." for disambiguation)
 /// * `is_home_team` - Boolean indicating if this is the home team
 /// * `events` - Mutable vector to append processed goal events to
 ///
@@ -277,7 +278,7 @@ pub fn process_team_goals_with_disambiguation(
 ///
 /// let mut events = Vec::new();
 /// let mut player_names = HashMap::new();
-/// player_names.insert(123, "Koivu".to_string());
+/// player_names.insert(123, "Koivu M.".to_string()); // Disambiguated name
 ///
 /// let home_team = ScheduleTeam::default();
 ///
@@ -285,8 +286,8 @@ pub fn process_team_goals_with_disambiguation(
 /// process_team_goals(&home_team, &player_names, true, &mut events);
 ///
 /// // Events will now contain home team goals with:
-/// // - Embedded player names when available
-/// // - Fallback to cached names when needed
+/// // - Cached disambiguated names when available
+/// // - Fallback to embedded names when needed
 /// // - No cancelled goals (RL0, VT0)
 /// // - Proper home/away team attribution
 /// ```
@@ -299,17 +300,29 @@ pub fn process_team_goals(
     for goal in team.goal_events().iter().filter(|g| {
         !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
     }) {
-        // First try to use embedded player name, then fall back to cached names
-        let scorer_name = if let Some(ref scorer_player) = goal.scorer_player {
+        // First check for disambiguated name from player_names cache, then fall back to embedded player name
+        let scorer_name = if let Some(cached_name) = player_names.get(&goal.scorer_player_id) {
+            // Use cached disambiguated name, but reject stale fallbacks
+            if cached_name.starts_with("Pelaaja ") {
+                // This is a stale fallback, try embedded player name instead
+                if let Some(ref scorer_player) = goal.scorer_player {
+                    format_for_display(&build_full_name(
+                        &scorer_player.first_name,
+                        &scorer_player.last_name,
+                    ))
+                } else {
+                    create_fallback_name(goal.scorer_player_id)
+                }
+            } else {
+                cached_name.clone()
+            }
+        } else if let Some(ref scorer_player) = goal.scorer_player {
             format_for_display(&build_full_name(
                 &scorer_player.first_name,
                 &scorer_player.last_name,
             ))
         } else {
-            player_names
-                .get(&goal.scorer_player_id)
-                .cloned()
-                .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
+            create_fallback_name(goal.scorer_player_id)
         };
 
         events.push(GoalEventData {

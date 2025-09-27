@@ -137,7 +137,8 @@ impl CachedGoalEventsData {
     /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
         let ttl = if self.is_live_game {
-            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 8 seconds for live games
+            // TTL for live games; see cache_ttl::LIVE_GAMES_SECONDS
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS)
         } else {
             Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS) // 1 hour for completed games
         };
