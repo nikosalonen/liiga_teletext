@@ -4,7 +4,7 @@
 //! It handles user input, screen updates, page creation, and the main application flow.
 
 use crate::data_fetcher::cache::has_live_games_from_game_data;
-use crate::data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
+use crate::data_fetcher::{GameData, fetch_liiga_data};
 use crate::error::AppError;
 use crate::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use chrono::{Datelike, Local, NaiveDate, Utc};
@@ -97,9 +97,9 @@ fn determine_indicator_states(
     let has_ongoing_games = has_live_games_from_game_data(last_games);
 
     // Show loading indicator only in specific cases
-    let should_show_loading = if let Some(date) = current_date {
+    let should_show_loading = if let Some(_date) = current_date {
         // Only show loading for historical dates
-        is_historical_date(date)
+        false // Historical games disabled
     } else {
         // Show loading for initial load when no specific date is requested
         true
@@ -107,8 +107,8 @@ fn determine_indicator_states(
 
     // Show auto-refresh indicator whenever auto-refresh is active
     let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
-    let should_show_indicator = if let Some(date) = current_date {
-        !is_historical_date(date) && (has_ongoing_games || !all_scheduled)
+    let should_show_indicator = if let Some(_date) = current_date {
+        has_ongoing_games || !all_scheduled // Historical games disabled (simplified from !false &&)
     } else {
         has_ongoing_games || !all_scheduled
     };
@@ -281,8 +281,9 @@ async fn create_or_restore_page(config: PageCreationConfig<'_>) -> Option<Telete
         .await;
 
         // Disable auto-refresh for historical dates
-        if let Some(date) = config.updated_current_date
-            && is_historical_date(date)
+        if let Some(_date) = config.updated_current_date
+            && false
+        // Historical games disabled
         {
             page.set_auto_refresh_disabled(true);
         }
@@ -329,8 +330,9 @@ async fn create_or_restore_page(config: PageCreationConfig<'_>) -> Option<Telete
                     .await;
 
                     // Disable auto-refresh for historical dates
-                    if let Some(date) = config.updated_current_date
-                        && is_historical_date(date)
+                    if let Some(_date) = config.updated_current_date
+                        && false
+                    // Historical games disabled
                     {
                         page.set_auto_refresh_disabled(true);
                     }
@@ -392,8 +394,9 @@ async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
             .await;
 
             // Disable auto-refresh for historical dates
-            if let Some(date) = params.updated_current_date
-                && is_historical_date(date)
+            if let Some(_date) = params.updated_current_date
+                && false
+            // Historical games disabled
             {
                 page.set_auto_refresh_disabled(true);
             }
@@ -896,7 +899,7 @@ async fn monitor_cache_usage() {
     let stats = get_all_cache_stats().await;
 
     tracing::debug!(
-        "Cache status - Player: {}/{} ({}%), Tournament: {}/{} ({}%), Detailed Game: {}/{} ({}%), Goal Events: {}/{} ({}%), HTTP Response: {}/{} ({}%)",
+        "Cache status - Player: {}/{} ({}%), Tournament: {}/{} ({}%), Goal Events: {}/{} ({}%), HTTP Response: {}/{} ({}%)",
         stats.player_cache.size,
         stats.player_cache.capacity,
         if stats.player_cache.capacity > 0 {
@@ -908,13 +911,6 @@ async fn monitor_cache_usage() {
         stats.tournament_cache.capacity,
         if stats.tournament_cache.capacity > 0 {
             (stats.tournament_cache.size * 100) / stats.tournament_cache.capacity
-        } else {
-            0
-        },
-        stats.detailed_game_cache.size,
-        stats.detailed_game_cache.capacity,
-        if stats.detailed_game_cache.capacity > 0 {
-            (stats.detailed_game_cache.size * 100) / stats.detailed_game_cache.capacity
         } else {
             0
         },
@@ -1050,7 +1046,8 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool {
 
     // Don't auto-refresh for historical dates
     if let Some(date) = params.current_date.as_deref()
-        && is_historical_date(date)
+        && false
+    // Historical games disabled
     {
         tracing::debug!("Auto-refresh skipped for historical date: {}", date);
         return false;
@@ -1088,14 +1085,14 @@ fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool {
 async fn fetch_data_with_timeout(
     current_date: Option<String>,
     timeout_duration: Duration,
-) -> (Vec<GameData>, bool, String, bool) {
+) -> (Vec<GameData>, bool, String, bool, Option<String>) {
     let fetch_future = fetch_liiga_data(current_date.clone());
 
     match tokio::time::timeout(timeout_duration, fetch_future).await {
         Ok(fetch_result) => match fetch_result {
             Ok((games, fetched_date)) => {
                 tracing::debug!("Auto-refresh successful: fetched {} games", games.len());
-                (games, false, fetched_date, false)
+                (games, false, fetched_date, false, None)
             }
             Err(e) => {
                 tracing::error!("Auto-refresh failed: {}", e);
@@ -1150,6 +1147,12 @@ async fn fetch_data_with_timeout(
                             message,
                             url
                         );
+                        // Add a concise on-screen notice during rate-limit cooldown
+                        // The page will still continue with existing data
+                        // Note: keep brief to preserve teletext layout
+                        // SAFETY: this runs in the UI loop and page exists here
+                        // We simply annotate the header/footer with a short hint
+                        // by returning a flag to the caller to render the note
                     }
                     _ => {
                         tracing::warn!("Auto-refresh error: {}, will retry on next cycle", e);
@@ -1159,7 +1162,14 @@ async fn fetch_data_with_timeout(
                 // Graceful degradation: continue with existing data instead of showing error page
                 tracing::info!("Continuing with existing data due to auto-refresh failure");
 
-                (Vec::new(), true, String::new(), true)
+                // Return a short note via separate field; keep fetched_date empty on error
+                (
+                    Vec::new(),
+                    true,
+                    String::new(),
+                    true,
+                    Some("(API rajoitus – yritetään hetken kuluttua)".to_string()),
+                )
             }
         },
         Err(_) => {
@@ -1168,7 +1178,7 @@ async fn fetch_data_with_timeout(
                 "Auto-refresh timeout after {:?}, continuing with existing data",
                 timeout_duration
             );
-            (Vec::new(), true, String::new(), true)
+            (Vec::new(), true, String::new(), true, None)
         }
     }
 }
@@ -1192,7 +1202,8 @@ fn create_loading_page(
     );
 
     if let Some(date) = current_date {
-        if is_historical_date(date) {
+        if false {
+            // Historical games disabled
             loading_page.add_error_message(&format!(
                 "Haetaan historiallista dataa päivälle {}...",
                 format_date_for_display(date)
@@ -1269,6 +1280,7 @@ async fn handle_data_fetching(
         bool,
         Option<TeletextPage>,
         bool,
+        Option<String>,
     ),
     AppError,
 > {
@@ -1290,7 +1302,7 @@ async fn handle_data_fetching(
 
     // Fetch data with timeout
     let timeout_duration = Duration::from_secs(15);
-    let (games, had_error, fetched_date, should_retry) =
+    let (games, had_error, fetched_date, should_retry, ui_note) =
         fetch_data_with_timeout(current_date.clone(), timeout_duration).await;
 
     // Update current_date to track the actual date being displayed
@@ -1358,6 +1370,7 @@ async fn handle_data_fetching(
         should_retry,
         current_page,
         needs_render,
+        ui_note,
     ))
 }
 
@@ -1475,7 +1488,8 @@ async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> 
 
                 // Check if current date is historical - don't refresh historical data
                 if let Some(date) = params.current_date
-                    && is_historical_date(date)
+                    && false
+                // Historical games disabled
                 {
                     tracing::info!("Manual refresh skipped for historical date: {}", date);
                     return Ok(false); // Skip refresh for historical dates
@@ -1697,16 +1711,23 @@ pub async fn run_interactive_ui(
                 current_page.as_ref().map(TeletextPage::get_current_page);
 
             // Handle data fetching using the helper function
-            let (games, had_error, fetched_date, should_retry, new_page, _needs_render_update) =
-                handle_data_fetching(
-                    &current_date,
-                    &last_games,
-                    disable_links,
-                    compact_mode,
-                    wide_mode,
-                    preserved_page_for_restoration,
-                )
-                .await?;
+            let (
+                games,
+                had_error,
+                fetched_date,
+                should_retry,
+                new_page,
+                _needs_render_update,
+                ui_note,
+            ) = handle_data_fetching(
+                &current_date,
+                &last_games,
+                disable_links,
+                compact_mode,
+                wide_mode,
+                preserved_page_for_restoration,
+            )
+            .await?;
 
             // Update current_date to track the actual date being displayed
             if !had_error && !fetched_date.is_empty() {
@@ -1752,6 +1773,12 @@ pub async fn run_interactive_ui(
                 if let Some(page) = current_page.as_mut() {
                     page.show_error_warning();
                     needs_render = true;
+
+                    // If we received a UI note (e.g., rate limit), display it on the existing page
+                    if let Some(note) = ui_note {
+                        page.clear_error_messages(); // Clear previous error messages to prevent accumulation
+                        page.add_error_message(&note);
+                    }
                 }
             } else {
                 // Track ongoing games with static time to confirm API limitations

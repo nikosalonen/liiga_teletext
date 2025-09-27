@@ -6,6 +6,7 @@
 //! - Creating fallback names for missing player data
 //! - Player name disambiguation for teams with multiple players sharing the same last name
 
+use crate::data_fetcher::models::{ScheduleGame, ScheduleTeam};
 use std::collections::{HashMap, HashSet};
 
 /// Builds a full name from first and last name components.
@@ -697,6 +698,110 @@ impl DisambiguationContext {
 /// ```
 pub fn create_fallback_name(player_id: i64) -> String {
     format!("Pelaaja {player_id}")
+}
+
+/// Builds a disambiguation context from basic API response data for a single team.
+/// This extracts player information from goal events in the team's schedule response.
+///
+/// # Arguments
+/// * `team` - The schedule team containing goal events with embedded player data
+///
+/// # Returns
+/// * `DisambiguationContext` - Context for player name disambiguation scoped to this team
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::player_names::build_disambiguation_from_team;
+/// use liiga_teletext::data_fetcher::models::ScheduleTeam;
+///
+/// // Create a mock team with goal events containing player data
+/// let team = ScheduleTeam::default();
+///
+/// let context = build_disambiguation_from_team(&team);
+/// ```
+pub fn build_disambiguation_from_team(team: &ScheduleTeam) -> DisambiguationContext {
+    let mut players = Vec::new();
+
+    // Extract players from team goal events
+    for goal in &team.goal_events {
+        if let Some(ref scorer_player) = goal.scorer_player {
+            players.push((
+                scorer_player.player_id,
+                scorer_player.first_name.clone(),
+                scorer_player.last_name.clone(),
+            ));
+        }
+    }
+
+    DisambiguationContext::new(players)
+}
+
+/// Builds a disambiguation context from basic API response data.
+/// This extracts player information from goal events in the schedule response.
+///
+/// **Deprecated**: This function creates a global disambiguation context across both teams,
+/// which can cause cross-team disambiguation. For team-scoped disambiguation,
+/// use `build_disambiguation_from_team` instead.
+///
+/// # Arguments
+/// * `game` - The schedule game containing goal events with embedded player data
+///
+/// # Returns
+/// * `DisambiguationContext` - Context for player name disambiguation
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::player_names::build_disambiguation_from_basic_response;
+/// use liiga_teletext::data_fetcher::models::ScheduleGame;
+///
+/// // Create a mock game with goal events containing player data
+/// let game = ScheduleGame {
+///     id: 1,
+///     season: 2024,
+///     start: "2024-01-15T18:30:00Z".to_string(),
+///     end: Some("2024-01-15T21:00:00Z".to_string()),
+///     home_team: liiga_teletext::data_fetcher::models::ScheduleTeam::default(),
+///     away_team: liiga_teletext::data_fetcher::models::ScheduleTeam::default(),
+///     finished_type: Some("FINISHED".to_string()),
+///     started: true,
+///     ended: true,
+///     game_time: 3600,
+///     serie: "runkosarja".to_string(),
+/// };
+///
+/// let context = build_disambiguation_from_basic_response(&game);
+/// ```
+#[deprecated(
+    since = "0.15.10",
+    note = "Use build_disambiguation_from_team for team-scoped disambiguation"
+)]
+#[allow(dead_code)]
+pub fn build_disambiguation_from_basic_response(game: &ScheduleGame) -> DisambiguationContext {
+    let mut players = Vec::new();
+
+    // Extract players from home team goal events
+    for goal in &game.home_team.goal_events {
+        if let Some(ref scorer_player) = goal.scorer_player {
+            players.push((
+                scorer_player.player_id,
+                scorer_player.first_name.clone(),
+                scorer_player.last_name.clone(),
+            ));
+        }
+    }
+
+    // Extract players from away team goal events
+    for goal in &game.away_team.goal_events {
+        if let Some(ref scorer_player) = goal.scorer_player {
+            players.push((
+                scorer_player.player_id,
+                scorer_player.first_name.clone(),
+                scorer_player.last_name.clone(),
+            ));
+        }
+    }
+
+    DisambiguationContext::new(players)
 }
 
 #[cfg(test)]

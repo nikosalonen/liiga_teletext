@@ -58,6 +58,7 @@ pub enum AppError {
     ApiSeasonNotFound { season: i32 },
 
     #[error("Game not found: game_id={game_id}, season={season}")]
+    #[allow(dead_code)]
     ApiGameNotFound { game_id: i32, season: i32 },
 
     #[error("Tournament not found: {tournament} for date {date}")]
@@ -200,6 +201,7 @@ impl AppError {
     }
 
     /// Create a game not found error
+    #[allow(dead_code)]
     pub fn api_game_not_found(game_id: i32, season: i32) -> Self {
         Self::ApiGameNotFound { game_id, season }
     }
