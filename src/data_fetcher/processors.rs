@@ -1,4 +1,3 @@
-use crate::constants::env_vars;
 use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, ScheduleGame};
 use crate::data_fetcher::player_names::{
     DisambiguationContext, build_full_name, create_fallback_name, format_for_display,
@@ -6,7 +5,7 @@ use crate::data_fetcher::player_names::{
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{DateTime, Local, NaiveTime, TimeZone, Utc};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tracing;
 
 /// Processes goal events for both teams in a game with team-scoped disambiguation.
@@ -120,9 +119,69 @@ where
     events
 }
 
+/// Processes goal events using only basic API response data with built-in disambiguation.
+/// This function extracts player information from embedded scorer data and creates
+/// disambiguation context for teams with multiple players sharing the same last name.
+///
+/// # Arguments
+/// * `game` - The schedule game containing goal events with embedded player data
+///
+/// # Returns
+/// * `Vec<GoalEventData>` - Processed goal events with disambiguated player names
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::processors::process_goal_events_from_basic_response;
+/// use liiga_teletext::data_fetcher::models::ScheduleGame;
+///
+/// // Create a mock game with goal events containing player data
+/// let game = ScheduleGame {
+///     id: 1,
+///     season: 2024,
+///     start: "2024-01-15T18:30:00Z".to_string(),
+///     end: Some("2024-01-15T21:00:00Z".to_string()),
+///     home_team: liiga_teletext::data_fetcher::models::ScheduleTeam::default(),
+///     away_team: liiga_teletext::data_fetcher::models::ScheduleTeam::default(),
+///     finished_type: Some("FINISHED".to_string()),
+///     started: true,
+///     ended: true,
+///     game_time: 3600,
+///     serie: "runkosarja".to_string(),
+/// };
+///
+/// let events = process_goal_events_from_basic_response(&game);
+/// ```
+pub fn process_goal_events_from_basic_response(game: &ScheduleGame) -> Vec<GoalEventData> {
+    use crate::data_fetcher::player_names::build_disambiguation_from_basic_response;
+
+    let mut events = Vec::new();
+
+    // Build disambiguation context from basic response data
+    let disambiguation_context = build_disambiguation_from_basic_response(game);
+
+    // Process home team goals
+    process_team_goals_with_disambiguation(
+        &game.home_team,
+        &disambiguation_context,
+        true,
+        &mut events,
+    );
+
+    // Process away team goals
+    process_team_goals_with_disambiguation(
+        &game.away_team,
+        &disambiguation_context,
+        false,
+        &mut events,
+    );
+
+    events
+}
+
 /// Processes goal events for a single team with team-scoped disambiguation.
 /// This enhanced version uses a disambiguation context to resolve player names
 /// with first initials when multiple players on the same team share the same last name.
+/// It also prioritizes embedded player data when available.
 ///
 /// # Arguments
 /// * `team` - Team data implementing HasGoalEvents trait
@@ -132,7 +191,8 @@ where
 ///
 /// # Features
 /// - Filters out cancelled and removed goals (RL0, VT0)
-/// - Uses team-scoped disambiguation for player names
+/// - Uses embedded player names when available (direct from API)
+/// - Falls back to team-scoped disambiguation for player names
 /// - Handles missing player names gracefully with fallback
 /// - Preserves goal metadata like timing and special types
 ///
@@ -151,7 +211,7 @@ where
 /// let home_team = ScheduleTeam::default();
 ///
 /// process_team_goals_with_disambiguation(&home_team, &context, true, &mut events);
-/// // Events will contain disambiguated names: "Koivu M.", "Koivu S."
+/// // Events will contain embedded names when available, or disambiguated names: "Koivu M.", "Koivu S."
 /// ```
 #[allow(dead_code)] // Used in integration tests
 pub fn process_team_goals_with_disambiguation(
@@ -163,12 +223,24 @@ pub fn process_team_goals_with_disambiguation(
     for goal in team.goal_events().iter().filter(|g| {
         !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
     }) {
+        // Try to get player name, but don't show fallback names if we don't have real data
+        let scorer_name = if let Some(ref scorer_player) = goal.scorer_player {
+            format_for_display(&build_full_name(
+                &scorer_player.first_name,
+                &scorer_player.last_name,
+            ))
+        } else if let Some(disambiguated_name) =
+            disambiguation_context.get_disambiguated_name(goal.scorer_player_id)
+        {
+            disambiguated_name.clone()
+        } else {
+            // No player data available - use empty string to indicate missing data
+            String::new()
+        };
+
         events.push(GoalEventData {
             scorer_player_id: goal.scorer_player_id,
-            scorer_name: disambiguation_context
-                .get_disambiguated_name(goal.scorer_player_id)
-                .cloned()
-                .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id)),
+            scorer_name,
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
             away_team_score: goal.away_team_score,
@@ -184,7 +256,8 @@ pub fn process_team_goals_with_disambiguation(
 ///
 /// This function handles:
 /// - Filtering out cancelled and removed goals
-/// - Using pre-formatted player names (cached formatted names)
+/// - Using embedded player names when available (direct from API)
+/// - Falling back to cached formatted names when embedded names unavailable
 /// - Handling missing player names gracefully
 /// - Preserving goal metadata like timing and special types
 ///
@@ -211,7 +284,8 @@ pub fn process_team_goals_with_disambiguation(
 /// process_team_goals(&home_team, &player_names, true, &mut events);
 ///
 /// // Events will now contain home team goals with:
-/// // - Pre-formatted player names (e.g., "Koivu")
+/// // - Embedded player names when available
+/// // - Fallback to cached names when needed
 /// // - No cancelled goals (RL0, VT0)
 /// // - Proper home/away team attribution
 /// ```
@@ -224,12 +298,22 @@ pub fn process_team_goals(
     for goal in team.goal_events().iter().filter(|g| {
         !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
     }) {
-        events.push(GoalEventData {
-            scorer_player_id: goal.scorer_player_id,
-            scorer_name: player_names
+        // First try to use embedded player name, then fall back to cached names
+        let scorer_name = if let Some(ref scorer_player) = goal.scorer_player {
+            format_for_display(&build_full_name(
+                &scorer_player.first_name,
+                &scorer_player.last_name,
+            ))
+        } else {
+            player_names
                 .get(&goal.scorer_player_id)
                 .cloned()
-                .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id)),
+                .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id))
+        };
+
+        events.push(GoalEventData {
+            scorer_player_id: goal.scorer_player_id,
+            scorer_name,
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
             away_team_score: goal.away_team_score,
@@ -438,290 +522,7 @@ fn is_game_likely_live(game: &ScheduleGame) -> bool {
     false
 }
 
-/// Try to fetch player names for specific player IDs with a reduced timeout
-/// This is used as a fallback when cached player names are missing
-async fn try_fetch_player_names_for_game(
-    api_domain: &str,
-    season: i32,
-    game_id: i32,
-    player_ids: &[i64],
-) -> Option<HashMap<i64, String>> {
-    use crate::data_fetcher::api::build_game_url;
-    use crate::data_fetcher::models::{DetailedGameResponse, Player};
-    use reqwest::Client;
-    use std::time::Duration;
-    use tracing::{debug, warn};
-
-    if player_ids.is_empty() {
-        return Some(HashMap::new());
-    }
-
-    debug!(
-        "Attempting to fetch player names for {} players in game ID {} (season {})",
-        player_ids.len(),
-        game_id,
-        season
-    );
-
-    // Get timeout from env var with 5 second default, clamped to safe range (1-30 seconds)
-    let timeout_secs = std::env::var(env_vars::API_FETCH_TIMEOUT)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(5)
-        .clamp(1, 30);
-
-    // Create a client with a configurable timeout for this fallback attempt
-    let client = match Client::builder()
-        .timeout(Duration::from_secs(timeout_secs))
-        .build()
-    {
-        Ok(client) => client,
-        Err(e) => {
-            warn!("Failed to create HTTP client for player name fetch: {}", e);
-            return None;
-        }
-    };
-
-    // Use the provided API domain and season
-    let url = build_game_url(api_domain, season, game_id);
-
-    match client.get(&url).send().await {
-        Ok(response) => {
-            // Check for HTTP errors before trying to parse JSON
-            let response = match response.error_for_status() {
-                Ok(response) => response,
-                Err(e) => {
-                    debug!(
-                        "HTTP error for player name fetch (game ID {}): {}",
-                        game_id, e
-                    );
-                    return None;
-                }
-            };
-
-            match response.json::<DetailedGameResponse>().await {
-                Ok(game_response) => {
-                    debug!(
-                        "Successfully fetched detailed game data for player name lookup (game ID: {})",
-                        game_id
-                    );
-
-                    let mut player_names = HashMap::new();
-                    // Convert player_ids to HashSet for O(1) lookup instead of O(n) contains()
-                    let mut wanted_ids: HashSet<i64> = HashSet::with_capacity(player_ids.len());
-                    wanted_ids.extend(player_ids.iter().copied());
-
-                    // Helper to process players and extract names for the requested IDs
-                    let mut process_players = |players: &[Player]| {
-                        for player in players {
-                            if wanted_ids.contains(&player.id) {
-                                let full_name =
-                                    build_full_name(&player.first_name, &player.last_name);
-                                let display_name = format_for_display(&full_name);
-                                player_names.insert(player.id, display_name);
-                            }
-                        }
-                    };
-
-                    // Process both home and away team players
-                    process_players(&game_response.home_team_players);
-                    process_players(&game_response.away_team_players);
-
-                    if !player_names.is_empty() {
-                        debug!(
-                            "Successfully fetched {} player names for game ID {}",
-                            player_names.len(),
-                            game_id
-                        );
-                        Some(player_names)
-                    } else {
-                        debug!(
-                            "No player names found for requested IDs in game ID {}",
-                            game_id
-                        );
-                        None
-                    }
-                }
-                Err(e) => {
-                    debug!("Failed to parse game response for player names: {}", e);
-                    None
-                }
-            }
-        }
-        Err(e) => {
-            debug!(
-                "Failed to fetch game data for player names (game ID {}): {}",
-                game_id, e
-            );
-            None
-        }
-    }
-}
-
-pub async fn create_basic_goal_events(game: &ScheduleGame, api_domain: &str) -> Vec<GoalEventData> {
-    use crate::data_fetcher::cache::get_cached_players;
-    use tracing::{info, warn};
-
-    // If the game has goal events in the response, use them with cached names if available
-    if !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty() {
-        info!(
-            "Game ID {}: Using goal events from schedule response ({} home, {} away)",
-            game.id,
-            game.home_team.goal_events.len(),
-            game.away_team.goal_events.len()
-        );
-
-        // Collect all player IDs that need names
-        let mut player_ids_needing_names = HashSet::with_capacity(
-            game.home_team.goal_events.len() + game.away_team.goal_events.len(),
-        );
-        for goal in &game.home_team.goal_events {
-            player_ids_needing_names.insert(goal.scorer_player_id);
-        }
-        for goal in &game.away_team.goal_events {
-            player_ids_needing_names.insert(goal.scorer_player_id);
-        }
-
-        // First, try to get cached player names
-        let cached_players = get_cached_players(game.id).await;
-        let mut player_names = HashMap::new();
-
-        match cached_players {
-            Some(cached) => {
-                // Use cached names for available players
-                for (&player_id, name) in &cached {
-                    if player_ids_needing_names.contains(&player_id) {
-                        player_names.insert(player_id, name.clone());
-                    }
-                }
-
-                // Find missing player names
-                let missing_players: Vec<i64> = player_ids_needing_names
-                    .iter()
-                    .filter(|&&id| !cached.contains_key(&id))
-                    .copied()
-                    .collect();
-
-                if !missing_players.is_empty() {
-                    info!(
-                        "Game ID {}: {} player names missing from cache, attempting to fetch them",
-                        game.id,
-                        missing_players.len()
-                    );
-
-                    // Try to fetch missing player names
-                    if let Some(additional_names) = try_fetch_player_names_for_game(
-                        api_domain,
-                        game.season,
-                        game.id,
-                        &missing_players,
-                    )
-                    .await
-                    {
-                        for (id, name) in additional_names {
-                            player_names.insert(id, name);
-                        }
-                    }
-                }
-            }
-            None => {
-                info!(
-                    "Game ID {}: No cached player data, attempting to fetch player names for {} players",
-                    game.id,
-                    player_ids_needing_names.len()
-                );
-
-                // Try to fetch all player names
-                let all_players: Vec<i64> = player_ids_needing_names.into_iter().collect();
-                if let Some(fetched_names) =
-                    try_fetch_player_names_for_game(api_domain, game.season, game.id, &all_players)
-                        .await
-                {
-                    player_names = fetched_names;
-                }
-            }
-        }
-
-        // Helper closure for consistent fallback handling
-        let get_player_name_with_fallback = |player_id: i64| -> String {
-            player_names
-                .get(&player_id)
-                .cloned()
-                .unwrap_or_else(|| {
-                    warn!(
-                        "Using fallback name for player ID {} in game ID {} - could not fetch actual name",
-                        player_id, game.id
-                    );
-                    create_fallback_name(player_id)
-                })
-        };
-
-        // Build basic_names with priority: fetched names > cached names > fallback
-        let mut basic_names = HashMap::new();
-        for goal in &game.home_team.goal_events {
-            let player_name = get_player_name_with_fallback(goal.scorer_player_id);
-            basic_names.insert(goal.scorer_player_id, player_name);
-        }
-
-        for goal in &game.away_team.goal_events {
-            let player_name = get_player_name_with_fallback(goal.scorer_player_id);
-            basic_names.insert(goal.scorer_player_id, player_name);
-        }
-
-        return process_goal_events(game, &basic_names);
-    }
-
-    // If no goal events but game has scores, create placeholder events
-    warn!(
-        "Game ID {}: No goal events in schedule response, creating {} placeholder events for score {}:{}",
-        game.id,
-        game.home_team.goals + game.away_team.goals,
-        game.home_team.goals,
-        game.away_team.goals
-    );
-
-    let mut events = Vec::new();
-
-    // Create placeholder events for home team goals
-    for i in 0..game.home_team.goals {
-        events.push(GoalEventData {
-            scorer_player_id: 0,                           // Unknown player ID
-            scorer_name: "Tuntematon pelaaja".to_string(), // "Unknown player" in Finnish
-            minute: 0,                                     // Unknown time
-            home_team_score: i + 1,
-            away_team_score: 0, // We don't know the exact progression
-            is_winning_goal: false,
-            goal_types: vec![],
-            is_home_team: true,
-            video_clip_url: None,
-        });
-    }
-
-    // Create placeholder events for away team goals
-    for i in 0..game.away_team.goals {
-        events.push(GoalEventData {
-            scorer_player_id: 0,                           // Unknown player ID
-            scorer_name: "Tuntematon pelaaja".to_string(), // "Unknown player" in Finnish
-            minute: 0,                                     // Unknown time
-            home_team_score: 0,                            // We don't know the exact progression
-            away_team_score: i + 1,
-            is_winning_goal: false,
-            goal_types: vec![],
-            is_home_team: false,
-            video_clip_url: None,
-        });
-    }
-
-    if !events.is_empty() {
-        info!(
-            "Game ID {}: Created {} placeholder goal events",
-            game.id,
-            events.len()
-        );
-    }
-
-    events
-}
+// Historical player name fetching function removed
 
 #[cfg(test)]
 mod tests {
@@ -737,6 +538,7 @@ mod tests {
     ) -> GoalEvent {
         GoalEvent {
             scorer_player_id,
+            scorer_player: None,
             log_time: "18:30:00".to_string(),
             game_time,
             period: 1,
@@ -746,6 +548,7 @@ mod tests {
             winning_goal: false,
             goal_types,
             assistant_player_ids: vec![],
+            assistant_players: vec![],
             video_clip_url: Some("https://example.com/video.mp4".to_string()),
         }
     }
@@ -1036,57 +839,6 @@ mod tests {
         assert!(matches!(result.unwrap_err(), AppError::DateTimeParse(_)));
     }
 
-    #[tokio::test]
-    async fn test_create_basic_goal_events() {
-        let home_goal = create_test_goal_event(123, 600, 1, 0, vec!["EV".to_string()]);
-        let away_goal = create_test_goal_event(456, 900, 1, 1, vec!["YV".to_string()]);
-
-        let game = create_test_game(vec![home_goal], vec![away_goal]);
-
-        let events = create_basic_goal_events(&game, "test-api.example.com").await;
-
-        assert_eq!(events.len(), 2);
-
-        // Should use fallback names since no player names cache is provided
-        assert_eq!(events[0].scorer_name, "Pelaaja 123");
-        assert_eq!(events[1].scorer_name, "Pelaaja 456");
-    }
-
-    #[tokio::test]
-    async fn test_create_basic_goal_events_empty_game() {
-        let game = create_test_game(vec![], vec![]);
-        let events = create_basic_goal_events(&game, "test-api.example.com").await;
-        assert!(events.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_create_basic_goal_events_with_scores_but_no_events() {
-        // Test the new fallback logic for games with scores but no goal events
-        let mut game = create_test_game(vec![], vec![]);
-
-        // Set scores but keep goal_events empty (simulates schedule response)
-        game.home_team.goals = 2;
-        game.away_team.goals = 1;
-
-        let events = create_basic_goal_events(&game, "test-api.example.com").await;
-
-        // Should create placeholder events based on scores
-        assert_eq!(events.len(), 3); // 2 home + 1 away
-
-        // Check home team events
-        let home_events: Vec<_> = events.iter().filter(|e| e.is_home_team).collect();
-        assert_eq!(home_events.len(), 2);
-        assert_eq!(home_events[0].scorer_name, "Tuntematon pelaaja");
-        assert_eq!(home_events[0].home_team_score, 1);
-        assert_eq!(home_events[1].home_team_score, 2);
-
-        // Check away team events
-        let away_events: Vec<_> = events.iter().filter(|e| !e.is_home_team).collect();
-        assert_eq!(away_events.len(), 1);
-        assert_eq!(away_events[0].scorer_name, "Tuntematon pelaaja");
-        assert_eq!(away_events[0].away_team_score, 1);
-    }
-
     #[test]
     fn test_goal_event_data_fields() {
         let goal = create_test_goal_event(123, 900, 2, 1, vec!["YV".to_string(), "MV".to_string()]);
@@ -1306,8 +1058,8 @@ mod tests {
         let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
 
         assert_eq!(events.len(), 1);
-        // Should use fallback name for missing player
-        assert_eq!(events[0].scorer_name, "Pelaaja 999");
+        // Should use empty string for missing player data
+        assert_eq!(events[0].scorer_name, "");
     }
 
     #[test]
@@ -1398,6 +1150,6 @@ mod tests {
         process_team_goals_with_disambiguation(&team, &context, true, &mut events);
 
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].scorer_name, "Pelaaja 999");
+        assert_eq!(events[0].scorer_name, "");
     }
 }

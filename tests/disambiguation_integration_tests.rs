@@ -45,7 +45,8 @@ fn create_realistic_player_data() -> (PlayerData, PlayerData) {
 fn create_realistic_goal_events() -> Vec<GoalEvent> {
     vec![
         GoalEvent {
-            scorer_player_id: 1001, // Mikko Koivu (should be disambiguated)
+            scorer_player_id: 1001,
+            scorer_player: None,
             log_time: "2024-01-15T18:35:23Z".to_string(),
             game_time: 323, // 5:23 into first period
             period: 1,
@@ -55,10 +56,12 @@ fn create_realistic_goal_events() -> Vec<GoalEvent> {
             winning_goal: false,
             goal_types: vec!["YV".to_string()],     // Power play
             assistant_player_ids: vec![1003, 1004], // Selänne, Kurri
+            assistant_players: vec![],
             video_clip_url: Some("https://example.com/goal1.mp4".to_string()),
         },
         GoalEvent {
-            scorer_player_id: 1002, // Saku Koivu (should be disambiguated)
+            scorer_player_id: 1002,
+            scorer_player: None,
             log_time: "2024-01-15T19:05:42Z".to_string(),
             game_time: 1142, // 19:02 into first period
             period: 1,
@@ -68,10 +71,12 @@ fn create_realistic_goal_events() -> Vec<GoalEvent> {
             winning_goal: false,
             goal_types: vec!["AV".to_string()], // Short-handed
             assistant_player_ids: vec![],
+            assistant_players: vec![],
             video_clip_url: Some("https://example.com/goal3.mp4".to_string()),
         },
         GoalEvent {
-            scorer_player_id: 1007, // Jussi Jokinen (should be disambiguated)
+            scorer_player_id: 1007,
+            scorer_player: None,
             log_time: "2024-01-15T19:25:18Z".to_string(),
             game_time: 2318, // 18:38 into second period
             period: 2,
@@ -81,6 +86,7 @@ fn create_realistic_goal_events() -> Vec<GoalEvent> {
             winning_goal: true,
             goal_types: vec!["TM".to_string()], // Empty net
             assistant_player_ids: vec![1006],   // Olli Jokinen
+            assistant_players: vec![],
             video_clip_url: None,
         },
     ]
@@ -89,7 +95,8 @@ fn create_realistic_goal_events() -> Vec<GoalEvent> {
 /// Creates away team goal events
 fn create_away_goal_events() -> Vec<GoalEvent> {
     vec![GoalEvent {
-        scorer_player_id: 2005, // Markus Granlund (should be disambiguated)
+        scorer_player_id: 2005,
+        scorer_player: None,
         log_time: "2024-01-15T18:42:15Z".to_string(),
         game_time: 735, // 12:15 into first period
         period: 1,
@@ -99,6 +106,7 @@ fn create_away_goal_events() -> Vec<GoalEvent> {
         winning_goal: false,
         goal_types: vec![],
         assistant_player_ids: vec![2001, 2003], // Laine, Barkov
+        assistant_players: vec![],
         video_clip_url: None,
     }]
 }
@@ -392,7 +400,8 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
     // Create home team goal events
     let home_goal_events = vec![
         GoalEvent {
-            scorer_player_id: 101, // Mikko Koivu
+            scorer_player_id: 101,
+            scorer_player: None,
             log_time: "2024-01-15T18:35:00Z".to_string(),
             game_time: 300,
             period: 1,
@@ -402,10 +411,12 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
             winning_goal: false,
             goal_types: vec![],
             assistant_player_ids: vec![],
+            assistant_players: vec![],
             video_clip_url: None,
         },
         GoalEvent {
-            scorer_player_id: 102, // Saku Koivu
+            scorer_player_id: 102,
+            scorer_player: None,
             log_time: "2024-01-15T18:45:00Z".to_string(),
             game_time: 900,
             period: 1,
@@ -415,10 +426,12 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
             winning_goal: false,
             goal_types: vec!["YV".to_string()],
             assistant_player_ids: vec![],
+            assistant_players: vec![],
             video_clip_url: Some("https://example.com/goal2.mp4".to_string()),
         },
         GoalEvent {
-            scorer_player_id: 103, // Kimmo Koivu
+            scorer_player_id: 103,
+            scorer_player: None,
             log_time: "2024-01-15T19:10:00Z".to_string(),
             game_time: 1800,
             period: 2,
@@ -428,13 +441,15 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
             winning_goal: true,
             goal_types: vec![],
             assistant_player_ids: vec![101, 104],
+            assistant_players: vec![],
             video_clip_url: None,
         },
     ];
 
     // Create away team goal events
     let away_goal_events = vec![GoalEvent {
-        scorer_player_id: 201, // Patrik Laine (no disambiguation needed)
+        scorer_player_id: 201,
+        scorer_player: None,
         log_time: "2024-01-15T19:25:00Z".to_string(),
         game_time: 2700,
         period: 3,
@@ -444,6 +459,7 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
         winning_goal: false,
         goal_types: vec!["AV".to_string()],
         assistant_player_ids: vec![202],
+        assistant_players: vec![],
         video_clip_url: None,
     }];
 
@@ -607,6 +623,7 @@ async fn test_performance_impact_with_large_datasets() {
         };
         goal_events.push(GoalEvent {
             scorer_player_id: player_id,
+            scorer_player: None,
             log_time: format!("2024-01-15T18:{}:00Z", 30 + i),
             game_time: i * 180, // Every 3 minutes
             period: (i / 7) + 1,
@@ -620,6 +637,7 @@ async fn test_performance_impact_with_large_datasets() {
                 vec![]
             },
             assistant_player_ids: vec![],
+            assistant_players: vec![],
             video_clip_url: if i % 4 == 0 {
                 Some(format!("https://example.com/goal{i}.mp4"))
             } else {
@@ -795,7 +813,8 @@ async fn test_cross_team_disambiguation_isolation() {
             ranking: Some(1),
             game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
             goal_events: vec![GoalEvent {
-                scorer_player_id: 101, // Home Mikko Koivu
+                scorer_player_id: 101,
+                scorer_player: None,
                 log_time: "2024-01-15T18:35:00Z".to_string(),
                 game_time: 300,
                 period: 1,
@@ -805,6 +824,7 @@ async fn test_cross_team_disambiguation_isolation() {
                 winning_goal: false,
                 goal_types: vec![],
                 assistant_player_ids: vec![],
+                assistant_players: vec![],
                 video_clip_url: None,
             }],
         },
@@ -821,7 +841,8 @@ async fn test_cross_team_disambiguation_isolation() {
             ranking: Some(5),
             game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
             goal_events: vec![GoalEvent {
-                scorer_player_id: 201, // Away Saku Koivu
+                scorer_player_id: 201,
+                scorer_player: None,
                 log_time: "2024-01-15T18:45:00Z".to_string(),
                 game_time: 900,
                 period: 1,
@@ -831,6 +852,7 @@ async fn test_cross_team_disambiguation_isolation() {
                 winning_goal: false,
                 goal_types: vec![],
                 assistant_player_ids: vec![],
+                assistant_players: vec![],
                 video_clip_url: None,
             }],
         },

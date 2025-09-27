@@ -126,6 +126,24 @@ pub mod retry {
     pub const NETWORK_CONNECTION_DELAY_SECONDS: u64 = 10;
 }
 
+/// Player name background resolution tuning
+pub mod player_name_fetch {
+    /// If more than this many player names are missing for a game, defer to
+    /// the background queue instead of fetching synchronously.
+    pub const SYNC_FETCH_THRESHOLD: usize = 3;
+
+    /// Minimum spacing between background detailed player fetches (milliseconds).
+    /// Keeps overall request rate low at startup to avoid 429s.
+    pub const MIN_SPACING_MS: u64 = 450;
+
+    /// Jitter range applied to spacing (+/- percentage of MIN_SPACING_MS).
+    /// Use 20% to avoid thundering herd across clients.
+    pub const JITTER_FRACTION: f64 = 0.2;
+
+    /// Background queue capacity for player name resolution jobs.
+    pub const QUEUE_CAPACITY: usize = 256;
+}
+
 // Re-export commonly used validation constants at the module level for convenience
 #[allow(unused_imports)]
 pub use validation::MAX_PLAYER_NAME_LENGTH;

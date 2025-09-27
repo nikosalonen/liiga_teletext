@@ -203,7 +203,7 @@ fn test_disambiguation_error_scenarios() {
 
     // Test missing player IDs in goal events
     let goal_with_missing_id = GoalEventData {
-        scorer_player_id: 999, // Non-existent ID
+        scorer_player_id: 999,
         scorer_name: "Unknown Player".to_string(),
         minute: 5,
         home_team_score: 1,

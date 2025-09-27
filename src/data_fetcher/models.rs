@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 pub struct GoalEvent {
     #[serde(rename = "scorerPlayerId")]
     pub scorer_player_id: i64,
+    #[serde(rename = "scorerPlayer", default)]
+    pub scorer_player: Option<EmbeddedPlayer>,
     #[serde(rename = "logTime")]
     pub log_time: String,
     #[serde(rename = "gameTime")]
@@ -22,6 +24,8 @@ pub struct GoalEvent {
     pub goal_types: Vec<String>,
     #[serde(rename = "assistantPlayerIds", default)]
     pub assistant_player_ids: Vec<i32>,
+    #[serde(rename = "assistantPlayers", default)]
+    pub assistant_players: Vec<EmbeddedPlayer>,
     #[serde(rename = "videoClipUrl", default)]
     pub video_clip_url: Option<String>,
 }
@@ -183,6 +187,16 @@ pub struct Player {
     pub first_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq)]
+pub struct EmbeddedPlayer {
+    #[serde(rename = "playerId")]
+    pub player_id: i64,
+    #[serde(rename = "firstName")]
+    pub first_name: String,
+    #[serde(rename = "lastName")]
+    pub last_name: String,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DetailedGameResponse {
     pub game: DetailedGame,
@@ -293,6 +307,11 @@ mod tests {
     fn create_test_goal_event() -> GoalEvent {
         GoalEvent {
             scorer_player_id: 12345,
+            scorer_player: Some(EmbeddedPlayer {
+                player_id: 12345,
+                first_name: "MIKKO".to_string(),
+                last_name: "KOIVU".to_string(),
+            }),
             log_time: "18:30:00".to_string(),
             game_time: 900,
             period: 1,
@@ -302,6 +321,7 @@ mod tests {
             winning_goal: false,
             goal_types: vec!["EV".to_string()],
             assistant_player_ids: vec![67890, 11111],
+            assistant_players: vec![],
             video_clip_url: Some("https://example.com/video.mp4".to_string()),
         }
     }
@@ -381,6 +401,8 @@ mod tests {
         assert!(!goal_event.winning_goal);
         assert!(goal_event.goal_types.is_empty());
         assert!(goal_event.assistant_player_ids.is_empty());
+        assert!(goal_event.assistant_players.is_empty());
+        assert_eq!(goal_event.scorer_player, None);
         assert_eq!(goal_event.video_clip_url, None);
     }
 

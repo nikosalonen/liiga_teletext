@@ -582,6 +582,15 @@ impl GameResultData {
 }
 
 impl TeletextPage {
+    /// Helper function to format scorer name for display, handling empty names gracefully.
+    fn format_scorer_name(scorer_name: &str) -> String {
+        if scorer_name.is_empty() {
+            "Maali".to_string() // "Goal" in Finnish
+        } else {
+            scorer_name.to_string()
+        }
+    }
+
     /// Creates a new TeletextPage instance with the specified parameters.
     ///
     /// # Arguments
@@ -1362,22 +1371,23 @@ impl TeletextPage {
                                 ));
 
                                 // Add video link functionality if there's a video clip and links are enabled
+                                let display_name = Self::format_scorer_name(&event.scorer_name);
                                 if let Some(url) = &event.video_clip_url {
                                     if !self.disable_video_links {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                            scorer_color, event.scorer_name, url
+                                            scorer_color, display_name, url
                                         ));
                                     } else {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}",
-                                            scorer_color, event.scorer_name
+                                            scorer_color, display_name
                                         ));
                                     }
                                 } else {
                                     buffer.push_str(&format!(
                                         "\x1b[38;5;{}m{:<12}",
-                                        scorer_color, event.scorer_name
+                                        scorer_color, display_name
                                     ));
                                 }
 
@@ -1409,22 +1419,23 @@ impl TeletextPage {
                                 ));
 
                                 // Add video link functionality if there's a video clip and links are enabled
+                                let display_name = Self::format_scorer_name(&event.scorer_name);
                                 if let Some(url) = &event.video_clip_url {
                                     if !self.disable_video_links {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                            scorer_color, event.scorer_name, url
+                                            scorer_color, display_name, url
                                         ));
                                     } else {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}",
-                                            scorer_color, event.scorer_name
+                                            scorer_color, display_name
                                         ));
                                     }
                                 } else {
                                     buffer.push_str(&format!(
                                         "\x1b[38;5;{}m{:<12}",
-                                        scorer_color, event.scorer_name
+                                        scorer_color, display_name
                                     ));
                                 }
 
@@ -1663,7 +1674,10 @@ impl TeletextPage {
                                 " \x1b[38;5;{}m{:2} {:<12}\x1b[0m{}",
                                 scorer_color,
                                 event.minute,
-                                event.scorer_name.chars().take(12).collect::<String>(),
+                                Self::format_scorer_name(&event.scorer_name)
+                                    .chars()
+                                    .take(12)
+                                    .collect::<String>(),
                                 goal_type_str
                             )
                         } else {
@@ -1692,7 +1706,10 @@ impl TeletextPage {
                                 "\x1b[38;5;{}m{:2} {:<12}\x1b[0m{}",
                                 scorer_color,
                                 event.minute,
-                                event.scorer_name.chars().take(12).collect::<String>(),
+                                Self::format_scorer_name(&event.scorer_name)
+                                    .chars()
+                                    .take(12)
+                                    .collect::<String>(),
                                 goal_type_str
                             )
                         } else {
@@ -2658,22 +2675,23 @@ impl TeletextPage {
                                     ));
 
                                     // Add video link functionality if there's a video clip and links are enabled
+                                    let display_name = Self::format_scorer_name(&event.scorer_name);
                                     if let Some(url) = &event.video_clip_url {
                                         if !self.disable_video_links {
                                             buffer.push_str(&format!(
                                                 "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                                scorer_color, event.scorer_name, url
+                                                scorer_color, display_name, url
                                             ));
                                         } else {
                                             buffer.push_str(&format!(
                                                 "\x1b[38;5;{}m{:<12}",
-                                                scorer_color, event.scorer_name
+                                                scorer_color, display_name
                                             ));
                                         }
                                     } else {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}",
-                                            scorer_color, event.scorer_name
+                                            scorer_color, display_name
                                         ));
                                     }
 
@@ -2708,22 +2726,23 @@ impl TeletextPage {
                                     ));
 
                                     // Add video link functionality if there's a video clip and links are enabled
+                                    let display_name = Self::format_scorer_name(&event.scorer_name);
                                     if let Some(url) = &event.video_clip_url {
                                         if !self.disable_video_links {
                                             buffer.push_str(&format!(
                                                 "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                                scorer_color, event.scorer_name, url
+                                                scorer_color, display_name, url
                                             ));
                                         } else {
                                             buffer.push_str(&format!(
                                                 "\x1b[38;5;{}m{:<12}",
-                                                scorer_color, event.scorer_name
+                                                scorer_color, display_name
                                             ));
                                         }
                                     } else {
                                         buffer.push_str(&format!(
                                             "\x1b[38;5;{}m{:<12}",
-                                            scorer_color, event.scorer_name
+                                            scorer_color, display_name
                                         ));
                                     }
 

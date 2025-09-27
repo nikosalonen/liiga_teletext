@@ -14,7 +14,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use data_fetcher::{fetch_liiga_data, is_historical_date};
+use data_fetcher::fetch_liiga_data;
 use error::AppError;
 use semver::Version;
 use std::io::stdout;
@@ -556,8 +556,9 @@ async fn main() -> Result<(), AppError> {
                     .await;
 
                     // Disable auto-refresh for historical dates in --once mode too
-                    if let Some(ref date) = args.date
-                        && is_historical_date(date)
+                    if let Some(ref _date) = args.date
+                        && false
+                    // Historical games disabled
                     {
                         page.set_auto_refresh_disabled(true);
                     }
