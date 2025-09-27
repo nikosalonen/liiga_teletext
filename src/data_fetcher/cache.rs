@@ -47,7 +47,7 @@ pub struct CachedGoalEventsData {
     #[allow(dead_code)]
     pub last_known_score: Option<String>, // Store the last known score when cache was cleared
     #[allow(dead_code)]
-    pub was_cleared: bool,                // Flag to indicate if cache was intentionally cleared
+    pub was_cleared: bool, // Flag to indicate if cache was intentionally cleared
 }
 
 /// Cached HTTP response with TTL support
