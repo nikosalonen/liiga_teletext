@@ -137,7 +137,7 @@ impl CachedGoalEventsData {
     /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
         let ttl = if self.is_live_game {
-            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 30 seconds for live games
+            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 8 seconds for live games
         } else {
             Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS) // 1 hour for completed games
         };
@@ -291,26 +291,32 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
 
     let mut cache = TOURNAMENT_CACHE.write().await;
 
-    if let Some(cached_entry) = cache.get(key) {
+    // Check if we have a cached entry and gather info before any mutations
+    let cache_info = if let Some(cached_entry) = cache.get(key) {
         debug!("Found cached tournament data for key: {}", key);
 
-        if !cached_entry.is_expired() {
-            let games_count = cached_entry.data.games.len();
-            let has_live = cached_entry.has_live_games;
+        let is_expired = cached_entry.is_expired();
+        let games_count = cached_entry.data.games.len();
+        let has_live = cached_entry.has_live_games;
+        let age = cached_entry.cached_at.elapsed();
+        let ttl = cached_entry.get_ttl();
+        let data = cached_entry.data.clone();
+
+        Some((is_expired, games_count, has_live, age, ttl, data))
+    } else {
+        debug!("Cache miss for tournament data: key={}", key);
+        None
+    };
+
+    if let Some((is_expired, games_count, has_live, age, ttl, data)) = cache_info {
+        if !is_expired {
             debug!(
                 "Cache hit for tournament data: key={}, games={}, has_live={}, age={:?}",
-                key,
-                games_count,
-                has_live,
-                cached_entry.cached_at.elapsed()
+                key, games_count, has_live, age
             );
-            return Some(cached_entry.data.clone());
+            return Some(data);
         } else {
             // Enhanced logging for expired cache entries during auto-refresh
-            let has_live = cached_entry.has_live_games;
-            let age = cached_entry.cached_at.elapsed();
-            let ttl = cached_entry.get_ttl();
-
             if has_live {
                 info!(
                     "Cache bypass: Expired live game cache entry removed during auto-refresh: key={}, age={:?}, ttl={:?}",
@@ -324,8 +330,6 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
             }
             cache.pop(key);
         }
-    } else {
-        debug!("Cache miss for tournament data: key={}", key);
     }
 
     None
@@ -339,28 +343,38 @@ pub async fn get_cached_tournament_data_with_live_check(
 ) -> Option<ScheduleResponse> {
     let mut cache = TOURNAMENT_CACHE.write().await;
 
-    if let Some(cached_entry) = cache.get(key) {
+    // Check if we have a cached entry and gather info before any mutations
+    let cache_info = if let Some(cached_entry) = cache.get(key) {
         // Check if we have live games in the current state
         let has_live = has_live_games_from_game_data(current_games);
+        let cached_has_live = cached_entry.has_live_games;
+        let is_expired = cached_entry.is_expired();
+        let age = cached_entry.cached_at.elapsed();
+        let data = cached_entry.data.clone();
 
+        Some((cached_has_live, has_live, is_expired, age, data))
+    } else {
+        None
+    };
+
+    if let Some((cached_has_live, has_live, is_expired, age, data)) = cache_info {
         // If the live state has changed, consider the cache expired
-        if cached_entry.has_live_games != has_live {
+        if cached_has_live != has_live {
             debug!(
                 "Cache invalidated due to live game state change: key={}, cached_has_live={}, current_has_live={}",
-                key, cached_entry.has_live_games, has_live
+                key, cached_has_live, has_live
             );
             cache.pop(key);
             return None;
         }
 
-        if !cached_entry.is_expired() {
-            return Some(cached_entry.data.clone());
+        if !is_expired {
+            return Some(data);
         } else {
             // Remove expired entry
             debug!(
                 "Removing expired cache entry during live game state check: key={}, age={:?}",
-                key,
-                cached_entry.cached_at.elapsed()
+                key, age
             );
             cache.pop(key);
         }
@@ -380,23 +394,33 @@ pub async fn get_cached_tournament_data_for_auto_refresh(key: &str) -> Option<Sc
 
     let mut cache = TOURNAMENT_CACHE.write().await;
 
-    if let Some(cached_entry) = cache.get(key) {
+    // Check if we have a cached entry and gather info before any mutations
+    let cache_info = if let Some(cached_entry) = cache.get(key) {
         let has_live = cached_entry.has_live_games;
         let age = cached_entry.cached_at.elapsed();
         let ttl = cached_entry.get_ttl();
+        let is_expired = cached_entry.is_expired();
+        let games_count = cached_entry.data.games.len();
+        let data = cached_entry.data.clone();
 
         debug!(
             "Auto-refresh: Found cached tournament data: key={}, has_live={}, age={:?}, ttl={:?}",
             key, has_live, age, ttl
         );
 
-        if !cached_entry.is_expired() {
-            let games_count = cached_entry.data.games.len();
+        Some((has_live, age, ttl, is_expired, games_count, data))
+    } else {
+        debug!("Auto-refresh: Cache miss for tournament data: key={}", key);
+        None
+    };
+
+    if let Some((has_live, age, ttl, is_expired, games_count, data)) = cache_info {
+        if !is_expired {
             info!(
                 "Auto-refresh: Using cached data: key={}, games={}, has_live={}, age={:?}",
                 key, games_count, has_live, age
             );
-            return Some(cached_entry.data.clone());
+            return Some(data);
         } else {
             // Enhanced logging for auto-refresh cache bypass
             if has_live {
@@ -412,8 +436,6 @@ pub async fn get_cached_tournament_data_for_auto_refresh(key: &str) -> Option<Sc
             }
             cache.pop(key);
         }
-    } else {
-        debug!("Auto-refresh: Cache miss for tournament data: key={}", key);
     }
 
     None
@@ -470,7 +492,8 @@ pub async fn should_bypass_cache_for_starting_games(current_games: &[GameData]) 
         match chrono::DateTime::parse_from_rfc3339(&game.start) {
             Ok(game_start) => {
                 let now = chrono::Utc::now();
-                let time_diff = now.signed_duration_since(game_start);
+                let game_start_utc = game_start.with_timezone(&chrono::Utc);
+                let time_diff = now.signed_duration_since(game_start_utc);
 
                 // Extended window: Check if game should start within the next 5 minutes or started within the last 10 minutes
                 let is_near_start = time_diff >= chrono::Duration::minutes(-5)
@@ -937,7 +960,7 @@ pub async fn cache_goal_events_data(
 }
 
 /// Retrieves cached goal events data if it's not expired
-#[instrument(skip(season, game_id), fields(season = season, game_id = game_id))]
+#[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
 #[allow(dead_code)]
 pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Vec<GoalEventData>> {
     let key = create_goal_events_key(season, game_id);
@@ -948,25 +971,33 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
 
     let mut cache = GOAL_EVENTS_CACHE.write().await;
 
-    if let Some(cached_entry) = cache.get(&key) {
+    // Check if we have a cached entry and gather info before any mutations
+    let cache_info = if let Some(cached_entry) = cache.get(&key) {
         debug!("Found cached goal events data: key={}", key);
 
-        if !cached_entry.is_expired() {
-            let event_count = cached_entry.data.len();
+        let is_expired = cached_entry.is_expired();
+        let event_count = cached_entry.data.len();
+        let age = cached_entry.cached_at.elapsed();
+        let ttl = cached_entry.get_ttl();
+        let data = cached_entry.data.clone();
+
+        Some((is_expired, event_count, age, ttl, data))
+    } else {
+        None
+    };
+
+    if let Some((is_expired, event_count, age, ttl, data)) = cache_info {
+        if !is_expired {
             debug!(
                 "Cache hit for goal events data: key={}, event_count={}, age={:?}",
-                key,
-                event_count,
-                cached_entry.cached_at.elapsed()
+                key, event_count, age
             );
-            return Some(cached_entry.data.clone());
+            return Some(data);
         } else {
             // Remove expired entry
             warn!(
                 "Removing expired goal events cache entry: key={}, age={:?}, ttl={:?}",
-                key,
-                cached_entry.cached_at.elapsed(),
-                Duration::from_secs(3600) // 1 hour TTL
+                key, age, ttl
             );
             cache.pop(&key);
         }
@@ -978,7 +1009,7 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
 }
 
 /// Retrieves the full cached goal events entry structure for metadata access
-#[instrument(skip(season, game_id), fields(season = season, game_id = game_id))]
+#[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
 #[allow(dead_code)]
 pub async fn get_cached_goal_events_entry(
     season: i32,
@@ -992,27 +1023,45 @@ pub async fn get_cached_goal_events_entry(
 
     let mut cache = GOAL_EVENTS_CACHE.write().await;
 
-    if let Some(cached_entry) = cache.get(&key) {
+    // Check if we have a cached entry and gather info before any mutations
+    let cache_info = if let Some(cached_entry) = cache.get(&key) {
         debug!("Found cached goal events entry: key={}", key);
 
-        if !cached_entry.is_expired() {
-            let event_count = cached_entry.data.len();
+        let is_expired = cached_entry.is_expired();
+        let event_count = cached_entry.data.len();
+        let age = cached_entry.cached_at.elapsed();
+        let was_cleared = cached_entry.was_cleared;
+        let last_known_score = cached_entry.last_known_score.clone();
+        let ttl = cached_entry.get_ttl();
+        let entry_clone = cached_entry.clone();
+
+        Some((
+            is_expired,
+            event_count,
+            age,
+            was_cleared,
+            last_known_score,
+            ttl,
+            entry_clone,
+        ))
+    } else {
+        None
+    };
+
+    if let Some((is_expired, event_count, age, was_cleared, last_known_score, ttl, entry_clone)) =
+        cache_info
+    {
+        if !is_expired {
             debug!(
                 "Cache hit for goal events entry: key={}, event_count={}, age={:?}, was_cleared={}, last_known_score={:?}",
-                key,
-                event_count,
-                cached_entry.cached_at.elapsed(),
-                cached_entry.was_cleared,
-                cached_entry.last_known_score
+                key, event_count, age, was_cleared, last_known_score
             );
-            return Some(cached_entry.clone());
+            return Some(entry_clone);
         } else {
             // Remove expired entry
             warn!(
                 "Removing expired goal events cache entry: key={}, age={:?}, ttl={:?}",
-                key,
-                cached_entry.cached_at.elapsed(),
-                Duration::from_secs(3600) // 1 hour TTL
+                key, age, ttl
             );
             cache.pop(&key);
         }
@@ -1110,25 +1159,33 @@ pub async fn get_cached_http_response(url: &str) -> Option<String> {
 
     let mut cache = HTTP_RESPONSE_CACHE.write().await;
 
-    if let Some(cached_entry) = cache.get(url) {
+    // Check if we have a cached entry and gather info before any mutations
+    let cache_info = if let Some(cached_entry) = cache.get(url) {
         debug!("Found cached HTTP response: url={}", url);
 
-        if !cached_entry.is_expired() {
-            let data_size = cached_entry.data.len();
+        let is_expired = cached_entry.is_expired();
+        let data_size = cached_entry.data.len();
+        let age = cached_entry.cached_at.elapsed();
+        let ttl = Duration::from_secs(cached_entry.ttl_seconds);
+        let data = cached_entry.data.clone();
+
+        Some((is_expired, data_size, age, ttl, data))
+    } else {
+        None
+    };
+
+    if let Some((is_expired, data_size, age, ttl, data)) = cache_info {
+        if !is_expired {
             debug!(
                 "Cache hit for HTTP response: url={}, data_size={}, age={:?}",
-                url,
-                data_size,
-                cached_entry.cached_at.elapsed()
+                url, data_size, age
             );
-            return Some(cached_entry.data.clone());
+            return Some(data);
         } else {
             // Remove expired entry
             warn!(
                 "Removing expired HTTP response cache entry: url={}, age={:?}, ttl={:?}",
-                url,
-                cached_entry.cached_at.elapsed(),
-                Duration::from_secs(cached_entry.ttl_seconds)
+                url, age, ttl
             );
             cache.pop(url);
         }
@@ -1260,8 +1317,8 @@ pub async fn get_detailed_cache_debug_info() -> String {
                 entry.get_cache_info();
 
             // Verify consistency between individual methods and combined method
-            assert_eq!(game_id, returned_game_id);
-            assert_eq!(season, returned_season);
+            debug_assert_eq!(game_id, returned_game_id);
+            debug_assert_eq!(season, returned_season);
 
             debug_info.push_str(&format!(
                 "  Key: {key}, Game ID: {game_id}, Season: {season}, Events: {event_count}, Expired: {is_expired}\n"

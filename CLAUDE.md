@@ -242,7 +242,7 @@ The application handles different tournament types:
 
 - **Version**: 0.15.10
 - **Rust Edition**: 2024
-- **Minimum Rust**: 1.89
+- **Minimum Rust**: 1.90
 - **Key Dependencies**: tokio (async runtime), reqwest (HTTP), crossterm (terminal), clap (CLI), chrono (dates), serde (JSON)
 
 ## Commit Guidelines
