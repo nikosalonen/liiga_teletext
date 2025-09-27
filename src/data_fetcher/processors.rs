@@ -119,15 +119,15 @@ where
     events
 }
 
-/// Processes goal events using only basic API response data with built-in disambiguation.
+/// Processes goal events using only basic API response data with team-scoped disambiguation.
 /// This function extracts player information from embedded scorer data and creates
-/// disambiguation context for teams with multiple players sharing the same last name.
+/// separate disambiguation contexts for each team to prevent cross-team disambiguation.
 ///
 /// # Arguments
 /// * `game` - The schedule game containing goal events with embedded player data
 ///
 /// # Returns
-/// * `Vec<GoalEventData>` - Processed goal events with disambiguated player names
+/// * `Vec<GoalEventData>` - Processed goal events with team-scoped disambiguated player names
 ///
 /// # Example
 /// ```
@@ -152,25 +152,26 @@ where
 /// let events = process_goal_events_from_basic_response(&game);
 /// ```
 pub fn process_goal_events_from_basic_response(game: &ScheduleGame) -> Vec<GoalEventData> {
-    use crate::data_fetcher::player_names::build_disambiguation_from_basic_response;
+    use crate::data_fetcher::player_names::build_disambiguation_from_team;
 
     let mut events = Vec::new();
 
-    // Build disambiguation context from basic response data
-    let disambiguation_context = build_disambiguation_from_basic_response(game);
+    // Build separate disambiguation contexts for each team to prevent cross-team disambiguation
+    let disambiguation_context_home = build_disambiguation_from_team(&game.home_team);
+    let disambiguation_context_away = build_disambiguation_from_team(&game.away_team);
 
-    // Process home team goals
+    // Process home team goals with home team disambiguation context
     process_team_goals_with_disambiguation(
         &game.home_team,
-        &disambiguation_context,
+        &disambiguation_context_home,
         true,
         &mut events,
     );
 
-    // Process away team goals
+    // Process away team goals with away team disambiguation context
     process_team_goals_with_disambiguation(
         &game.away_team,
-        &disambiguation_context,
+        &disambiguation_context_away,
         false,
         &mut events,
     );
