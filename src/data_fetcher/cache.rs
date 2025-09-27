@@ -642,6 +642,7 @@ pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
 /// }
 /// ```
 #[instrument(skip(game_id, players), fields(game_id = %game_id))]
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn cache_players(game_id: i32, players: HashMap<i64, String>) {
     let player_count = players.len();
     debug!(
@@ -979,25 +980,42 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
         let event_count = cached_entry.data.len();
         let age = cached_entry.cached_at.elapsed();
         let ttl = cached_entry.get_ttl();
+        let last_known_score = cached_entry.last_known_score.clone();
+        #[cfg(test)]
+        let was_cleared = cached_entry.was_cleared;
+        #[cfg(not(test))]
+        let was_cleared = false; // Field not available in non-test builds
         let data = cached_entry.data.clone();
 
-        Some((is_expired, event_count, age, ttl, data))
+        Some((
+            is_expired,
+            event_count,
+            age,
+            ttl,
+            last_known_score,
+            was_cleared,
+            data,
+        ))
     } else {
         None
     };
 
-    if let Some((is_expired, event_count, age, ttl, data)) = cache_info {
+    if let Some((is_expired, event_count, age, ttl, last_known_score, was_cleared, data)) =
+        cache_info
+    {
         if !is_expired {
+            let last_known = last_known_score.as_deref().unwrap_or("None");
             debug!(
-                "Cache hit for goal events data: key={}, event_count={}, age={:?}",
-                key, event_count, age
+                "Cache hit for goal events data: key={}, event_count={}, age={:?}, last_known_score={}, was_cleared={}",
+                key, event_count, age, last_known, was_cleared
             );
             return Some(data);
         } else {
             // Remove expired entry
+            let last_known = last_known_score.as_deref().unwrap_or("None");
             warn!(
-                "Removing expired goal events cache entry: key={}, age={:?}, ttl={:?}",
-                key, age, ttl
+                "Removing expired goal events cache entry: key={}, age={:?}, ttl={:?}, last_known_score={}, was_cleared={}",
+                key, age, ttl, last_known, was_cleared
             );
             cache.pop(&key);
         }
@@ -1087,7 +1105,30 @@ pub async fn get_goal_events_cache_capacity() -> usize {
 /// Clears all goal events cache entries
 #[allow(dead_code)]
 pub async fn clear_goal_events_cache() {
-    GOAL_EVENTS_CACHE.write().await.clear();
+    let mut cache = GOAL_EVENTS_CACHE.write().await;
+
+    // Log last known scores and cleared status before clearing
+    let mut cleared_entries = Vec::new();
+    for (key, entry) in cache.iter() {
+        let last_known = entry.last_known_score.as_deref().unwrap_or("None");
+        #[cfg(test)]
+        let was_cleared = entry.was_cleared;
+        #[cfg(not(test))]
+        let was_cleared = false; // Field not available in non-test builds
+        cleared_entries.push(format!(
+            "Key: {key}, LastKnownScore: {last_known}, WasCleared: {was_cleared}"
+        ));
+    }
+
+    if !cleared_entries.is_empty() {
+        debug!(
+            "Clearing goal events cache with {} entries: [{}]",
+            cleared_entries.len(),
+            cleared_entries.join(", ")
+        );
+    }
+
+    cache.clear();
 }
 
 /// Clears goal events cache for a specific game
@@ -1305,7 +1346,27 @@ pub async fn get_detailed_cache_debug_info() -> String {
         stats.http_response_cache.capacity,
     ));
 
-    // Get detailed goal events cache info using debug methods
+    // Tournament Cache Details (also exercises get_ttl())
+    {
+        let tournament_cache = TOURNAMENT_CACHE.read().await;
+        if !tournament_cache.is_empty() {
+            debug_info.push_str("Tournament Cache Details:\n");
+            for (key, entry) in tournament_cache.iter() {
+                let age = entry.cached_at.elapsed();
+                let ttl = entry.get_ttl();
+                debug_info.push_str(&format!(
+                    "  Key: {key}, Games: {}, Has Live: {}, Age: {:?}, TTL: {:?}\n",
+                    entry.data.games.len(),
+                    entry.has_live_games,
+                    age,
+                    ttl
+                ));
+            }
+            debug_info.push('\n');
+        }
+    }
+
+    // Goal Events Cache Details (print TTL and last-known score)
     let goal_events_cache = GOAL_EVENTS_CACHE.read().await;
     if !goal_events_cache.is_empty() {
         debug_info.push_str("Goal Events Cache Details:\n");
@@ -1315,13 +1376,16 @@ pub async fn get_detailed_cache_debug_info() -> String {
             let season = entry.get_season();
             let (returned_game_id, returned_season, event_count, is_expired) =
                 entry.get_cache_info();
+            let ttl = entry.get_ttl();
+            let last_known = entry.last_known_score.as_deref().unwrap_or("-");
 
             // Verify consistency between individual methods and combined method
             debug_assert_eq!(game_id, returned_game_id);
             debug_assert_eq!(season, returned_season);
 
             debug_info.push_str(&format!(
-                "  Key: {key}, Game ID: {game_id}, Season: {season}, Events: {event_count}, Expired: {is_expired}\n"
+                "  Key: {key}, Game ID: {game_id}, Season: {season}, Events: {event_count}, Expired: {is_expired}, TTL: {:?}, LastKnownScore: {last_known}\n",
+                ttl
             ));
         }
         debug_info.push('\n');

@@ -224,7 +224,7 @@ pub fn process_team_goals_with_disambiguation(
     for goal in team.goal_events().iter().filter(|g| {
         !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
     }) {
-        // Try to get player name, but don't show fallback names if we don't have real data
+        // Try to get player name, prioritizing embedded player data
         let scorer_name = if let Some(ref scorer_player) = goal.scorer_player {
             format_for_display(&build_full_name(
                 &scorer_player.first_name,
@@ -235,8 +235,8 @@ pub fn process_team_goals_with_disambiguation(
         {
             disambiguated_name.clone()
         } else {
-            // No player data available - use empty string to indicate missing data
-            String::new()
+            // Fallback to player ID if no other data is available
+            create_fallback_name(goal.scorer_player_id)
         };
 
         events.push(GoalEventData {
@@ -1072,8 +1072,8 @@ mod tests {
         let events = process_goal_events_with_disambiguation(&game, &home_players, &away_players);
 
         assert_eq!(events.len(), 1);
-        // Should use empty string for missing player data
-        assert_eq!(events[0].scorer_name, "");
+        // Should use fallback name for missing player data
+        assert_eq!(events[0].scorer_name, "Pelaaja 999");
     }
 
     #[test]
@@ -1164,6 +1164,6 @@ mod tests {
         process_team_goals_with_disambiguation(&team, &context, true, &mut events);
 
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].scorer_name, "");
+        assert_eq!(events[0].scorer_name, "Pelaaja 999");
     }
 }

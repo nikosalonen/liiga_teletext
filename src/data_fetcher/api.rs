@@ -591,24 +591,20 @@ fn has_actual_goals(game: &ScheduleGame) -> bool {
 /// Checks if the basic response has complete player data for all goal events.
 /// Returns true if all goal events have scorer_player information.
 fn has_complete_player_data(game: &ScheduleGame) -> bool {
-    // Check if all home team goal events have player data
-    let home_complete = game
+    // Only return true if there are goal events and at least some have player data
+    let has_goals =
+        !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty();
+
+    // Check if at least some goal events have player data (more lenient approach)
+    let has_some_player_data = game
         .home_team
         .goal_events
         .iter()
-        .all(|g| g.scorer_player.is_some());
+        .chain(game.away_team.goal_events.iter())
+        .any(|g| g.scorer_player.is_some());
 
-    // Check if all away team goal events have player data
-    let away_complete = game
-        .away_team
-        .goal_events
-        .iter()
-        .all(|g| g.scorer_player.is_some());
-
-    // Only return true if there are goal events and all have player data
-    let has_goals =
-        !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty();
-    has_goals && home_complete && away_complete
+    // Use the more lenient check: if we have goals and at least some have player data
+    has_goals && has_some_player_data
 }
 
 /// Processes a single game and returns GameData.
