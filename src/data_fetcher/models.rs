@@ -108,6 +108,7 @@ pub struct ScheduleResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct Period {
     pub index: i32,
     #[serde(rename = "homeTeamGoals")]
@@ -122,6 +123,7 @@ pub struct Period {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct PenaltyEvent {
     #[serde(rename = "playerId")]
     pub player_id: i32,
@@ -145,6 +147,7 @@ pub struct PenaltyEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct DetailedTeam {
     #[serde(rename = "teamId")]
     pub team_id: String,
@@ -158,6 +161,7 @@ pub struct DetailedTeam {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct DetailedGame {
     pub id: i32,
     pub season: i32,
@@ -179,6 +183,7 @@ pub struct DetailedGame {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[allow(dead_code)]
 pub struct Player {
     pub id: i64,
     #[serde(rename = "lastName")]
@@ -198,6 +203,7 @@ pub struct EmbeddedPlayer {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+#[allow(dead_code)]
 pub struct DetailedGameResponse {
     pub game: DetailedGame,
     pub awards: Vec<serde_json::Value>,
