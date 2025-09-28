@@ -58,7 +58,9 @@ pub struct CachedGoalEventsData {
     pub game_id: i32,
     pub season: i32,
     pub is_live_game: bool,
+    #[allow(dead_code)]
     pub last_known_score: Option<String>, // Store the last known score when cache was cleared
+    #[allow(dead_code)]
     pub was_cleared: bool,                // Flag to indicate if cache was intentionally cleared
 }
 
@@ -163,6 +165,7 @@ impl CachedGoalEventsData {
     }
 
     /// Creates a cleared cache entry with the last known score
+    #[allow(dead_code)]
     pub fn new_cleared(game_id: i32, season: i32, last_known_score: String) -> Self {
         Self {
             data: Vec::new(),
@@ -1107,6 +1110,7 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
 
 /// Retrieves the full cached goal events entry structure for metadata access
 #[instrument(skip(season, game_id), fields(season = season, game_id = game_id))]
+#[allow(dead_code)]
 pub async fn get_cached_goal_events_entry(
     season: i32,
     game_id: i32,
@@ -1169,6 +1173,7 @@ pub async fn clear_goal_events_cache() {
 }
 
 /// Clears goal events cache for a specific game
+#[allow(dead_code)]
 pub async fn clear_goal_events_cache_for_game(season: i32, game_id: i32) {
     let key = create_goal_events_key(season, game_id);
     let mut cache = GOAL_EVENTS_CACHE.write().await;

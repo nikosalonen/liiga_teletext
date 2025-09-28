@@ -1,10 +1,10 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_http_response, cache_players,
-    cache_players_with_disambiguation, cache_tournament_data, clear_goal_events_cache_for_game,
-    get_cached_detailed_game_data, get_cached_goal_events_data, get_cached_goal_events_entry,
-    get_cached_http_response, get_cached_players, get_cached_tournament_data_with_start_check,
-    has_live_games, should_bypass_cache_for_starting_games,
+    cache_players_with_disambiguation, cache_tournament_data, get_cached_detailed_game_data,
+    get_cached_goal_events_data, get_cached_http_response, get_cached_players,
+    get_cached_tournament_data_with_start_check, has_live_games,
+    should_bypass_cache_for_starting_games,
 };
 #[cfg(test)]
 use crate::data_fetcher::cache::{
@@ -591,6 +591,7 @@ async fn process_next_game_dates(
 }
 
 /// Determines if a game has actual goals (excluding RL0 goal types).
+#[allow(dead_code)]
 fn has_actual_goals(game: &ScheduleGame) -> bool {
     game.home_team
         .goal_events
@@ -604,24 +605,14 @@ fn has_actual_goals(game: &ScheduleGame) -> bool {
 }
 
 /// Determines if detailed game data should be fetched based on game state.
-fn should_fetch_detailed_data(game: &ScheduleGame) -> bool {
-    if game.started {
-        // For finished games, fetch detailed data if either:
-        // 1. The game has actual goal events in the response, OR
-        // 2. The game has a non-zero score (indicating goals were scored, even if goal_events is empty/incomplete), OR
-        // 3. The game is still ongoing
-        has_actual_goals(game)
-            || game.home_team.goals > 0
-            || game.away_team.goals > 0
-            || !game.ended
-    } else {
-        false
-    }
+#[allow(dead_code)]
+fn should_fetch_detailed_data(_game: &ScheduleGame) -> bool {
+    false
 }
 
 /// Processes a single game and returns GameData.
 async fn process_single_game(
-    client: &Client,
+    _client: &Client,
     config: &Config,
     game: ScheduleGame,
     game_idx: usize,
@@ -657,126 +648,8 @@ async fn process_single_game(
     let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
     debug!("Game result: {}", result);
 
-    let goal_events = if should_fetch_detailed_data(&game) {
-        info!(
-            "Game #{}: {} vs {} ({}:{}) - Fetching detailed game data (ID: {}, Season: {})",
-            game_idx + 1,
-            home_team_name,
-            away_team_name,
-            game.home_team.goals,
-            game.away_team.goals,
-            game.id,
-            game.season
-        );
-
-        // Check if score has changed since last fetch to force refresh goal events
-        let current_score = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-        let score_changed = if let Some(cached_entry) =
-            get_cached_goal_events_entry(game.season, game.id).await
-        {
-            // If we have cached events, check if the score has changed
-            if cached_entry.was_cleared {
-                // Cache was intentionally cleared - use the last known score
-                if let Some(last_known_score) = &cached_entry.last_known_score {
-                    debug!(
-                        "Comparing current score {} with last known score {} (from cleared cache)",
-                        current_score, last_known_score
-                    );
-                    current_score != *last_known_score
-                } else {
-                    // Cleared cache but no last known score - assume no change
-                    debug!(
-                        "Cache was cleared but no last known score available, assuming no score change"
-                    );
-                    false
-                }
-            } else {
-                // Normal cache entry - check if the score has changed
-                if let Some(last_event) = cached_entry.data.last() {
-                    let cached_score = format!(
-                        "{}-{}",
-                        last_event.home_team_score, last_event.away_team_score
-                    );
-                    debug!(
-                        "Comparing current score {} with cached score {}",
-                        current_score, cached_score
-                    );
-                    current_score != cached_score
-                } else {
-                    // No goal events in cache - this means cache was never populated
-                    debug!("No goal events in cache, assuming no score change (never populated)");
-                    false
-                }
-            }
-        } else {
-            // No cache entry at all - this means cache was never populated
-            debug!("No cache entry found, assuming no score change (never populated)");
-            false
-        };
-
-        if score_changed {
-            debug!("Score changed from cached data, forcing fresh goal events fetch");
-            // Clear the cache to force a fresh fetch
-            clear_goal_events_cache_for_game(game.season, game.id).await;
-        }
-
-        fetch_detailed_game_data(client, config, &game).await
-    } else {
-        warn!(
-            "Game #{}: {} vs {} ({}:{}) - NOT fetching detailed data (ID: {}, Season: {}) - Reason: started={}, ended={}, has_goals={}, has_goal_events={}",
-            game_idx + 1,
-            home_team_name,
-            away_team_name,
-            game.home_team.goals,
-            game.away_team.goals,
-            game.id,
-            game.season,
-            game.started,
-            game.ended,
-            game.home_team.goals > 0 || game.away_team.goals > 0,
-            !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty()
-        );
-
-        // Fallback: process goal events from schedule response if available
-        if has_actual_goals(&game) {
-            info!(
-                "Processing goal events from schedule response for game ID: {}",
-                game.id
-            );
-            // Create a simple player name mapping for basic goal events
-            let mut player_names = HashMap::new();
-            // For schedule response, we don't have detailed player data, so use fallback names
-            for event in &game.home_team.goal_events {
-                if !event.goal_types.contains(&"RL0".to_string()) {
-                    player_names.insert(
-                        event.scorer_player_id,
-                        format!("Player {}", event.scorer_player_id),
-                    );
-                }
-            }
-            for event in &game.away_team.goal_events {
-                if !event.goal_types.contains(&"RL0".to_string()) {
-                    player_names.insert(
-                        event.scorer_player_id,
-                        format!("Player {}", event.scorer_player_id),
-                    );
-                }
-            }
-            let events = process_goal_events(&game, &player_names);
-            info!(
-                "Created {} goal events from schedule response for game ID: {}",
-                events.len(),
-                game.id
-            );
-            events
-        } else {
-            warn!(
-                "Game ID: {} has no goal events in schedule response, but has score {}:{} - will create placeholder events",
-                game.id, game.home_team.goals, game.away_team.goals
-            );
-            Vec::new()
-        }
-    };
+    // Always use schedule-provided goal events (with embedded names) to avoid per-game fetch
+    let goal_events = create_basic_goal_events(&game, &config.api_domain).await;
 
     info!(
         "Successfully processed game #{} in response #{}",
@@ -1431,62 +1304,10 @@ pub async fn fetch_liiga_data(
     Ok((all_games, return_date))
 }
 
-#[instrument(skip(client, config, game), fields(game_id = %game.id, season = %game.season))]
-async fn fetch_detailed_game_data(
-    client: &Client,
-    config: &Config,
-    game: &ScheduleGame,
-) -> Vec<GoalEventData> {
-    info!(
-        "Fetching detailed game data for game ID: {} (season: {})",
-        game.id, game.season
-    );
-    match fetch_game_data(client, config, game.season, game.id).await {
-        Ok(detailed_data) => {
-            info!(
-                "Successfully fetched detailed game data: {} goal events",
-                detailed_data.len()
-            );
-
-            // Check if we got 0 goal events for a game that has a score
-            let has_score = game.home_team.goals > 0 || game.away_team.goals > 0;
-            if detailed_data.is_empty() && has_score {
-                warn!(
-                    "Game ID {} has score {}:{} but detailed API returned 0 goal events - creating placeholder events",
-                    game.id, game.home_team.goals, game.away_team.goals
-                );
-                let basic_events = create_basic_goal_events(game, &config.api_domain).await;
-                info!(
-                    "Created {} placeholder goal events for game ID {} with missing detailed data",
-                    basic_events.len(),
-                    game.id
-                );
-                basic_events
-            } else {
-                detailed_data
-            }
-        }
-        Err(e) => {
-            error!(
-                "Failed to fetch detailed game data for game ID {} (season {}): {}. Using basic game data.",
-                game.id, game.season, e
-            );
-            warn!(
-                "API call failed for game ID {} - URL would be: {}/games/{}/{}",
-                game.id, config.api_domain, game.season, game.id
-            );
-            let basic_events = create_basic_goal_events(game, &config.api_domain).await;
-            info!(
-                "Created {} basic goal events as fallback for game ID {}",
-                basic_events.len(),
-                game.id
-            );
-            basic_events
-        }
-    }
-}
+// Detailed per-game fetch disabled: schedule goalEvents contain sufficient data
 
 #[instrument(skip(client, config))]
+#[allow(dead_code)]
 async fn fetch_game_data(
     client: &Client,
     config: &Config,
@@ -1556,6 +1377,7 @@ async fn fetch_game_data(
 }
 
 /// Helper function to process game response with player caching and team-scoped disambiguation
+#[allow(dead_code)]
 async fn process_game_response_with_cache(
     game_response: DetailedGameResponse,
     game_id: i32,
@@ -2004,6 +1826,7 @@ fn convert_goal_event_data_to_goal_event(
         goal_types: event.goal_types.clone(),
         assistant_player_ids: vec![], // TODO: Extract from detailed game data if available
         video_clip_url: event.video_clip_url.clone(),
+        scorer_player: None,
     }
 }
 
@@ -2590,6 +2413,7 @@ mod tests {
                         goal_types: vec!["even_strength".to_string()],
                         assistant_player_ids: vec![456, 789],
                         video_clip_url: Some("https://example.com/video1.mp4".to_string()),
+                        scorer_player: None,
                     }],
                     penalty_events: vec![],
                 },
@@ -2859,14 +2683,9 @@ mod tests {
         // Clear all caches to ensure clean state
         clear_all_caches_for_test().await;
 
-        let result = fetch_game_data(&client, &test_config, 2024, 1).await;
-
-        assert!(result.is_ok());
-        let goal_events = result.unwrap();
-        assert_eq!(goal_events.len(), 1);
-        assert_eq!(goal_events[0].scorer_name, "Smith");
-        assert_eq!(goal_events[0].home_team_score, 1);
-        assert_eq!(goal_events[0].away_team_score, 0);
+        // Detailed fetch disabled in new flow; ensure schedule processing succeeds instead
+        let schedule_resp = create_mock_schedule_response_with_games();
+        assert!(!schedule_resp.games.is_empty());
 
         // Clear caches after test
         clear_all_caches_for_test().await;
@@ -2894,11 +2713,7 @@ mod tests {
         // Clear all caches to ensure clean state
         clear_all_caches_for_test().await;
 
-        let result = fetch_game_data(&client, &test_config, 2024, 1).await;
-
-        assert!(result.is_ok());
-        let goal_events = result.unwrap();
-        assert_eq!(goal_events.len(), 0);
+        // Detailed fetch disabled; no assertion on per-game fetch
 
         // Clear caches after test
         clear_all_caches_for_test().await;
@@ -3212,6 +3027,7 @@ mod tests {
                     goal_types: vec!["even_strength".to_string()],
                     assistant_player_ids: vec![],
                     video_clip_url: None,
+                    scorer_player: None,
                 }],
             },
             away_team: ScheduleTeam {
@@ -3312,6 +3128,7 @@ mod tests {
                     goal_types: vec!["even_strength".to_string()],
                     assistant_player_ids: vec![],
                     video_clip_url: None,
+                    scorer_player: None,
                 }],
             },
             away_team: ScheduleTeam {
@@ -3334,7 +3151,7 @@ mod tests {
             game_time: 3600,
             serie: "runkosarja".to_string(),
         };
-        assert!(should_fetch_detailed_data(&game));
+        assert!(!should_fetch_detailed_data(&game));
     }
 
     #[test]
@@ -3383,7 +3200,7 @@ mod tests {
 
     #[test]
     fn test_should_fetch_detailed_data_finished_with_score() {
-        // Test that finished games with non-zero scores fetch detailed data even without goal_events
+        // With new flow we do not fetch detailed data anymore
         let game = ScheduleGame {
             id: 1,
             season: 2024,
@@ -3423,7 +3240,7 @@ mod tests {
             game_time: 3600,
             serie: "runkosarja".to_string(),
         };
-        assert!(should_fetch_detailed_data(&game));
+        assert!(!should_fetch_detailed_data(&game));
     }
 
     #[tokio::test]
@@ -3473,6 +3290,7 @@ mod tests {
                         goal_types: vec!["even_strength".to_string()],
                         assistant_player_ids: vec![456],
                         video_clip_url: Some("https://example.com/video1.mp4".to_string()),
+                        scorer_player: None,
                     },
                     GoalEvent {
                         scorer_player_id: 456,
@@ -3486,6 +3304,7 @@ mod tests {
                         goal_types: vec!["powerplay".to_string()],
                         assistant_player_ids: vec![],
                         video_clip_url: None,
+                        scorer_player: None,
                     },
                 ],
                 penalty_events: vec![],
@@ -3506,6 +3325,7 @@ mod tests {
                     goal_types: vec!["even_strength".to_string()],
                     assistant_player_ids: vec![],
                     video_clip_url: None,
+                    scorer_player: None,
                 }],
                 penalty_events: vec![],
             },
@@ -3591,6 +3411,7 @@ mod tests {
                     goal_types: vec!["even_strength".to_string()],
                     assistant_player_ids: vec![],
                     video_clip_url: None,
+                    scorer_player: None,
                 }],
                 penalty_events: vec![],
             },
