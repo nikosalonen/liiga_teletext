@@ -588,9 +588,9 @@ fn has_actual_goals(game: &ScheduleGame) -> bool {
             .any(|g| !g.goal_types.contains(&"RL0".to_string()))
 }
 
-/// Checks if the basic response has complete player data for all goal events.
-/// Returns true if all goal events have scorer_player information.
-fn has_complete_player_data(game: &ScheduleGame) -> bool {
+/// Checks if the basic response has any player data for goal events.
+/// Returns true if there are goal events and at least one has scorer_player information.
+fn has_any_player_data(game: &ScheduleGame) -> bool {
     // Only return true if there are goal events and at least some have player data
     let has_goals =
         !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty();
@@ -643,7 +643,7 @@ async fn process_single_game(
     let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
     debug!("Game result: {}", result);
 
-    let goal_events = if has_complete_player_data(&game) {
+    let goal_events = if has_any_player_data(&game) {
         info!(
             "Game #{}: {} vs {} ({}:{}) - Using basic response data with disambiguation (ID: {}, Season: {})",
             game_idx + 1,
