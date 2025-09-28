@@ -109,10 +109,12 @@ async fn test_config_validation() {
         Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: None,
+            http_timeout_seconds: liiga_teletext::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
         },
         Config {
             api_domain: "http://api.example.com".to_string(),
             log_file_path: Some("/custom/log/path".to_string()),
+            http_timeout_seconds: liiga_teletext::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
         },
     ];
 
@@ -206,6 +208,7 @@ async fn test_config_integration() {
     let test_config = Config {
         api_domain: "https://api.test.com".to_string(),
         log_file_path: Some("/test/log/path".to_string()),
+        http_timeout_seconds: liiga_teletext::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
     };
 
     // Save config
