@@ -109,10 +109,12 @@ async fn test_config_validation() {
         Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: None,
+            http_timeout_seconds: liiga_teletext::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
         },
         Config {
             api_domain: "http://api.example.com".to_string(),
             log_file_path: Some("/custom/log/path".to_string()),
+            http_timeout_seconds: liiga_teletext::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
         },
     ];
 
@@ -123,6 +125,10 @@ async fn test_config_validation() {
 
         assert_eq!(loaded_config.api_domain, config.api_domain);
         assert_eq!(loaded_config.log_file_path, config.log_file_path);
+        assert_eq!(
+            loaded_config.http_timeout_seconds,
+            config.http_timeout_seconds
+        );
     }
 }
 
@@ -206,6 +212,7 @@ async fn test_config_integration() {
     let test_config = Config {
         api_domain: "https://api.test.com".to_string(),
         log_file_path: Some("/test/log/path".to_string()),
+        http_timeout_seconds: liiga_teletext::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
     };
 
     // Save config
@@ -223,6 +230,10 @@ async fn test_config_integration() {
     assert_eq!(
         loaded_config.log_file_path,
         Some("/test/log/path".to_string())
+    );
+    assert_eq!(
+        loaded_config.http_timeout_seconds,
+        liiga_teletext::constants::DEFAULT_HTTP_TIMEOUT_SECONDS
     );
 }
 
