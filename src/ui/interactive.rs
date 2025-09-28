@@ -1739,7 +1739,7 @@ pub async fn run_interactive_ui(
             let games_hash = calculate_games_hash(&games);
             let data_changed = games_hash != last_games_hash;
 
-            if data_changed {
+            if data_changed && !had_error {
                 tracing::debug!("Data changed, updating UI");
 
                 // Log specific changes for live games to help debug game clock updates

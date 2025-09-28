@@ -97,7 +97,6 @@ impl CachedTournamentData {
             Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
         }
     }
-
 }
 
 impl CachedGoalEventsData {

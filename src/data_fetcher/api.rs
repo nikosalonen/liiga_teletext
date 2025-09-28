@@ -947,7 +947,7 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
     debug!("Response text (first 1024 chars): {}", preview);
 
     // Determine TTL for successful HTTP responses
-    let ttl_seconds = if url.contains("/games/") {
+    let ttl_seconds = if url.contains("/games") {
         300 // 5 minutes for game data
     } else if url.contains("/schedule") {
         1800 // 30 minutes for schedule data
