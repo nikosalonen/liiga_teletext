@@ -43,16 +43,22 @@ const PLAYOFFS_END_MONTH: u32 = 6; // June
 /// * `Client` - A configured reqwest HTTP client
 ///
 /// # Features
-/// * 10-second timeout for requests (reduced to prevent UI timeouts)
+/// * Configurable timeout for requests (default: 30 seconds, configurable via config/env)
 /// * Connection pooling with up to 100 connections per host
 /// * HTTP/2 multiplexing when available
 /// * Automatic retry logic for transient failures (implemented in fetch function)
-fn create_http_client() -> Client {
+fn create_http_client_with_timeout(timeout_seconds: u64) -> Client {
     Client::builder()
-        .timeout(Duration::from_secs(10)) // Reduced from 30 to 10 seconds to prevent UI timeouts
+        .timeout(Duration::from_secs(timeout_seconds))
         .pool_max_idle_per_host(100)
         .build()
         .expect("Failed to create HTTP client")
+}
+
+/// Creates an HTTP client for testing with default timeout
+#[cfg(test)]
+fn create_test_http_client() -> Client {
+    create_http_client_with_timeout(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS)
 }
 
 /// Builds a tournament URL for fetching game data.
@@ -1263,7 +1269,7 @@ pub async fn fetch_liiga_data(
 
     let config = Config::load().await?;
     info!("Config loaded successfully");
-    let client = create_http_client();
+    let client = create_http_client_with_timeout(config.http_timeout_seconds);
 
     // Determine the date to fetch data for
     let (date, is_pre_noon_cutoff) = determine_fetch_date(custom_date);
@@ -2369,6 +2375,7 @@ mod tests {
         Config {
             api_domain: "http://localhost:8080".to_string(),
             log_file_path: None,
+            http_timeout_seconds: crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
         }
     }
 
@@ -2525,7 +2532,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_schedule_response();
 
@@ -2564,7 +2571,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_empty_schedule_response();
 
@@ -2593,7 +2600,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         Mock::given(method("GET"))
             .and(path("/games"))
@@ -2617,7 +2624,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         Mock::given(method("GET"))
             .and(path("/games"))
@@ -2643,7 +2650,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_schedule_response();
 
@@ -2683,7 +2690,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_empty_schedule_response();
 
@@ -2775,7 +2782,7 @@ mod tests {
     async fn test_fetch_game_data_cache_fallback() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_detailed_game_response();
 
@@ -2883,7 +2890,7 @@ mod tests {
     async fn test_fetch_game_data_server_error() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         Mock::given(method("GET"))
             .and(path("/games/2024/1"))
@@ -2909,7 +2916,7 @@ mod tests {
     async fn test_fetch_regular_season_start_date_success() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = vec![ScheduleApiGame {
             id: 1,
@@ -2944,7 +2951,7 @@ mod tests {
     async fn test_fetch_regular_season_start_date_not_found() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         Mock::given(method("GET"))
             .and(path("/schedule"))
@@ -3829,7 +3836,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Mock response for a future date
         let mock_response = create_mock_schedule_response();
@@ -3867,7 +3874,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Mock empty response for all dates
         let mock_response = create_mock_empty_schedule_response_no_next_date();
@@ -3896,7 +3903,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_future_games_fallback_invalid_date() {
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let result =
             find_future_games_fallback(&client, &config, &["runkosarja"], "invalid-date").await;
@@ -4065,7 +4072,7 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Mock responses for multiple tournaments
         // playoffs has games on the date
@@ -4146,7 +4153,7 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Only runkosarja has games on the date
         Mock::given(method("GET"))
@@ -4223,7 +4230,7 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Create a response with next_game_date equal to current date (>= comparison test)
         let same_date_response = ScheduleResponse {
@@ -4304,7 +4311,7 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // All tournaments have no games and no future dates
         Mock::given(method("GET"))
@@ -4380,7 +4387,7 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Set up tournaments in reverse priority order to test that results maintain priority
         // qualifications (last in priority) has games
@@ -4461,7 +4468,7 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // playoffs returns 404 (simulates tournament not available)
         Mock::given(method("GET"))

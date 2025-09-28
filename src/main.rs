@@ -445,6 +445,7 @@ async fn main() -> Result<(), AppError> {
         let mut config = Config::load().await.unwrap_or_else(|_| Config {
             api_domain: String::new(),
             log_file_path: None,
+            http_timeout_seconds: crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
         });
 
         if let Some(new_domain) = args.new_api_domain {
