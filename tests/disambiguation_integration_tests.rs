@@ -56,6 +56,7 @@ fn create_realistic_goal_events() -> Vec<GoalEvent> {
             goal_types: vec!["YV".to_string()],     // Power play
             assistant_player_ids: vec![1003, 1004], // Selänne, Kurri
             video_clip_url: Some("https://example.com/goal1.mp4".to_string()),
+            scorer_player: None,
         },
         GoalEvent {
             scorer_player_id: 1002, // Saku Koivu (should be disambiguated)
@@ -69,6 +70,7 @@ fn create_realistic_goal_events() -> Vec<GoalEvent> {
             goal_types: vec!["AV".to_string()], // Short-handed
             assistant_player_ids: vec![],
             video_clip_url: Some("https://example.com/goal3.mp4".to_string()),
+            scorer_player: None,
         },
         GoalEvent {
             scorer_player_id: 1007, // Jussi Jokinen (should be disambiguated)
@@ -82,6 +84,7 @@ fn create_realistic_goal_events() -> Vec<GoalEvent> {
             goal_types: vec!["TM".to_string()], // Empty net
             assistant_player_ids: vec![1006],   // Olli Jokinen
             video_clip_url: None,
+            scorer_player: None,
         },
     ]
 }
@@ -100,6 +103,7 @@ fn create_away_goal_events() -> Vec<GoalEvent> {
         goal_types: vec![],
         assistant_player_ids: vec![2001, 2003], // Laine, Barkov
         video_clip_url: None,
+        scorer_player: None,
     }]
 }
 
@@ -403,6 +407,7 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
             goal_types: vec![],
             assistant_player_ids: vec![],
             video_clip_url: None,
+            scorer_player: None,
         },
         GoalEvent {
             scorer_player_id: 102, // Saku Koivu
@@ -416,6 +421,7 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
             goal_types: vec!["YV".to_string()],
             assistant_player_ids: vec![],
             video_clip_url: Some("https://example.com/goal2.mp4".to_string()),
+            scorer_player: None,
         },
         GoalEvent {
             scorer_player_id: 103, // Kimmo Koivu
@@ -429,6 +435,7 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
             goal_types: vec![],
             assistant_player_ids: vec![101, 104],
             video_clip_url: None,
+            scorer_player: None,
         },
     ];
 
@@ -445,6 +452,7 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
         goal_types: vec!["AV".to_string()],
         assistant_player_ids: vec![202],
         video_clip_url: None,
+        scorer_player: None,
     }];
 
     // Create mock schedule game
@@ -625,6 +633,7 @@ async fn test_performance_impact_with_large_datasets() {
             } else {
                 None
             },
+            scorer_player: None,
         });
     }
 
@@ -806,6 +815,7 @@ async fn test_cross_team_disambiguation_isolation() {
                 goal_types: vec![],
                 assistant_player_ids: vec![],
                 video_clip_url: None,
+                scorer_player: None,
             }],
         },
         away_team: ScheduleTeam {
@@ -832,6 +842,7 @@ async fn test_cross_team_disambiguation_isolation() {
                 goal_types: vec![],
                 assistant_player_ids: vec![],
                 video_clip_url: None,
+                scorer_player: None,
             }],
         },
         finished_type: Some("FINISHED".to_string()),
