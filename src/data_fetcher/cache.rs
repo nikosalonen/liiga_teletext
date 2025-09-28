@@ -1411,9 +1411,9 @@ pub async fn get_detailed_cache_debug_info() -> String {
             let (returned_game_id, returned_season, event_count, is_expired) =
                 entry.get_cache_info();
 
-            // Verify consistency between individual methods and combined method
-            assert_eq!(game_id, returned_game_id);
-            assert_eq!(season, returned_season);
+            // Verify consistency between individual methods and combined method (debug-only)
+            debug_assert_eq!(game_id, returned_game_id);
+            debug_assert_eq!(season, returned_season);
 
             debug_info.push_str(&format!(
                 "  Key: {key}, Game ID: {game_id}, Season: {season}, Events: {event_count}, Expired: {is_expired}\n"
