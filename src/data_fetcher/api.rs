@@ -6,7 +6,6 @@ use crate::data_fetcher::cache::{
     get_cached_tournament_data_with_start_check, has_live_games,
     should_bypass_cache_for_starting_games,
 };
-use futures;
 #[cfg(test)]
 use crate::data_fetcher::cache::{
     get_detailed_game_cache_size, get_goal_events_cache_size, get_tournament_cache_size,
@@ -23,6 +22,7 @@ use crate::data_fetcher::processors::{
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{Datelike, Local, Utc};
+use futures;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
@@ -249,27 +249,39 @@ async fn determine_active_tournaments(
     // Filter tournament candidates based on season (avoid unnecessary API calls)
     // Maintain original priority order: preseason -> regular -> playoffs -> playout -> qualifications
     let mut tournament_candidates = Vec::new();
-    
+
     // Only include preseason during May-September
     if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&month) {
-        info!("Including valmistavat_ottelut (month {} is in preseason period)", month);
+        info!(
+            "Including valmistavat_ottelut (month {} is in preseason period)",
+            month
+        );
         tournament_candidates.push("valmistavat_ottelut");
     }
-    
+
     // Always include regular season
     tournament_candidates.push("runkosarja");
-    
+
     // Only include playoffs/playout/qualifications during March-June
     if (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month) {
-        info!("Including playoffs, playout, and qualifications (month {} is in playoff period)", month);
+        info!(
+            "Including playoffs, playout, and qualifications (month {} is in playoff period)",
+            month
+        );
         tournament_candidates.push("playoffs");
         tournament_candidates.push("playout");
         tournament_candidates.push("qualifications");
     } else {
-        info!("Skipping playoffs, playout, and qualifications (month {} is outside playoff period)", month);
+        info!(
+            "Skipping playoffs, playout, and qualifications (month {} is outside playoff period)",
+            month
+        );
     }
 
-    info!("Tournament candidates for month {}: {:?}", month, tournament_candidates);
+    info!(
+        "Tournament candidates for month {}: {:?}",
+        month, tournament_candidates
+    );
 
     // Create parallel futures for filtered tournament checks to improve performance
     let fetch_futures: Vec<_> = tournament_candidates
@@ -277,7 +289,7 @@ async fn determine_active_tournaments(
         .map(|&tournament| {
             let url = build_tournament_url(&config.api_domain, tournament, date);
             let tournament_name = tournament;
-            
+
             async move {
                 info!("Checking tournament: {}", tournament_name);
                 match fetch::<ScheduleResponse>(client, &url).await {
@@ -302,47 +314,47 @@ async fn determine_active_tournaments(
 
     // Process results in original order to maintain priority
     for (tournament, response) in results.into_iter().flatten() {
-            // Cache the response for downstream reuse
-            let cache_key = create_tournament_key(tournament, date);
-            cached_responses.insert(cache_key, response.clone());
+        // Cache the response for downstream reuse
+        let cache_key = create_tournament_key(tournament, date);
+        cached_responses.insert(cache_key, response.clone());
 
-            // If there are games on this date, mark this tournament active
-            if !response.games.is_empty() {
-                info!(
-                    "Found {} games for tournament {} on date {}",
-                    response.games.len(),
-                    tournament,
-                    date
-                );
-                active.push(tournament);
-                continue;
-            }
+        // If there are games on this date, mark this tournament active
+        if !response.games.is_empty() {
+            info!(
+                "Found {} games for tournament {} on date {}",
+                response.games.len(),
+                tournament,
+                date
+            );
+            active.push(tournament);
+            continue;
+        }
 
-            // If no games but has a future nextGameDate, use this tournament
-            if let Some(next_date) = &response.next_game_date {
-                if let (Ok(next_parsed), Ok(current_parsed)) = (
-                    chrono::NaiveDate::parse_from_str(next_date, "%Y-%m-%d"),
-                    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d"),
-                ) {
-                    if next_parsed >= current_parsed {
-                        info!(
-                            "Tournament {} has future games on {}, using this tournament",
-                            tournament, next_date
-                        );
-                        active.push(tournament);
-                    } else {
-                        info!(
-                            "Tournament {} nextGameDate {} is in the past, trying next tournament type",
-                            tournament, next_date
-                        );
-                    }
+        // If no games but has a future nextGameDate, use this tournament
+        if let Some(next_date) = &response.next_game_date {
+            if let (Ok(next_parsed), Ok(current_parsed)) = (
+                chrono::NaiveDate::parse_from_str(next_date, "%Y-%m-%d"),
+                chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d"),
+            ) {
+                if next_parsed >= current_parsed {
+                    info!(
+                        "Tournament {} has future games on {}, using this tournament",
+                        tournament, next_date
+                    );
+                    active.push(tournament);
+                } else {
+                    info!(
+                        "Tournament {} nextGameDate {} is in the past, trying next tournament type",
+                        tournament, next_date
+                    );
                 }
-            } else {
-                info!(
-                    "Tournament {} has no nextGameDate, trying next tournament type",
-                    tournament
-                );
             }
+        } else {
+            info!(
+                "Tournament {} has no nextGameDate, trying next tournament type",
+                tournament
+            );
+        }
     }
 
     if active.is_empty() {
