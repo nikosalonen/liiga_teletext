@@ -92,7 +92,10 @@ impl Config {
             config.log_file_path = Some(log_file_path);
         }
 
-        if let Some(timeout) = std::env::var("LIIGA_HTTP_TIMEOUT").ok().and_then(|s| s.parse::<u64>().ok()) {
+        if let Some(timeout) = std::env::var("LIIGA_HTTP_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+        {
             config.http_timeout_seconds = timeout;
         }
 
