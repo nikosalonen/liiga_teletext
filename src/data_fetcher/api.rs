@@ -40,25 +40,25 @@ const PLAYOFFS_END_MONTH: u32 = 6; // June
 /// connection pooling, and HTTP/2 multiplexing when available.
 ///
 /// # Returns
-/// * `Client` - A configured reqwest HTTP client
+/// * `Result<Client, reqwest::Error>` - A configured reqwest HTTP client or error
 ///
 /// # Features
 /// * Configurable timeout for requests (default: 30 seconds, configurable via config/env)
-/// * Connection pooling with up to 100 connections per host
+/// * Connection pooling with centralized pool size configuration
 /// * HTTP/2 multiplexing when available
 /// * Automatic retry logic for transient failures (implemented in fetch function)
-fn create_http_client_with_timeout(timeout_seconds: u64) -> Client {
+fn create_http_client_with_timeout(timeout_seconds: u64) -> Result<Client, reqwest::Error> {
     Client::builder()
         .timeout(Duration::from_secs(timeout_seconds))
-        .pool_max_idle_per_host(100)
+        .pool_max_idle_per_host(crate::constants::HTTP_POOL_MAX_IDLE_PER_HOST)
         .build()
-        .expect("Failed to create HTTP client")
 }
 
 /// Creates an HTTP client for testing with default timeout
 #[cfg(test)]
 fn create_test_http_client() -> Client {
     create_http_client_with_timeout(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS)
+        .expect("Failed to create test HTTP client")
 }
 
 /// Builds a tournament URL for fetching game data.
@@ -319,7 +319,7 @@ async fn determine_active_tournaments(
     let mut cached_responses: HashMap<String, ScheduleResponse> = HashMap::new();
 
     // Process results in original order to maintain priority
-    for (tournament, response) in results.into_iter().flatten() {
+    for (tournament, response) in results.into_iter().filter_map(Result::ok) {
         // Cache the response for downstream reuse
         let cache_key = create_tournament_key(tournament, date);
         cached_responses.insert(cache_key, response.clone());
@@ -1269,7 +1269,7 @@ pub async fn fetch_liiga_data(
 
     let config = Config::load().await?;
     info!("Config loaded successfully");
-    let client = create_http_client_with_timeout(config.http_timeout_seconds);
+    let client = create_http_client_with_timeout(config.http_timeout_seconds)?;
 
     // Determine the date to fetch data for
     let (date, is_pre_noon_cutoff) = determine_fetch_date(custom_date);
