@@ -15,13 +15,13 @@ use crate::teletext_ui::ScoreType;
 use chrono::{Datelike, Local, Utc};
 use futures::future;
 use once_cell::sync::Lazy;
-use rand::{Rng, SeedableRng, rngs::SmallRng};
+use rand::{Rng, rng};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 //
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
 // Tournament season constants for month-based logic
@@ -50,15 +50,18 @@ fn create_http_client() -> Client {
         .expect("Failed to create HTTP client")
 }
 
-// Global rate-limit cooldown until timestamp (milliseconds since Unix epoch)
+// Global rate-limit cooldown until (monotonic) milliseconds since process start
 static RATE_LIMIT_COOLDOWN_UNTIL_MS: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(0));
+static START_INSTANT: Lazy<Instant> = Lazy::new(Instant::now);
+const MAX_GLOBAL_COOLDOWN_MS: u64 = 60_000; // safety cap (60s)
+const MAX_SLEEP_MS: u64 = 30_000; // cap individual sleep to 30s
 
 fn now_millis() -> u64 {
-    // Use std::time::SystemTime to avoid async clock issues here
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_else(|_| std::time::Duration::from_millis(0));
-    now.as_millis() as u64
+    START_INSTANT
+        .elapsed()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
 }
 
 /// Builds a tournament URL for fetching game data.
@@ -822,13 +825,12 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
     let mut attempt = 0u32;
     let max_retries = 3u32;
     let mut backoff = Duration::from_millis(250);
-    let mut rng = SmallRng::seed_from_u64(now_millis());
     let response = loop {
         // If we are in cooldown due to previous 429, wait until cooldown expires
-        let cooldown_until = RATE_LIMIT_COOLDOWN_UNTIL_MS.load(Ordering::Relaxed);
+        let cooldown_until = RATE_LIMIT_COOLDOWN_UNTIL_MS.load(Ordering::Acquire);
         let now = now_millis();
         if now < cooldown_until {
-            let sleep_ms = cooldown_until - now;
+            let sleep_ms = (cooldown_until - now).min(MAX_SLEEP_MS);
             warn!(
                 "Rate limit cooldown active for {:?}ms; deferring request to {}",
                 sleep_ms, url
@@ -848,14 +850,16 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
                         .map(Duration::from_secs);
                     // Jitter: randomize +/- 20% to avoid thundering herd
                     let base_wait = retry_after.unwrap_or(backoff);
-                    let jitter_factor: f64 = rng.random_range(0.8..1.2);
+                    let jitter_factor: f64 = rng().random_range(0.8..1.2);
                     let wait = Duration::from_millis(
                         (base_wait.as_millis() as f64 * jitter_factor) as u64,
                     );
                     if status.as_u16() == 429 {
                         // Set cooldown so subsequent requests back off globally
-                        let until = now_millis() + wait.as_millis() as u64;
-                        RATE_LIMIT_COOLDOWN_UNTIL_MS.store(until, Ordering::Relaxed);
+                        // Use fetch_max to prevent race conditions where multiple 429s could shorten cooldown
+                        let until = (now_millis() + wait.as_millis() as u64)
+                            .min(now_millis() + MAX_GLOBAL_COOLDOWN_MS);
+                        RATE_LIMIT_COOLDOWN_UNTIL_MS.fetch_max(until, Ordering::Release);
                     }
                     warn!(
                         "Transient {} from {}. Retrying in {:?} (attempt {}/{})",
@@ -915,11 +919,15 @@ async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, App
         return Err(match status_code {
             404 => AppError::api_not_found(url),
             429 => {
-                // On final 429, enforce a slightly longer cooldown (at least RATE_LIMIT_DELAY_SECONDS)
-                let min_cooldown =
-                    Duration::from_secs(crate::constants::retry::RATE_LIMIT_DELAY_SECONDS);
-                let until = now_millis() + min_cooldown.as_millis() as u64;
-                RATE_LIMIT_COOLDOWN_UNTIL_MS.store(until, Ordering::Relaxed);
+                // On final 429, enforce the maximum possible cooldown to prevent further abuse
+                // This is a strong, monotonic cooldown that represents complete rate limit exhaustion
+                let final_cooldown_ms = MAX_GLOBAL_COOLDOWN_MS;
+                let until = now_millis() + final_cooldown_ms;
+                RATE_LIMIT_COOLDOWN_UNTIL_MS.fetch_max(until, Ordering::Release);
+                warn!(
+                    "Final 429 response from {}: setting maximum cooldown of {}ms",
+                    url, final_cooldown_ms
+                );
                 AppError::api_rate_limit(reason, url)
             }
             400..=499 => AppError::api_client_error(status_code, reason, url),
@@ -2604,7 +2612,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("season", "2024"))
+            .and(query_param("date",   "2024-01-15"))
             .respond_with(ResponseTemplate::new(500))
             .mount(&mock_server)
             .await;
