@@ -243,7 +243,7 @@ async fn determine_active_tournaments(
         date_parts[1].parse::<u32>().unwrap_or(0)
     } else {
         // Default to current month if date parsing fails
-        Utc::now().with_timezone(&Local).month()
+        Utc::now().month()
     };
 
     // Filter tournament candidates based on season (avoid unnecessary API calls)
@@ -2541,7 +2541,7 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        let result = fetch_tournament_data(&client, &test_config, "runkosarja", "2024-01-15").await;
+        let result = fetch_tournament_data(&client, &test_config, "runkosarja", "2024-03-15").await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -2621,6 +2621,8 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/games"))
+            .and(query_param("tournament", "runkosarja"))
+            .and(query_param("date", "2024-01-15"))
             .respond_with(ResponseTemplate::new(404))
             .mount(&mock_server)
             .await;
@@ -3836,7 +3838,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("date", "2024-03-15"))
+            .and(query_param("date", "2024-01-15"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&mock_response))
             .mount(&mock_server)
             .await;
@@ -4130,12 +4132,10 @@ mod tests {
         assert!(result.is_ok());
         let (active_tournaments, _cached_responses) = result.unwrap();
 
-        // Should contain all three active tournaments in priority order
-        assert_eq!(active_tournaments.len(), 3);
-        assert_eq!(
-            active_tournaments,
-            vec!["playoffs", "playout", "qualifications"]
-        );
+        // March includes playoff tournaments that have games or future games
+        // Note: With month-based filtering, only playoff tournaments are checked in March
+        assert_eq!(active_tournaments.len(), 2);
+        assert_eq!(active_tournaments, vec!["playoffs", "playout"]);
     }
 
     #[tokio::test]
@@ -4229,7 +4229,7 @@ mod tests {
         let same_date_response = ScheduleResponse {
             games: vec![],
             previous_game_date: None,
-            next_game_date: Some("2024-01-15".to_string()),
+            next_game_date: Some("2024-03-15".to_string()),
         };
 
         // playoffs has no games but next game date is same as current date
@@ -4447,12 +4447,10 @@ mod tests {
         assert!(result.is_ok());
         let (active_tournaments, _cached_responses) = result.unwrap();
 
-        // Should maintain priority order: valmistavat_ottelut, runkosarja, qualifications
-        assert_eq!(active_tournaments.len(), 3);
-        assert_eq!(
-            active_tournaments,
-            vec!["valmistavat_ottelut", "runkosarja", "qualifications"]
-        );
+        // March should include runkosarja (always) and qualifications (playoff period) that have games
+        // valmistavat_ottelut is not checked in March (outside preseason period)
+        assert_eq!(active_tournaments.len(), 2);
+        assert_eq!(active_tournaments, vec!["runkosarja", "qualifications"]);
     }
 
     #[tokio::test]
