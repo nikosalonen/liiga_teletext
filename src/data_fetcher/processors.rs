@@ -32,8 +32,9 @@ use tracing;
 /// # Example
 /// This function is typically used with game data from the API to create
 /// disambiguated goal events that avoid confusion between players with similar names.
-/// When multiple players share the same last name on a team, their names are
 /// differentiated using first initials (e.g., "Koivu M." vs "Koivu S.").
+/// Additionally, it avoids showing disambiguation for the same player multiple times -
+/// only the first goal by each player shows disambiguation, subsequent goals show just the last name.
 #[allow(dead_code)] // Used in integration tests
 pub fn process_goal_events_with_disambiguation<T>(
     game: &T,
@@ -43,17 +44,31 @@ pub fn process_goal_events_with_disambiguation<T>(
 where
     T: HasTeams,
 {
+    use std::collections::HashSet;
     let mut events = Vec::new();
+    let mut seen_players = HashSet::new();
 
     // Create disambiguation contexts for each team separately
     let home_context = DisambiguationContext::new(home_players.to_vec());
     let away_context = DisambiguationContext::new(away_players.to_vec());
 
     // Process home team goals with home team disambiguation
-    process_team_goals_with_disambiguation(game.home_team(), &home_context, true, &mut events);
+    process_team_goals_with_disambiguation_tracking(
+        game.home_team(),
+        &home_context,
+        true,
+        &mut events,
+        &mut seen_players,
+    );
 
     // Process away team goals with away team disambiguation
-    process_team_goals_with_disambiguation(game.away_team(), &away_context, false, &mut events);
+    process_team_goals_with_disambiguation_tracking(
+        game.away_team(),
+        &away_context,
+        false,
+        &mut events,
+        &mut seen_players,
+    );
 
     events
 }
@@ -179,6 +194,97 @@ pub fn process_goal_events_from_basic_response(game: &ScheduleGame) -> Vec<GoalE
     events
 }
 
+/// Processes goal events for a single team with team-scoped disambiguation and player tracking.
+/// This enhanced version uses a disambiguation context to resolve player names
+/// with first initials when multiple players on the same team share the same last name.
+/// It tracks which players have already appeared to avoid redundant disambiguation.
+///
+/// # Arguments
+/// * `team` - Team data implementing HasGoalEvents trait
+/// * `disambiguation_context` - Context containing disambiguated player names for this team
+/// * `is_home_team` - Boolean indicating if this is the home team
+/// * `events` - Mutable vector to append processed goal events to
+/// * `seen_players` - Mutable set to track which players have already been shown
+///
+/// # Features
+/// - Filters out cancelled and removed goals (RL0, VT0)
+/// - Shows disambiguation only for first occurrence of each player
+/// - Subsequent goals by same player show just the last name
+/// - Falls back to embedded player data when disambiguation unavailable
+/// - Creates fallback names for missing player data
+/// - Preserves goal metadata like timing and special types
+/// - Maintains video clip links when available
+#[allow(dead_code)] // Used in integration tests
+pub fn process_team_goals_with_disambiguation_tracking(
+    team: &dyn HasGoalEvents,
+    disambiguation_context: &DisambiguationContext,
+    is_home_team: bool,
+    events: &mut Vec<GoalEventData>,
+    seen_players: &mut std::collections::HashSet<i64>,
+) {
+    use crate::data_fetcher::player_names::{
+        build_full_name, create_fallback_name, format_for_display,
+        get_players_needing_disambiguation,
+    };
+
+    // Determine which players actually need disambiguation
+    let players_needing_disambiguation =
+        get_players_needing_disambiguation(&disambiguation_context.players);
+
+    for goal in team.goal_events().iter().filter(|g| {
+        !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
+    }) {
+        // Check if this player has already been shown
+        let is_first_occurrence = !seen_players.contains(&goal.scorer_player_id);
+        seen_players.insert(goal.scorer_player_id);
+
+        // Try to get player name, using disambiguation logic
+        let scorer_name = if let Some(disambiguated_name) =
+            disambiguation_context.get_disambiguated_name(goal.scorer_player_id)
+        {
+            // Check if this player actually needs disambiguation
+            let needs_disambiguation =
+                players_needing_disambiguation.contains(&goal.scorer_player_id);
+
+            if needs_disambiguation {
+                // Player needs disambiguation - check if this is first occurrence
+                if is_first_occurrence {
+                    // First occurrence: show full disambiguation
+                    disambiguated_name.clone()
+                } else {
+                    // Subsequent occurrence by same player: show just last name
+                    let base_name = disambiguated_name
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or(disambiguated_name);
+                    base_name.to_string()
+                }
+            } else {
+                // Player doesn't need disambiguation: always show just last name
+                disambiguated_name.clone()
+            }
+        } else if let Some(ref scorer_player) = goal.scorer_player {
+            // Player doesn't have disambiguation context: use embedded data
+            format_for_display(&build_full_name("", &scorer_player.last_name))
+        } else {
+            // Fallback to player ID if no other data is available
+            create_fallback_name(goal.scorer_player_id)
+        };
+
+        events.push(GoalEventData {
+            scorer_player_id: goal.scorer_player_id,
+            scorer_name,
+            minute: goal.game_time / 60,
+            home_team_score: goal.home_team_score,
+            away_team_score: goal.away_team_score,
+            is_winning_goal: goal.winning_goal,
+            goal_types: goal.goal_types.clone(),
+            is_home_team,
+            video_clip_url: goal.video_clip_url.clone(),
+        });
+    }
+}
+
 /// Processes goal events for a single team with team-scoped disambiguation.
 /// This enhanced version uses a disambiguation context to resolve player names
 /// with first initials when multiple players on the same team share the same last name.
@@ -221,36 +327,15 @@ pub fn process_team_goals_with_disambiguation(
     is_home_team: bool,
     events: &mut Vec<GoalEventData>,
 ) {
-    for goal in team.goal_events().iter().filter(|g| {
-        !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
-    }) {
-        // Try to get player name, prioritizing team-scoped disambiguation
-        let scorer_name = if let Some(disambiguated_name) =
-            disambiguation_context.get_disambiguated_name(goal.scorer_player_id)
-        {
-            disambiguated_name.clone()
-        } else if let Some(ref scorer_player) = goal.scorer_player {
-            format_for_display(&build_full_name(
-                &scorer_player.first_name,
-                &scorer_player.last_name,
-            ))
-        } else {
-            // Fallback to player ID if no other data is available
-            create_fallback_name(goal.scorer_player_id)
-        };
-
-        events.push(GoalEventData {
-            scorer_player_id: goal.scorer_player_id,
-            scorer_name,
-            minute: goal.game_time / 60,
-            home_team_score: goal.home_team_score,
-            away_team_score: goal.away_team_score,
-            is_winning_goal: goal.winning_goal,
-            goal_types: goal.goal_types.clone(),
-            is_home_team,
-            video_clip_url: goal.video_clip_url.clone(),
-        });
-    }
+    use std::collections::HashSet;
+    let mut seen_players = HashSet::new();
+    process_team_goals_with_disambiguation_tracking(
+        team,
+        disambiguation_context,
+        is_home_team,
+        events,
+        &mut seen_players,
+    );
 }
 
 /// Processes goal events for a single team, filtering out certain goal types and formatting player names.
