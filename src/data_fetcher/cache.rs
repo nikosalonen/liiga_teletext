@@ -474,32 +474,68 @@ pub async fn get_cached_tournament_data_with_start_check(
     key: &str,
     current_games: &[GameData],
 ) -> Option<ScheduleResponse> {
+    // Compute this outside the lock to avoid awaiting while holding it
+    let has_starting_games = should_bypass_cache_for_starting_games(current_games).await;
     let mut cache = TOURNAMENT_CACHE.write().await;
 
-    if let Some(cached_entry) = cache.get(key) {
-        // Check if we have any games that might be starting
-        let has_starting_games = current_games
-            .iter()
-            .any(|game| game.score_type == ScoreType::Scheduled && !game.start.is_empty());
+    // Check if we have a cached entry and gather info before any mutations
+    let cache_info = if let Some(cached_entry) = cache.get(key) {
+        // Check if we have live games in the current state
+        let has_live = has_live_games_from_game_data(current_games);
+        let cached_has_live = cached_entry.has_live_games;
+        let is_expired = cached_entry.is_expired();
+        let age = cached_entry.cached_at.elapsed();
+        let data_when_fresh = if !is_expired {
+            Some(cached_entry.data.clone())
+        } else {
+            None
+        };
 
-        // If we have starting games, consider cache expired more aggressively
-        if has_starting_games {
-            let age = cached_entry.cached_at.elapsed();
-            let aggressive_ttl = Duration::from_secs(cache_ttl::STARTING_GAMES_SECONDS); // 10 seconds for starting games
+        Some((
+            cached_has_live,
+            has_live,
+            is_expired,
+            age,
+            has_starting_games,
+            data_when_fresh,
+        ))
+    } else {
+        None
+    };
 
-            if age > aggressive_ttl {
-                info!(
-                    "Cache expired for starting games: key={}, age={:?}, aggressive_ttl={:?}",
-                    key, age, aggressive_ttl
-                );
-                cache.pop(key);
-                return None;
-            }
+    if let Some((cached_has_live, has_live, _is_expired, age, has_starting_games, data_when_fresh)) =
+        cache_info
+    {
+        // If the live state has changed, consider the cache expired
+        if cached_has_live != has_live {
+            debug!(
+                "Cache invalidated due to live game state change: key={}, cached_has_live={}, current_has_live={}",
+                key, cached_has_live, has_live
+            );
+            cache.pop(key);
+            return None;
         }
 
-        if !cached_entry.is_expired() {
-            return Some(cached_entry.data.clone());
+        if let Some(data) = data_when_fresh {
+            // Only apply the aggressive TTL when games are truly near start
+            if has_starting_games {
+                let aggressive_ttl = Duration::from_secs(cache_ttl::STARTING_GAMES_SECONDS);
+                if age > aggressive_ttl {
+                    info!(
+                        "Cache expired for starting games: key={}, age={:?}, aggressive_ttl={:?}",
+                        key, age, aggressive_ttl
+                    );
+                    cache.pop(key);
+                    return None;
+                }
+            }
+            return Some(data);
         } else {
+            // Remove expired entry
+            debug!(
+                "Removing expired cache entry during live game state check: key={}, age={:?}",
+                key, age
+            );
             cache.pop(key);
         }
     }
@@ -1369,10 +1405,6 @@ mod tests {
     use crate::data_fetcher::models::{GoalEventData, ScheduleGame, ScheduleTeam};
     use serial_test::serial;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use tokio::sync::Mutex;
-
-    // Mutex to ensure LRU tests run sequentially to avoid cache interference
-    static TEST_MUTEX: Mutex<()> = Mutex::const_new(());
 
     // Global test counter to ensure unique IDs across all test runs
     static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -1384,7 +1416,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_players_with_formatting() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 50000 + test_id as i32;
 
@@ -1410,7 +1441,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_lru_simple() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let base_id = 60000 + (test_id * 1000) as i32;
 
@@ -1456,7 +1486,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_lru_access_order() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let base_id = 70000 + (test_id * 1000) as i32;
 
@@ -1504,7 +1533,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_lru_simple_access_order() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let base_id = 80000 + (test_id * 1000) as i32;
 
@@ -1559,7 +1587,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_tournament_cache_basic() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
 
         // Clear cache to ensure clean state
@@ -1587,7 +1614,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_tournament_cache_ttl() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
 
         // Clear cache to ensure clean state
@@ -1791,7 +1817,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_goal_events_cache_basic() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 91000 + test_id as i32;
 
@@ -1827,7 +1852,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_http_response_cache_basic() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
 
         // Clear cache to ensure clean state
@@ -1856,7 +1880,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_stats() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
 
         // Clear all caches to ensure clean state
@@ -1991,7 +2014,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_expiration() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 95000 + test_id as i32;
 
@@ -2027,7 +2049,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_goal_events_cache_debug_methods() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 96000 + test_id as i32;
         let season = 2024;
@@ -2593,7 +2614,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_debugging_functions() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
 
         // Clear all caches first
@@ -2642,7 +2662,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_players_with_disambiguation_basic() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 100000 + test_id as i32;
 
@@ -2683,7 +2702,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_players_with_disambiguation_no_conflicts() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 101000 + test_id as i32;
 
@@ -2718,7 +2736,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_players_with_disambiguation_cross_team_same_names() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 102000 + test_id as i32;
 
@@ -2753,7 +2770,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_players_with_disambiguation_empty_first_names() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 103000 + test_id as i32;
 
@@ -2785,7 +2801,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_players_with_disambiguation_unicode_names() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 104000 + test_id as i32;
 
@@ -2818,7 +2833,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_get_cached_disambiguated_players() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 105000 + test_id as i32;
 
@@ -2852,7 +2866,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_get_cached_player_name() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 106000 + test_id as i32;
 
@@ -2889,7 +2902,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_has_cached_disambiguated_players() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 107000 + test_id as i32;
 
@@ -2918,7 +2930,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_players_with_disambiguation_three_players_same_name() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 108000 + test_id as i32;
 
@@ -2950,7 +2961,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_players_with_disambiguation_mixed_scenario() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 109000 + test_id as i32;
 
@@ -2995,7 +3005,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_cache_players_with_disambiguation_empty_teams() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 110000 + test_id as i32;
 
@@ -3020,7 +3029,6 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_api_integration_disambiguation_flow() {
-        let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 111000 + test_id as i32;
 
