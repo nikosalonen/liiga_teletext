@@ -164,19 +164,24 @@ impl CachedGoalEventsData {
         }
     }
 
-    /// Creates a cleared cache entry with the last known score
-    #[allow(dead_code)]
-    pub fn new_cleared(game_id: i32, season: i32, last_known_score: String) -> Self {
-        Self {
-            data: Vec::new(),
-            cached_at: Instant::now(),
-            game_id,
-            season,
-            is_live_game: true, // Assume live game if we're clearing cache
-            last_known_score: Some(last_known_score),
-            was_cleared: true,
-        }
-    }
+   
+       pub fn new_cleared(
+           game_id: i32,
+           season: i32,
+           last_known_score: String,
+           is_live_game: bool,
+       ) -> Self {
+             Self {
+                 data: Vec::new(),
+                 cached_at: Instant::now(),
+                 game_id,
+                 season,
+ 
+               is_live_game,
+                 last_known_score: Some(last_known_score),
+                 was_cleared: true,
+             }
+         }
 
     /// Checks if the cached data is expired based on game state
     pub fn is_expired(&self) -> bool {
@@ -1069,7 +1074,7 @@ pub async fn cache_goal_events_data(
 }
 
 /// Retrieves cached goal events data if it's not expired
-#[instrument(skip(season, game_id), fields(season = season, game_id = game_id))]
+#[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
 pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Vec<GoalEventData>> {
     let key = create_goal_events_key(season, game_id);
     debug!(
@@ -1109,7 +1114,7 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
 }
 
 /// Retrieves the full cached goal events entry structure for metadata access
-#[instrument(skip(season, game_id), fields(season = season, game_id = game_id))]
+#[instrument(skip(season, game_id), fields(season = %season, game_id = %game_id))]
 #[allow(dead_code)]
 pub async fn get_cached_goal_events_entry(
     season: i32,
@@ -1197,7 +1202,7 @@ pub async fn clear_goal_events_cache_for_game(season: i32, game_id: i32) {
 
     // If we had a last known score, create a cleared cache entry with that score
     if let Some(score) = last_known_score {
-        let mut cleared_entry = CachedGoalEventsData::new_cleared(game_id, season, score.clone());
+        let mut cleared_entry = CachedGoalEventsData::new_cleared(game_id, season, score.clone(), was_live);
         // keep the previous live-state
         cleared_entry.is_live_game = was_live;
         cache.put(key, cleared_entry);
