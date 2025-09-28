@@ -13,6 +13,7 @@ use crate::data_fetcher::processors::{
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{Datelike, Local, Utc};
+use futures::future;
 use once_cell::sync::Lazy;
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 use reqwest::Client;
@@ -233,14 +234,30 @@ async fn determine_active_tournaments(
     let mut active: Vec<&'static str> = Vec::with_capacity(tournament_candidates.len());
     let mut cached_responses: HashMap<String, ScheduleResponse> = HashMap::new();
 
-    for &tournament in &tournament_candidates {
-        info!("Checking tournament: {}", tournament);
+    // Make all tournament API calls in parallel for faster startup
+    info!(
+        "Fetching tournament data in parallel for {} tournaments",
+        tournament_candidates.len()
+    );
+    let tournament_futures: Vec<_> = tournament_candidates
+        .iter()
+        .map(|&tournament| {
+            let url = build_tournament_url(&config.api_domain, tournament, date);
+            async move {
+                let result = fetch::<ScheduleResponse>(client, &url).await;
+                (tournament, result)
+            }
+        })
+        .collect();
 
-        // Fetch the tournament data to check nextGameDate
-        let url = build_tournament_url(&config.api_domain, tournament, date);
+    let tournament_results = future::join_all(tournament_futures).await;
 
-        match fetch::<ScheduleResponse>(client, &url).await {
+    // Process results from parallel API calls
+    for (tournament, result) in tournament_results {
+        match result {
             Ok(response) => {
+                info!("Successfully fetched tournament: {}", tournament);
+
                 // Cache the response for downstream reuse
                 let cache_key = create_tournament_key(tournament, date);
                 cached_responses.insert(cache_key, response.clone());

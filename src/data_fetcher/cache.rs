@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -96,13 +98,6 @@ impl CachedTournamentData {
         }
     }
 
-    /// Gets the remaining time until expiration
-    #[cfg(test)]
-    pub fn time_until_expiry(&self) -> Duration {
-        let ttl = self.get_ttl();
-        let elapsed = self.cached_at.elapsed();
-        ttl.saturating_sub(elapsed)
-    }
 }
 
 impl CachedGoalEventsData {
@@ -335,57 +330,10 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
     None
 }
 
-/// Retrieves cached tournament data with custom live game state check
-#[cfg(test)]
-pub async fn get_cached_tournament_data_with_live_check(
-    key: &str,
-    current_games: &[GameData],
-) -> Option<ScheduleResponse> {
-    let mut cache = TOURNAMENT_CACHE.write().await;
-
-    // Check if we have a cached entry and gather info before any mutations
-    let cache_info = if let Some(cached_entry) = cache.get(key) {
-        // Check if we have live games in the current state
-        let has_live = has_live_games_from_game_data(current_games);
-        let cached_has_live = cached_entry.has_live_games;
-        let is_expired = cached_entry.is_expired();
-        let age = cached_entry.cached_at.elapsed();
-        let data = cached_entry.data.clone();
-
-        Some((cached_has_live, has_live, is_expired, age, data))
-    } else {
-        None
-    };
-
-    if let Some((cached_has_live, has_live, is_expired, age, data)) = cache_info {
-        // If the live state has changed, consider the cache expired
-        if cached_has_live != has_live {
-            debug!(
-                "Cache invalidated due to live game state change: key={}, cached_has_live={}, current_has_live={}",
-                key, cached_has_live, has_live
-            );
-            cache.pop(key);
-            return None;
-        }
-
-        if !is_expired {
-            return Some(data);
-        } else {
-            // Remove expired entry
-            debug!(
-                "Removing expired cache entry during live game state check: key={}, age={:?}",
-                key, age
-            );
-            cache.pop(key);
-        }
-    }
-
-    None
-}
-
 /// Retrieves cached tournament data specifically for auto-refresh scenarios
 /// This function provides enhanced logging and ensures proper cache bypass for expired entries
 #[cfg(test)]
+#[allow(dead_code)]
 pub async fn get_cached_tournament_data_for_auto_refresh(key: &str) -> Option<ScheduleResponse> {
     debug!(
         "Auto-refresh: Attempting to retrieve tournament data from cache for key: {}",
