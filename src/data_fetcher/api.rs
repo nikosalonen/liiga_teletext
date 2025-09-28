@@ -2667,7 +2667,7 @@ mod tests {
     async fn test_fetch_game_data_success() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let _client = Client::new();
 
         let mock_response = create_mock_detailed_game_response();
 
@@ -2695,7 +2695,7 @@ mod tests {
     async fn test_fetch_game_data_no_goals() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let _client = Client::new();
 
         let mut mock_response = create_mock_detailed_game_response();
         mock_response.game.home_team.goal_events = vec![];
