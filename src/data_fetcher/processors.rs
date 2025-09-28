@@ -440,6 +440,7 @@ fn is_game_likely_live(game: &ScheduleGame) -> bool {
 
 /// Try to fetch player names for specific player IDs with a reduced timeout
 /// This is used as a fallback when cached player names are missing
+#[allow(dead_code)]
 async fn try_fetch_player_names_for_game(
     api_domain: &str,
     season: i32,
@@ -558,8 +559,10 @@ async fn try_fetch_player_names_for_game(
     }
 }
 
-pub async fn create_basic_goal_events(game: &ScheduleGame, api_domain: &str) -> Vec<GoalEventData> {
-    use crate::data_fetcher::cache::get_cached_players;
+pub async fn create_basic_goal_events(
+    game: &ScheduleGame,
+    _api_domain: &str,
+) -> Vec<GoalEventData> {
     use tracing::{info, warn};
 
     // If the game has goal events in the response, use them with cached names if available
@@ -571,101 +574,44 @@ pub async fn create_basic_goal_events(game: &ScheduleGame, api_domain: &str) -> 
             game.away_team.goal_events.len()
         );
 
-        // Collect all player IDs that need names
-        let mut player_ids_needing_names = HashSet::with_capacity(
-            game.home_team.goal_events.len() + game.away_team.goal_events.len(),
-        );
+        // Build names from embedded scorerPlayer when available; fallback to last name or numeric fallback
+        let mut basic_names: HashMap<i64, String> = HashMap::new();
+
+        let mut collect_name =
+            |scorer_id: i64, maybe_first: Option<&str>, maybe_last: Option<&str>| {
+                if let Some(last) = maybe_last {
+                    // Prefer last name only per teletext style; add initial only if first is present and needed later
+                    basic_names.insert(scorer_id, format_for_display(last));
+                } else if let Some(first) = maybe_first {
+                    // No last name in payload, use first as display (rare)
+                    basic_names.insert(scorer_id, format_for_display(first));
+                } else {
+                    // Complete fallback
+                    basic_names.insert(scorer_id, create_fallback_name(scorer_id));
+                }
+            };
+
         for goal in &game.home_team.goal_events {
-            player_ids_needing_names.insert(goal.scorer_player_id);
-        }
-        for goal in &game.away_team.goal_events {
-            player_ids_needing_names.insert(goal.scorer_player_id);
-        }
-
-        // First, try to get cached player names
-        let cached_players = get_cached_players(game.id).await;
-        let mut player_names = HashMap::new();
-
-        match cached_players {
-            Some(cached) => {
-                // Use cached names for available players
-                for (&player_id, name) in &cached {
-                    if player_ids_needing_names.contains(&player_id) {
-                        player_names.insert(player_id, name.clone());
-                    }
-                }
-
-                // Find missing player names
-                let missing_players: Vec<i64> = player_ids_needing_names
-                    .iter()
-                    .filter(|&&id| !cached.contains_key(&id))
-                    .copied()
-                    .collect();
-
-                if !missing_players.is_empty() {
-                    info!(
-                        "Game ID {}: {} player names missing from cache, attempting to fetch them",
-                        game.id,
-                        missing_players.len()
-                    );
-
-                    // Try to fetch missing player names
-                    if let Some(additional_names) = try_fetch_player_names_for_game(
-                        api_domain,
-                        game.season,
-                        game.id,
-                        &missing_players,
-                    )
-                    .await
-                    {
-                        for (id, name) in additional_names {
-                            player_names.insert(id, name);
-                        }
-                    }
-                }
-            }
-            None => {
-                info!(
-                    "Game ID {}: No cached player data, attempting to fetch player names for {} players",
-                    game.id,
-                    player_ids_needing_names.len()
+            if let Some(p) = &goal.scorer_player {
+                collect_name(
+                    goal.scorer_player_id,
+                    Some(&p.first_name),
+                    Some(&p.last_name),
                 );
-
-                // Try to fetch all player names
-                let all_players: Vec<i64> = player_ids_needing_names.into_iter().collect();
-                if let Some(fetched_names) =
-                    try_fetch_player_names_for_game(api_domain, game.season, game.id, &all_players)
-                        .await
-                {
-                    player_names = fetched_names;
-                }
+            } else {
+                collect_name(goal.scorer_player_id, None, None);
             }
         }
-
-        // Helper closure for consistent fallback handling
-        let get_player_name_with_fallback = |player_id: i64| -> String {
-            player_names
-                .get(&player_id)
-                .cloned()
-                .unwrap_or_else(|| {
-                    warn!(
-                        "Using fallback name for player ID {} in game ID {} - could not fetch actual name",
-                        player_id, game.id
-                    );
-                    create_fallback_name(player_id)
-                })
-        };
-
-        // Build basic_names with priority: fetched names > cached names > fallback
-        let mut basic_names = HashMap::new();
-        for goal in &game.home_team.goal_events {
-            let player_name = get_player_name_with_fallback(goal.scorer_player_id);
-            basic_names.insert(goal.scorer_player_id, player_name);
-        }
-
         for goal in &game.away_team.goal_events {
-            let player_name = get_player_name_with_fallback(goal.scorer_player_id);
-            basic_names.insert(goal.scorer_player_id, player_name);
+            if let Some(p) = &goal.scorer_player {
+                collect_name(
+                    goal.scorer_player_id,
+                    Some(&p.first_name),
+                    Some(&p.last_name),
+                );
+            } else {
+                collect_name(goal.scorer_player_id, None, None);
+            }
         }
 
         return process_goal_events(game, &basic_names);
@@ -747,6 +693,7 @@ mod tests {
             goal_types,
             assistant_player_ids: vec![],
             video_clip_url: Some("https://example.com/video.mp4".to_string()),
+            scorer_player: None,
         }
     }
 

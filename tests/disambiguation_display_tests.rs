@@ -66,6 +66,7 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
             goal_types: vec![],
             assistant_player_ids: vec![],
             video_clip_url: None,
+            scorer_player: None,
         },
         GoalEvent {
             scorer_player_id: 2, // Saku Koivu (will become "Koivu S.")
@@ -79,6 +80,7 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
             goal_types: vec![],
             assistant_player_ids: vec![],
             video_clip_url: None,
+            scorer_player: None,
         },
         GoalEvent {
             scorer_player_id: 3, // Teemu Selänne (will become "Selänne")
@@ -92,6 +94,7 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
             goal_types: vec![],
             assistant_player_ids: vec![],
             video_clip_url: None,
+            scorer_player: None,
         },
     ];
 
@@ -107,6 +110,7 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
         goal_types: vec!["YV".to_string()],
         assistant_player_ids: vec![],
         video_clip_url: None,
+        scorer_player: None,
     }];
 
     ScheduleGame {

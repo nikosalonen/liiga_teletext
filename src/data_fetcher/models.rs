@@ -24,6 +24,18 @@ pub struct GoalEvent {
     pub assistant_player_ids: Vec<i32>,
     #[serde(rename = "videoClipUrl", default)]
     pub video_clip_url: Option<String>,
+    #[serde(rename = "scorerPlayer", default)]
+    pub scorer_player: Option<EmbeddedPlayer>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub struct EmbeddedPlayer {
+    #[serde(rename = "playerId")]
+    pub player_id: i64,
+    #[serde(rename = "lastName")]
+    pub last_name: String,
+    #[serde(rename = "firstName")]
+    pub first_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -303,6 +315,7 @@ mod tests {
             goal_types: vec!["EV".to_string()],
             assistant_player_ids: vec![67890, 11111],
             video_clip_url: Some("https://example.com/video.mp4".to_string()),
+            scorer_player: None,
         }
     }
 
