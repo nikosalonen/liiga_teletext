@@ -71,13 +71,13 @@ impl Config {
             config.log_file_path = Some(log_file_path);
         }
 
-        // Normalize API domain to ensure https:// prefix is present at runtime
-        // This mirrors save() behavior and prevents invalid URL errors in HTTP calls
-        if !config.api_domain.starts_with("https://") {
-            config.api_domain = format!(
-                "https://{}",
-                config.api_domain.trim_start_matches("http://")
-            );
+        // Normalize API domain to ensure scheme is present at runtime
+        // Only add https:// prefix when no scheme is present, preserving explicit schemes
+        let trimmed_domain = config.api_domain.trim();
+        if !trimmed_domain.contains("://") {
+            config.api_domain = format!("https://{trimmed_domain}");
+        } else {
+            config.api_domain = trimmed_domain.to_string();
         }
 
         // Validate configuration
@@ -243,10 +243,11 @@ impl Config {
         if !config_dir.exists() {
             fs::create_dir_all(config_dir).await?;
         }
-        let api_domain = if !self.api_domain.starts_with("https://") {
-            format!("https://{}", self.api_domain.trim_start_matches("http://"))
+        let trimmed_domain = self.api_domain.trim();
+        let api_domain = if !trimmed_domain.contains("://") {
+            format!("https://{trimmed_domain}")
         } else {
-            self.api_domain.clone()
+            trimmed_domain.to_string()
         };
         let content = toml::to_string_pretty(&Config {
             api_domain,
@@ -379,12 +380,12 @@ api_domain = "https://api.example.com"
         let content = tokio::fs::read_to_string(&config_path).await.unwrap();
         // More robust assertion that handles potential formatting differences
         assert!(
-            content.contains("api_domain") && content.contains("https://api.example.com"),
-            "Content should contain api_domain and https://api.example.com. Content: {content}"
+            content.contains("api_domain") && content.contains("http://api.example.com"),
+            "Content should contain api_domain and http://api.example.com. Content: {content}"
         );
-        // Also test that the loaded config has the correct domain
+        // Also test that the loaded config has the correct domain (preserved as-is)
         let loaded_config = Config::load_from_path(&config_path_str).await.unwrap();
-        assert_eq!(loaded_config.api_domain, "https://api.example.com");
+        assert_eq!(loaded_config.api_domain, "http://api.example.com");
     }
 
     #[tokio::test]
@@ -617,11 +618,11 @@ another_extra = 123
         let test_cases = vec![
             // (input, expected_output)
             ("api.example.com", "https://api.example.com"),
-            ("http://api.example.com", "https://api.example.com"),
+            ("http://api.example.com", "http://api.example.com"),
             ("https://api.example.com", "https://api.example.com"),
             ("https://api.example.com/", "https://api.example.com/"),
             ("localhost:8080", "https://localhost:8080"),
-            ("http://localhost:8080", "https://localhost:8080"),
+            ("http://localhost:8080", "http://localhost:8080"),
         ];
 
         for (input, expected) in test_cases {
