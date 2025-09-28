@@ -97,6 +97,10 @@ pub mod env_vars {
     /// Environment variable for API fetch timeout in seconds (default: 5)
     /// Used for fallback player name fetching when cached names are missing
     pub const API_FETCH_TIMEOUT: &str = "LIIGA_API_FETCH_TIMEOUT";
+
+    /// Environment variable for HTTP client timeout in seconds (default: 30)
+    /// Controls the timeout for all HTTP requests made by the application
+    pub const HTTP_TIMEOUT: &str = "LIIGA_HTTP_TIMEOUT";
 }
 
 /// Retry configuration

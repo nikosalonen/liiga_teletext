@@ -22,6 +22,7 @@ use crate::data_fetcher::processors::{
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
 use chrono::{Datelike, Local, Utc};
+use futures;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
@@ -39,19 +40,25 @@ const PLAYOFFS_END_MONTH: u32 = 6; // June
 /// connection pooling, and HTTP/2 multiplexing when available.
 ///
 /// # Returns
-/// * `Client` - A configured reqwest HTTP client
+/// * `Result<Client, reqwest::Error>` - A configured reqwest HTTP client or error
 ///
 /// # Features
-/// * 30-second timeout for requests
-/// * Connection pooling with up to 100 connections per host
+/// * Configurable timeout for requests (default: 30 seconds, configurable via config/env)
+/// * Connection pooling with centralized pool size configuration
 /// * HTTP/2 multiplexing when available
 /// * Automatic retry logic for transient failures (implemented in fetch function)
-fn create_http_client() -> Client {
+fn create_http_client_with_timeout(timeout_seconds: u64) -> Result<Client, reqwest::Error> {
     Client::builder()
-        .timeout(Duration::from_secs(30))
-        .pool_max_idle_per_host(100)
+        .timeout(Duration::from_secs(timeout_seconds))
+        .pool_max_idle_per_host(crate::constants::HTTP_POOL_MAX_IDLE_PER_HOST)
         .build()
-        .expect("Failed to create HTTP client")
+}
+
+/// Creates an HTTP client for testing with default timeout
+#[cfg(test)]
+fn create_test_http_client() -> Client {
+    create_http_client_with_timeout(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS)
+        .expect("Failed to create test HTTP client")
 }
 
 /// Builds a tournament URL for fetching game data.
@@ -220,11 +227,11 @@ fn determine_fetch_date_with_time(
     }
 }
 
-/// Determines which tournaments are active by checking each tournament type in sequence.
+/// Determines which tournaments are active by checking all tournament types in parallel.
 /// Uses the API's nextGameDate to determine when tournaments transition.
 /// Returns both the active tournaments and cached API responses to avoid double-fetching.
-/// - Try preseason first, if no future games, try regular season
-/// - Try regular season, if no future games, try playoffs
+/// - Fetches all tournament data simultaneously for better performance
+/// - Processes results in priority order (preseason -> regular -> playoffs -> playout -> qualifications)
 /// - This naturally handles tournament transitions using API data
 async fn determine_active_tournaments(
     client: &Client,
@@ -236,75 +243,123 @@ async fn determine_active_tournaments(
         date
     );
 
-    // List of tournament types to try in order
-    let tournament_candidates = [
-        "valmistavat_ottelut", // Preseason
-        "runkosarja",          // Regular season
-        "playoffs",            // Playoffs
-        "playout",             // Playout
-        "qualifications",      // Qualifications
-    ];
+    // Parse the date to get the month for tournament filtering
+    let date_parts: Vec<&str> = date.split('-').collect();
+    let month = if date_parts.len() >= 2 {
+        date_parts[1].parse::<u32>().unwrap_or(0)
+    } else {
+        // Default to current month if date parsing fails
+        Utc::now().month()
+    };
+
+    // Filter tournament candidates based on season (avoid unnecessary API calls)
+    // Maintain original priority order: preseason -> regular -> playoffs -> playout -> qualifications
+    let mut tournament_candidates = Vec::new();
+
+    // Only include preseason during May-September
+    if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&month) {
+        info!(
+            "Including valmistavat_ottelut (month {} is in preseason period)",
+            month
+        );
+        tournament_candidates.push("valmistavat_ottelut");
+    }
+
+    // Always include regular season
+    tournament_candidates.push("runkosarja");
+
+    // Only include playoffs/playout/qualifications during March-June
+    if (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month) {
+        info!(
+            "Including playoffs, playout, and qualifications (month {} is in playoff period)",
+            month
+        );
+        tournament_candidates.push("playoffs");
+        tournament_candidates.push("playout");
+        tournament_candidates.push("qualifications");
+    } else {
+        info!(
+            "Skipping playoffs, playout, and qualifications (month {} is outside playoff period)",
+            month
+        );
+    }
+
+    info!(
+        "Tournament candidates for month {}: {:?}",
+        month, tournament_candidates
+    );
+
+    // Create parallel futures for filtered tournament checks to improve performance
+    let fetch_futures: Vec<_> = tournament_candidates
+        .iter()
+        .map(|&tournament| {
+            let url = build_tournament_url(&config.api_domain, tournament, date);
+            let tournament_name = tournament;
+
+            async move {
+                info!("Checking tournament: {}", tournament_name);
+                match fetch::<ScheduleResponse>(client, &url).await {
+                    Ok(response) => Ok((tournament_name, response)),
+                    Err(e) => {
+                        info!(
+                            "Failed to fetch tournament {}: {}, will skip this tournament",
+                            tournament_name, e
+                        );
+                        Err(e)
+                    }
+                }
+            }
+        })
+        .collect();
+
+    // Execute all tournament checks in parallel
+    let results = futures::future::join_all(fetch_futures).await;
 
     let mut active: Vec<&'static str> = Vec::with_capacity(tournament_candidates.len());
     let mut cached_responses: HashMap<String, ScheduleResponse> = HashMap::new();
 
-    for &tournament in &tournament_candidates {
-        info!("Checking tournament: {}", tournament);
+    // Process results in original order to maintain priority
+    for (tournament, response) in results.into_iter().filter_map(Result::ok) {
+        // Cache the response for downstream reuse
+        let cache_key = create_tournament_key(tournament, date);
+        cached_responses.insert(cache_key, response.clone());
 
-        // Fetch the tournament data to check nextGameDate
-        let url = build_tournament_url(&config.api_domain, tournament, date);
+        // If there are games on this date, mark this tournament active
+        if !response.games.is_empty() {
+            info!(
+                "Found {} games for tournament {} on date {}",
+                response.games.len(),
+                tournament,
+                date
+            );
+            active.push(tournament);
+            continue;
+        }
 
-        match fetch::<ScheduleResponse>(client, &url).await {
-            Ok(response) => {
-                // Cache the response for downstream reuse
-                let cache_key = create_tournament_key(tournament, date);
-                cached_responses.insert(cache_key, response.clone());
-
-                // If there are games on this date, mark this tournament active
-                if !response.games.is_empty() {
+        // If no games but has a future nextGameDate, use this tournament
+        if let Some(next_date) = &response.next_game_date {
+            if let (Ok(next_parsed), Ok(current_parsed)) = (
+                chrono::NaiveDate::parse_from_str(next_date, "%Y-%m-%d"),
+                chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d"),
+            ) {
+                if next_parsed >= current_parsed {
                     info!(
-                        "Found {} games for tournament {} on date {}",
-                        response.games.len(),
-                        tournament,
-                        date
+                        "Tournament {} has future games on {}, using this tournament",
+                        tournament, next_date
                     );
                     active.push(tournament);
-                    continue;
-                }
-
-                // If no games but has a future nextGameDate, use this tournament
-                if let Some(next_date) = &response.next_game_date {
-                    if let (Ok(next_parsed), Ok(current_parsed)) = (
-                        chrono::NaiveDate::parse_from_str(next_date, "%Y-%m-%d"),
-                        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d"),
-                    ) {
-                        if next_parsed >= current_parsed {
-                            info!(
-                                "Tournament {} has future games on {}, using this tournament",
-                                tournament, next_date
-                            );
-                            active.push(tournament);
-                        } else {
-                            info!(
-                                "Tournament {} nextGameDate {} is in the past, trying next tournament type",
-                                tournament, next_date
-                            );
-                        }
-                    }
                 } else {
                     info!(
-                        "Tournament {} has no nextGameDate, trying next tournament type",
-                        tournament
+                        "Tournament {} nextGameDate {} is in the past, trying next tournament type",
+                        tournament, next_date
                     );
                 }
             }
-            Err(e) => {
-                info!(
-                    "Failed to fetch tournament {}: {}, trying next tournament type",
-                    tournament, e
-                );
-                continue;
-            }
+        } else {
+            info!(
+                "Tournament {} has no nextGameDate, trying next tournament type",
+                tournament
+            );
         }
     }
 
@@ -326,8 +381,8 @@ fn build_tournament_list_fallback(date: &str) -> Vec<&'static str> {
         date_parts[1].parse::<u32>().unwrap_or(0)
     } else {
         // Default to current month if date parsing fails
-        // Use UTC for consistency, convert to local time for month extraction
-        Utc::now().with_timezone(&Local).month()
+        // Use UTC for consistency
+        Utc::now().month()
     };
 
     let mut tournaments = Vec::new();
@@ -1214,7 +1269,7 @@ pub async fn fetch_liiga_data(
 
     let config = Config::load().await?;
     info!("Config loaded successfully");
-    let client = create_http_client();
+    let client = create_http_client_with_timeout(config.http_timeout_seconds)?;
 
     // Determine the date to fetch data for
     let (date, is_pre_noon_cutoff) = determine_fetch_date(custom_date);
@@ -1625,11 +1680,11 @@ fn parse_date_and_season(date: &str) -> (i32, u32, i32) {
     let (year, month) = if date_parts.len() >= 2 {
         let y = date_parts[0]
             .parse::<i32>()
-            .unwrap_or_else(|_| Utc::now().with_timezone(&Local).year());
+            .unwrap_or_else(|_| Utc::now().year());
         let m = date_parts[1].parse::<u32>().unwrap_or(1);
         (y, m)
     } else {
-        (Utc::now().with_timezone(&Local).year(), 1)
+        (Utc::now().year(), 1)
     };
 
     // Ice hockey season: if month >= 9, season = year+1, else season = year
@@ -2320,6 +2375,7 @@ mod tests {
         Config {
             api_domain: "http://localhost:8080".to_string(),
             log_file_path: None,
+            http_timeout_seconds: crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
         }
     }
 
@@ -2476,14 +2532,14 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_schedule_response();
 
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&mock_response))
             .mount(&mock_server)
             .await;
@@ -2492,7 +2548,7 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        let result = fetch_tournament_data(&client, &test_config, "runkosarja", "2024-01-15").await;
+        let result = fetch_tournament_data(&client, &test_config, "runkosarja", "2024-03-15").await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -2515,7 +2571,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_empty_schedule_response();
 
@@ -2544,7 +2600,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         Mock::given(method("GET"))
             .and(path("/games"))
@@ -2568,10 +2624,12 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         Mock::given(method("GET"))
             .and(path("/games"))
+            .and(query_param("tournament", "runkosarja"))
+            .and(query_param("date", "2024-01-15"))
             .respond_with(ResponseTemplate::new(404))
             .mount(&mock_server)
             .await;
@@ -2592,7 +2650,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_schedule_response();
 
@@ -2632,7 +2690,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_empty_schedule_response();
 
@@ -2724,7 +2782,7 @@ mod tests {
     async fn test_fetch_game_data_cache_fallback() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = create_mock_detailed_game_response();
 
@@ -2832,7 +2890,7 @@ mod tests {
     async fn test_fetch_game_data_server_error() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         Mock::given(method("GET"))
             .and(path("/games/2024/1"))
@@ -2858,7 +2916,7 @@ mod tests {
     async fn test_fetch_regular_season_start_date_success() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let mock_response = vec![ScheduleApiGame {
             id: 1,
@@ -2893,7 +2951,7 @@ mod tests {
     async fn test_fetch_regular_season_start_date_not_found() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         Mock::given(method("GET"))
             .and(path("/schedule"))
@@ -3778,7 +3836,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Mock response for a future date
         let mock_response = create_mock_schedule_response();
@@ -3816,7 +3874,7 @@ mod tests {
 
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Mock empty response for all dates
         let mock_response = create_mock_empty_schedule_response_no_next_date();
@@ -3845,7 +3903,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_future_games_fallback_invalid_date() {
         let config = create_mock_config();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         let result =
             find_future_games_fallback(&client, &config, &["runkosarja"], "invalid-date").await;
@@ -4014,14 +4072,14 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Mock responses for multiple tournaments
         // playoffs has games on the date
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_with_games()),
@@ -4033,7 +4091,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_with_games()),
@@ -4045,7 +4103,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_future_date()),
@@ -4057,7 +4115,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4068,7 +4126,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4076,17 +4134,15 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
+        let result = determine_active_tournaments(&client, &config, "2024-03-15").await;
 
         assert!(result.is_ok());
         let (active_tournaments, _cached_responses) = result.unwrap();
 
-        // Should contain all three active tournaments in priority order
-        assert_eq!(active_tournaments.len(), 3);
-        assert_eq!(
-            active_tournaments,
-            vec!["playoffs", "playout", "qualifications"]
-        );
+        // March includes playoff tournaments that have games or future games
+        // Note: With month-based filtering, only playoff tournaments are checked in March
+        assert_eq!(active_tournaments.len(), 2);
+        assert_eq!(active_tournaments, vec!["playoffs", "playout"]);
     }
 
     #[tokio::test]
@@ -4097,13 +4153,13 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Only runkosarja has games on the date
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_with_games()),
@@ -4115,7 +4171,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4126,7 +4182,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4137,7 +4193,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4148,7 +4204,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4156,7 +4212,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
+        let result = determine_active_tournaments(&client, &config, "2024-03-15").await;
 
         assert!(result.is_ok());
         let (active_tournaments, _cached_responses) = result.unwrap();
@@ -4174,20 +4230,20 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Create a response with next_game_date equal to current date (>= comparison test)
         let same_date_response = ScheduleResponse {
             games: vec![],
             previous_game_date: None,
-            next_game_date: Some("2024-01-15".to_string()),
+            next_game_date: Some("2024-03-15".to_string()),
         };
 
         // playoffs has no games but next game date is same as current date
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&same_date_response))
             .mount(&mock_server)
             .await;
@@ -4196,7 +4252,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4207,7 +4263,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4218,7 +4274,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4229,7 +4285,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4237,7 +4293,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
+        let result = determine_active_tournaments(&client, &config, "2024-03-15").await;
 
         assert!(result.is_ok());
         let (active_tournaments, _cached_responses) = result.unwrap();
@@ -4255,13 +4311,13 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // All tournaments have no games and no future dates
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4272,7 +4328,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4283,7 +4339,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4294,7 +4350,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4305,7 +4361,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4313,7 +4369,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
+        let result = determine_active_tournaments(&client, &config, "2024-03-15").await;
 
         assert!(result.is_ok());
         let (active_tournaments, _cached_responses) = result.unwrap();
@@ -4331,14 +4387,14 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // Set up tournaments in reverse priority order to test that results maintain priority
         // qualifications (last in priority) has games
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_with_games()),
@@ -4350,7 +4406,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_with_games()),
@@ -4362,7 +4418,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_with_games()),
@@ -4374,7 +4430,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4385,7 +4441,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4393,17 +4449,15 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
+        let result = determine_active_tournaments(&client, &config, "2024-03-15").await;
 
         assert!(result.is_ok());
         let (active_tournaments, _cached_responses) = result.unwrap();
 
-        // Should maintain priority order: valmistavat_ottelut, runkosarja, qualifications
-        assert_eq!(active_tournaments.len(), 3);
-        assert_eq!(
-            active_tournaments,
-            vec!["valmistavat_ottelut", "runkosarja", "qualifications"]
-        );
+        // March should include runkosarja (always) and qualifications (playoff period) that have games
+        // valmistavat_ottelut is not checked in March (outside preseason period)
+        assert_eq!(active_tournaments.len(), 2);
+        assert_eq!(active_tournaments, vec!["runkosarja", "qualifications"]);
     }
 
     #[tokio::test]
@@ -4414,13 +4468,13 @@ mod tests {
         let mock_server = MockServer::start().await;
         let mut config = create_mock_config();
         config.api_domain = mock_server.uri();
-        let client = Client::new();
+        let client = create_test_http_client();
 
         // playoffs returns 404 (simulates tournament not available)
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playoffs"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(ResponseTemplate::new(404))
             .mount(&mock_server)
             .await;
@@ -4429,7 +4483,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_with_games()),
@@ -4441,7 +4495,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "valmistavat_ottelut"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4452,7 +4506,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "playout"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4463,7 +4517,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "qualifications"))
-            .and(query_param("date", "2024-01-15"))
+            .and(query_param("date", "2024-03-15"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(create_mock_schedule_response_no_games_no_future()),
@@ -4471,7 +4525,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let result = determine_active_tournaments(&client, &config, "2024-01-15").await;
+        let result = determine_active_tournaments(&client, &config, "2024-03-15").await;
 
         assert!(result.is_ok());
         let (active_tournaments, _cached_responses) = result.unwrap();

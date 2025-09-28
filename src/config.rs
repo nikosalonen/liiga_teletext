@@ -13,6 +13,24 @@ pub struct Config {
     /// Path to the log file. If not specified, logs will be written to a default location.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log_file_path: Option<String>,
+    /// HTTP timeout in seconds for API requests. Defaults to 30 seconds if not specified.
+    #[serde(default = "default_http_timeout")]
+    pub http_timeout_seconds: u64,
+}
+
+/// Default HTTP timeout in seconds
+fn default_http_timeout() -> u64 {
+    crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            api_domain: String::new(),
+            log_file_path: None,
+            http_timeout_seconds: default_http_timeout(),
+        }
+    }
 }
 
 impl Config {
@@ -23,6 +41,7 @@ impl Config {
     /// # Environment Variables
     /// - `LIIGA_API_DOMAIN` - Override API domain
     /// - `LIIGA_LOG_FILE` - Override log file path
+    /// - `LIIGA_HTTP_TIMEOUT` - Override HTTP timeout in seconds (default: 30)
     ///
     /// # Returns
     /// * `Ok(Config)` - Successfully loaded or created configuration
@@ -44,6 +63,7 @@ impl Config {
                 Config {
                     api_domain,
                     log_file_path: None,
+                    http_timeout_seconds: default_http_timeout(),
                 }
             } else {
                 println!("Please enter your API domain: ");
@@ -55,6 +75,7 @@ impl Config {
                 let config = Config {
                     api_domain: input.trim().to_string(),
                     log_file_path: None,
+                    http_timeout_seconds: default_http_timeout(),
                 };
 
                 config.save().await?;
@@ -69,6 +90,13 @@ impl Config {
 
         if let Ok(log_file_path) = std::env::var("LIIGA_LOG_FILE") {
             config.log_file_path = Some(log_file_path);
+        }
+
+        if let Some(timeout) = std::env::var("LIIGA_HTTP_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+        {
+            config.http_timeout_seconds = timeout;
         }
 
         // Validate configuration
@@ -194,6 +222,9 @@ impl Config {
             println!("API Domain:");
             println!("{}", config.api_domain);
             println!("────────────────────────────────────");
+            println!("HTTP Timeout:");
+            println!("{} seconds", config.http_timeout_seconds);
+            println!("────────────────────────────────────");
             println!("Log File Location:");
             if let Some(custom_path) = &config.log_file_path {
                 println!("{custom_path}");
@@ -242,6 +273,7 @@ impl Config {
         let content = toml::to_string_pretty(&Config {
             api_domain,
             log_file_path: self.log_file_path.clone(),
+            http_timeout_seconds: self.http_timeout_seconds,
         })?;
         let mut file = fs::File::create(path).await?;
         file.write_all(content.as_bytes()).await?;
@@ -314,6 +346,7 @@ api_domain = "https://api.example.com"
         let config = Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: Some("/custom/log/path".to_string()),
+            http_timeout_seconds: default_http_timeout(),
         };
         config.save_to_path(&config_path_str).await.unwrap();
         assert!(config_path.exists());
@@ -344,6 +377,7 @@ api_domain = "https://api.example.com"
         let config = Config {
             api_domain: "api.example.com".to_string(),
             log_file_path: None,
+            http_timeout_seconds: default_http_timeout(),
         };
         config.save_to_path(&config_path_str).await.unwrap();
         let content = tokio::fs::read_to_string(&config_path).await.unwrap();
@@ -365,6 +399,7 @@ api_domain = "https://api.example.com"
         let config = Config {
             api_domain: "http://api.example.com".to_string(),
             log_file_path: None,
+            http_timeout_seconds: default_http_timeout(),
         };
         config.save_to_path(&config_path_str).await.unwrap();
         let content = tokio::fs::read_to_string(&config_path).await.unwrap();
@@ -387,6 +422,7 @@ api_domain = "https://api.example.com"
         let config = Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: None,
+            http_timeout_seconds: default_http_timeout(),
         };
         config.save_to_path(&config_path_str).await.unwrap();
         assert!(config_dir.exists());
@@ -401,6 +437,7 @@ api_domain = "https://api.example.com"
         let original_config = Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: Some("/custom/log/path".to_string()),
+            http_timeout_seconds: default_http_timeout(),
         };
         original_config
             .save_to_path(&config_path_str)
@@ -443,6 +480,7 @@ api_domain = "https://api.example.com"
         let test_config = Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: Some("/custom/log/path".to_string()),
+            http_timeout_seconds: default_http_timeout(),
         };
         test_config
             .save_to_path(&temp_config_path_str)
@@ -487,6 +525,7 @@ invalid_field = [1, 2, 3, "unclosed_string
         let config = Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: Some("/custom/log/path".to_string()),
+            http_timeout_seconds: default_http_timeout(),
         };
 
         // Test serialization
@@ -505,6 +544,7 @@ invalid_field = [1, 2, 3, "unclosed_string
         let config = Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: None,
+            http_timeout_seconds: default_http_timeout(),
         };
 
         // Test serialization
@@ -623,6 +663,7 @@ another_extra = 123
             let config = Config {
                 api_domain: input.to_string(),
                 log_file_path: None,
+                http_timeout_seconds: default_http_timeout(),
             };
 
             // Save the config
@@ -701,6 +742,7 @@ another_extra = 123
         let config = Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: None,
+            http_timeout_seconds: default_http_timeout(),
         };
 
         // This should create all the nested directories
@@ -727,6 +769,7 @@ another_extra = 123
         let config = Config {
             api_domain: "https://api.example.com/path?param=value&other=123#fragment".to_string(),
             log_file_path: Some("/path/with spaces/and-dashes_underscores.log".to_string()),
+            http_timeout_seconds: default_http_timeout(),
         };
 
         let temp_dir = tempdir().unwrap();
@@ -765,11 +808,13 @@ another_extra = 123
         let config_with_none = Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: None,
+            http_timeout_seconds: default_http_timeout(),
         };
 
         let config_with_some = Config {
             api_domain: "https://api.example.com".to_string(),
             log_file_path: Some("/custom/path.log".to_string()),
+            http_timeout_seconds: default_http_timeout(),
         };
 
         // Test serialization behavior
@@ -788,18 +833,22 @@ another_extra = 123
             Config {
                 api_domain: "https://api.example.com".to_string(),
                 log_file_path: None,
+                http_timeout_seconds: default_http_timeout(),
             },
             Config {
                 api_domain: "http://localhost:8080".to_string(),
                 log_file_path: Some("/tmp/test.log".to_string()),
+                http_timeout_seconds: default_http_timeout(),
             },
             Config {
                 api_domain: "api.example.com".to_string(),
                 log_file_path: None,
+                http_timeout_seconds: default_http_timeout(),
             },
             Config {
                 api_domain: "localhost".to_string(),
                 log_file_path: None,
+                http_timeout_seconds: default_http_timeout(),
             },
         ];
 
@@ -819,16 +868,19 @@ another_extra = 123
             Config {
                 api_domain: "".to_string(),
                 log_file_path: None,
+                http_timeout_seconds: default_http_timeout(),
             },
             // Invalid domain format
             Config {
                 api_domain: "invalid_domain".to_string(),
                 log_file_path: None,
+                http_timeout_seconds: default_http_timeout(),
             },
             // Empty log file path
             Config {
                 api_domain: "https://api.example.com".to_string(),
                 log_file_path: Some("".to_string()),
+                http_timeout_seconds: default_http_timeout(),
             },
         ];
 
@@ -873,6 +925,7 @@ log_file_path = "/file/log/path.log"
         unsafe {
             std::env::remove_var("LIIGA_API_DOMAIN");
             std::env::remove_var("LIIGA_LOG_FILE");
+            std::env::remove_var("LIIGA_HTTP_TIMEOUT");
         }
     }
 }
