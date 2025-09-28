@@ -222,6 +222,9 @@ impl Config {
             println!("API Domain:");
             println!("{}", config.api_domain);
             println!("────────────────────────────────────");
+            println!("HTTP Timeout:");
+            println!("{} seconds", config.http_timeout_seconds);
+            println!("────────────────────────────────────");
             println!("Log File Location:");
             if let Some(custom_path) = &config.log_file_path {
                 println!("{custom_path}");
@@ -922,6 +925,7 @@ log_file_path = "/file/log/path.log"
         unsafe {
             std::env::remove_var("LIIGA_API_DOMAIN");
             std::env::remove_var("LIIGA_LOG_FILE");
+            std::env::remove_var("LIIGA_HTTP_TIMEOUT");
         }
     }
 }

@@ -381,8 +381,8 @@ fn build_tournament_list_fallback(date: &str) -> Vec<&'static str> {
         date_parts[1].parse::<u32>().unwrap_or(0)
     } else {
         // Default to current month if date parsing fails
-        // Use UTC for consistency, convert to local time for month extraction
-        Utc::now().with_timezone(&Local).month()
+        // Use UTC for consistency
+        Utc::now().month()
     };
 
     let mut tournaments = Vec::new();
@@ -1680,11 +1680,11 @@ fn parse_date_and_season(date: &str) -> (i32, u32, i32) {
     let (year, month) = if date_parts.len() >= 2 {
         let y = date_parts[0]
             .parse::<i32>()
-            .unwrap_or_else(|_| Utc::now().with_timezone(&Local).year());
+            .unwrap_or_else(|_| Utc::now().year());
         let m = date_parts[1].parse::<u32>().unwrap_or(1);
         (y, m)
     } else {
-        (Utc::now().with_timezone(&Local).year(), 1)
+        (Utc::now().year(), 1)
     };
 
     // Ice hockey season: if month >= 9, season = year+1, else season = year
