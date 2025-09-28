@@ -503,8 +503,14 @@ pub async fn get_cached_tournament_data_with_start_check(
         None
     };
 
-    if let Some((cached_has_live, has_live, _is_expired, age, has_starting_games, data_when_fresh)) =
-        cache_info
+    if let Some((
+        cached_has_live,
+        has_live,
+        _is_expired,
+        age,
+        has_starting_games,
+        data_when_fresh,
+    )) = cache_info
     {
         // If the live state has changed, consider the cache expired
         if cached_has_live != has_live {
