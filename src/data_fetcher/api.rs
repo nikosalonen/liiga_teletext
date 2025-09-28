@@ -2612,7 +2612,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/games"))
             .and(query_param("tournament", "runkosarja"))
-            .and(query_param("date",   "2024-01-15"))
+            .and(query_param("date", "2024-01-15"))
             .respond_with(ResponseTemplate::new(500))
             .mount(&mock_server)
             .await;

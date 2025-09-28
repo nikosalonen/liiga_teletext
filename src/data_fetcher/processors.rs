@@ -224,16 +224,16 @@ pub fn process_team_goals_with_disambiguation(
     for goal in team.goal_events().iter().filter(|g| {
         !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
     }) {
-        // Try to get player name, prioritizing embedded player data
-        let scorer_name = if let Some(ref scorer_player) = goal.scorer_player {
+        // Try to get player name, prioritizing team-scoped disambiguation
+        let scorer_name = if let Some(disambiguated_name) =
+            disambiguation_context.get_disambiguated_name(goal.scorer_player_id)
+        {
+            disambiguated_name.clone()
+        } else if let Some(ref scorer_player) = goal.scorer_player {
             format_for_display(&build_full_name(
                 &scorer_player.first_name,
                 &scorer_player.last_name,
             ))
-        } else if let Some(disambiguated_name) =
-            disambiguation_context.get_disambiguated_name(goal.scorer_player_id)
-        {
-            disambiguated_name.clone()
         } else {
             // Fallback to player ID if no other data is available
             create_fallback_name(goal.scorer_player_id)
