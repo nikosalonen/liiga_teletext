@@ -26,11 +26,11 @@
 | 1.9 - Extract Game Display Logic | ✅ DONE | 237 lines | 30m | Completed 2025-01-01 |
 | 1.10 - Extract Compact Mode | ⏸️ DEFERRED | ~600 lines | N/A | Requires TeletextPage refactor |
 | 1.11 - Extract Wide Mode | ⏸️ DEFERRED | ~400 lines | N/A | Requires TeletextPage refactor |
-| 1.12 - Extract Score Formatting | ⏸️ DEFERRED | ~300 lines | N/A | Requires TeletextPage refactor |
+| 1.12 - Extract Score Formatting | ✅ DONE | 241 lines | N/A | Already completed (pre-existing module) |
 
-**Phase 1 Status:** 8 tasks completed, 4 deferred for Phase 2 approach
-**Completed:** Extracted all standalone structs/enums + footer + game display rendering
-**Deferred:** Remaining TeletextPage method extractions need different strategy
+**Phase 1 Status:** 9 tasks completed, 3 deferred for Phase 2 approach  
+**Completed:** Extracted all standalone structs/enums + footer + game display + score formatting  
+**Deferred:** Compact Mode and Wide Mode extractions need different strategy
 
 ---
 
@@ -90,11 +90,11 @@
 
 **Phase 4 Status:** ✅ **COMPLETE** (5/5 tasks)
 
--  **Task 4.1 Complete:** player_names.rs → 3 focused modules (1,652 lines extracted)
--  **Task 4.2 Complete:** api/core.rs → orchestrator.rs (162 lines extracted)
--  **Task 4.3 Complete:** cache/core.rs → 8 modules (922 lines extracted in Phase 3)
--  **Task 4.4 Complete:** interactive.rs → 10 modules (793 lines extracted)
--  **Task 4.5 Complete:** teletext_ui/core.rs → 15 modules (1,815 lines extracted)
+- **Task 4.1 Complete:** player_names.rs → 3 focused modules (1,652 lines extracted)
+- **Task 4.2 Complete:** api/core.rs → orchestrator.rs (162 lines extracted)
+- **Task 4.3 Complete:** cache/core.rs → 8 modules (922 lines extracted in Phase 3)
+- **Task 4.4 Complete:** interactive.rs → 10 modules (793 lines extracted)
+- **Task 4.5 Complete:** teletext_ui/core.rs → 15 modules (1,815 lines extracted)
 
 **Phase 4 Total:** 5,344 lines modularized across all tasks
 
@@ -172,6 +172,7 @@
 ## Cumulative Statistics
 
 ### Before Refactoring
+
 ```
 Total Lines:        22,665
 Files > 1000 lines: 7
@@ -180,6 +181,7 @@ Average File Size:  ~1,500 lines
 ```
 
 ### Target After Refactoring
+
 ```
 Total Lines:        22,665 (same logic)
 Files > 1000 lines: 0
@@ -189,6 +191,7 @@ Total New Modules:  50-60
 ```
 
 ### Progress Metrics
+
 - **Lines Refactored:** 8,250 / 22,665 (36.4%)
 - **Modules Created:** 36 / 50+ (Phase 1: 6, Phase 2: 9, Phase 3: 7, Phase 4: 14 so far)
 - **Phases Complete:** 3 / 8 (Phase 1: 6/6 ✅, Phase 2: 8/8 ✅, Phase 3: 5/5 ✅, Phase 4: 2/5 ✅, Phase 6: 2/4 ✅, Phase 7: 2/6 🔄)
@@ -225,6 +228,7 @@ Total New Modules:  50-60
 ## Lessons Learned
 
 ### Task 1.1 - Extract Colors (2025-09-30)
+
 - ✅ Task was straightforward and low-risk as predicted
 - ✅ Creating feature branch BEFORE starting is better practice
 - ✅ Verification script caught formatting issues immediately
@@ -234,6 +238,7 @@ Total New Modules:  50-60
 - 📝 Remember to run `cargo fmt` before final commit
 
 ### Task 1.2 - Extract Team Abbreviations (2025-09-30)
+
 - ✅ Function moved cleanly with all documentation
 - ✅ Public API maintained via re-export in lib.rs
 - ✅ Components directory structure created
@@ -242,6 +247,7 @@ Total New Modules:  50-60
 - 📝 Three module files needed (abbreviations.rs, components/mod.rs, ui/mod.rs update)
 
 ### Task 1.3 - Extract CompactDisplayConfig (2025-09-30)
+
 - ✅ Extracted struct with 3 impl blocks and 2 enum types
 - ✅ Made CONTENT_MARGIN public for use in new module
 - ✅ Backward compatibility maintained via re-exports in teletext_ui.rs
@@ -251,6 +257,7 @@ Total New Modules:  50-60
 - 📝 Had to add #[allow(unused_imports)] to re-exports in mod.rs
 
 ### Task 1.4 - Extract TeletextPageConfig (2025-09-30)
+
 - ✅ Clean extraction of configuration struct with 3 methods
 - ✅ Backward compatibility maintained via re-exports
 - ✅ All 40 tests still passing
@@ -259,6 +266,7 @@ Total New Modules:  50-60
 - 📝 Similar structure to Task 1.3, so smoother execution
 
 ### Task 1.5 & 1.6 - Extract GameResultData and ScoreType (2025-09-30)
+
 - ✅ Extracted both GameResultData struct and ScoreType enum together
 - ✅ ScoreType is tightly coupled with GameResultData, so combined makes sense
 - ✅ Backward compatibility maintained via re-exports
@@ -268,6 +276,7 @@ Total New Modules:  50-60
 - 📝 Documentation examples preserved with doctests
 
 ### Task 1.7 - Extract LoadingIndicator (2025-09-30) - REVISED
+
 - ✅ Extracted LoadingIndicator struct with animation support
 - ✅ Original Task 1.7 (Header Rendering) revised - header is embedded in main render
 - ✅ Found better extraction candidate (LoadingIndicator)
@@ -282,6 +291,7 @@ Total New Modules:  50-60
 **Tasks 1.8-1.12: DEFERRED to Phase 2** ⏸️
 
 **Rationale:**
+
 - Tasks 1.1-1.7 successfully extracted all **standalone data structures** from teletext_ui.rs
 - Tasks 1.8-1.12 involve extracting **methods from the large TeletextPage impl block**
 - These require a different refactoring strategy:
@@ -293,6 +303,7 @@ Total New Modules:  50-60
 - This is better suited for Phase 2 after we've completed similar work on other large impl blocks
 
 **Phase 1 Achievements:**
+
 - ✅ Extracted 8 standalone modules (439 lines)
 - ✅ teletext_ui.rs reduced by 9.4% (4,675 → 4,236 lines)
 - ✅ Created clean module structure under src/ui/
@@ -304,9 +315,11 @@ Phase 2 will focus on modularizing data_fetcher/api.rs (4,537 lines) which also 
 We'll develop patterns there that we can apply back to teletext_ui.rs.
 
 ### Task 1.8+ - [Deferred to Phase 2]
+
 - See Phase 1 completion note above
 
 ### Task 2.1 - Extract URL Builders (2025-09-30)
+
 - ✅ Created src/data_fetcher/api/ subdirectory structure
 - ✅ Extracted 5 URL builder functions to api/urls.rs (108 lines)
 - ✅ Moved main API implementation to api/core.rs
@@ -318,6 +331,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Clean module structure established for future extractions
 
 ### Task 2.2 - Extract HTTP Client (2025-09-30)
+
 - ✅ Extracted 2 HTTP client creation functions to api/http_client.rs (29 lines)
 - ✅ Separated connection pooling and timeout configuration logic
 - ✅ Maintained backward compatibility via re-exports
@@ -327,6 +341,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Small but focused module for HTTP client configuration
 
 ### Task 2.3 - Extract Date Logic (2025-09-30)
+
 - ✅ Extracted 3 date/season functions and 4 constants to api/date_logic.rs (85 lines)
 - ✅ Removed duplicate date determination logic from core.rs
 - ✅ Maintained backward compatibility via re-exports
@@ -337,6 +352,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Cleaner separation of date/season logic from API logic
 
 ### Task 2.4 - Extract Tournament Logic (2025-09-30)
+
 - ✅ Extracted TournamentType enum and 6 tournament functions to api/tournament_logic.rs (404 lines)
 - ✅ Moved tournament selection, fetching, and filtering logic
 - ✅ Made fetch() function pub(super) for use within API module
@@ -347,6 +363,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Largest single extraction in Phase 2 so far
 
 ### Task 2.8 - Extract Season Detection (2025-09-30)
+
 - ✅ Extracted 4 season/date detection functions to api/season_utils.rs (110 lines)
 - ✅ Moved historical date detection and playoff schedule logic
 - ✅ Maintained backward compatibility via re-exports
@@ -356,6 +373,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Clean separation of season logic utilities
 
 **Phase 2 Progress So Far:**
+
 - ✅ 5 tasks completed (2.1-2.4, 2.8)
 - ✅ Core API reduced by 15.1% (4,537 → 3,854 lines, 683 lines extracted)
 - ✅ 5 new focused modules created
@@ -364,6 +382,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - ✅ Tasks 2.5-2.7 remain (game/schedule fetching - high complexity)
 
 ### Task 3.1 - Extract Cache Types (2025-09-30)
+
 - ✅ Converted single cache.rs file to cache/ directory structure
 - ✅ Created types.rs with 4 cache data structures (221 lines)
 - ✅ Extracted CachedTournamentData, CachedDetailedGameData, CachedGoalEventsData, CachedHttpResponse
@@ -374,6 +393,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Clean separation of data structures from cache operations
 
 ### Task 3.2 - Extract Tournament Cache (2025-09-30)
+
 - ✅ Created tournament_cache.rs with tournament-specific cache operations (336 lines)
 - ✅ Extracted TOURNAMENT_CACHE static and 12 functions
 - ✅ Removed duplicate functions from core.rs after extraction
@@ -384,6 +404,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Pattern established for subsequent cache extractions
 
 ### Task 3.3 - Extract Player Cache (2025-09-30)
+
 - ✅ Created player_cache.rs with player-specific cache operations (359 lines)
 - ✅ Extracted PLAYER_CACHE static and 10 functions
 - ✅ Includes player disambiguation and formatting support
@@ -394,6 +415,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Clean isolation of player-specific caching logic
 
 ### Task 3.4 - Extract Detailed Game Cache (2025-09-30)
+
 - ✅ Created detailed_game_cache.rs with detailed game cache operations (103 lines)
 - ✅ Extracted DETAILED_GAME_CACHE static and 6 functions
 - ✅ Maintained backward compatibility via re-exports
@@ -403,6 +425,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Small but focused module for detailed game caching
 
 ### Task 3.5 - Extract Goal Events Cache (2025-09-30)
+
 - ✅ Created goal_events_cache.rs with goal events cache operations (189 lines)
 - ✅ Extracted GOAL_EVENTS_CACHE static and 9 functions
 - ✅ Includes cache clearing for specific games with score preservation
@@ -413,6 +436,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Complex logic for preserving last known scores during cache clears
 
 **Phase 3 Completion Summary (2025-09-30):**
+
 - ✅ All 5 planned tasks completed
 - ✅ Cache module fully modularized across 7 files
 - ✅ Core.rs reduced by 30% (3,068 → 2,146 lines, 922 lines removed)
@@ -424,6 +448,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Remaining core.rs contains: HTTP cache, combined stats, tests (~2,146 lines)
 
 ### Task 2.7 - Extract Generic Fetch Function (2025-09-30)
+
 - ✅ Created fetch_utils.rs with generic fetch function (209 lines)
 - ✅ Extracted HTTP caching, retry backoff, and error handling logic
 - ✅ Made function accessible via pub(super) for use within API module
@@ -435,6 +460,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Required careful handling of visibility (pub(super) vs pub)
 
 ### Task 2.9 - Extract Game API Operations (2025-09-30)
+
 - ✅ Created game_api.rs with game-specific operations (832 lines)
 - ✅ Extracted game processing, historical game fetching, and data conversion
 - ✅ Includes 14+ functions: process_games, fetch_historical_games, etc.
@@ -447,6 +473,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Used #[cfg(test)] imports to expose functions only for testing
 
 ### Task 2.10 - Extract Tournament API (2025-09-30)
+
 - ✅ Created tournament_api.rs with tournament operations (498 lines)
 - ✅ Extracted tournament data fetching, date selection, and fallback mechanisms
 - ✅ Includes 8 functions: fetch_tournament_data, process_next_game_dates, etc.
@@ -458,6 +485,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Date selection logic cleanly isolated from main API flow
 
 **Phase 2 Completion Summary (2025-09-30):**
+
 - ✅ All 8 planned tasks completed (plus 2 bonus tasks 2.9, 2.10)
 - ✅ API module fully modularized across 9 files
 - ✅ Core.rs reduced by 47% (4,537 → 2,410 lines, 2,127 lines removed)
@@ -479,6 +507,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
   - core.rs (2,410 lines) - Main orchestration and entry point
 
 ### Task 4.1 - Modularize player_names (2025-09-30)
+
 - ✅ Created player_names/ directory structure
 - ✅ Extracted formatting.rs (203 lines) - Basic name formatting utilities
 - ✅ Extracted disambiguation.rs (507 lines) - Advanced name disambiguation logic
@@ -491,6 +520,7 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Comprehensive tests included in each extracted module
 
 ### Task 4.4 - Modularize ui/interactive (2025-09-30) - IN PROGRESS
+
 - ✅ Created ui/interactive/ directory structure
 - ✅ Moved interactive.rs → interactive/core.rs
 - ✅ Created mod.rs with backward-compatible re-exports
@@ -535,6 +565,7 @@ git checkout -b refactor/restart
 **Task 4.5: Complete Modularization of teletext_ui.rs** ✅
 
 **Modules Extracted:**
+
 1. **pagination.rs** (228 lines) - Page navigation and content pagination logic
 2. **mode_utils.rs** (76 lines) - Mode validation and utility functions (compact/wide mode)
 3. **indicators.rs** (76 lines) - Loading indicators, auto-refresh indicators, error warnings
@@ -542,6 +573,7 @@ git checkout -b refactor/restart
 5. **formatting.rs** (225 lines) - Display formatting and layout utilities (buffer size calculation, compact game formatting, display grouping)
 
 **Results:**
+
 - **Total extracted:** 871 lines across 5 specialized modules
 - **Core.rs reduction:** 4,236 → 3,452 lines (18.5% reduction, 784 lines removed)
 - **Time invested:** ~85 minutes across multiple extraction sessions
@@ -549,6 +581,7 @@ git checkout -b refactor/restart
 - **Clean compilation:** ✅ Zero breaking changes
 
 **Technical Achievements:**
+
 - Preserved ANSI color formatting in compact display functions
 - Maintained complex logic for display grouping and header handling
 - Updated field visibility (show_footer, season_countdown) to pub(super) for proper module access
@@ -558,6 +591,7 @@ git checkout -b refactor/restart
 ### Updated Phase 4 Status
 
 **Phase 4 Progress:** ✅ 4/5 tasks complete (80%)
+
 - **Task 4.1:** ✅ player_names.rs (1,652 lines extracted)
 - **Task 4.2:** ✅ api/core.rs (162 lines extracted)
 - **Task 4.3:** ⏸️ cache/core.rs (deferred - HTTP cache only)
@@ -569,6 +603,7 @@ git checkout -b refactor/restart
 ### Overall Project Progress
 
 **Updated Statistics:**
+
 - **Tasks completed:** 26/50+ tasks (52%)
 - **Total lines modularized:** ~9,700+ / 22,665 (42.8%)
 - **New modules created:** 41+ modules (Phase 1: 6, Phase 2: 9, Phase 3: 7, Phase 4: 19+)
@@ -578,12 +613,14 @@ git checkout -b refactor/restart
 ### Strategic Impact
 
 **Task 4.5 was critical because:**
+
 1. **Largest original file:** teletext_ui.rs started as the biggest file (4,236 lines)
 2. **Complex dependencies:** Required careful handling of struct field visibility and cross-module access
 3. **Core functionality:** Contains the main rendering and display logic for the teletext UI
 4. **High risk/reward:** Success demonstrates the modularization approach works for even the most complex files
 
 **Pattern Established:**
+
 - Extract self-contained utilities first (pagination, mode_utils)
 - Follow with state management functions (indicators)
 - Then content management (content.rs)
@@ -598,7 +635,9 @@ With Task 4.5 complete, the most logical next steps are:
 2. **Phase 5 Planning:** Interactive UI remaining work (if any large files remain)
 3. **Final Integration:** Ensure all modules work together seamlessly
 4. **Documentation:** Update module documentation and architecture diagrams
+
 ### Task 5.5 - Extract Terminal Manager (2025-01-01) ✅
+
 - ✅ Created comprehensive terminal_manager.rs module (122 lines)
 - ✅ Extracted terminal setup and cleanup operations
 - ✅ Extracted raw mode enabling/disabling logic
@@ -613,6 +652,7 @@ With Task 4.5 complete, the most logical next steps are:
 - 📝 Improved modularity and testability of terminal operations
 
 ### Task 5.4 - Extract Refresh Coordinator (2025-01-01) ✅
+
 - ✅ Created comprehensive refresh_coordinator.rs module (620 lines)
 - ✅ Extracted all refresh operations: data fetching, timeout handling, error management
 - ✅ Extracted change detection and logging coordination
@@ -629,6 +669,7 @@ With Task 4.5 complete, the most logical next steps are:
 - 📝 Improved modularity, maintainability, and testability of refresh operations
 
 ### Task 5.3 - Extract Navigation Manager (2025-09-30) ✅
+
 - ✅ Created comprehensive navigation_manager.rs module (634 lines)
 - ✅ Extracted all page creation logic: create_page, create_future_games_page, create_loading_page, create_error_page
 - ✅ Extracted page management: create_or_restore_page, handle_page_restoration, manage_loading_indicators
@@ -644,6 +685,7 @@ With Task 4.5 complete, the most logical next steps are:
 - 📝 Improved modularity, maintainability, and testability
 
 ### Task 4.4 - Modularize ui/interactive (2025-09-30) - COMPLETE ✅
+
 - ✅ Created ui/interactive/ directory structure
 - ✅ Moved interactive.rs → interactive/core.rs
 - ✅ Created mod.rs with backward-compatible re-exports
@@ -673,23 +715,28 @@ With Task 4.5 complete, the most logical next steps are:
 ### Today's Accomplishments
 
 **Task 4.4**: Modularize ui/interactive ✅
+
 - Extracted input_handler.rs (405 lines)
 - Reduced core.rs by 36%
 
 **Task 6.1**: Extract Game Status Logic ✅
+
 - Created game_status.rs (220 lines)
 - Reduced processors/core.rs by 9.3%
 
 **Task 6.2**: Extract Goal Event Processing ✅
+
 - Created goal_events.rs (348 lines)
 - Reduced processors/core.rs by 27.5%
 
 **Task 7.1+7.2**: Modularize Config ✅
+
 - Created paths.rs (34 lines)
 - Created validation.rs (56 lines)
 - Config module now modular
 
 ### Updated Progress
+
 - **Total tasks today**: 4 major tasks
 - **Lines modularized**: ~1,200 lines
 - **New modules**: 4 (game_status, goal_events, paths, validation)
@@ -701,17 +748,20 @@ With Task 4.5 complete, the most logical next steps are:
 ### Latest Accomplishments
 
 **Task 4.5**: Modularize teletext_ui.rs ✅
+
 - Discovered modularization already completed - types extracted to ui/teletext/
 - Confirmed proper module structure and imports working correctly
 - All 276 tests passing
 
 **Task 7.6**: Extract User Prompts ✅
+
 - Created src/config/user_prompts.rs (36 lines)
 - Extracted prompt_for_api_domain() function from config/mod.rs
 - Clean separation of user interaction concerns
 - Completed Phase 7 (Configuration Module) ✅
 
 ### Updated Progress Summary
+
 - **Total tasks completed**: 25/50+ tasks (50%)
 - **New modules created**: 2 (user_prompts.rs, confirmed teletext types structure)
 - **Phases completed**: 4 full phases (✅ Phase 1, 2, 3, 7) + partial Phase 4, 6
@@ -719,6 +769,7 @@ With Task 4.5 complete, the most logical next steps are:
 - **All tests passing**: ✅ 276 unit tests + integration tests
 
 ### Next Suitable Tasks
+
 - **Task 6.3/6.4**: Complete processors module (2 remaining tasks)
 - **Task 8.1-8.5**: Begin main.rs refactoring (5 tasks, 614 lines)
 - **Tasks 4.2/4.3**: Return to deferred large file modularization
@@ -730,6 +781,7 @@ With Task 4.5 complete, the most logical next steps are:
 **Objective**: Extract rendering functions from teletext_ui/core.rs to improve modularity and maintainability.
 
 **Files Created/Modified**:
+
 - **NEW**: `src/teletext_ui/rendering.rs` (658 lines)
   - `render_wide_mode_content()` - Wide mode two-column rendering with terminal width validation
   - `render_normal_content()` - Standard single-column rendering with flexible positioning
@@ -744,6 +796,7 @@ With Task 4.5 complete, the most logical next steps are:
 - **FIXED**: Unused variable warnings and import cleanup
 
 **Results**:
+
 - **Before**: teletext_ui/core.rs = 3,452 lines
 - **After**: teletext_ui/core.rs = 2,797 lines
 - **Extracted**: 658 lines to rendering.rs
@@ -753,6 +806,7 @@ With Task 4.5 complete, the most logical next steps are:
 - **Quality**: ✅ No functional changes, pure code organization
 
 **Technical Challenges Resolved**:
+
 1. **Duplicate method resolution**: Removed all duplicate functions from core.rs after extraction
 2. **Field visibility**: Made `disable_video_links` accessible to rendering module
 3. **ANSI escape sequences**: Fixed double-escaping issues in terminal formatting strings
@@ -760,6 +814,7 @@ With Task 4.5 complete, the most logical next steps are:
 5. **Backwards compatibility**: All existing functionality preserved through proper re-exports
 
 **Strategic Impact**:
+
 - **Core focus**: teletext_ui/core.rs is now more focused on business logic rather than rendering details
 - **Separation of concerns**: Rendering logic is isolated and can be tested/maintained independently
 - **Module clarity**: Each module now has a single, clear responsibility
@@ -768,12 +823,14 @@ With Task 4.5 complete, the most logical next steps are:
 ### 📊 Cumulative Progress Summary
 
 **Overall teletext_ui Modularization Progress**:
+
 - **Original size**: 4,236 lines (before Task 4.5 series)
 - **Current size**: 2,797 lines (core.rs)
 - **Total extracted**: 1,439 lines across 6 modules
 - **Overall reduction**: 34.0%
 
 **Extracted Modules**:
+
 1. **pagination.rs**: 304 lines - Pagination logic and calculations
 2. **mode_utils.rs**: 121 lines - Mode switching and validation utilities
 3. **indicators.rs**: 176 lines - Loading and status indicator management
