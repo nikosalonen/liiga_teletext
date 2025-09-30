@@ -9,7 +9,6 @@ use crate::error::AppError;
 use crate::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use chrono::{Datelike, Local, NaiveDate, Utc};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -24,10 +23,11 @@ use super::series_utils::get_subheader;
 use super::change_detection::{calculate_games_hash, detect_and_log_changes};
 use super::indicators::determine_indicator_states;
 use super::refresh_manager::{
-    calculate_poll_interval, calculate_auto_refresh_interval, calculate_min_refresh_interval,
+    calculate_auto_refresh_interval, calculate_min_refresh_interval,
     should_trigger_auto_refresh, AutoRefreshParams,
 };
-use super::input_handler::{handle_key_event, KeyEventParams};
+use super::state_manager::InteractiveState;
+use super::event_handler::{EventHandler, EventHandlerBuilder, EventResult};
 
 // Teletext page constants (removed unused constants)
 
@@ -515,40 +515,6 @@ async fn monitor_cache_usage() {
     // This ensures that the oldest/least recently used entries are always removed first.
 }
 
-/// Initialize timer state for the interactive UI
-fn initialize_timers() -> (
-    Instant, // last_manual_refresh
-    Instant, // last_auto_refresh
-    Instant, // last_page_change
-    Instant, // last_date_navigation
-    Instant, // last_resize
-    Instant, // last_activity
-    Instant, // cache_monitor_timer
-    Instant, // last_rate_limit_hit
-) {
-    (
-        Instant::now()
-            .checked_sub(Duration::from_secs(15))
-            .unwrap_or_else(Instant::now),
-        Instant::now()
-            .checked_sub(Duration::from_secs(10))
-            .unwrap_or_else(Instant::now),
-        Instant::now()
-            .checked_sub(Duration::from_millis(200))
-            .unwrap_or_else(Instant::now),
-        Instant::now()
-            .checked_sub(Duration::from_millis(250))
-            .unwrap_or_else(Instant::now),
-        Instant::now()
-            .checked_sub(Duration::from_millis(500))
-            .unwrap_or_else(Instant::now),
-        Instant::now(),
-        Instant::now(),
-        Instant::now()
-            .checked_sub(Duration::from_secs(60))
-            .unwrap_or_else(Instant::now),
-    )
-}
 
 
 /// Handle data fetching with error handling and timeout
@@ -830,76 +796,6 @@ async fn handle_data_fetching(
 
 /// Parameters for keyboard event handling
 /// Handle keyboard events
-/// Handle resize events with debouncing
-fn handle_resize_event(
-    _current_page: &mut Option<TeletextPage>,
-    _needs_render: &mut bool,
-    pending_resize: &mut bool,
-    resize_timer: &mut Instant,
-    last_resize: &mut Instant,
-) {
-    tracing::debug!("Resize event");
-    // Debounce resize events
-    if last_resize.elapsed() >= Duration::from_millis(500) {
-        *resize_timer = Instant::now();
-        *pending_resize = true;
-        *last_resize = Instant::now();
-    }
-}
-
-/// Update auto-refresh indicator animation
-fn update_auto_refresh_animation(current_page: &mut Option<TeletextPage>, needs_render: &mut bool) {
-    if let Some(page) = current_page
-        && page.is_auto_refresh_indicator_active()
-    {
-        page.update_auto_refresh_animation();
-        *needs_render = true;
-    }
-}
-
-/// Handle pending resize with debouncing
-fn handle_pending_resize(
-    current_page: &mut Option<TeletextPage>,
-    needs_render: &mut bool,
-    pending_resize: &mut bool,
-    resize_timer: &Instant,
-) {
-    if *pending_resize && resize_timer.elapsed() >= Duration::from_millis(500) {
-        tracing::debug!("Handling resize");
-        if let Some(page) = current_page {
-            page.handle_resize();
-            *needs_render = true;
-        }
-        *pending_resize = false;
-    }
-}
-
-/// Render UI with buffering
-fn render_ui(
-    current_page: &Option<TeletextPage>,
-    needs_render: &mut bool,
-    stdout: &mut std::io::Stdout,
-) -> Result<(), AppError> {
-    if *needs_render {
-        if let Some(page) = current_page {
-            page.render_buffered(stdout)?;
-            tracing::debug!("UI rendered with buffering");
-        }
-        *needs_render = false;
-    }
-    Ok(())
-}
-
-/// Handle cache monitoring
-async fn handle_cache_monitoring(cache_monitor_timer: &mut Instant) {
-    const CACHE_MONITOR_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
-
-    if cache_monitor_timer.elapsed() >= CACHE_MONITOR_INTERVAL {
-        tracing::debug!("Monitoring cache usage");
-        monitor_cache_usage().await;
-        *cache_monitor_timer = Instant::now();
-    }
-}
 
 /// Setup terminal for interactive mode
 fn setup_terminal(debug_mode: bool) -> Result<std::io::Stdout, AppError> {
@@ -933,115 +829,86 @@ pub async fn run_interactive_ui(
 ) -> Result<(), AppError> {
     // Setup terminal for interactive mode
     let mut stdout = setup_terminal(debug_mode)?;
-    // Timer management with adaptive intervals
-    let (
-        mut last_manual_refresh,
-        mut last_auto_refresh,
-        mut last_page_change,
-        mut last_date_navigation,
-        mut last_resize,
-        _last_activity,
-        mut cache_monitor_timer,
-        _last_rate_limit_hit,
-    ) = initialize_timers();
-
-    // State management
-    let mut needs_refresh = true;
-    let mut needs_render = false;
-    let mut current_page: Option<TeletextPage> = None;
-    let mut pending_resize = false;
-    let mut resize_timer = Instant::now();
-    // Preserved page number for restoration after refresh - will be set when needed
-    let mut preserved_page_for_restoration: Option<usize>;
-
-    // Date navigation state - track the current date being displayed
-    let mut current_date = date;
-
-    // Change detection - track data changes to avoid unnecessary re-renders
-    let mut last_games_hash = 0u64;
-    let mut last_games = Vec::new();
-
-    // Adaptive polling configuration
-    let mut last_activity = Instant::now();
-
-    // Backoff on consecutive fetch errors to avoid tight retry loops
-    let mut retry_backoff = Duration::from_secs(0);
-    let mut last_backoff_hit = Instant::now()
-        .checked_sub(Duration::from_secs(60))
-        .unwrap_or_else(Instant::now);
+    
+    // Initialize all state through the state manager
+    let mut state = InteractiveState::new(date);
+    
+    // Create event handler with appropriate configuration
+    let event_handler = if debug_mode {
+        EventHandler::for_debug()
+    } else {
+        EventHandler::new()
+    };
 
     loop {
-        // Adaptive polling interval based on activity
-        let time_since_activity = last_activity.elapsed();
-        let poll_interval = calculate_poll_interval(time_since_activity);
-
         // Check for auto-refresh with better logic and rate limiting protection
-        let auto_refresh_interval = calculate_auto_refresh_interval(&last_games);
+        let auto_refresh_interval = calculate_auto_refresh_interval(state.change_detection.last_games());
         let min_interval_between_refreshes =
-            calculate_min_refresh_interval(last_games.len(), min_refresh_interval);
+            calculate_min_refresh_interval(state.change_detection.last_games().len(), min_refresh_interval);
 
         // Debug logging for backoff enforcement
-        if retry_backoff > Duration::from_secs(0) {
-            let backoff_remaining = retry_backoff.saturating_sub(last_backoff_hit.elapsed());
+        if state.adaptive_polling.retry_backoff() > Duration::from_secs(0) {
+            let backoff_remaining = state.adaptive_polling.backoff_remaining();
             if backoff_remaining > Duration::from_secs(0) {
                 tracing::trace!(
                     "Retry backoff active: {}s remaining (total backoff: {}s, elapsed since error: {}s)",
                     backoff_remaining.as_secs(),
-                    retry_backoff.as_secs(),
-                    last_backoff_hit.elapsed().as_secs()
+                    state.adaptive_polling.retry_backoff().as_secs(),
+                    state.adaptive_polling.last_backoff_hit().elapsed().as_secs()
                 );
             }
         }
 
         if should_trigger_auto_refresh(AutoRefreshParams {
-            needs_refresh,
-            games: &last_games,
-            last_auto_refresh,
+            needs_refresh: state.needs_refresh(),
+            games: state.change_detection.last_games(),
+            last_auto_refresh: state.timers.last_auto_refresh,
             auto_refresh_interval,
             min_interval_between_refreshes,
-            last_rate_limit_hit: last_backoff_hit,
-            rate_limit_backoff: retry_backoff,
-            current_date: &current_date,
+            last_rate_limit_hit: state.adaptive_polling.last_backoff_hit(),
+            rate_limit_backoff: state.adaptive_polling.retry_backoff(),
+            current_date: state.current_date(),
         }) {
-            needs_refresh = true;
+            state.request_refresh();
         }
 
         // Data fetching with change detection
-        if needs_refresh {
+        if state.needs_refresh() {
             tracing::debug!("Fetching new data");
 
             // Always preserve the current page number before refresh, regardless of loading screen
-            preserved_page_for_restoration =
-                current_page.as_ref().map(TeletextPage::get_current_page);
+            if let Some(page) = state.current_page() {
+                state.preserve_page(page.get_current_page());
+            }
 
             // Handle data fetching using the helper function
             let (games, had_error, fetched_date, should_retry, new_page, _needs_render_update) =
                 handle_data_fetching(
-                    &current_date,
-                    &last_games,
+                    state.current_date(),
+                    state.change_detection.last_games(),
                     disable_links,
                     compact_mode,
                     wide_mode,
-                    preserved_page_for_restoration,
+                    state.preserved_page(),
                 )
                 .await?;
 
             // Update current_date to track the actual date being displayed
             if !had_error && !fetched_date.is_empty() {
-                current_date = Some(fetched_date.clone());
-                tracing::debug!("Updated current_date to: {:?}", current_date);
+                state.set_current_date(Some(fetched_date.clone()));
+                tracing::debug!("Updated current_date to: {:?}", state.current_date());
             }
 
             // Change detection using a simple hash of game data
             let games_hash = calculate_games_hash(&games);
-            let data_changed = games_hash != last_games_hash;
+            let data_changed = state.change_detection.update_and_check_changes(&games, games_hash);
 
             if data_changed {
                 tracing::debug!("Data changed, updating UI");
 
                 // Log specific changes for live games to help debug game clock updates
-                if !last_games.is_empty() && games.len() == last_games.len() {
-                    for (i, (new_game, old_game)) in games.iter().zip(last_games.iter()).enumerate()
+                if !state.change_detection.last_games().is_empty() && games.len() == state.change_detection.last_games().len() {
+                    for (i, (new_game, old_game)) in games.iter().zip(state.change_detection.last_games().iter()).enumerate()
                     {
                         if new_game.played_time != old_game.played_time
                             && new_game.score_type == ScoreType::Ongoing
@@ -1060,16 +927,15 @@ pub async fn run_interactive_ui(
 
                 // Update the current page if we have a new one
                 if let Some(new_page) = new_page {
-                    current_page = Some(new_page);
-                    needs_render = true;
+                    state.set_current_page(new_page);
                 }
             } else if had_error {
                 tracing::debug!(
                     "Auto-refresh failed but no data changes detected, continuing with existing UI"
                 );
-                if let Some(page) = current_page.as_mut() {
+                if let Some(page) = state.current_page_mut() {
                     page.show_error_warning();
-                    needs_render = true;
+                    state.request_render();
                 }
             } else {
                 // Track ongoing games with static time to confirm API limitations
@@ -1112,117 +978,79 @@ pub async fn run_interactive_ui(
 
             // Update change detection variables only on successful fetch
             if !had_error {
-                if let Some(page) = current_page.as_mut()
+                if let Some(page) = state.current_page_mut()
                     && page.is_error_warning_active()
                 {
                     page.hide_error_warning();
-                    needs_render = true;
+                    state.request_render();
                 }
-                last_games_hash = games_hash;
-                last_games = games;
+                state.change_detection.update_state(games, games_hash);
             } else {
                 tracing::debug!(
                     "Preserving last_games due to fetch error; will retry without clearing state"
                 );
             }
 
-            needs_refresh = false;
+            state.clear_refresh_flag();
 
             // Only update last_auto_refresh if we shouldn't retry
             // This ensures that failed auto-refresh attempts will be retried on the next cycle
             if !should_retry {
-                last_auto_refresh = Instant::now();
+                state.timers.update_auto_refresh();
                 // Reset backoff window after a successful cycle
-                if retry_backoff > Duration::from_secs(0) {
+                if state.adaptive_polling.retry_backoff() > Duration::from_secs(0) {
                     tracing::debug!("Resetting retry backoff after successful refresh");
                 }
-                retry_backoff = Duration::from_secs(0);
+                state.adaptive_polling.reset_backoff();
                 tracing::trace!("Auto-refresh cycle completed successfully");
             } else {
-                // Increase backoff to avoid tight retry loops while allowing quick recovery
-                let base_next = if retry_backoff.is_zero() {
-                    Duration::from_secs(2)
-                } else {
-                    retry_backoff.saturating_mul(2)
-                };
-                // Cap the backoff at 10 seconds (base before jitter)
-                let capped_next = std::cmp::min(base_next, Duration::from_secs(10));
-
-                // Apply ±20% jitter to avoid synchronized retries across clients
-                // Use system time nanoseconds as a lightweight entropy source
-                let nanos = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.subsec_nanos())
-                    .unwrap_or(0);
-                let rand_fraction = (nanos % 1000) as f64 / 1000.0; // 0.0..1.0
-                let jitter_factor = 0.8_f64 + 0.4_f64 * rand_fraction; // 0.8..1.2
-                let jittered_secs = (capped_next.as_secs_f64() * jitter_factor).min(10.0);
-
-                retry_backoff = Duration::from_secs_f64(jittered_secs);
-                last_backoff_hit = Instant::now();
-                let base_secs = capped_next.as_secs_f64();
+                state.adaptive_polling.apply_backoff();
+                let jittered_secs = state.adaptive_polling.retry_backoff().as_secs_f64();
                 tracing::debug!(
-                    "Auto-refresh failed; applying retry backoff of {jittered_secs:.2}s (base {base_secs:.2}s, jitter {jitter_factor:.2})"
+                    "Auto-refresh failed; applying retry backoff of {jittered_secs:.2}s"
                 );
             }
         }
 
-        // Handle pending resize with debouncing
-        handle_pending_resize(
-            &mut current_page,
-            &mut needs_render,
-            &mut pending_resize,
-            &resize_timer,
-        );
-
         // Update auto-refresh indicator animation (only when active)
-        update_auto_refresh_animation(&mut current_page, &mut needs_render);
+        if let Some(page) = state.current_page_mut()
+            && page.is_auto_refresh_indicator_active()
+        {
+            page.update_auto_refresh_animation();
+            state.request_render();
+        }
 
         // Batched UI rendering - only render when necessary
         // Use buffered rendering to minimize flickering
-        render_ui(&current_page, &mut needs_render, &mut stdout)?;
+        if state.needs_render() {
+            if let Some(page) = state.current_page() {
+                page.render_buffered(&mut stdout)?;
+                tracing::debug!("UI rendered with buffering");
+            }
+            state.clear_render_flag();
+        }
 
-        // Event handling with adaptive polling
-        if event::poll(poll_interval)? {
-            last_activity = Instant::now(); // Reset activity timer
-
-            match event::read()? {
-                Event::Key(key_event) => {
-                    if handle_key_event(KeyEventParams {
-                        key_event: &key_event,
-                        current_page: &mut current_page,
-                        needs_render: &mut needs_render,
-                        needs_refresh: &mut needs_refresh,
-                        current_date: &mut current_date,
-                        last_manual_refresh: &mut last_manual_refresh,
-                        last_page_change: &mut last_page_change,
-                        last_date_navigation: &mut last_date_navigation,
-                    })
-                    .await?
-                    {
-                        break;
-                    }
-                }
-                Event::Resize(_, _) => {
-                    handle_resize_event(
-                        &mut current_page,
-                        &mut needs_render,
-                        &mut pending_resize,
-                        &mut resize_timer,
-                        &mut last_resize,
-                    );
-                }
-                _ => {}
+        // Process events using the event handler
+        match event_handler.process_events(&mut state).await? {
+            EventResult::Exit => {
+                tracing::info!("Exit requested through event handler");
+                break;
+            }
+            EventResult::Handled | EventResult::Continue => {
+                // Continue with the loop
             }
         }
 
         // Periodic cache monitoring for long-running sessions
-        handle_cache_monitoring(&mut cache_monitor_timer).await;
-
-        // Only sleep if we're in idle mode to avoid unnecessary delays
-        if poll_interval >= Duration::from_millis(200) {
-            tokio::time::sleep(Duration::from_millis(50)).await;
+        const CACHE_MONITOR_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
+        if state.timers.cache_monitor_timer.elapsed() >= CACHE_MONITOR_INTERVAL {
+            tracing::debug!("Monitoring cache usage");
+            monitor_cache_usage().await;
+            state.timers.update_cache_monitor();
         }
+
+        // Small sleep to prevent tight loops when not processing events
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
     // Cleanup terminal

@@ -6,14 +6,18 @@
 //! - `indicators`: Loading and auto-refresh indicator management
 //! - `refresh_manager`: Auto-refresh timing and logic
 //! - `input_handler`: Keyboard input and date navigation
+//! - `state_manager`: State management and organization
+//! - `event_handler`: Event processing and coordination
 //! - `core`: Main interactive UI loop and orchestration
 
 mod change_detection;
 mod core;
+mod event_handler;
 mod indicators;
 mod input_handler;
 mod refresh_manager;
 mod series_utils;
+mod state_manager;
 
 // Re-export all public items from core for backward compatibility
 pub use core::*;
