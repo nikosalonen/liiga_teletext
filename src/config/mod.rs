@@ -4,6 +4,12 @@ use std::path::Path;
 use tokio::fs;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt};
 
+pub mod paths;
+pub mod validation;
+
+use paths::{get_config_path, get_log_dir_path};
+use validation::validate_config;
+
 /// Configuration structure for the application.
 /// Handles loading, saving, and managing application settings.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -52,7 +58,7 @@ impl Config {
     /// - Handles first-time setup with user prompts
     /// - Environment variables take precedence over config file
     pub async fn load() -> Result<Self, AppError> {
-        let config_path = Config::get_config_path();
+        let config_path = get_config_path();
 
         let mut config = if Path::new(&config_path).exists() {
             let content = fs::read_to_string(&config_path).await?;
@@ -111,43 +117,7 @@ impl Config {
     /// * `Ok(())` - Configuration is valid
     /// * `Err(AppError)` - Configuration validation failed
     pub fn validate(&self) -> Result<(), AppError> {
-        // Validate API domain
-        if self.api_domain.is_empty() {
-            return Err(AppError::config_error("API domain cannot be empty"));
-        }
-
-        // Check if API domain looks like a valid URL or domain
-        if !self.api_domain.starts_with("http://") && !self.api_domain.starts_with("https://") {
-            // If it doesn't start with protocol, it should at least look like a domain
-            if !self.api_domain.contains('.') && !self.api_domain.starts_with("localhost") {
-                return Err(AppError::config_error(
-                    "API domain must be a valid URL or domain name",
-                ));
-            }
-        }
-
-        // Validate log file path if provided
-        if let Some(log_path) = &self.log_file_path {
-            if log_path.is_empty() {
-                return Err(AppError::config_error("Log file path cannot be empty"));
-            }
-
-            // Check if parent directory exists or can be created
-            if let Some(parent) = Path::new(log_path).parent()
-                && !parent.exists()
-            {
-                // Try to create the directory to validate the path
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    AppError::config_error(format!(
-                        "Cannot create log directory '{}': {}",
-                        parent.display(),
-                        e
-                    ))
-                })?;
-            }
-        }
-
-        Ok(())
+        validate_config(&self.api_domain, &self.log_file_path)
     }
 
     /// Saves current configuration to the default config file location.
@@ -161,7 +131,7 @@ impl Config {
     /// - Ensures api_domain has https:// prefix
     /// - Uses TOML format for storage
     pub async fn save(&self) -> Result<(), AppError> {
-        let config_path = Config::get_config_path();
+        let config_path = get_config_path();
         self.save_to_path(&config_path).await
     }
 
@@ -174,12 +144,7 @@ impl Config {
     /// - Uses platform-specific config directory (e.g., ~/.config on Linux)
     /// - Falls back to current directory if config directory is unavailable
     pub fn get_config_path() -> String {
-        dirs::config_dir()
-            .unwrap_or_else(|| Path::new(".").to_path_buf())
-            .join("liiga_teletext")
-            .join("config.toml")
-            .to_string_lossy()
-            .to_string()
+        paths::get_config_path()
     }
 
     /// Returns the platform-specific path for the log directory.
@@ -191,12 +156,7 @@ impl Config {
     /// - Uses platform-specific config directory (e.g., ~/.config on Linux)
     /// - Falls back to current directory if config directory is unavailable
     pub fn get_log_dir_path() -> String {
-        dirs::config_dir()
-            .unwrap_or_else(|| Path::new(".").to_path_buf())
-            .join("liiga_teletext")
-            .join("logs")
-            .to_string_lossy()
-            .to_string()
+        paths::get_log_dir_path()
     }
 
     /// Displays current configuration settings to stdout.
@@ -209,8 +169,8 @@ impl Config {
     /// - Shows config file location and current settings
     /// - Handles case when no config file exists
     pub async fn display() -> Result<(), AppError> {
-        let config_path = Config::get_config_path();
-        let log_dir = Config::get_log_dir_path();
+        let config_path = get_config_path();
+        let log_dir = get_log_dir_path();
 
         if Path::new(&config_path).exists() {
             let config = Config::load().await?;
