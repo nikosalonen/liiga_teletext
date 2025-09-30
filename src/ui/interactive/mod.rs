@@ -3,10 +3,12 @@
 //! This module is organized into focused submodules:
 //! - `series_utils`: Tournament series type classification and display
 //! - `change_detection`: Game data change tracking and hashing
+//! - `indicators`: Loading and auto-refresh indicator management
 //! - `core`: Main interactive UI loop and orchestration
 
 mod change_detection;
 mod core;
+mod indicators;
 mod series_utils;
 
 // Re-export all public items from core for backward compatibility

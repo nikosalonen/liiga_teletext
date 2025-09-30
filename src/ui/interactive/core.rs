@@ -22,6 +22,7 @@ use tracing;
 // Import utilities from sibling modules
 use super::series_utils::get_subheader;
 use super::change_detection::{calculate_games_hash, detect_and_log_changes};
+use super::indicators::determine_indicator_states;
 
 // Teletext page constants (removed unused constants)
 
@@ -36,32 +37,6 @@ pub fn format_date_for_display(date_str: &str) -> String {
     }
 }
 
-/// Determines whether to show loading indicator and auto-refresh indicator
-fn determine_indicator_states(
-    current_date: &Option<String>,
-    last_games: &[GameData],
-) -> (bool, bool) {
-    let has_ongoing_games = has_live_games_from_game_data(last_games);
-
-    // Show loading indicator only in specific cases
-    let should_show_loading = if let Some(date) = current_date {
-        // Only show loading for historical dates
-        is_historical_date(date)
-    } else {
-        // Show loading for initial load when no specific date is requested
-        true
-    };
-
-    // Show auto-refresh indicator whenever auto-refresh is active
-    let all_scheduled = !last_games.is_empty() && last_games.iter().all(is_future_game);
-    let should_show_indicator = if let Some(date) = current_date {
-        !is_historical_date(date) && (has_ongoing_games || !all_scheduled)
-    } else {
-        has_ongoing_games || !all_scheduled
-    };
-
-    (should_show_loading, should_show_indicator)
-}
 
 /// Manages loading and auto-refresh indicators for the current page
 fn manage_loading_indicators(
