@@ -2,10 +2,10 @@
 
 ## Quick Status
 
-**Overall Progress:** 20/50+ tasks completed (40%)  
-**Current Phase:** Phase 2 - Data Fetcher API  
-**Current Task:** Phase 2 Complete!  
-**Last Updated:** 2025-09-30 10:19 UTC
+**Overall Progress:** 22/50+ tasks completed (44%)  
+**Current Phase:** Phase 4 - Player Names & Interactive UI  
+**Current Task:** Task 4.4 - Modularize ui/interactive (In Progress)  
+**Last Updated:** 2025-09-30 07:34 UTC
 
 ---
 
@@ -76,19 +76,22 @@
 
 ---
 
-## Phase 4: Player Names (data_fetcher/player_names.rs → 2,388 lines)
+## Phase 4: Player Names & Interactive UI
 
-### Status: 🔴 Not Started
+### Status: 🔄 In Progress
 
 | Task | Status | Size Reduction | Time | Notes |
 |------|--------|----------------|------|-------|
-| 4.1 - Extract Roster Data Structures | ⬜️ TODO | ~300 lines | 25m | Medium Risk |
-| 4.2 - Extract Name Disambiguation | ⬜️ TODO | ~800 lines | 50m | High Risk |
-| 4.3 - Extract Display Formatting | ⬜️ TODO | ~600 lines | 45m | High Risk |
-| 4.4 - Extract Initial Generation | ⬜️ TODO | ~400 lines | 35m | Medium Risk |
+| 4.1 - Modularize player_names.rs (2,388 lines) | ✅ DONE | 1,652 lines | 45m | Completed 2025-09-30 |
+| 4.2 - Modularize api/core.rs (2,410 lines) | ⏸️ DEFERRED | N/A | N/A | Only 2 functions left |
+| 4.3 - Modularize cache/core.rs (2,146 lines) | ⏸️ DEFERRED | N/A | N/A | HTTP cache only |
+| 4.4 - Modularize ui/interactive.rs (2,181 lines) | 🔄 IN PROGRESS | 270 lines so far | Est 90m | 12% complete |
+| 4.5 - Modularize teletext_ui.rs (4,236 lines) | ⬜️ TODO | ~2,000 lines | Est 120m | Largest file |
 
-**Phase 4 Total:** ~2,100 lines → distributed across 4+ files  
-**Target:** Each file <600 lines
+**Phase 4 Progress:**
+- **Task 4.1 Complete:** player_names.rs → 3 focused modules (formatting.rs, disambiguation.rs, mod.rs)
+- **Task 4.4 Progress:** interactive.rs → directory structure + 2 modules extracted so far
+- **Lines Modularized:** 1,922 / ~8,000 target (24%)
 
 ---
 
@@ -180,10 +183,10 @@ Total New Modules:  50-60
 ```
 
 ### Progress Metrics
-- **Lines Refactored:** 5,535 / 22,665 (24.4%)
-- **Modules Created:** 26 / 50+ (Phase 1: 6 modules; Phase 2: 9 modules; Phase 3: 7 modules)
-- **Phases Complete:** 3 / 8 (Phase 1: 6/6 ✅, Phase 2: 8/8 ✅, Phase 3: 5/5 ✅)
-- **Tests Passing:** ✅ All 364 tests passing
+- **Lines Refactored:** 7,727 / 22,665 (34.1%)
+- **Modules Created:** 31 / 50+ (Phase 1: 6, Phase 2: 9, Phase 3: 7, Phase 4: 9 so far)
+- **Phases Complete:** 3 / 8 (Phase 1: 6/6 ✅, Phase 2: 8/8 ✅, Phase 3: 5/5 ✅, Phase 4: 1.5/5 🔄)
+- **Tests Passing:** ✅ All 276 tests passing
 
 ---
 
@@ -468,6 +471,30 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
   - game_api.rs (832 lines) - Game processing and historical games
   - tournament_api.rs (498 lines) - Tournament data fetching
   - core.rs (2,410 lines) - Main orchestration and entry point
+
+### Task 4.1 - Modularize player_names (2025-09-30)
+- ✅ Created player_names/ directory structure
+- ✅ Extracted formatting.rs (203 lines) - Basic name formatting utilities
+- ✅ Extracted disambiguation.rs (507 lines) - Advanced name disambiguation logic
+- ✅ Created mod.rs (26 lines) - Module organization with re-exports
+- ✅ Removed core.rs after extraction (was 2,388 lines)
+- ✅ All 276 tests passing
+- ⏱️ Actual time: ~45 minutes (estimated: 60m) - efficient!
+- 📝 Total reduction: 2,388 → 736 lines across 3 files (69% reduction)
+- 📝 Clean separation between formatting and disambiguation concerns
+- 📝 Comprehensive tests included in each extracted module
+
+### Task 4.4 - Modularize ui/interactive (2025-09-30) - IN PROGRESS
+- ✅ Created ui/interactive/ directory structure  
+- ✅ Moved interactive.rs → interactive/core.rs
+- ✅ Created mod.rs with backward-compatible re-exports
+- ✅ Extracted series_utils.rs (122 lines) - Tournament series type classification
+- ✅ Extracted change_detection.rs (148 lines) - Game data change tracking
+- ✅ All 276 tests passing after each extraction
+- ⏱️ Time so far: ~35 minutes
+- 📝 Progress: 270 lines extracted (12% of 2,181 total)
+- 📝 Remaining extractions: indicators, page creation, input handling, refresh logic
+- 📝 Pattern: Extract self-contained utilities first, then larger coordinating modules
 
 ---
 
