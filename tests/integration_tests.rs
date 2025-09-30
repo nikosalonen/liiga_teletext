@@ -2,6 +2,7 @@ use liiga_teletext::{
     config::Config,
     data_fetcher::models::*,
     teletext_ui::{GameResultData, ScoreType, TeletextPage, TeletextRow},
+    ui::teletext::CompactModeValidation,
 };
 use tempfile::tempdir;
 
@@ -448,8 +449,7 @@ async fn test_compact_mode_non_interactive() {
     let validation = page.validate_compact_mode_compatibility();
     assert!(matches!(
         validation,
-        liiga_teletext::teletext_ui::CompactModeValidation::Compatible
-            | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
 
     // Test that compact mode configuration is valid
@@ -457,8 +457,7 @@ async fn test_compact_mode_non_interactive() {
     let validation = page.validate_compact_mode_compatibility();
     assert!(matches!(
         validation,
-        liiga_teletext::teletext_ui::CompactModeValidation::Compatible
-            | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
 }
 
@@ -533,20 +532,18 @@ async fn test_compact_mode_with_dates() {
     let future_validation = future_page.validate_compact_mode_compatibility();
     assert!(matches!(
         past_validation,
-        liiga_teletext::teletext_ui::CompactModeValidation::Compatible
-            | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
     assert!(matches!(
         future_validation,
-        liiga_teletext::teletext_ui::CompactModeValidation::Compatible
-            | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
 }
 
 /// Test compact mode with terminal width constraints
 #[tokio::test]
 async fn test_compact_mode_terminal_width_constraints() {
-    use liiga_teletext::teletext_ui::{CompactDisplayConfig, TerminalWidthValidation};
+    use liiga_teletext::ui::teletext::{CompactDisplayConfig, TerminalWidthValidation};
 
     // Test various terminal widths
     let config = CompactDisplayConfig::default();
@@ -679,13 +676,11 @@ async fn test_compact_mode_preserves_styling() {
     let compact_validation = compact_page.validate_compact_mode_compatibility();
     assert!(matches!(
         normal_validation,
-        liiga_teletext::teletext_ui::CompactModeValidation::Compatible
-            | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
     assert!(matches!(
         compact_validation,
-        liiga_teletext::teletext_ui::CompactModeValidation::Compatible
-            | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
 
     // Verify compact page reports compact mode
@@ -798,8 +793,8 @@ async fn test_compact_mode_basic_functionality() {
     assert!(
         matches!(
             validation,
-            liiga_teletext::teletext_ui::CompactModeValidation::Compatible
-                | liiga_teletext::teletext_ui::CompactModeValidation::CompatibleWithWarnings { .. }
+            CompactModeValidation::Compatible
+                | CompactModeValidation::CompatibleWithWarnings { .. }
         ),
         "Compact mode should be compatible"
     );
