@@ -4,8 +4,23 @@
 //! - Basic formatting for teletext display
 //! - Name disambiguation for players with the same last name
 //! - Fallback name generation for missing player data
+//!
+//! The module is organized into two main components:
+//! - `formatting`: Basic name formatting, display helpers, and initial extraction
+//! - `disambiguation`: Advanced name disambiguation for teams with duplicate last names
 
-mod core;
+// Submodules
+mod disambiguation;
+mod formatting;
 
-// Re-export all public items from core for backward compatibility
-pub use core::*;
+// Re-export public items from formatting
+pub use formatting::{
+    build_full_name, create_fallback_name, extract_first_chars, extract_first_initial,
+    format_for_display, format_for_display_with_first_initial,
+};
+
+// Re-export public items from disambiguation
+pub use disambiguation::{
+    format_with_disambiguation, get_players_needing_disambiguation, group_players_by_last_name,
+    group_players_by_last_name_indices, is_disambiguation_needed, DisambiguationContext,
+};
