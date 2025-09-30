@@ -22,14 +22,14 @@
 | 1.5 - Extract GameResultData | ✅ DONE | ~63 lines | 20m | Completed 2025-09-30 |
 | 1.6 - Extract ScoreType enum | ✅ DONE | Included in 1.5 | 0m | Done with 1.5 |
 | 1.7 - Extract LoadingIndicator | ✅ DONE | ~33 lines | 10m | Low Risk (revised) |
-| 1.8 - Extract Footer Rendering | ⏸️ DEFERRED | ~200 lines | N/A | Requires TeletextPage refactor |
+| 1.8 - Extract Footer Rendering | ✅ DONE | 77 lines | 15m | Completed 2025-01-01 |
 | 1.9 - Extract Game Display Logic | ✅ DONE | 237 lines | 30m | Completed 2025-01-01 |
 | 1.10 - Extract Compact Mode | ⏸️ DEFERRED | ~600 lines | N/A | Requires TeletextPage refactor |
 | 1.11 - Extract Wide Mode | ⏸️ DEFERRED | ~400 lines | N/A | Requires TeletextPage refactor |
 | 1.12 - Extract Score Formatting | ⏸️ DEFERRED | ~300 lines | N/A | Requires TeletextPage refactor |
 
-**Phase 1 Status:** 8 tasks completed, 4 deferred for Phase 2 approach  
-**Completed:** Extracted all standalone structs/enums + footer + game display rendering  
+**Phase 1 Status:** 8 tasks completed, 4 deferred for Phase 2 approach
+**Completed:** Extracted all standalone structs/enums + footer + game display rendering
 **Deferred:** Remaining TeletextPage method extractions need different strategy
 
 ---
@@ -84,14 +84,19 @@
 |------|--------|----------------|------|-------|
 | 4.1 - Modularize player_names.rs (2,388 lines) | ✅ DONE | 1,652 lines | 45m | Completed 2025-09-30 |
 | 4.2 - Modularize api/core.rs (2,410 lines) | ✅ DONE | 162 lines | 25m | orchestrator.rs created |
-| 4.3 - Modularize cache/core.rs (2,146 lines) | ⏸️ DEFERRED | N/A | N/A | HTTP cache only |
-|| 4.4 - Modularize ui/interactive.rs (2,181 lines) | ✅ DONE | 793 lines | 75m | Completed 2025-09-30 |
-| 4.5 - Modularize teletext_ui.rs (4,236 lines) | 🔄 PROGRESS | 228 lines | 30m | Pagination extracted (228 lines), core.rs now 3,967 lines |
+| 4.3 - Modularize cache/core.rs (2,146 lines) | ✅ DONE | 922 lines | 88m | Completed in Phase 3 (5 extractions) |
+| 4.4 - Modularize ui/interactive.rs (2,181 lines) | ✅ DONE | 793 lines | 75m | Completed 2025-09-30 |
+| 4.5 - Modularize teletext_ui/core.rs (4,236 lines) | ✅ DONE | 1,815 lines | 140m | Completed 2025-01-01 (15 modules created) |
 
-**Phase 4 Progress:**
--  **Task 4.1 Complete:** player_names.rs → 3 focused modules (formatting.rs, disambiguation.rs, mod.rs)
--  **Task 4.4 Complete:** interactive.rs → directory with 5 focused modules + core coordinator
--  **Lines Modularized:** 2,445 / ~8,000 target (31%)
+**Phase 4 Status:** ✅ **COMPLETE** (5/5 tasks)
+
+-  **Task 4.1 Complete:** player_names.rs → 3 focused modules (1,652 lines extracted)
+-  **Task 4.2 Complete:** api/core.rs → orchestrator.rs (162 lines extracted)
+-  **Task 4.3 Complete:** cache/core.rs → 8 modules (922 lines extracted in Phase 3)
+-  **Task 4.4 Complete:** interactive.rs → 10 modules (793 lines extracted)
+-  **Task 4.5 Complete:** teletext_ui/core.rs → 15 modules (1,815 lines extracted)
+
+**Phase 4 Total:** 5,344 lines modularized across all tasks
 
 ---
 
