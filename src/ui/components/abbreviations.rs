@@ -20,6 +20,7 @@
 /// assert_eq!(get_team_abbreviation("HC Blues"), "HCB");
 /// assert_eq!(get_team_abbreviation("K-Espoo"), "KES");
 /// ```
+#[allow(dead_code)]
 pub fn get_team_abbreviation(team_name: &str) -> String {
     match team_name {
         // Current Liiga teams (2024-25 season)

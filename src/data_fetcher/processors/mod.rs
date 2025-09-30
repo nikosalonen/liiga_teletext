@@ -10,9 +10,7 @@ pub mod time_formatting;
 pub use game_status::{determine_game_status, format_time};
 
 // Re-export goal event processing functions
-pub use goal_events::{
-    create_basic_goal_events, process_goal_events,
-};
+pub use goal_events::{create_basic_goal_events, process_goal_events};
 
 // Re-export time formatting functions
 pub use time_formatting::{should_show_todays_games, should_show_todays_games_with_time};

@@ -1,4 +1,3 @@
-
 // Import game status functions from game_status module
 // Import goal event processing functions from goal_events module
 // Import time formatting functions from time_formatting module
@@ -6,8 +5,18 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::AppError;
     use crate::data_fetcher::models::{GoalEvent, ScheduleGame, ScheduleTeam};
+    use crate::data_fetcher::player_names::DisambiguationContext;
+    use crate::data_fetcher::processors::goal_events::{
+        process_goal_events_with_disambiguation, process_team_goals,
+        process_team_goals_with_disambiguation,
+    };
+    use crate::data_fetcher::processors::{
+        create_basic_goal_events, determine_game_status, format_time, process_goal_events,
+    };
+    use crate::teletext_ui::ScoreType;
+    use std::collections::HashMap;
 
     fn create_test_goal_event(
         scorer_player_id: i64,

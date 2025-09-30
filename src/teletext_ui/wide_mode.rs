@@ -10,12 +10,15 @@ use crate::teletext_ui::core::TeletextRow;
 use crossterm::terminal;
 
 /// Minimum terminal width required for wide mode display
+#[allow(dead_code)]
 const MIN_WIDE_TERMINAL_WIDTH: u16 = 128;
 
 /// Column width for each side in wide mode
+#[allow(dead_code)]
 const WIDE_MODE_COLUMN_WIDTH: u16 = 64;
 
 /// Configuration for wide mode display
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct WideModeConfig {
     pub enabled: bool,
@@ -36,10 +39,12 @@ impl Default for WideModeConfig {
 }
 
 /// Manages wide mode display logic and layout
+#[allow(dead_code)]
 pub struct WideModeManager {
     config: WideModeConfig,
 }
 
+#[allow(dead_code)]
 impl WideModeManager {
     /// Create a new wide mode manager
     pub fn new(config: WideModeConfig) -> Self {
@@ -47,6 +52,7 @@ impl WideModeManager {
     }
 
     /// Create a wide mode manager with default configuration
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self::new(WideModeConfig::default())
     }
@@ -189,6 +195,7 @@ impl WideModeManager {
 }
 
 /// Result of wide mode terminal validation
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub enum WideModeValidation {
     /// Wide mode is disabled
@@ -210,7 +217,6 @@ pub enum WideModeValidation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::GoalEventData;
     use crate::ui::teletext::game_result::ScoreType;
 
     fn create_test_game_row(home: &str, away: &str) -> TeletextRow {

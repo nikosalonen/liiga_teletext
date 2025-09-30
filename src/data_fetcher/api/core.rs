@@ -3,15 +3,13 @@
 use super::date_logic::determine_fetch_date_with_time;
 #[cfg(test)]
 use super::game_api::{
-    fetch_game_data, get_team_name, has_actual_goals, process_game_response_with_cache,
+    fetch_game_data, get_team_name, has_actual_goals,
     process_goal_events_for_historical_game_with_players, should_fetch_detailed_data,
 };
 #[cfg(test)]
 use super::http_client::create_test_http_client;
 #[cfg(test)]
-use super::season_utils::{
-    is_historical_date_with_current_time, should_use_schedule_for_playoffs_with_current_time,
-};
+use super::season_utils::is_historical_date_with_current_time;
 #[cfg(test)]
 use super::tournament_api::{fetch_day_data, fetch_tournament_data, find_future_games_fallback};
 #[cfg(test)]
@@ -33,7 +31,7 @@ use crate::data_fetcher::models::{
     DetailedGameResponse, ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
 #[cfg(test)]
-use chrono::{DateTime, Local, Utc};
+use chrono::{Local, Utc};
 #[cfg(test)]
 use reqwest::Client;
 #[cfg(test)]
@@ -47,7 +45,8 @@ use std::time::Duration;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Period, Player};
+    use crate::data_fetcher::models::detailed::Period;
+    use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Player};
     use serial_test::serial;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,

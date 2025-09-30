@@ -1,27 +1,14 @@
-
-
 // Import cache types from sibling module
 // Import tournament cache items from sibling module
-use super::tournament_cache::{
-    TOURNAMENT_CACHE, clear_tournament_cache,
-};
+use super::tournament_cache::{TOURNAMENT_CACHE, clear_tournament_cache};
 // Import player cache items from sibling module
-use super::player_cache::{
-    PLAYER_CACHE,
-    clear_cache,
-};
+use super::player_cache::{PLAYER_CACHE, clear_cache};
 // Import detailed game cache items from sibling module
-use super::detailed_game_cache::{
-    DETAILED_GAME_CACHE, clear_detailed_game_cache,
-};
+use super::detailed_game_cache::{DETAILED_GAME_CACHE, clear_detailed_game_cache};
 // Import goal events cache items from sibling module
-use super::goal_events_cache::{
-    GOAL_EVENTS_CACHE, clear_goal_events_cache,
-};
+use super::goal_events_cache::{GOAL_EVENTS_CACHE, clear_goal_events_cache};
 // Import HTTP response cache items from sibling module
-use super::http_response_cache::{
-    HTTP_RESPONSE_CACHE, clear_http_response_cache,
-};
+use super::http_response_cache::{HTTP_RESPONSE_CACHE, clear_http_response_cache};
 // Import game utilities from parent module
 
 // Combined Cache Management Functions
@@ -185,13 +172,26 @@ pub async fn reset_all_caches_with_confirmation() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_fetcher::cache::types::CachedGoalEventsData;
+    use crate::data_fetcher::cache::{
+        cache_detailed_game_data, cache_goal_events_data, cache_http_response, cache_players,
+        cache_players_with_disambiguation, cache_players_with_formatting,
+        cache_tournament_data, create_detailed_game_key, create_goal_events_key,
+        get_cache_size, get_cached_detailed_game_data, get_cached_disambiguated_players,
+        get_cached_goal_events_data, get_cached_http_response, get_cached_player_name,
+        get_cached_players, get_cached_tournament_data, get_tournament_cache_size,
+        has_cached_disambiguated_players, has_live_games,
+    };
+    use crate::data_fetcher::has_live_games_from_game_data;
     use crate::data_fetcher::models::{
         DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEventData, ScheduleGame,
-        ScheduleTeam,
+        ScheduleResponse, ScheduleTeam,
     };
     use crate::teletext_ui::ScoreType;
     use serial_test::serial;
+    use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
     use tokio::sync::Mutex;
 
     // Mutex to ensure LRU tests run sequentially to avoid cache interference

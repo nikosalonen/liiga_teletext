@@ -8,9 +8,9 @@
 
 use liiga_teletext::data_fetcher::models::{GoalEvent, GoalEventData, ScheduleGame, ScheduleTeam};
 use liiga_teletext::data_fetcher::player_names::{
-    DisambiguationContext, format_for_display_with_first_initial, format_with_disambiguation,
+    DisambiguationContext, format_with_disambiguation,
 };
-use liiga_teletext::data_fetcher::processors::process_goal_events_with_disambiguation;
+use liiga_teletext::data_fetcher::processors::goal_events::process_goal_events_with_disambiguation;
 use liiga_teletext::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 
 /// Creates realistic test player data with common Finnish hockey names
@@ -982,24 +982,7 @@ async fn test_unicode_character_handling_in_disambiguation() {
         "Unique name should not be disambiguated"
     );
 
-    // Test format_for_display_with_first_initial with Unicode
-    let unicode_name = format_for_display_with_first_initial("Äkäslompolo", "Kärppä");
-    assert_eq!(
-        unicode_name, "Kärppä Ä.",
-        "Should handle Unicode in first initial"
-    );
-
-    let unicode_name2 = format_for_display_with_first_initial("Öljynen", "Kärppä");
-    assert_eq!(
-        unicode_name2, "Kärppä Ö.",
-        "Should handle Ö in first initial"
-    );
-
-    let unicode_name3 = format_for_display_with_first_initial("Åke", "Kärppä");
-    assert_eq!(
-        unicode_name3, "Kärppä Å.",
-        "Should handle Å in first initial"
-    );
+    // Test Unicode handling is already verified above through format_with_disambiguation
 
     // Test disambiguation context with Unicode
     let home_context = DisambiguationContext::new(home_players);

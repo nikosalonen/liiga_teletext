@@ -18,6 +18,7 @@ pub struct TimerState {
     pub last_resize: Instant,
     pub last_activity: Instant,
     pub cache_monitor_timer: Instant,
+    #[allow(dead_code)]
     pub last_rate_limit_hit: Instant,
 }
 
@@ -48,6 +49,7 @@ impl TimerState {
     }
 
     /// Update manual refresh timestamp
+    #[allow(dead_code)]
     pub fn update_manual_refresh(&mut self) {
         self.last_manual_refresh = Instant::now();
     }
@@ -58,11 +60,13 @@ impl TimerState {
     }
 
     /// Update page change timestamp
+    #[allow(dead_code)]
     pub fn update_page_change(&mut self) {
         self.last_page_change = Instant::now();
     }
 
     /// Update date navigation timestamp
+    #[allow(dead_code)]
     pub fn update_date_navigation(&mut self) {
         self.last_date_navigation = Instant::now();
     }
@@ -159,11 +163,13 @@ impl UIState {
     }
 
     /// Check if resize is ready to process
+    #[allow(dead_code)]
     pub fn is_resize_ready(&self) -> bool {
         self.pending_resize && self.resize_timer.elapsed() >= Duration::from_millis(500)
     }
 
     /// Clear resize flag
+    #[allow(dead_code)]
     pub fn clear_resize_flag(&mut self) {
         self.pending_resize = false;
     }
@@ -207,6 +213,7 @@ impl NavigationState {
     }
 
     /// Get preserved page number and clear it
+    #[allow(dead_code)]
     pub fn take_preserved_page(&mut self) -> Option<usize> {
         self.preserved_page_for_restoration.take()
     }
@@ -261,6 +268,7 @@ impl ChangeDetectionState {
     }
 
     /// Get last games hash
+    #[allow(dead_code)]
     pub fn last_games_hash(&self) -> u64 {
         self.last_games_hash
     }
@@ -319,6 +327,7 @@ impl AdaptivePollingState {
     }
 
     /// Check if currently in backoff period
+    #[allow(dead_code)]
     pub fn is_in_backoff(&self) -> bool {
         if self.retry_backoff.is_zero() {
             false
@@ -440,11 +449,13 @@ impl InteractiveState {
     }
 
     /// Check if resize is ready (delegates to UI state)
+    #[allow(dead_code)]
     pub fn is_resize_ready(&self) -> bool {
         self.ui.is_resize_ready()
     }
 
     /// Clear resize flag (delegates to UI state)
+    #[allow(dead_code)]
     pub fn clear_resize_flag(&mut self) {
         self.ui.clear_resize_flag();
     }
@@ -465,6 +476,7 @@ impl InteractiveState {
     }
 
     /// Get preserved page number and clear it (delegates to navigation state)
+    #[allow(dead_code)]
     pub fn take_preserved_page(&mut self) -> Option<usize> {
         self.navigation.take_preserved_page()
     }

@@ -613,6 +613,7 @@ impl TeletextPage {
 ///
 /// # Returns
 /// * `usize` - Number of visible characters (excluding ANSI sequences)
+#[allow(dead_code)]
 pub fn count_visible_chars(text: &str) -> usize {
     let mut visible_len = 0;
     let mut in_ansi = false;

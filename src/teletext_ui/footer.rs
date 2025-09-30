@@ -34,6 +34,7 @@ use std::io::{Stdout, Write};
 ///
 /// # Returns
 /// * `Result<(), AppError>` - Result indicating success or failure
+#[allow(clippy::too_many_arguments)]
 pub fn render_footer(
     _stdout: &mut Stdout,
     buffer: &mut String,

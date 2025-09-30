@@ -86,8 +86,7 @@ pub struct DetailedGameResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::models::goals::{EmbeddedPlayer, GoalEvent};
-    use serde_json;
+    use crate::data_fetcher::models::goals::GoalEvent;
 
     fn create_test_goal_event() -> GoalEvent {
         GoalEvent {
