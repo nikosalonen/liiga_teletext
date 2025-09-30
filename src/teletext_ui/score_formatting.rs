@@ -93,7 +93,7 @@ pub fn format_playing_time(played_time: i32) -> String {
 /// # Returns
 /// * `u8` - ANSI color code for the score
 pub fn get_score_color(score_type: &ScoreType, is_overtime: bool, is_shootout: bool) -> u8 {
-    use crossterm::style::Color;
+    
     match score_type {
         ScoreType::Final => {
             if is_overtime || is_shootout {
@@ -120,11 +120,10 @@ pub fn format_game_time(time: &str) -> String {
     }
 
     // Remove seconds if present (e.g., "18:30:00" -> "18:30")
-    if let Some(colon_pos) = time.rfind(':') {
-        if time.len() > colon_pos + 3 {
+    if let Some(colon_pos) = time.rfind(':')
+        && time.len() > colon_pos + 3 {
             return time[..colon_pos].to_string();
         }
-    }
 
     time.to_string()
 }

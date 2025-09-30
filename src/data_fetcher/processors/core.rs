@@ -1,20 +1,8 @@
-use crate::data_fetcher::models::{GoalEvent, ScheduleGame, ScheduleTeam};
-use crate::data_fetcher::player_names::DisambiguationContext;
-use crate::error::AppError;
-use crate::teletext_ui::ScoreType;
-use std::collections::HashMap;
 
 // Import game status functions from game_status module
-use super::game_status::{determine_game_status, format_time};
 // Import goal event processing functions from goal_events module
-use super::goal_events::{
-    create_basic_goal_events, process_goal_events, process_goal_events_with_disambiguation,
-    process_team_goals, process_team_goals_with_disambiguation,
-};
 // Import time formatting functions from time_formatting module
-use super::time_formatting::{should_show_todays_games, should_show_todays_games_with_time};
 // Import player fetching functions from player_fetching module
-use super::player_fetching::try_fetch_player_names_for_game;
 
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,7 @@
 // src/teletext_ui/validation.rs - Validation utilities for TeletextPage mode compatibility and terminal width checking
 
 use super::core::{TeletextPage, TeletextRow};
-use crate::ui::teletext::compact_display::{CompactDisplayConfig, CompactModeValidation};
+use crate::ui::teletext::compact_display::CompactModeValidation;
 
 impl TeletextPage {
     /// Validates compact mode compatibility with current page settings.

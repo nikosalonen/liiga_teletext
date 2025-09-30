@@ -28,6 +28,5 @@ pub use season_utils::*;
 #[allow(unused_imports)]
 pub use season_schedule::*;
 // Re-export core API functions
-pub use core::*;
 // Re-export orchestrator functions (main API entry point)
 pub use orchestrator::*;

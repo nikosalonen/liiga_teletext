@@ -10,7 +10,7 @@
 use crate::data_fetcher::{GameData, fetch_liiga_data, has_live_games_from_game_data};
 use crate::error::AppError;
 use crate::teletext_ui::{ScoreType, TeletextPage};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tracing;
 
 use super::change_detection::{calculate_games_hash, detect_and_log_changes};
@@ -411,13 +411,12 @@ impl RefreshCoordinator {
 
         // Update change detection variables only on successful fetch
         if !result.had_error {
-            if let Some(page) = state.current_page_mut() {
-                if page.is_error_warning_active() {
+            if let Some(page) = state.current_page_mut()
+                && page.is_error_warning_active() {
                     page.hide_error_warning();
                     state.request_render();
                     needs_state_render = true;
                 }
-            }
             state
                 .change_detection
                 .update_state(result.games.clone(), games_hash);

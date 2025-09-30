@@ -196,11 +196,10 @@ pub async fn handle_once_command(
                     .await;
 
                 // Disable auto-refresh for historical dates in --once mode too
-                if let Some(ref date) = args.date {
-                    if is_historical_date(date) {
+                if let Some(ref date) = args.date
+                    && is_historical_date(date) {
                         page.set_auto_refresh_disabled(true);
                     }
-                }
 
                 page
             }
