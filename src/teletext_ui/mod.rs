@@ -1,9 +1,10 @@
 // src/teletext_ui/mod.rs - Modular teletext UI system
 
+pub mod core;
+pub mod pagination;
 pub mod utils;
 pub mod season_utils;
-pub mod pagination;
-pub mod core;
+pub mod mode_utils;
 
 // Re-export all public types and functions for backward compatibility
 pub use core::*;
