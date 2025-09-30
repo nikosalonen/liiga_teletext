@@ -16,7 +16,6 @@ use tracing::debug;
 
 use crate::ui::teletext::colors::*;
 
-
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
