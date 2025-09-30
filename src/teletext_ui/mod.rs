@@ -2,6 +2,7 @@
 
 pub mod utils;
 pub mod season_utils;
+pub mod pagination;
 pub mod core;
 
 // Re-export all public types and functions for backward compatibility

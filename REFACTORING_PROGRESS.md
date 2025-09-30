@@ -5,7 +5,7 @@
 **Overall Progress:** 25/50+ tasks completed (50%)  
 **Current Phase:** Phase 6 & 8 - Processors & Main Entry Point  
 **Current Task:** Ready for next task selection  
-**Last Updated:** 2025-09-30 09:04 UTC
+**Last Updated:** 2025-01-01 15:38 UTC
 
 ---
 
@@ -83,10 +83,10 @@
 | Task | Status | Size Reduction | Time | Notes |
 |------|--------|----------------|------|-------|
 | 4.1 - Modularize player_names.rs (2,388 lines) | ✅ DONE | 1,652 lines | 45m | Completed 2025-09-30 |
-| 4.2 - Modularize api/core.rs (2,410 lines) | ⏸️ DEFERRED | N/A | N/A | Only 2 functions left |
+| 4.2 - Modularize api/core.rs (2,410 lines) | ✅ DONE | 162 lines | 25m | orchestrator.rs created |
 | 4.3 - Modularize cache/core.rs (2,146 lines) | ⏸️ DEFERRED | N/A | N/A | HTTP cache only |
 || 4.4 - Modularize ui/interactive.rs (2,181 lines) | ✅ DONE | 793 lines | 75m | Completed 2025-09-30 |
-| 4.5 - Modularize teletext_ui.rs (4,236 lines) | ⬜️ TODO | ~2,000 lines | Est 120m | Largest file |
+| 4.5 - Modularize teletext_ui.rs (4,236 lines) | 🔄 PROGRESS | 228 lines | 30m | Pagination extracted (228 lines), core.rs now 3,967 lines |
 
 **Phase 4 Progress:**
 -  **Task 4.1 Complete:** player_names.rs → 3 focused modules (formatting.rs, disambiguation.rs, mod.rs)
