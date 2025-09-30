@@ -490,11 +490,14 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - ✅ Created mod.rs with backward-compatible re-exports
 - ✅ Extracted series_utils.rs (122 lines) - Tournament series type classification
 - ✅ Extracted change_detection.rs (148 lines) - Game data change tracking
+- ✅ Extracted indicators.rs (40 lines) - Loading indicator management
+- ✅ Extracted refresh_manager.rs (156 lines) - Auto-refresh timing and logic
 - ✅ All 276 tests passing after each extraction
-- ⏱️ Time so far: ~35 minutes
-- 📝 Progress: 270 lines extracted (12% of 2,181 total)
-- 📝 Remaining extractions: indicators, page creation, input handling, refresh logic
+- ⏱️ Time so far: ~60 minutes
+- 📝 Progress: 466 lines extracted (21% of 2,181 total)
+- 📝 Remaining extractions: page creation (~400 lines), input handling (~150 lines)
 - 📝 Pattern: Extract self-contained utilities first, then larger coordinating modules
+- 📝 4/7 extractions complete - excellent momentum!
 
 ---
 
