@@ -9,6 +9,7 @@
 //! - `state_manager`: State management and organization
 //! - `event_handler`: Event processing and coordination
 //! - `navigation_manager`: Page navigation and creation management
+//! - `refresh_coordinator`: Auto-refresh operations and data fetching coordination
 //! - `core`: Main interactive UI loop and orchestration
 
 mod change_detection;
@@ -17,6 +18,7 @@ mod event_handler;
 mod indicators;
 mod input_handler;
 pub mod navigation_manager;
+mod refresh_coordinator;
 mod refresh_manager;
 mod series_utils;
 mod state_manager;
