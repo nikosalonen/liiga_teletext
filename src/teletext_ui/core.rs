@@ -476,80 +476,13 @@ impl TeletextPage {
             );
         } else if self.compact_mode {
             // Compact mode rendering
-            let config = CompactDisplayConfig::default();
-            let validation = config.validate_terminal_width(width as usize);
-
-            match validation {
-                TerminalWidthValidation::Sufficient {
-                    current_width: _,
-                    required_width: _,
-                    excess: _,
-                } => {
-                    // Terminal is wide enough for compact mode
-                    let compact_lines = self.group_games_for_compact_display(
-                        &visible_rows,
-                        &config,
-                        width as usize,
-                    );
-
-                    // Check for compatibility warnings
-                    let compatibility = self.validate_compact_mode_compatibility();
-                    if let CompactModeValidation::CompatibleWithWarnings { warnings } =
-                        compatibility
-                    {
-                        // Display warnings at the top of compact content
-                        for (warning_index, warning) in warnings.iter().enumerate() {
-                            buffer.push_str(&format!(
-                                "\x1b[{};{}H\x1b[38;5;{}m⚠ {} (compact mode)\x1b[0m",
-                                current_line + warning_index,
-                                CONTENT_MARGIN + 1,
-                                text_fg_code,
-                                warning
-                            ));
-                        }
-                        current_line += warnings.len();
-                    }
-
-                    for (line_index, compact_line) in compact_lines.iter().enumerate() {
-                        buffer.push_str(&format!(
-                            "\x1b[{};{}H{}",
-                            current_line + line_index,
-                            CONTENT_MARGIN + 1,
-                            compact_line
-                        ));
-                    }
-                    current_line += compact_lines.len();
-                }
-                TerminalWidthValidation::Insufficient {
-                    current_width,
-                    required_width,
-                    shortfall,
-                } => {
-                    // Terminal is too narrow for compact mode - show detailed error message
-                    let error_message = format!(
-                        "Terminal too narrow for compact mode ({current_width} chars, need {required_width} chars, short {shortfall} chars)"
-                    );
-
-                    buffer.push_str(&format!(
-                        "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                        current_line,
-                        CONTENT_MARGIN + 1,
-                        text_fg_code,
-                        error_message
-                    ));
-                    current_line += 1;
-
-                    // Add suggestion for minimum terminal width
-                    buffer.push_str(&format!(
-                        "\x1b[{};{}H\x1b[38;5;{}mResize terminal to at least {} characters wide\x1b[0m",
-                        current_line,
-                        CONTENT_MARGIN + 1,
-                        text_fg_code,
-                        required_width
-                    ));
-                    current_line += 1;
-                }
-            }
+            self.render_compact_mode_content(
+                &mut buffer,
+                &visible_rows,
+                width as usize,
+                &mut current_line,
+                text_fg_code,
+            );
         } else {
             // Normal rendering mode
             self.render_normal_mode_content(

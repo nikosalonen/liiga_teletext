@@ -1,5 +1,6 @@
 // src/teletext_ui/mod.rs - Modular teletext UI system
 
+pub mod compact_mode_rendering;
 pub mod content;
 pub mod core;
 pub mod footer;
