@@ -2,7 +2,7 @@ use liiga_teletext::{
     config::Config,
     data_fetcher::models::*,
     teletext_ui::{GameResultData, ScoreType, TeletextPage, TeletextRow},
-    ui::teletext::{CompactModeValidation, TerminalWidthValidation},
+    ui::teletext::CompactModeValidation,
 };
 use tempfile::tempdir;
 
@@ -449,8 +449,7 @@ async fn test_compact_mode_non_interactive() {
     let validation = page.validate_compact_mode_compatibility();
     assert!(matches!(
         validation,
-        CompactModeValidation::Compatible
-            | CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
 
     // Test that compact mode configuration is valid
@@ -458,8 +457,7 @@ async fn test_compact_mode_non_interactive() {
     let validation = page.validate_compact_mode_compatibility();
     assert!(matches!(
         validation,
-        CompactModeValidation::Compatible
-            | CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
 }
 
@@ -534,13 +532,11 @@ async fn test_compact_mode_with_dates() {
     let future_validation = future_page.validate_compact_mode_compatibility();
     assert!(matches!(
         past_validation,
-        CompactModeValidation::Compatible
-            | CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
     assert!(matches!(
         future_validation,
-        CompactModeValidation::Compatible
-            | CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
 }
 
@@ -680,13 +676,11 @@ async fn test_compact_mode_preserves_styling() {
     let compact_validation = compact_page.validate_compact_mode_compatibility();
     assert!(matches!(
         normal_validation,
-        CompactModeValidation::Compatible
-            | CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
     assert!(matches!(
         compact_validation,
-        CompactModeValidation::Compatible
-            | CompactModeValidation::CompatibleWithWarnings { .. }
+        CompactModeValidation::Compatible | CompactModeValidation::CompatibleWithWarnings { .. }
     ));
 
     // Verify compact page reports compact mode

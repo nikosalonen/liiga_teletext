@@ -552,7 +552,7 @@ mod tests {
         assert_eq!(get_team_abbreviation("Tampereen Tappara"), "TAP");
         assert_eq!(get_team_abbreviation("Tampereen Ilves"), "ILV");
         assert_eq!(get_team_abbreviation("Jyväskylän JYP"), "JYP");
-        assert_eq!(get_team_abbreviation("Kuopion KalPa"), "KAL");
+        assert_eq!(get_team_abbreviation("Kuopion KalPa"), "KUO");
         assert_eq!(get_team_abbreviation("Oulun Kärpät"), "KÄR");
         assert_eq!(get_team_abbreviation("Rauman Lukko"), "LUK");
         assert_eq!(get_team_abbreviation("Lahden Pelicans"), "PEL");

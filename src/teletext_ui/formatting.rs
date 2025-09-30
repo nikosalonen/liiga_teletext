@@ -250,7 +250,7 @@ impl TeletextPage {
 /// # Arguments
 /// * `team_name` - The full team name
 ///
-/// # Returns  
+/// # Returns
 /// * `String` - 3-letter team abbreviation
 pub fn get_team_abbreviation(team_name: &str) -> String {
     // Known team mappings for Finnish Liiga
@@ -261,15 +261,16 @@ pub fn get_team_abbreviation(team_name: &str) -> String {
         "JYP" | "Jyväskylän JYP" => "JYP".to_string(),
         "Ilves" | "Tampereen Ilves" => "ILV".to_string(),
         "KalPa" => "KAL".to_string(),
-        "Kärpät" => "KÄR".to_string(),
-        "Lukko" => "LUK".to_string(),
-        "Pelicans" => "PEL".to_string(),
-        "SaiPa" => "SAI".to_string(),
-        "Sport" => "SPO".to_string(),
-        "HPK" => "HPK".to_string(),
-        "Jukurit" => "JUK".to_string(),
-        "Ässät" => "ÄSS".to_string(),
-        "KooKoo" => "KOO".to_string(),
+        "Kuopion KalPa" => "KUO".to_string(),
+        "Kärpät" | "Oulun Kärpät" => "KÄR".to_string(),
+        "Lukko" | "Rauman Lukko" => "LUK".to_string(),
+        "Pelicans" | "Lahden Pelicans" => "PEL".to_string(),
+        "SaiPa" | "Lappeenrannan SaiPa" => "SAI".to_string(),
+        "Sport" | "Vaasan Sport" => "SPO".to_string(),
+        "HPK" | "Hämeenlinnan HPK" => "HPK".to_string(),
+        "Jukurit" | "Mikkelin Jukurit" => "JUK".to_string(),
+        "Ässät" | "Porin Ässät" => "ÄSS".to_string(),
+        "KooKoo" | "Kouvolan KooKoo" => "KOO".to_string(),
         "K-Espoo" => "KES".to_string(),
         _ => {
             // Fallback: extract only letters, convert to uppercase, take first 3
