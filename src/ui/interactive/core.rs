@@ -3,7 +3,7 @@
 //! This module contains the main interactive UI loop and all UI-related helper functions.
 //! It handles user input, screen updates, page creation, and the main application flow.
 
-use crate::data_fetcher::cache::has_live_games_from_game_data;
+use crate::data_fetcher::has_live_games_from_game_data;
 use crate::data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::{GameResultData, ScoreType, TeletextPage};

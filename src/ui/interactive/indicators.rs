@@ -3,7 +3,7 @@
 //! This module handles the logic for showing/hiding loading screens and
 //! auto-refresh indicators based on game state and date selection.
 
-use crate::data_fetcher::{GameData, cache::has_live_games_from_game_data, is_historical_date};
+use crate::data_fetcher::{GameData, has_live_games_from_game_data, is_historical_date};
 use crate::teletext_ui::{ScoreType, TeletextPage};
 
 /// Helper function to check if a game is in the future (scheduled)

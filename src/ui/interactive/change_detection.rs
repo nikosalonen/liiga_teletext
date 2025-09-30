@@ -3,7 +3,7 @@
 //! This module provides efficient change detection to avoid unnecessary UI updates
 //! by computing hashes of game data and comparing them across refreshes.
 
-use crate::data_fetcher::{GameData, cache::has_live_games_from_game_data};
+use crate::data_fetcher::{GameData, has_live_games_from_game_data};
 use crate::teletext_ui::ScoreType;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
