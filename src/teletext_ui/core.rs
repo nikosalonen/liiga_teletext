@@ -283,48 +283,12 @@ impl TeletextPage {
             return Ok(());
         }
 
-        let (width, _) = crossterm::terminal::size()?;
-        let footer_y = if self.ignore_height_limit {
-            // In --once mode, we don't update loading indicators
-            return Ok(());
-        } else {
-            // In interactive mode, position footer at bottom of screen
-            self.screen_height.saturating_sub(1)
-        };
-        let empty_y = footer_y.saturating_sub(1);
-
-        // Clear the loading indicator line first
-        execute!(
+        super::footer::render_loading_indicator_only(
             stdout,
-            MoveTo(0, empty_y),
-            Print(" ".repeat(width as usize))
-        )?;
-
-        // Show loading indicator if active
-        if let Some(ref loading) = self.loading_indicator {
-            let loading_text = format!("{} {}", loading.current_frame(), loading.message());
-            let loading_width = loading_text.chars().count();
-            let left_padding = if width as usize > loading_width {
-                (width as usize - loading_width) / 2
-            } else {
-                0
-            };
-            execute!(
-                stdout,
-                MoveTo(0, empty_y),
-                SetForegroundColor(goal_type_fg()), // Use existing color function for consistency
-                Print(format!(
-                    "{space:>pad$}{text}",
-                    space = "",
-                    pad = left_padding,
-                    text = loading_text
-                )),
-                ResetColor
-            )?;
-        }
-
-        stdout.flush()?;
-        Ok(())
+            self.screen_height,
+            self.ignore_height_limit,
+            &self.loading_indicator,
+        )
     }
 
     /// Sets whether to show the season countdown in the footer.
@@ -600,65 +564,24 @@ impl TeletextPage {
 
         // Add footer if enabled
         if self.show_footer {
-            let footer_y = if self.ignore_height_limit {
-                current_line + 1
-            } else {
-                self.screen_height.saturating_sub(1) as usize
-            };
+            let footer_y = super::footer::calculate_footer_position(
+                self.ignore_height_limit,
+                current_line,
+                self.screen_height,
+            );
 
-            let controls = if total_pages > 1 {
-                "q=Lopeta ←→=Sivut"
-            } else {
-                "q=Lopeta"
-            };
-
-            let controls = if self.auto_refresh_disabled {
-                if total_pages > 1 {
-                    "q=Lopeta ←→=Sivut (Ei päivity)"
-                } else {
-                    "q=Lopeta (Ei päivity)"
-                }
-            } else {
-                controls
-            };
-
-            // Add season countdown above the footer if available
-            if let Some(ref countdown) = self.season_countdown {
-                let countdown_y = footer_y.saturating_sub(1);
-                buffer.push_str(&format!(
-                    "\x1b[{};1H\x1b[38;5;{}m{:^width$}\x1b[0m",
-                    countdown_y,
-                    get_ansi_code(Color::AnsiValue(226), 226), // Bright yellow
-                    countdown,
-                    width = width as usize
-                ));
-            }
-
-            // Add loading indicator or auto-refresh indicator if active
-            let mut footer_text = if let Some(ref loading) = self.loading_indicator {
-                let loading_frame = loading.current_frame();
-                format!("{controls} {} {}", loading_frame, loading.message())
-            } else if let Some(ref indicator) = self.auto_refresh_indicator {
-                let indicator_frame = indicator.current_frame();
-                format!("{controls} {indicator_frame}")
-            } else {
-                controls.to_string()
-            };
-
-            // Append error warning if active
-            if self.error_warning_active {
-                footer_text.push_str("  ⚠️");
-            }
-
-            buffer.push_str(&format!(
-                "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
+            super::footer::render_footer(
+                stdout,
+                &mut buffer,
                 footer_y,
-                get_ansi_code(header_bg(), 21),
-                "   ",
-                footer_text,
-                "   ",
-                width = (width as usize).saturating_sub(6)
-            ));
+                width as usize,
+                total_pages,
+                &self.loading_indicator,
+                &self.auto_refresh_indicator,
+                self.auto_refresh_disabled,
+                self.error_warning_active,
+                &self.season_countdown,
+            )?;
         }
 
         // Write entire buffer in one operation (minimizes flicker)
