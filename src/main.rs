@@ -1,4 +1,5 @@
 // src/main.rs
+mod cli;
 mod config;
 mod constants;
 mod data_fetcher;
@@ -8,6 +9,7 @@ mod ui;
 
 use chrono::{Local, Utc};
 use clap::Parser;
+use cli::{Args, is_noninteractive_mode};
 use config::Config;
 use crossterm::{
     execute,
@@ -27,97 +29,7 @@ use ui::{create_future_games_page, create_page, format_date_for_display};
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
 
-/// Determines if the application should run in non-interactive mode
-/// based on the provided command line arguments.
-fn is_noninteractive_mode(args: &Args) -> bool {
-    args.once
-        || args.list_config
-        || args.version
-        || args.new_api_domain.is_some()
-        || args.new_log_file_path.is_some()
-        || args.clear_log_file_path
-}
 
-/// Finnish Hockey League (Liiga) Teletext Viewer
-///
-/// A nostalgic teletext-style viewer for Finnish Hockey League scores and game information.
-/// Displays game scores, goalscorers, and special situations (powerplay, overtime, shootout).
-///
-/// In interactive mode (default):
-/// - Use arrow keys (←/→) to navigate between pages
-/// - Use Shift+←/→ to navigate between dates with games
-/// - Press 'r' to refresh data (10s cooldown between refreshes)
-/// - Press 'q' to quit
-///
-/// The viewer automatically refreshes:
-/// - Every minute when there are ongoing games
-/// - Every hour when showing only completed games
-#[derive(Parser, Debug)]
-#[command(author = "Niko Salonen", about, long_about = None)]
-#[command(disable_version_flag = true)]
-struct Args {
-    /// Show scores once and exit immediately. Useful for scripts or quick score checks.
-    /// The output stays visible in terminal history.
-    #[arg(short, long)]
-    once: bool,
-
-    /// Disable clickable video links in the output.
-    /// Useful for terminals that don't support links or for plain text output.
-    #[arg(long = "plain", short = 'p', help_heading = "Display Options")]
-    disable_links: bool,
-
-    /// Display games in compact format showing only team identifiers and scores.
-    /// Removes goal scorer details, timestamps, and video links for a condensed view.
-    #[arg(short = 'c', long = "compact", help_heading = "Display Options")]
-    compact: bool,
-
-    /// Display games in wide format with two columns side by side.
-    /// Shows full game details in a two-column layout when terminal width is 128+ characters.
-    /// Each column displays 60 characters width with full teletext layout.
-    /// Falls back to normal single-column display on narrow terminals.
-    #[arg(short = 'w', long = "wide", help_heading = "Display Options")]
-    wide: bool,
-
-    /// Update API domain in config. Will prompt for new domain if not provided.
-    #[arg(long = "config", help_heading = "Configuration")]
-    new_api_domain: Option<String>,
-
-    /// Update log file path in config. This sets a persistent custom log file location.
-    #[arg(long = "set-log-file", help_heading = "Configuration")]
-    new_log_file_path: Option<String>,
-
-    /// Clear the custom log file path from config. This reverts to using the default log location.
-    #[arg(long = "clear-log-file", help_heading = "Configuration")]
-    clear_log_file_path: bool,
-
-    /// List current configuration settings
-    #[arg(long = "list-config", short = 'l', help_heading = "Configuration")]
-    list_config: bool,
-
-    /// Show games for a specific date in YYYY-MM-DD format.
-    /// If not provided, shows today's or yesterday's games based on current time.
-    #[arg(long = "date", short = 'd', help_heading = "Display Options")]
-    date: Option<String>,
-
-    /// Show version information
-    #[arg(short = 'V', long = "version", help_heading = "Info")]
-    version: bool,
-
-    /// Enable debug mode which doesn't clear the terminal before drawing the UI.
-    /// In this mode, info logs are written to the log file instead of being displayed in the terminal.
-    /// The log file is created if it doesn't exist.
-    #[arg(long = "debug", help_heading = "Debug")]
-    debug: bool,
-
-    /// Specify a custom log file path. If not provided, logs will be written to the default location.
-    #[arg(long = "log-file", help_heading = "Debug")]
-    log_file: Option<String>,
-
-    /// Set minimum refresh interval in seconds (default: auto-detect based on game count).
-    /// Higher values reduce API calls but may miss updates. Use with caution.
-    #[arg(long = "min-refresh-interval", help_heading = "Display Options")]
-    min_refresh_interval: Option<u64>,
-}
 
 /// Checks for the latest version of this crate on crates.io.
 ///
@@ -557,10 +469,10 @@ async fn main() -> Result<(), AppError> {
                     .await;
 
                     // Disable auto-refresh for historical dates in --once mode too
-                    if let Some(ref date) = args.date
-                        && is_historical_date(date)
-                    {
-                        page.set_auto_refresh_disabled(true);
+                    if let Some(ref date) = args.date {
+                        if is_historical_date(date) {
+                            page.set_auto_refresh_disabled(true);
+                        }
                     }
 
                     page
