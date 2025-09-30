@@ -2,6 +2,7 @@ pub mod types;
 pub mod tournament_cache;
 pub mod player_cache;
 pub mod detailed_game_cache;
+pub mod goal_events_cache;
 mod core;
 
 // Re-export cache types
@@ -12,5 +13,7 @@ pub use player_cache::*;
 pub use tournament_cache::*;
 // Re-export detailed game cache functions
 pub use detailed_game_cache::*;
+// Re-export goal events cache functions
+pub use goal_events_cache::*;
 // Re-export core cache functions
 pub use core::*;
