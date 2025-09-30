@@ -84,7 +84,7 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
                 has_live,
                 cached_entry.cached_at.elapsed()
             );
-            return Some(cached_entry.data.clone());
+            Some(cached_entry.data.clone())
         } else {
             // Enhanced logging for expired cache entries during auto-refresh
             let has_live = cached_entry.has_live_games;
@@ -103,12 +103,12 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
                 );
             }
             cache.pop(key);
+            None
         }
     } else {
         debug!("Cache miss for tournament data: key={}", key);
+        None
     }
-
-    None
 }
 
 /// Retrieves cached tournament data with custom live game state check
