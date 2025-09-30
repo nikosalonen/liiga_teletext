@@ -2,13 +2,15 @@ use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::fs;
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 pub mod paths;
 pub mod validation;
+pub mod user_prompts;
 
 use paths::{get_config_path, get_log_dir_path};
 use validation::validate_config;
+use user_prompts::prompt_for_api_domain;
 
 /// Configuration structure for the application.
 /// Handles loading, saving, and managing application settings.
@@ -72,14 +74,10 @@ impl Config {
                     http_timeout_seconds: default_http_timeout(),
                 }
             } else {
-                println!("Please enter your API domain: ");
-                let mut input = String::new();
-                let stdin = io::stdin();
-                let mut reader = io::BufReader::new(stdin);
-                reader.read_line(&mut input).await?;
+                let api_domain = prompt_for_api_domain().await?;
 
                 let config = Config {
-                    api_domain: input.trim().to_string(),
+                    api_domain,
                     log_file_path: None,
                     http_timeout_seconds: default_http_timeout(),
                 };
