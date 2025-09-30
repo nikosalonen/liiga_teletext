@@ -1,7 +1,7 @@
 use crate::constants::env_vars;
-use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, ScheduleGame};
+use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, ScheduleGame};
 use crate::data_fetcher::player_names::{
-    DisambiguationContext, build_full_name, create_fallback_name, format_for_display,
+    DisambiguationContext, build_full_name, format_for_display,
 };
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
