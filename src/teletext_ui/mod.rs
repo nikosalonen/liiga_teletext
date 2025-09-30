@@ -2,10 +2,11 @@
 
 pub mod core;
 pub mod pagination;
-pub mod utils;
-pub mod season_utils;
 pub mod mode_utils;
 pub mod indicators;
+pub mod content;
+pub mod utils;
+pub mod season_utils;
 
 // Re-export all public types and functions for backward compatibility
 pub use core::*;
