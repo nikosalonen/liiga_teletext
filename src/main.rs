@@ -4,22 +4,20 @@ mod config;
 mod constants;
 mod data_fetcher;
 mod error;
+mod logging;
 mod teletext_ui;
 mod ui;
 mod version;
 
 use chrono::{Local, Utc};
 use clap::Parser;
-use cli::{Args, is_noninteractive_mode};
+use cli::Args;
 use config::Config;
 use crossterm::{execute, style::Color, terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode}};
 use data_fetcher::{fetch_liiga_data, is_historical_date};
 use error::AppError;
 use std::io::stdout;
-use std::path::Path;
 use teletext_ui::TeletextPage;
-use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use ui::{create_future_games_page, create_page, format_date_for_display};
 
 
@@ -34,100 +32,8 @@ async fn main() -> Result<(), AppError> {
         ));
     }
 
-    // Try to load config to get log file path if specified
-    let config_log_path = Config::load()
-        .await
-        .ok()
-        .and_then(|config| config.log_file_path);
-
-    // Set up logging to both console and file
-    let custom_log_path = args.log_file.as_ref().or(config_log_path.as_ref());
-    let (log_dir, log_file_name) = match custom_log_path {
-        Some(custom_path) => {
-            let path = Path::new(custom_path);
-            let parent = path.parent().unwrap_or(Path::new("."));
-            let file_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("liiga_teletext.log");
-            (parent.to_string_lossy().to_string(), file_name.to_string())
-        }
-        None => (Config::get_log_dir_path(), "liiga_teletext.log".to_string()),
-    };
-
-    // Create log directory if it doesn't exist
-    if !Path::new(&log_dir).exists() {
-        tokio::fs::create_dir_all(&log_dir).await.map_err(|e| {
-            AppError::log_setup_error(format!("Failed to create log directory: {e}"))
-        })?;
-    }
-
-    // Set up a rolling file appender that creates a new log file each day
-    let file_appender = RollingFileAppender::new(Rotation::DAILY, &log_dir, &log_file_name);
-
-    // Create a non-blocking writer for the file appender
-    // The guard must be kept alive for the duration of the program
-    // to ensure logs are flushed properly
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-
-    // Set up the subscriber with appropriate outputs based on mode
-    let registry = tracing_subscriber::registry();
-    let is_noninteractive = is_noninteractive_mode(&args);
-
-    if is_noninteractive {
-        if args.once && !args.debug {
-            // Once mode without debug: log only to file, not to stdout
-            registry
-                .with(
-                    fmt::Layer::new()
-                        .with_writer(non_blocking)
-                        .with_ansi(false)
-                        .with_filter(
-                            EnvFilter::from_default_env()
-                                .add_directive("liiga_teletext=info".parse().unwrap()),
-                        ),
-                )
-                .init();
-        } else {
-            // Other non-interactive modes: log to both stdout and file
-            registry
-                .with(
-                    fmt::Layer::new()
-                        .with_writer(stdout)
-                        .with_ansi(true)
-                        .with_filter(
-                            EnvFilter::from_default_env()
-                                .add_directive("liiga_teletext=info".parse().unwrap()),
-                        ),
-                )
-                .with(
-                    fmt::Layer::new()
-                        .with_writer(non_blocking)
-                        .with_ansi(false)
-                        .with_filter(
-                            EnvFilter::from_default_env()
-                                .add_directive("liiga_teletext=info".parse().unwrap()),
-                        ),
-                )
-                .init();
-        }
-    } else {
-        // Interactive: log only to file
-        registry
-            .with(
-                fmt::Layer::new()
-                    .with_writer(non_blocking)
-                    .with_ansi(false)
-                    .with_filter(
-                        EnvFilter::from_default_env()
-                            .add_directive("liiga_teletext=info".parse().unwrap()),
-                    ),
-            )
-            .init();
-    }
-
-    // Log the location of the log file
-    let log_file_path = format!("{log_dir}/{log_file_name}");
+    // Set up logging configuration
+    let (log_file_path, _guard) = logging::setup_logging(&args).await?;
     tracing::info!("Logs are being written to: {log_file_path}");
 
     // Handle version flag first
