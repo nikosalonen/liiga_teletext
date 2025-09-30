@@ -10,6 +10,7 @@
 //! - `event_handler`: Event processing and coordination
 //! - `navigation_manager`: Page navigation and creation management
 //! - `refresh_coordinator`: Auto-refresh operations and data fetching coordination
+//! - `terminal_manager`: Terminal setup and cleanup operations
 //! - `core`: Main interactive UI loop and orchestration
 
 mod change_detection;
@@ -22,6 +23,7 @@ mod refresh_coordinator;
 mod refresh_manager;
 mod series_utils;
 mod state_manager;
+mod terminal_manager;
 
 // Re-export all public items from core for backward compatibility
 pub use core::*;

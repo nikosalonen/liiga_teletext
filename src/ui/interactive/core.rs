@@ -4,17 +4,13 @@
 //! It handles user input, screen updates, page creation, and the main application flow.
 
 use crate::error::AppError;
-use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
-use std::io::stdout;
 use std::time::Duration;
 
 // Import utilities from sibling modules
 use super::state_manager::InteractiveState;
 use super::event_handler::{EventHandler, EventHandlerBuilder, EventResult};
 use super::refresh_coordinator::{RefreshCoordinator, RefreshCycleConfig};
+use super::terminal_manager::{TerminalManager, TerminalConfig};
 
 // Teletext page constants (removed unused constants)
 
@@ -31,27 +27,6 @@ use super::refresh_coordinator::{RefreshCoordinator, RefreshCycleConfig};
 /// Parameters for keyboard event handling
 /// Handle keyboard events
 
-/// Setup terminal for interactive mode
-fn setup_terminal(debug_mode: bool) -> Result<std::io::Stdout, AppError> {
-    let mut stdout = stdout();
-
-    if !debug_mode {
-        enable_raw_mode()?;
-        execute!(stdout, EnterAlternateScreen)?;
-    }
-
-    Ok(stdout)
-}
-
-/// Cleanup terminal after interactive mode
-fn cleanup_terminal(debug_mode: bool, mut stdout: std::io::Stdout) -> Result<(), AppError> {
-    if !debug_mode {
-        disable_raw_mode()?;
-        execute!(stdout, LeaveAlternateScreen)?;
-    }
-    Ok(())
-}
-
 /// Runs the interactive UI with adaptive polling and change detection
 pub async fn run_interactive_ui(
     date: Option<String>,
@@ -61,8 +36,9 @@ pub async fn run_interactive_ui(
     compact_mode: bool,
     wide_mode: bool,
 ) -> Result<(), AppError> {
-    // Setup terminal for interactive mode
-    let mut stdout = setup_terminal(debug_mode)?;
+    // Create terminal manager and setup terminal for interactive mode
+    let terminal_manager = TerminalManager::with_config(TerminalConfig { debug_mode });
+    let mut stdout = terminal_manager.setup_terminal()?;
     
     // Initialize all state through the state manager
     let mut state = InteractiveState::new(date);
@@ -152,7 +128,7 @@ pub async fn run_interactive_ui(
     }
 
     // Cleanup terminal
-    cleanup_terminal(debug_mode, stdout)?;
+    terminal_manager.cleanup_terminal(stdout)?;
     Ok(())
 }
 
