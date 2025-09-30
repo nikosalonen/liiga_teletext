@@ -72,7 +72,7 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
     let mut cache = TOURNAMENT_CACHE.write().await;
 
     if let Some(cached_entry) = cache.get(key) {
-        debug!("Found cached tournament data for key: {}", key);
+        debug!("Found cached tournament data for key: {key}");
 
         if !cached_entry.is_expired() {
             let games_count = cached_entry.data.games.len();
@@ -106,7 +106,7 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
             None
         }
     } else {
-        debug!("Cache miss for tournament data: key={}", key);
+        debug!("Cache miss for tournament data: key={key}");
         None
     }
 }
@@ -195,7 +195,7 @@ pub async fn get_cached_tournament_data_for_auto_refresh(key: &str) -> Option<Sc
             cache.pop(key);
         }
     } else {
-        debug!("Auto-refresh: Cache miss for tournament data: key={}", key);
+        debug!("Auto-refresh: Cache miss for tournament data: key={key}");
     }
 
     None

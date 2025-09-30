@@ -57,7 +57,7 @@ pub async fn get_cached_detailed_game_data(
     let mut cache = DETAILED_GAME_CACHE.write().await;
 
     if let Some(cached_entry) = cache.get(&key) {
-        debug!("Found cached detailed game data: key={}", key);
+        debug!("Found cached detailed game data: key={key}");
 
         if !cached_entry.is_expired() {
             let is_live = cached_entry.is_live_game;
@@ -79,7 +79,7 @@ pub async fn get_cached_detailed_game_data(
             cache.pop(&key);
         }
     } else {
-        debug!("Cache miss for detailed game data: key={}", key);
+        debug!("Cache miss for detailed game data: key={key}");
     }
 
     None

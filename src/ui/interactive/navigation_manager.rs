@@ -495,7 +495,7 @@ impl NavigationManager {
                 is_future
             }
             Err(e) => {
-                tracing::warn!("Failed to parse game start time '{}': {}", game.start, e);
+                tracing::warn!("Failed to parse game start time '{}': {e}", game.start);
                 false
             }
         }
@@ -530,7 +530,7 @@ impl NavigationManager {
                 is_near_start
             }
             Err(e) => {
-                tracing::warn!("Failed to parse game start time '{}': {}", game.start, e);
+                tracing::warn!("Failed to parse game start time '{}': {e}", game.start);
                 false
             }
         }

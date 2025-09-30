@@ -144,7 +144,7 @@ pub async fn fetch_liiga_data(
     if all_games.is_empty() {
         info!("No games found after processing all data");
         if earliest_date.is_some() {
-            info!("Returning empty games list with next date: {}", return_date);
+            info!("Returning empty games list with next date: {return_date}");
         } else {
             info!(
                 "Returning empty games list with original date: {}",

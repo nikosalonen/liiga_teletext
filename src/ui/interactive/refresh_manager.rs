@@ -45,7 +45,7 @@ fn is_game_near_start_time(game: &GameData) -> bool {
             is_near_start
         }
         Err(e) => {
-            tracing::warn!("Failed to parse game start time '{}': {}", game.start, e);
+            tracing::warn!("Failed to parse game start time '{}': {e}", game.start);
             false
         }
     }
@@ -123,7 +123,7 @@ pub(super) fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool
     if let Some(date) = params.current_date.as_deref()
         && is_historical_date(date)
     {
-        tracing::debug!("Auto-refresh skipped for historical date: {}", date);
+        tracing::debug!("Auto-refresh skipped for historical date: {date}");
         return false;
     }
 

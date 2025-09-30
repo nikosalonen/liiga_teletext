@@ -107,7 +107,7 @@ pub(super) async fn fetch_tournament_data_with_cache_check(
     date: &str,
     current_games: &[GameData],
 ) -> Result<ScheduleResponse, AppError> {
-    info!("Fetching tournament data for {} on {}", tournament, date);
+    info!("Fetching tournament data for {tournament} on {date}");
 
     // Create cache key
     let cache_key = create_tournament_key(tournament, date);
@@ -260,21 +260,21 @@ pub(super) async fn process_next_game_dates(
                     tournament, next_date
                 );
             } else {
-                info!("Tournament {} has no next game date", tournament);
+                info!("Tournament {tournament} has no next game date");
             }
         } else {
-            info!("No response found for tournament key: {}", tournament_key);
+            info!("No response found for tournament key: {tournament_key}");
         }
     }
 
     if let Some(next_date) = best_date.clone() {
-        info!("Found best next game date: {}", next_date);
+        info!("Found best next game date: {next_date}");
         // Only fetch tournaments that have games on the best date
         let tournaments_to_fetch: Vec<&str> = tournament_next_dates
             .iter()
             .filter_map(|(tournament, date)| {
                 if date == &next_date {
-                    info!("Tournament {} has games on the best date", tournament);
+                    info!("Tournament {tournament} has games on the best date");
                     Some(*tournament)
                 } else {
                     info!(
@@ -391,7 +391,7 @@ pub(super) async fn find_future_games_fallback(
     let mut check_date = match chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d") {
         Ok(date) => date,
         Err(e) => {
-            error!("Failed to parse date '{}': {}", current_date, e);
+            error!("Failed to parse date '{current_date}': {e}");
             return Err(AppError::datetime_parse_error(format!(
                 "Failed to parse date '{current_date}': {e}"
             )));
@@ -413,7 +413,7 @@ pub(super) async fn find_future_games_fallback(
         };
 
         let date_str = check_date.format("%Y-%m-%d").to_string();
-        info!("Checking for games on date: {}", date_str);
+        info!("Checking for games on date: {date_str}");
 
         // Try to fetch games for this date
         match fetch_day_data(client, config, tournaments, &date_str, &[], &HashMap::new()).await {
@@ -428,10 +428,10 @@ pub(super) async fn find_future_games_fallback(
                 }
             }
             Ok((None, _)) => {
-                info!("No games found on date {}", date_str);
+                info!("No games found on date {date_str}");
             }
             Err(e) => {
-                warn!("Error fetching games for date {}: {}", date_str, e);
+                warn!("Error fetching games for date {date_str}: {e}");
                 // Continue to next date even if this one fails
             }
         }

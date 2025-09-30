@@ -42,7 +42,7 @@ pub fn determine_fetch_date_with_time(
         None => {
             if should_show_todays_games_with_time(now_local) {
                 let date_str = now_local.format("%Y-%m-%d").to_string();
-                info!("Using today's date: {}", date_str);
+                info!("Using today's date: {date_str}");
                 (date_str, false)
             } else {
                 let yesterday = now_local
