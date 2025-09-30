@@ -28,425 +28,18 @@ use super::refresh_manager::{
 };
 use super::state_manager::InteractiveState;
 use super::event_handler::{EventHandler, EventHandlerBuilder, EventResult};
+use super::navigation_manager::{NavigationManager, PageCreationConfig, PageRestorationParams, LoadingIndicatorConfig};
 
 // Teletext page constants (removed unused constants)
 
 // UI timing constants (removed unused constants)
 
-/// Formats a date string for display in Finnish format (DD.MM.)
-pub fn format_date_for_display(date_str: &str) -> String {
-    // Parse the date using chrono for better error handling
-    match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-        Ok(date) => date.format("%d.%m.").to_string(),
-        Err(_) => date_str.to_string(), // Fallback if parsing fails
-    }
-}
 
 
-/// Manages loading and auto-refresh indicators for the current page
-fn manage_loading_indicators(
-    current_page: &mut Option<TeletextPage>,
-    should_show_loading: bool,
-    should_show_indicator: bool,
-    current_date: &Option<String>,
-    disable_links: bool,
-    compact_mode: bool,
-    wide_mode: bool,
-) -> bool {
-    let mut needs_render = false;
-
-    if should_show_indicator && let Some(page) = current_page {
-        page.show_auto_refresh_indicator();
-        needs_render = true;
-    }
-
-    if should_show_loading {
-        *current_page = Some(create_loading_page(
-            current_date,
-            disable_links,
-            compact_mode,
-            wide_mode,
-        ));
-        needs_render = true;
-    } else {
-        tracing::debug!("Skipping loading screen due to ongoing games");
-    }
-
-    needs_render
-}
 
 
-/// Configuration for creating or restoring a teletext page
-struct PageCreationConfig<'a> {
-    games: &'a [GameData],
-    disable_links: bool,
-    compact_mode: bool,
-    wide_mode: bool,
-    fetched_date: &'a str,
-    preserved_page_for_restoration: Option<usize>,
-    current_date: &'a Option<String>,
-    updated_current_date: &'a Option<String>,
-}
 
-/// Creates or restores a teletext page based on the current state and data
-async fn create_or_restore_page(config: PageCreationConfig<'_>) -> Option<TeletextPage> {
-    // Restore the preserved page number
-    if let Some(preserved_page_for_restoration) = config.preserved_page_for_restoration {
-        let mut page = create_page(
-            config.games,
-            config.disable_links,
-            true,
-            false,
-            config.compact_mode,
-            config.wide_mode,
-            false, // suppress_countdown - false for interactive mode
-            Some(config.fetched_date.to_string()),
-            Some(preserved_page_for_restoration),
-        )
-        .await;
 
-        // Disable auto-refresh for historical dates
-        if let Some(date) = config.updated_current_date
-            && is_historical_date(date)
-        {
-            page.set_auto_refresh_disabled(true);
-        }
-
-        Some(page)
-    } else {
-        let page = if config.games.is_empty() {
-            create_error_page(
-                config.fetched_date,
-                config.disable_links,
-                config.compact_mode,
-                config.wide_mode,
-            )
-        } else {
-            // Try to create a future games page, fall back to regular page if not future games
-            let show_future_header = config.current_date.is_none();
-            match create_future_games_page(
-                config.games,
-                config.disable_links,
-                true,
-                false,
-                config.compact_mode,
-                config.wide_mode,
-                false, // suppress_countdown - false for interactive mode
-                show_future_header,
-                Some(config.fetched_date.to_string()),
-                None,
-            )
-            .await
-            {
-                Some(page) => page,
-                None => {
-                    let mut page = create_page(
-                        config.games,
-                        config.disable_links,
-                        true,
-                        false,
-                        config.compact_mode,
-                        config.wide_mode,
-                        false, // suppress_countdown - false for interactive mode
-                        Some(config.fetched_date.to_string()),
-                        None,
-                    )
-                    .await;
-
-                    // Disable auto-refresh for historical dates
-                    if let Some(date) = config.updated_current_date
-                        && is_historical_date(date)
-                    {
-                        page.set_auto_refresh_disabled(true);
-                    }
-
-                    page
-                }
-            }
-        };
-
-        Some(page)
-    }
-}
-
-/// Parameters for page restoration
-struct PageRestorationParams<'a> {
-    current_page: &'a mut Option<TeletextPage>,
-    data_changed: bool,
-    had_error: bool,
-    preserved_page_for_restoration: Option<usize>,
-    games: &'a [GameData],
-    last_games: &'a [GameData],
-    disable_links: bool,
-    fetched_date: &'a str,
-    updated_current_date: &'a Option<String>,
-    compact_mode: bool,
-    wide_mode: bool,
-}
-
-/// Handles page restoration when loading screen was shown but data didn't change
-async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool {
-    let mut needs_render = false;
-
-    // If we showed a loading screen but data didn't change, we still need to restore pagination
-    if !params.data_changed
-        && !params.had_error
-        && params.preserved_page_for_restoration.is_some()
-        && let Some(current) = params.current_page
-    {
-        // Check if current page is a loading page by checking if it has error messages
-        if current.has_error_messages()
-            && let Some(preserved_page_for_restoration) = params.preserved_page_for_restoration
-        {
-            let games_to_use = if params.games.is_empty() {
-                params.last_games
-            } else {
-                params.games
-            };
-            let mut page = create_page(
-                games_to_use,
-                params.disable_links,
-                true,
-                false,
-                params.compact_mode,
-                params.wide_mode,
-                false, // suppress_countdown - false for interactive mode
-                Some(params.fetched_date.to_string()),
-                Some(preserved_page_for_restoration),
-            )
-            .await;
-
-            // Disable auto-refresh for historical dates
-            if let Some(date) = params.updated_current_date
-                && is_historical_date(date)
-            {
-                page.set_auto_refresh_disabled(true);
-            }
-
-            *params.current_page = Some(page);
-            needs_render = true;
-        }
-    }
-
-    needs_render
-}
-
-/// Creates a base TeletextPage with common initialization logic.
-/// This helper function reduces code duplication between create_page and create_future_games_page.
-#[allow(clippy::too_many_arguments)]
-async fn create_base_page(
-    games: &[GameData],
-    disable_video_links: bool,
-    show_footer: bool,
-    ignore_height_limit: bool,
-    compact_mode: bool,
-    wide_mode: bool,
-    suppress_countdown: bool,
-    future_games_header: Option<String>,
-    fetched_date: Option<String>,
-    current_page: Option<usize>,
-) -> TeletextPage {
-    let subheader = get_subheader(games);
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        subheader,
-        disable_video_links,
-        show_footer,
-        ignore_height_limit,
-        compact_mode,
-        wide_mode,
-    );
-
-    // Set the fetched date if provided
-    if let Some(date) = fetched_date {
-        page.set_fetched_date(date);
-    }
-
-    // Add future games header first if provided
-    if let Some(header) = future_games_header {
-        page.add_future_games_header(header);
-    }
-
-    for game in games {
-        page.add_game_result(GameResultData::new(game));
-    }
-
-    // Set season countdown if regular season hasn't started yet (unless suppressed)
-    if !suppress_countdown {
-        page.set_show_season_countdown(games).await;
-    }
-
-    // Set the current page AFTER content is added (so total_pages() is correct)
-    if let Some(page_num) = current_page {
-        page.set_current_page(page_num);
-    }
-
-    page
-}
-
-/// Creates a TeletextPage for regular games
-#[allow(clippy::too_many_arguments)]
-pub async fn create_page(
-    games: &[GameData],
-    disable_video_links: bool,
-    show_footer: bool,
-    ignore_height_limit: bool,
-    compact_mode: bool,
-    wide_mode: bool,
-    suppress_countdown: bool,
-    fetched_date: Option<String>,
-    current_page: Option<usize>,
-) -> TeletextPage {
-    create_base_page(
-        games,
-        disable_video_links,
-        show_footer,
-        ignore_height_limit,
-        compact_mode,
-        wide_mode,
-        suppress_countdown,
-        None,
-        fetched_date,
-        current_page,
-    )
-    .await
-}
-
-/// Validates if a game is in the future by checking both time and start fields.
-/// Returns true if the game has a non-empty time field and a valid future start date.
-fn is_future_game(game: &GameData) -> bool {
-    // Check if time field is non-empty (indicates scheduled game)
-    if game.time.is_empty() {
-        return false;
-    }
-
-    // Check if start field contains a valid future date
-    if game.start.is_empty() {
-        return false;
-    }
-
-    // Parse the start date to validate it's on a future date (not just future time today)
-    // Expected format: YYYY-MM-DDThh:mm:ssZ
-    match chrono::DateTime::parse_from_rfc3339(&game.start) {
-        Ok(game_start) => {
-            // Convert to local timezone for date comparison
-            let game_local = game_start.with_timezone(&chrono::Local);
-            let now_local = chrono::Local::now();
-
-            // Extract just the date parts for comparison
-            let game_date = game_local.date_naive();
-            let today = now_local.date_naive();
-
-            let is_future = game_date > today;
-
-            if !is_future {
-                tracing::debug!(
-                    "Game date {} is not in the future (today: {})",
-                    game_date,
-                    today
-                );
-            }
-
-            is_future
-        }
-        Err(e) => {
-            tracing::warn!("Failed to parse game start time '{}': {}", game.start, e);
-            false
-        }
-    }
-}
-
-/// Checks if a game is scheduled to start within the next few minutes or has recently started
-#[allow(dead_code)] // Reserved for future use
-fn is_game_near_start_time(game: &GameData) -> bool {
-    if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
-        return false;
-    }
-
-    match chrono::DateTime::parse_from_rfc3339(&game.start) {
-        Ok(game_start) => {
-            let time_diff = Utc::now().signed_duration_since(game_start.with_timezone(&Utc));
-
-            // Extended window: Check if game should start within the next 5 minutes or started within the last 10 minutes
-            // This is more aggressive to catch games that should have started but haven't updated their status yet
-            let is_near_start = time_diff >= chrono::Duration::minutes(-5)
-                && time_diff <= chrono::Duration::minutes(10);
-
-            if is_near_start {
-                tracing::debug!(
-                    "Game near start time: {} vs {} - start: {}, time_diff: {:?}",
-                    game.home_team,
-                    game.away_team,
-                    game_start,
-                    time_diff
-                );
-            }
-
-            is_near_start
-        }
-        Err(e) => {
-            tracing::warn!("Failed to parse game start time '{}': {}", game.start, e);
-            false
-        }
-    }
-}
-
-/// Creates a TeletextPage for future games if the games are scheduled.
-/// Returns Some(TeletextPage) if the games are future games, None otherwise.
-#[allow(clippy::too_many_arguments)]
-pub async fn create_future_games_page(
-    games: &[GameData],
-    disable_video_links: bool,
-    show_footer: bool,
-    ignore_height_limit: bool,
-    compact_mode: bool,
-    wide_mode: bool,
-    suppress_countdown: bool,
-    show_future_header: bool,
-    fetched_date: Option<String>,
-    current_page: Option<usize>,
-) -> Option<TeletextPage> {
-    // Check if these are future games by validating both time and start fields
-    if !games.is_empty() && is_future_game(&games[0]) {
-        // Extract date from the first game's start field (assuming format YYYY-MM-DDThh:mm:ssZ)
-        let start_str = &games[0].start;
-        let date_str = start_str.split('T').next().unwrap_or("");
-        let formatted_date = format_date_for_display(date_str);
-
-        tracing::debug!(
-            "First game serie: '{}', subheader: '{}'",
-            games[0].serie,
-            get_subheader(games)
-        );
-
-        let future_games_header = if show_future_header {
-            Some(format!("Seuraavat ottelut {formatted_date}"))
-        } else {
-            None
-        };
-        let mut page = create_base_page(
-            games,
-            disable_video_links,
-            show_footer,
-            ignore_height_limit,
-            compact_mode,
-            wide_mode,
-            suppress_countdown,
-            future_games_header,
-            fetched_date, // Pass the fetched date to show it in the header
-            current_page,
-        )
-        .await;
-
-        // Set auto-refresh disabled for scheduled games
-        page.set_auto_refresh_disabled(true);
-
-        Some(page)
-    } else {
-        None
-    }
-}
 
 /// Gets the target date for navigation, using current_date if available,
 /// otherwise determining the appropriate date based on current time.
@@ -606,87 +199,8 @@ async fn fetch_data_with_timeout(
     }
 }
 
-/// Create loading page for data fetching
-fn create_loading_page(
-    current_date: &Option<String>,
-    disable_links: bool,
-    compact_mode: bool,
-    wide_mode: bool,
-) -> TeletextPage {
-    let mut loading_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        disable_links,
-        true,
-        false,
-        compact_mode,
-        wide_mode,
-    );
 
-    if let Some(date) = current_date {
-        if is_historical_date(date) {
-            loading_page.add_error_message(&format!(
-                "Haetaan historiallista dataa päivälle {}...",
-                format_date_for_display(date)
-            ));
-            loading_page.add_error_message("Tämä voi kestää hetken, odotathan...");
-        } else {
-            loading_page.add_error_message(&format!(
-                "Haetaan otteluita päivälle {}...",
-                format_date_for_display(date)
-            ));
-        }
-    } else {
-        loading_page.add_error_message("Haetaan päivän otteluita...");
-    }
-
-    loading_page
-}
-
-/// Create error page for empty games
-fn create_error_page(
-    fetched_date: &str,
-    disable_links: bool,
-    compact_mode: bool,
-    wide_mode: bool,
-) -> TeletextPage {
-    let mut error_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        disable_links,
-        true,
-        false,
-        compact_mode,
-        wide_mode,
-    );
-
-    // Use UTC internally, convert to local time for date formatting
-    let today = Utc::now()
-        .with_timezone(&Local)
-        .format("%Y-%m-%d")
-        .to_string();
-
-    if fetched_date == today {
-        error_page.add_error_message("Ei otteluita tänään");
-        error_page.add_error_message("");
-        error_page.add_error_message("Käytä Shift + nuolinäppäimiä");
-        error_page.add_error_message("siirtyäksesi toiseen päivään");
-    } else {
-        error_page.add_error_message(&format!(
-            "Ei otteluita {} päivälle",
-            format_date_for_display(fetched_date)
-        ));
-        error_page.add_error_message("");
-        error_page.add_error_message("Käytä Shift + nuolinäppäimiä");
-        error_page.add_error_message("siirtyäksesi toiseen päivään");
-    }
-
-    error_page
-}
-
-/// Handle data fetching and page creation
+/// Handle data fetching and page creation using NavigationManager
 async fn handle_data_fetching(
     current_date: &Option<String>,
     last_games: &[GameData],
@@ -705,20 +219,25 @@ async fn handle_data_fetching(
     ),
     AppError,
 > {
+    // Create navigation manager
+    let nav_manager = NavigationManager::new();
+
     // Determine indicator states
     let (should_show_loading, should_show_indicator) =
         determine_indicator_states(current_date, last_games);
 
     // Initialize page state
     let mut current_page: Option<TeletextPage> = None;
-    let mut needs_render = manage_loading_indicators(
+    let mut needs_render = nav_manager.manage_loading_indicators(
         &mut current_page,
-        should_show_loading,
-        should_show_indicator,
-        current_date,
-        disable_links,
-        compact_mode,
-        wide_mode,
+        LoadingIndicatorConfig {
+            should_show_loading,
+            should_show_indicator,
+            current_date,
+            disable_links,
+            compact_mode,
+            wide_mode,
+        },
     );
 
     // Fetch data with timeout
@@ -740,7 +259,7 @@ async fn handle_data_fetching(
     // Always create a page if we have no games (to show the error message with navigation hints)
     // or if data changed and there was no error
     if (data_changed || games.is_empty()) && !had_error {
-        if let Some(page) = create_or_restore_page(PageCreationConfig {
+        if let Some(page) = nav_manager.create_or_restore_page(PageCreationConfig {
             games: &games,
             disable_links,
             compact_mode,
@@ -762,7 +281,7 @@ async fn handle_data_fetching(
     }
 
     // Handle page restoration when loading screen was shown but data didn't change
-    let restoration_render = handle_page_restoration(PageRestorationParams {
+    let restoration_render = nav_manager.handle_page_restoration(PageRestorationParams {
         current_page: &mut current_page,
         data_changed,
         had_error,
@@ -964,8 +483,9 @@ pub async fn run_interactive_ui(
                 }
 
                 // Check if all games are scheduled (future games) - only relevant if no ongoing games
+                let nav_manager = NavigationManager::new();
                 let has_ongoing_games = has_live_games_from_game_data(&games);
-                let all_scheduled = !games.is_empty() && games.iter().all(is_future_game);
+                let all_scheduled = !games.is_empty() && games.iter().all(|game| nav_manager.is_future_game(game));
 
                 if all_scheduled && !has_ongoing_games {
                     tracing::info!("All games are scheduled - auto-refresh disabled");
@@ -1114,104 +634,4 @@ mod tests {
         // Should not panic - any hash value is valid for empty games
     }
 
-    #[test]
-    fn test_format_date_for_display() {
-        assert_eq!(format_date_for_display("2024-01-15"), "15.01.");
-        assert_eq!(format_date_for_display("2024-12-31"), "31.12.");
-
-        // Test invalid date - should return original string
-        assert_eq!(format_date_for_display("invalid-date"), "invalid-date");
-    }
-
-    #[test]
-    fn test_is_future_game() {
-        // Create a future game (different date)
-        let future_game = GameData {
-            home_team: "Team A".to_string(),
-            away_team: "Team B".to_string(),
-            time: "18:30".to_string(),
-            result: "".to_string(),
-            score_type: ScoreType::Scheduled,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 0,
-            start: "2030-01-15T18:30:00Z".to_string(), // Future date
-        };
-
-        assert!(is_future_game(&future_game));
-
-        // Create a past game
-        let past_game = GameData {
-            home_team: "Team A".to_string(),
-            away_team: "Team B".to_string(),
-            time: "18:30".to_string(),
-            result: "2-1".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: "2020-01-15T18:30:00Z".to_string(), // Past date
-        };
-
-        assert!(!is_future_game(&past_game));
-
-        // Test games later today should NOT be considered future games for "Seuraavat ottelut"
-        let now = chrono::Local::now();
-        let today_later = now
-            .date_naive()
-            .and_hms_opt(23, 59, 59)
-            .unwrap()
-            .and_local_timezone(chrono::Local::now().timezone())
-            .single()
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-
-        let game_later_today = GameData {
-            home_team: "Team A".to_string(),
-            away_team: "Team B".to_string(),
-            time: "23:59".to_string(),
-            result: "".to_string(),
-            score_type: ScoreType::Scheduled,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 0,
-            start: today_later.to_rfc3339(),
-        };
-
-        // Should NOT be considered a future game (same date)
-        assert!(!is_future_game(&game_later_today));
-
-        // Test games tomorrow should be considered future games
-        let tomorrow = (now + chrono::Duration::days(1))
-            .date_naive()
-            .and_hms_opt(18, 30, 0)
-            .unwrap()
-            .and_local_timezone(chrono::Local::now().timezone())
-            .single()
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-
-        let game_tomorrow = GameData {
-            home_team: "Team A".to_string(),
-            away_team: "Team B".to_string(),
-            time: "18:30".to_string(),
-            result: "".to_string(),
-            score_type: ScoreType::Scheduled,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 0,
-            start: tomorrow.to_rfc3339(),
-        };
-
-        // Should be considered a future game (different date)
-        assert!(is_future_game(&game_tomorrow));
-    }
 }
