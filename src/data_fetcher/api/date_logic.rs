@@ -36,7 +36,7 @@ pub fn determine_fetch_date_with_time(
     now_local: chrono::DateTime<chrono::Local>,
 ) -> (String, bool) {
     use crate::data_fetcher::processors::should_show_todays_games_with_time;
-    
+
     match custom_date {
         Some(date) => (date, false), // Custom date provided, not due to cutoff
         None => {

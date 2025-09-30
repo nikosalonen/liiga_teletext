@@ -45,7 +45,7 @@ mod tests {
 
         let json = serde_json::to_string(&player).unwrap();
         let deserialized: Player = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.last_name, "Kärppä");
         assert_eq!(deserialized.first_name, "Äkäslompolo");
     }

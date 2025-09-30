@@ -28,9 +28,9 @@ use tracing::{debug, warn};
 /// async fn example() {
 ///     let player_ids = vec![123, 456];
 ///     let names = try_fetch_player_names_for_game(
-///         "api.example.com", 
-///         2024, 
-///         12345, 
+///         "api.example.com",
+///         2024,
+///         12345,
 ///         &player_ids
 ///     ).await;
 ///     

@@ -25,10 +25,7 @@ use crate::error::AppError;
 /// # Returns
 /// * `Result<T, AppError>` - Parsed response data or error
 #[instrument(skip(client))]
-pub(super) async fn fetch<T: DeserializeOwned>(
-    client: &Client,
-    url: &str,
-) -> Result<T, AppError> {
+pub(super) async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, AppError> {
     info!("Fetching data from URL: {}", url);
 
     // Check HTTP response cache first

@@ -1,15 +1,15 @@
-pub mod goals;
-pub mod schedule;
-pub mod detailed;
-pub mod players;
 pub mod common;
+pub mod detailed;
+pub mod goals;
+pub mod players;
+pub mod schedule;
 
 // Re-export all public types for backward compatibility
-pub use goals::{GoalEvent, EmbeddedPlayer, GoalEventData};
-pub use schedule::{ScheduleTeam, ScheduleGame, ScheduleApiGame, ScheduleResponse};
-pub use detailed::{DetailedGame, DetailedTeam, DetailedGameResponse, Period, PenaltyEvent};
+pub use common::{GameData, HasGoalEvents, HasTeams};
+pub use detailed::{DetailedGame, DetailedGameResponse, DetailedTeam, PenaltyEvent, Period};
+pub use goals::{EmbeddedPlayer, GoalEvent, GoalEventData};
 pub use players::Player;
-pub use common::{GameData, HasTeams, HasGoalEvents};
+pub use schedule::{ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam};
 
 #[cfg(test)]
 mod tests {

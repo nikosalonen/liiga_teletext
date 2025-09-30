@@ -25,13 +25,13 @@ pub use crate::ui::teletext::game_result::{GameResultData, ScoreType};
 pub use crate::ui::teletext::loading_indicator::LoadingIndicator;
 pub use crate::ui::teletext::page_config::TeletextPageConfig;
 
-const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
-const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
+pub(super) const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
+pub(super) const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
 pub const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
 
 // Import utilities from modules
-use super::utils::get_ansi_code;
 use super::season_utils::calculate_days_until_regular_season;
+use super::utils::get_ansi_code;
 
 #[derive(Debug)]
 pub struct TeletextPage {
@@ -240,9 +240,6 @@ impl TeletextPage {
         }
     }
 
-
-
-
     /// Distributes games between left and right columns for wide mode display.
     /// Uses left-column-first filling logic similar to pagination.
     ///
@@ -278,13 +275,6 @@ impl TeletextPage {
 
         (left_games, right_games)
     }
-
-
-
-
-
-
-
 
     /// Renders only the loading indicator area without redrawing the entire screen
     #[allow(dead_code)] // Method for future use
@@ -382,7 +372,6 @@ impl TeletextPage {
             }
         }
     }
-
 
     /// Renders the page content to the provided stdout.
     /// Handles all formatting, colors, and layout according to current settings.
@@ -599,240 +588,14 @@ impl TeletextPage {
             }
         } else {
             // Normal rendering mode
-            for row in visible_rows {
-                match row {
-                    TeletextRow::GameResult {
-                        home_team,
-                        away_team,
-                        time,
-                        result,
-                        score_type,
-                        is_overtime,
-                        is_shootout,
-                        goal_events,
-                        played_time,
-                    } => {
-                        // Format result with overtime/shootout indicator
-                        let result_text = if *is_shootout {
-                            format!("{result} rl")
-                        } else if *is_overtime {
-                            format!("{result} ja")
-                        } else {
-                            result.clone()
-                        };
-
-                        // Format time display based on game state
-                        let (time_display, score_display) = match score_type {
-                            ScoreType::Scheduled => (time.clone(), String::new()),
-                            ScoreType::Ongoing => {
-                                let formatted_time =
-                                    format!("{:02}:{:02}", played_time / 60, played_time % 60);
-                                (formatted_time, result_text.clone())
-                            }
-                            ScoreType::Final => (String::new(), result_text.clone()),
-                        };
-
-                        let result_color = match score_type {
-                            ScoreType::Final => result_fg_code,
-                            _ => text_fg_code,
-                        };
-
-                        // Build game line with precise positioning (using 1-based ANSI coordinates)
-                        if !time_display.is_empty() && !score_display.is_empty() {
-                            // For ongoing games: show time on the left, score on the right
-                            buffer.push_str(&format!(
-                            "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{:<10}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                            current_line, CONTENT_MARGIN + 1,
-                            text_fg_code,
-                            home_team.chars().take(20).collect::<String>(),
-                            current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
-                            text_fg_code,
-                            current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
-                            text_fg_code,
-                            away_team.chars().take(20).collect::<String>(),
-                            current_line, 35 + CONTENT_MARGIN + 1,
-                            text_fg_code,
-                            time_display,
-                            current_line, 45 + CONTENT_MARGIN + 1,
-                            result_color,
-                            score_display
-                        ));
-                        } else {
-                            // For scheduled/final games: show time or score on the right
-                            let display_text = if !time_display.is_empty() {
-                                time_display
-                            } else {
-                                score_display
-                            };
-                            buffer.push_str(&format!(
-                            "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                            current_line, CONTENT_MARGIN + 1,
-                            text_fg_code,
-                            home_team.chars().take(20).collect::<String>(),
-                            current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
-                            text_fg_code,
-                            current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
-                            text_fg_code,
-                            away_team.chars().take(20).collect::<String>(),
-                            current_line, 45 + CONTENT_MARGIN + 1,
-                            result_color,
-                            display_text
-                        ));
-                        }
-
-                        current_line += 1;
-
-                        // Add goal events for finished/ongoing games
-                        if matches!(score_type, ScoreType::Ongoing | ScoreType::Final)
-                            && !goal_events.is_empty()
-                        {
-                            let home_scorer_fg_code = get_ansi_code(home_scorer_fg(), 51);
-                            let away_scorer_fg_code = get_ansi_code(away_scorer_fg(), 51);
-                            let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
-                            let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
-
-                            let home_scorers: Vec<_> =
-                                goal_events.iter().filter(|e| e.is_home_team).collect();
-                            let away_scorers: Vec<_> =
-                                goal_events.iter().filter(|e| !e.is_home_team).collect();
-                            let max_scorers = home_scorers.len().max(away_scorers.len());
-
-                            for i in 0..max_scorers {
-                                // Home team scorer
-                                if let Some(event) = home_scorers.get(i) {
-                                    let scorer_color = if (event.is_winning_goal
-                                        && (*is_overtime || *is_shootout))
-                                        || event.goal_types.contains(&"VL".to_string())
-                                    {
-                                        winning_goal_fg_code
-                                    } else {
-                                        home_scorer_fg_code
-                                    };
-
-                                    buffer.push_str(&format!(
-                                        "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
-                                        current_line,
-                                        CONTENT_MARGIN + 1,
-                                        scorer_color,
-                                        event.minute
-                                    ));
-
-                                    // Add video link functionality if there's a video clip and links are enabled
-                                    if let Some(url) = &event.video_clip_url {
-                                        if !self.disable_video_links {
-                                            buffer.push_str(&format!(
-                                                "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                                scorer_color, event.scorer_name, url
-                                            ));
-                                        } else {
-                                            buffer.push_str(&format!(
-                                                "\x1b[38;5;{}m{:<12}",
-                                                scorer_color, event.scorer_name
-                                            ));
-                                        }
-                                    } else {
-                                        buffer.push_str(&format!(
-                                            "\x1b[38;5;{}m{:<12}",
-                                            scorer_color, event.scorer_name
-                                        ));
-                                    }
-
-                                    // Add goal type indicators
-                                    let goal_type = event.get_goal_type_display();
-                                    if !goal_type.is_empty() {
-                                        buffer.push_str(&format!(
-                                            " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
-                                        ));
-                                    } else {
-                                        buffer.push_str("\x1b[0m");
-                                    }
-                                }
-
-                                // Away team scorer
-                                if let Some(event) = away_scorers.get(i) {
-                                    let scorer_color = if (event.is_winning_goal
-                                        && (*is_overtime || *is_shootout))
-                                        || event.goal_types.contains(&"VL".to_string())
-                                    {
-                                        winning_goal_fg_code
-                                    } else {
-                                        away_scorer_fg_code
-                                    };
-
-                                    buffer.push_str(&format!(
-                                        "\x1b[{};{}H\x1b[38;5;{}m{:2} ",
-                                        current_line,
-                                        AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
-                                        scorer_color,
-                                        event.minute
-                                    ));
-
-                                    // Add video link functionality if there's a video clip and links are enabled
-                                    if let Some(url) = &event.video_clip_url {
-                                        if !self.disable_video_links {
-                                            buffer.push_str(&format!(
-                                                "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
-                                                scorer_color, event.scorer_name, url
-                                            ));
-                                        } else {
-                                            buffer.push_str(&format!(
-                                                "\x1b[38;5;{}m{:<12}",
-                                                scorer_color, event.scorer_name
-                                            ));
-                                        }
-                                    } else {
-                                        buffer.push_str(&format!(
-                                            "\x1b[38;5;{}m{:<12}",
-                                            scorer_color, event.scorer_name
-                                        ));
-                                    }
-
-                                    // Add goal type indicators
-                                    let goal_type = event.get_goal_type_display();
-                                    if !goal_type.is_empty() {
-                                        buffer.push_str(&format!(
-                                            " \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m"
-                                        ));
-                                    } else {
-                                        buffer.push_str("\x1b[0m");
-                                    }
-                                }
-
-                                if home_scorers.get(i).is_some() || away_scorers.get(i).is_some() {
-                                    current_line += 1;
-                                }
-                            }
-                        }
-
-                        // Add spacing between games in interactive mode
-                        if !self.ignore_height_limit {
-                            current_line += 1;
-                        }
-                    }
-                    TeletextRow::ErrorMessage(message) => {
-                        for line in message.lines() {
-                            buffer.push_str(&format!(
-                                "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                                current_line,
-                                CONTENT_MARGIN + 1,
-                                text_fg_code,
-                                line
-                            ));
-                            current_line += 1;
-                        }
-                    }
-                    TeletextRow::FutureGamesHeader(header_text) => {
-                        buffer.push_str(&format!(
-                            "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                            current_line,
-                            CONTENT_MARGIN + 1,
-                            subheader_fg_code,
-                            header_text
-                        ));
-                        current_line += 1;
-                    }
-                }
-            }
+            self.render_normal_mode_content(
+                &mut buffer,
+                &visible_rows,
+                &mut current_line,
+                text_fg_code,
+                result_fg_code,
+                subheader_fg_code,
+            );
         }
 
         // Add footer if enabled

@@ -7,11 +7,11 @@
 //! - Game analysis and validation for navigation decisions
 //! - Loading indicator coordination
 
+use super::series_utils::get_subheader;
 use crate::data_fetcher::{GameData, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use chrono::{Datelike, Local, NaiveDate, Utc};
-use super::series_utils::get_subheader;
 
 /// Configuration for creating or restoring a teletext page
 #[derive(Debug)]
@@ -78,21 +78,25 @@ impl NavigationManager {
     }
 
     /// Creates or restores a teletext page based on the current state and data
-    pub async fn create_or_restore_page(&self, config: PageCreationConfig<'_>) -> Option<TeletextPage> {
+    pub async fn create_or_restore_page(
+        &self,
+        config: PageCreationConfig<'_>,
+    ) -> Option<TeletextPage> {
         // Restore the preserved page number
         if let Some(preserved_page_for_restoration) = config.preserved_page_for_restoration {
-            let mut page = self.create_page(
-                config.games,
-                config.disable_links,
-                true,
-                false,
-                config.compact_mode,
-                config.wide_mode,
-                false, // suppress_countdown - false for interactive mode
-                Some(config.fetched_date.to_string()),
-                Some(preserved_page_for_restoration),
-            )
-            .await;
+            let mut page = self
+                .create_page(
+                    config.games,
+                    config.disable_links,
+                    true,
+                    false,
+                    config.compact_mode,
+                    config.wide_mode,
+                    false, // suppress_countdown - false for interactive mode
+                    Some(config.fetched_date.to_string()),
+                    Some(preserved_page_for_restoration),
+                )
+                .await;
 
             // Disable auto-refresh for historical dates
             if let Some(date) = config.updated_current_date
@@ -113,34 +117,36 @@ impl NavigationManager {
             } else {
                 // Try to create a future games page, fall back to regular page if not future games
                 let show_future_header = config.current_date.is_none();
-                match self.create_future_games_page(
-                    config.games,
-                    config.disable_links,
-                    true,
-                    false,
-                    config.compact_mode,
-                    config.wide_mode,
-                    false, // suppress_countdown - false for interactive mode
-                    show_future_header,
-                    Some(config.fetched_date.to_string()),
-                    None,
-                )
-                .await
+                match self
+                    .create_future_games_page(
+                        config.games,
+                        config.disable_links,
+                        true,
+                        false,
+                        config.compact_mode,
+                        config.wide_mode,
+                        false, // suppress_countdown - false for interactive mode
+                        show_future_header,
+                        Some(config.fetched_date.to_string()),
+                        None,
+                    )
+                    .await
                 {
                     Some(page) => page,
                     None => {
-                        let mut page = self.create_page(
-                            config.games,
-                            config.disable_links,
-                            true,
-                            false,
-                            config.compact_mode,
-                            config.wide_mode,
-                            false, // suppress_countdown - false for interactive mode
-                            Some(config.fetched_date.to_string()),
-                            None,
-                        )
-                        .await;
+                        let mut page = self
+                            .create_page(
+                                config.games,
+                                config.disable_links,
+                                true,
+                                false,
+                                config.compact_mode,
+                                config.wide_mode,
+                                false, // suppress_countdown - false for interactive mode
+                                Some(config.fetched_date.to_string()),
+                                None,
+                            )
+                            .await;
 
                         // Disable auto-refresh for historical dates
                         if let Some(date) = config.updated_current_date
@@ -177,18 +183,19 @@ impl NavigationManager {
                 } else {
                     params.games
                 };
-                let mut page = self.create_page(
-                    games_to_use,
-                    params.disable_links,
-                    true,
-                    false,
-                    params.compact_mode,
-                    params.wide_mode,
-                    false, // suppress_countdown - false for interactive mode
-                    Some(params.fetched_date.to_string()),
-                    Some(preserved_page_for_restoration),
-                )
-                .await;
+                let mut page = self
+                    .create_page(
+                        games_to_use,
+                        params.disable_links,
+                        true,
+                        false,
+                        params.compact_mode,
+                        params.wide_mode,
+                        false, // suppress_countdown - false for interactive mode
+                        Some(params.fetched_date.to_string()),
+                        Some(preserved_page_for_restoration),
+                    )
+                    .await;
 
                 // Disable auto-refresh for historical dates
                 if let Some(date) = params.updated_current_date
@@ -213,7 +220,9 @@ impl NavigationManager {
     ) -> bool {
         let mut needs_render = false;
 
-        if config.should_show_indicator && let Some(page) = current_page {
+        if config.should_show_indicator
+            && let Some(page) = current_page
+        {
             page.show_auto_refresh_indicator();
             needs_render = true;
         }
@@ -349,19 +358,20 @@ impl NavigationManager {
             } else {
                 None
             };
-            let mut page = self.create_base_page(
-                games,
-                disable_video_links,
-                show_footer,
-                ignore_height_limit,
-                compact_mode,
-                wide_mode,
-                suppress_countdown,
-                future_games_header,
-                fetched_date, // Pass the fetched date to show it in the header
-                current_page,
-            )
-            .await;
+            let mut page = self
+                .create_base_page(
+                    games,
+                    disable_video_links,
+                    show_footer,
+                    ignore_height_limit,
+                    compact_mode,
+                    wide_mode,
+                    suppress_countdown,
+                    future_games_header,
+                    fetched_date, // Pass the fetched date to show it in the header
+                    current_page,
+                )
+                .await;
 
             // Set auto-refresh disabled for scheduled games
             page.set_auto_refresh_disabled(true);
@@ -433,19 +443,13 @@ impl NavigationManager {
         let formatted_date = format_date_for_display(fetched_date);
 
         if is_historical_date(fetched_date) {
-            error_page.add_error_message(&format!(
-                "Ei otteluita päivälle {}",
-                formatted_date
-            ));
+            error_page.add_error_message(&format!("Ei otteluita päivälle {}", formatted_date));
             error_page.add_error_message("");
             error_page.add_error_message("Käytä Shift + nuolia siirtyäksesi toiselle päivälle");
             error_page.add_error_message("tai käynnistä sovellus uudelleen (-d parametrilla)");
             error_page.add_error_message("nähdäksesi päivän ottelut.");
         } else {
-            error_page.add_error_message(&format!(
-                "Ei otteluita päivälle {}",
-                formatted_date
-            ));
+            error_page.add_error_message(&format!("Ei otteluita päivälle {}", formatted_date));
             error_page.add_error_message("");
             error_page.add_error_message("Käytä Shift + nuolia siirtyäksesi toiselle päivälle");
             error_page.add_error_message("tai paina 'r' päivittääksesi tiedot.");
@@ -551,13 +555,13 @@ pub fn format_date_for_display(date_str: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing_utils::create_basic_game;
+    
 
     #[test]
     fn test_format_date_for_display() {
         assert_eq!(format_date_for_display("2024-01-15"), "15.01.");
         assert_eq!(format_date_for_display("2024-12-31"), "31.12.");
-        
+
         // Test invalid date - should return original string
         assert_eq!(format_date_for_display("invalid-date"), "invalid-date");
     }
@@ -580,7 +584,7 @@ mod tests {
     #[tokio::test]
     async fn test_is_future_game() {
         let manager = NavigationManager::new();
-        
+
         // Create a future game (different date)
         let future_game = crate::data_fetcher::GameData {
             home_team: "Team A".to_string(),
@@ -626,7 +630,7 @@ mod tests {
             compact_mode: false,
             wide_mode: false,
         };
-        
+
         assert!(config.should_show_loading);
         assert!(!config.should_show_indicator);
         assert_eq!(config.current_date, &Some("2024-01-15".to_string()));

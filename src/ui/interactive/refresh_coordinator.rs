@@ -7,7 +7,7 @@
 //! - Cache monitoring and maintenance
 //! - Backoff and retry logic coordination
 
-use crate::data_fetcher::{fetch_liiga_data, GameData, has_live_games_from_game_data};
+use crate::data_fetcher::{GameData, fetch_liiga_data, has_live_games_from_game_data};
 use crate::error::AppError;
 use crate::teletext_ui::{ScoreType, TeletextPage};
 use std::time::{Duration, Instant};
@@ -15,8 +15,13 @@ use tracing;
 
 use super::change_detection::{calculate_games_hash, detect_and_log_changes};
 use super::indicators::determine_indicator_states;
-use super::navigation_manager::{NavigationManager, PageCreationConfig, PageRestorationParams, LoadingIndicatorConfig};
-use super::refresh_manager::{calculate_auto_refresh_interval, calculate_min_refresh_interval, should_trigger_auto_refresh, AutoRefreshParams};
+use super::navigation_manager::{
+    LoadingIndicatorConfig, NavigationManager, PageCreationConfig, PageRestorationParams,
+};
+use super::refresh_manager::{
+    AutoRefreshParams, calculate_auto_refresh_interval, calculate_min_refresh_interval,
+    should_trigger_auto_refresh,
+};
 use super::state_manager::InteractiveState;
 
 /// Result of a refresh operation
@@ -88,12 +93,19 @@ impl RefreshCoordinator {
     }
 
     /// Check if auto-refresh should be triggered
-    pub fn should_trigger_refresh(&self, state: &InteractiveState, config: &RefreshCycleConfig) -> bool {
+    pub fn should_trigger_refresh(
+        &self,
+        state: &InteractiveState,
+        config: &RefreshCycleConfig,
+    ) -> bool {
         if !state.needs_refresh() {
             // Calculate refresh intervals
-            let auto_refresh_interval = calculate_auto_refresh_interval(state.change_detection.last_games());
-            let min_interval_between_refreshes =
-                calculate_min_refresh_interval(state.change_detection.last_games().len(), config.min_refresh_interval);
+            let auto_refresh_interval =
+                calculate_auto_refresh_interval(state.change_detection.last_games());
+            let min_interval_between_refreshes = calculate_min_refresh_interval(
+                state.change_detection.last_games().len(),
+                config.min_refresh_interval,
+            );
 
             // Debug logging for backoff enforcement
             if state.adaptive_polling.retry_backoff() > Duration::from_secs(0) {
@@ -103,7 +115,11 @@ impl RefreshCoordinator {
                         "Retry backoff active: {}s remaining (total backoff: {}s, elapsed since error: {}s)",
                         backoff_remaining.as_secs(),
                         state.adaptive_polling.retry_backoff().as_secs(),
-                        state.adaptive_polling.last_backoff_hit().elapsed().as_secs()
+                        state
+                            .adaptive_polling
+                            .last_backoff_hit()
+                            .elapsed()
+                            .as_secs()
                     );
                 }
             }
@@ -214,7 +230,10 @@ impl RefreshCoordinator {
     }
 
     /// Handle data fetching and page creation coordination
-    async fn handle_data_fetching(&self, params: DataFetchParams<'_>) -> Result<RefreshResult, AppError> {
+    async fn handle_data_fetching(
+        &self,
+        params: DataFetchParams<'_>,
+    ) -> Result<RefreshResult, AppError> {
         // Determine indicator states
         let (should_show_loading, should_show_indicator) =
             determine_indicator_states(params.current_date, params.last_games);
@@ -235,8 +254,9 @@ impl RefreshCoordinator {
 
         // Fetch data with timeout
         let timeout_duration = Duration::from_secs(15);
-        let (games, had_error, fetched_date, should_retry) =
-            self.fetch_data_with_timeout(params.current_date.clone(), timeout_duration).await;
+        let (games, had_error, fetched_date, should_retry) = self
+            .fetch_data_with_timeout(params.current_date.clone(), timeout_duration)
+            .await;
 
         // Update current_date to track the actual date being displayed
         let mut updated_current_date = params.current_date.clone();
@@ -252,17 +272,19 @@ impl RefreshCoordinator {
         // Always create a page if we have no games (to show the error message with navigation hints)
         // or if data changed and there was no error
         if (data_changed || games.is_empty()) && !had_error {
-            if let Some(page) = self.nav_manager.create_or_restore_page(PageCreationConfig {
-                games: &games,
-                disable_links: params.disable_links,
-                compact_mode: params.compact_mode,
-                wide_mode: params.wide_mode,
-                fetched_date: &fetched_date,
-                preserved_page_for_restoration: params.preserved_page_for_restoration,
-                current_date: params.current_date,
-                updated_current_date: &updated_current_date,
-            })
-            .await
+            if let Some(page) = self
+                .nav_manager
+                .create_or_restore_page(PageCreationConfig {
+                    games: &games,
+                    disable_links: params.disable_links,
+                    compact_mode: params.compact_mode,
+                    wide_mode: params.wide_mode,
+                    fetched_date: &fetched_date,
+                    preserved_page_for_restoration: params.preserved_page_for_restoration,
+                    current_date: params.current_date,
+                    updated_current_date: &updated_current_date,
+                })
+                .await
             {
                 current_page = Some(page);
                 needs_render = true;
@@ -274,20 +296,22 @@ impl RefreshCoordinator {
         }
 
         // Handle page restoration when loading screen was shown but data didn't change
-        let restoration_render = self.nav_manager.handle_page_restoration(PageRestorationParams {
-            current_page: &mut current_page,
-            data_changed,
-            had_error,
-            preserved_page_for_restoration: params.preserved_page_for_restoration,
-            games: &games,
-            last_games: params.last_games,
-            disable_links: params.disable_links,
-            fetched_date: &fetched_date,
-            updated_current_date: &updated_current_date,
-            compact_mode: params.compact_mode,
-            wide_mode: params.wide_mode,
-        })
-        .await;
+        let restoration_render = self
+            .nav_manager
+            .handle_page_restoration(PageRestorationParams {
+                current_page: &mut current_page,
+                data_changed,
+                had_error,
+                preserved_page_for_restoration: params.preserved_page_for_restoration,
+                games: &games,
+                last_games: params.last_games,
+                disable_links: params.disable_links,
+                fetched_date: &fetched_date,
+                updated_current_date: &updated_current_date,
+                compact_mode: params.compact_mode,
+                wide_mode: params.wide_mode,
+            })
+            .await;
         needs_render = needs_render || restoration_render;
 
         // Hide auto-refresh indicator after data is fetched
@@ -307,7 +331,11 @@ impl RefreshCoordinator {
     }
 
     /// Perform comprehensive data fetching and refresh cycle
-    pub async fn perform_refresh_cycle(&self, state: &mut InteractiveState, config: &RefreshCycleConfig) -> Result<RefreshResult, AppError> {
+    pub async fn perform_refresh_cycle(
+        &self,
+        state: &mut InteractiveState,
+        config: &RefreshCycleConfig,
+    ) -> Result<RefreshResult, AppError> {
         tracing::debug!("Fetching new data");
 
         // Always preserve the current page number before refresh, regardless of loading screen
@@ -316,14 +344,16 @@ impl RefreshCoordinator {
         }
 
         // Handle data fetching using the helper function
-        let result = self.handle_data_fetching(DataFetchParams {
-            current_date: state.current_date(),
-            last_games: state.change_detection.last_games(),
-            disable_links: config.disable_links,
-            compact_mode: config.compact_mode,
-            wide_mode: config.wide_mode,
-            preserved_page_for_restoration: state.preserved_page(),
-        }).await?;
+        let result = self
+            .handle_data_fetching(DataFetchParams {
+                current_date: state.current_date(),
+                last_games: state.change_detection.last_games(),
+                disable_links: config.disable_links,
+                compact_mode: config.compact_mode,
+                wide_mode: config.wide_mode,
+                preserved_page_for_restoration: state.preserved_page(),
+            })
+            .await?;
 
         // Update current_date to track the actual date being displayed
         if !result.had_error && !result.fetched_date.is_empty() {
@@ -335,12 +365,18 @@ impl RefreshCoordinator {
     }
 
     /// Process refresh results and update state
-    pub fn process_refresh_results(&self, state: &mut InteractiveState, result: &RefreshResult) -> bool {
+    pub fn process_refresh_results(
+        &self,
+        state: &mut InteractiveState,
+        result: &RefreshResult,
+    ) -> bool {
         let mut needs_state_render = false;
 
         // Change detection using a simple hash of game data
         let games_hash = calculate_games_hash(&result.games);
-        let data_changed = state.change_detection.update_and_check_changes(&result.games, games_hash);
+        let data_changed = state
+            .change_detection
+            .update_and_check_changes(&result.games, games_hash);
 
         if data_changed {
             tracing::debug!("Data changed, updating UI");
@@ -382,7 +418,9 @@ impl RefreshCoordinator {
                     needs_state_render = true;
                 }
             }
-            state.change_detection.update_state(result.games.clone(), games_hash);
+            state
+                .change_detection
+                .update_state(result.games.clone(), games_hash);
         } else {
             tracing::debug!(
                 "Preserving last_games due to fetch error; will retry without clearing state"
@@ -409,9 +447,7 @@ impl RefreshCoordinator {
         } else {
             state.adaptive_polling.apply_backoff();
             let jittered_secs = state.adaptive_polling.retry_backoff().as_secs_f64();
-            tracing::debug!(
-                "Auto-refresh failed; applying retry backoff of {jittered_secs:.2}s"
-            );
+            tracing::debug!("Auto-refresh failed; applying retry backoff of {jittered_secs:.2}s");
         }
     }
 
@@ -485,9 +521,17 @@ impl RefreshCoordinator {
 
     /// Log detailed changes for live games to help debug game clock updates
     fn log_game_changes(&self, state: &InteractiveState, new_games: &[GameData]) {
-        if !state.change_detection.last_games().is_empty() && new_games.len() == state.change_detection.last_games().len() {
-            for (i, (new_game, old_game)) in new_games.iter().zip(state.change_detection.last_games().iter()).enumerate() {
-                if new_game.played_time != old_game.played_time && new_game.score_type == ScoreType::Ongoing {
+        if !state.change_detection.last_games().is_empty()
+            && new_games.len() == state.change_detection.last_games().len()
+        {
+            for (i, (new_game, old_game)) in new_games
+                .iter()
+                .zip(state.change_detection.last_games().iter())
+                .enumerate()
+            {
+                if new_game.played_time != old_game.played_time
+                    && new_game.score_type == ScoreType::Ongoing
+                {
                     tracing::info!(
                         "Game clock update detected: Game {} - {} vs {} - time changed from {}s to {}s",
                         i + 1,
@@ -532,7 +576,10 @@ impl RefreshCoordinator {
     fn analyze_game_schedule(&self, games: &[GameData]) {
         // Check if all games are scheduled (future games) - only relevant if no ongoing games
         let has_ongoing_games = has_live_games_from_game_data(games);
-        let all_scheduled = !games.is_empty() && games.iter().all(|game| self.nav_manager.is_future_game(game));
+        let all_scheduled = !games.is_empty()
+            && games
+                .iter()
+                .all(|game| self.nav_manager.is_future_game(game));
 
         if all_scheduled && !has_ongoing_games {
             tracing::info!("All games are scheduled - auto-refresh disabled");
@@ -565,7 +612,10 @@ mod tests {
         let coordinator = RefreshCoordinator::default();
         // Should be equivalent to RefreshCoordinator::new()
         assert_eq!(std::mem::size_of_val(&coordinator.nav_manager), 0);
-        assert_eq!(coordinator.cache_config.cache_monitor_interval, Duration::from_secs(300));
+        assert_eq!(
+            coordinator.cache_config.cache_monitor_interval,
+            Duration::from_secs(300)
+        );
     }
 
     #[test]
@@ -574,7 +624,10 @@ mod tests {
             cache_monitor_interval: Duration::from_secs(600),
         };
         let coordinator = RefreshCoordinator::with_cache_config(custom_config);
-        assert_eq!(coordinator.cache_config.cache_monitor_interval, Duration::from_secs(600));
+        assert_eq!(
+            coordinator.cache_config.cache_monitor_interval,
+            Duration::from_secs(600)
+        );
     }
 
     #[test]
@@ -595,7 +648,7 @@ mod tests {
             wide_mode: false,
             preserved_page_for_restoration: None,
         };
-        
+
         assert_eq!(params.current_date, &Some("2024-01-15".to_string()));
         assert!(!params.disable_links);
         assert!(!params.compact_mode);
@@ -611,7 +664,7 @@ mod tests {
             compact_mode: false,
             wide_mode: true,
         };
-        
+
         assert_eq!(config.min_refresh_interval, Some(10));
         assert!(config.disable_links);
         assert!(!config.compact_mode);

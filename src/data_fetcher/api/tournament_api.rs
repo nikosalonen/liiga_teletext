@@ -16,7 +16,7 @@ use tracing::{debug, error, info, instrument, warn};
 // Import from sibling modules
 use super::fetch_utils::fetch;
 use super::game_api::process_games;
-use super::urls::{create_tournament_key, build_tournament_url};
+use super::urls::{build_tournament_url, create_tournament_key};
 
 /// Determines if a candidate date should be used as the best date for showing games.
 /// Prioritizes future games over past games, and regular season over preseason when close to season start.

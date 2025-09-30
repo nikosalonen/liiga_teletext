@@ -1,6 +1,6 @@
 // src/teletext_ui/pagination.rs - Pagination logic extracted from core.rs
 
-use super::core::{TeletextRow, TeletextPage};
+use super::core::{TeletextPage, TeletextRow};
 
 impl TeletextPage {
     /// Calculates the height requirement for a single game row.
@@ -28,7 +28,7 @@ impl TeletextPage {
 
     /// Calculates the effective game height considering wide mode.
     /// In wide mode, we can fit two games side by side, effectively halving the height usage.
-    /// 
+    ///
     /// # Arguments
     /// * `game` - The teletext row to calculate effective height for
     ///

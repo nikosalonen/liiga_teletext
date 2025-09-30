@@ -24,7 +24,7 @@ impl TestDataBuilder {
 
     /// Creates a basic game data with custom fields for testing
     pub fn create_custom_game(
-        _id: i32,  // Kept for backwards compatibility but unused
+        _id: i32, // Kept for backwards compatibility but unused
         home_team: &str,
         away_team: &str,
         result: &str,

@@ -21,6 +21,6 @@ pub use formatting::{
 
 // Re-export public items from disambiguation
 pub use disambiguation::{
-    format_with_disambiguation, get_players_needing_disambiguation, group_players_by_last_name,
-    group_players_by_last_name_indices, is_disambiguation_needed, DisambiguationContext,
+    DisambiguationContext, format_with_disambiguation, get_players_needing_disambiguation,
+    group_players_by_last_name, group_players_by_last_name_indices, is_disambiguation_needed,
 };

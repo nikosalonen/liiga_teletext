@@ -19,23 +19,23 @@ use super::tournament_logic::build_tournament_list;
 use super::tournament_api::{determine_return_date, fetch_day_data, handle_no_games_found};
 
 /// Main API entry point that orchestrates the fetching of Liiga game data.
-/// 
+///
 /// This function coordinates between multiple specialized modules to:
 /// - Determine the appropriate date to fetch
 /// - Route to historical vs current data endpoints
 /// - Build tournament lists and fetch data
 /// - Process and return the final game data
-/// 
+///
 /// # Arguments
 /// * `custom_date` - Optional date override in "YYYY-MM-DD" format
-/// 
+///
 /// # Returns
 /// * `Result<(Vec<GameData>, String), AppError>` - Tuple of games and the date they represent
-/// 
+///
 /// # Example
 /// ```rust,no_run
 /// use liiga_teletext::data_fetcher::api::fetch_liiga_data;
-/// 
+///
 /// #[tokio::main]
 /// async fn main() -> Result<(), liiga_teletext::AppError> {
 ///     // Fetch data for today

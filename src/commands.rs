@@ -33,7 +33,8 @@ pub async fn handle_version_command() -> Result<(), AppError> {
 
     // Check for updates and show version info
     if let Some(latest_version) = version::check_latest_version().await {
-        let current = semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(AppError::VersionParse)?;
+        let current =
+            semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(AppError::VersionParse)?;
         let latest = semver::Version::parse(&latest_version).map_err(AppError::VersionParse)?;
 
         if latest > current {
@@ -65,7 +66,7 @@ pub async fn handle_list_config_command() -> Result<(), AppError> {
 
     version::print_logo();
     Config::display().await?;
-    
+
     Ok(())
 }
 
@@ -93,7 +94,7 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
 
     config.save().await?;
     println!("Config updated successfully!");
-    
+
     Ok(())
 }
 
@@ -102,7 +103,10 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
 /// Fetches and displays game data once, then exits.
 /// Handles error cases, empty games, and different page types.
 /// Shows version info after display if update is available.
-pub async fn handle_once_command(args: &Args, version_check: tokio::task::JoinHandle<Option<String>>) -> Result<(), AppError> {
+pub async fn handle_once_command(
+    args: &Args,
+    version_check: tokio::task::JoinHandle<Option<String>>,
+) -> Result<(), AppError> {
     // In --once mode, don't show loading messages (only show in interactive mode)
 
     let (games, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
@@ -156,38 +160,40 @@ pub async fn handle_once_command(args: &Args, version_check: tokio::task::JoinHa
     } else {
         // Create navigation manager
         let nav_manager = NavigationManager::new();
-        
+
         // Try to create a future games page, fall back to regular page if not future games
         // Only show future games header if no specific date was requested
         let show_future_header = args.date.is_none();
-        match nav_manager.create_future_games_page(
-            &games,
-            args.disable_links,
-            true,
-            true,
-            args.compact,
-            args.wide,
-            args.once || args.compact, // suppress_countdown when once or compact mode
-            show_future_header,
-            Some(fetched_date.clone()),
-            None,
-        )
-        .await
+        match nav_manager
+            .create_future_games_page(
+                &games,
+                args.disable_links,
+                true,
+                true,
+                args.compact,
+                args.wide,
+                args.once || args.compact, // suppress_countdown when once or compact mode
+                show_future_header,
+                Some(fetched_date.clone()),
+                None,
+            )
+            .await
         {
             Some(page) => page,
             None => {
-                let mut page = nav_manager.create_page(
-                    &games,
-                    args.disable_links,
-                    true,
-                    true,
-                    args.compact,
-                    args.wide,
-                    args.once || args.compact, // suppress_countdown when once or compact mode
-                    Some(fetched_date.clone()),
-                    None,
-                )
-                .await;
+                let mut page = nav_manager
+                    .create_page(
+                        &games,
+                        args.disable_links,
+                        true,
+                        true,
+                        args.compact,
+                        args.wide,
+                        args.once || args.compact, // suppress_countdown when once or compact mode
+                        Some(fetched_date.clone()),
+                        None,
+                    )
+                    .await;
 
                 // Disable auto-refresh for historical dates in --once mode too
                 if let Some(ref date) = args.date {

@@ -68,9 +68,7 @@ impl WideModeManager {
             136
         } else {
             // In interactive mode, get actual terminal size or fallback to 80
-            terminal::size()
-                .map(|(width, _)| width)
-                .unwrap_or(80)
+            terminal::size().map(|(width, _)| width).unwrap_or(80)
         };
 
         terminal_width >= self.config.min_terminal_width
@@ -169,9 +167,7 @@ impl WideModeManager {
         let terminal_width = if ignore_height_limit {
             136 // Assume wide terminal in non-interactive mode
         } else {
-            terminal::size()
-                .map(|(width, _)| width)
-                .unwrap_or(80)
+            terminal::size().map(|(width, _)| width).unwrap_or(80)
         };
 
         if !self.config.enabled {
@@ -238,7 +234,7 @@ mod tests {
             ..WideModeConfig::default()
         };
         let manager = WideModeManager::new(config);
-        
+
         assert!(manager.is_enabled());
     }
 
@@ -249,7 +245,7 @@ mod tests {
             ..WideModeConfig::default()
         };
         let manager = WideModeManager::new(config);
-        
+
         // Should return false when disabled, regardless of terminal width
         assert!(!manager.can_fit_two_pages(true));
         assert!(!manager.can_fit_two_pages(false));
@@ -262,10 +258,10 @@ mod tests {
             ..WideModeConfig::default()
         };
         let manager = WideModeManager::new(config);
-        
+
         // In non-interactive mode (136 columns), should fit
         assert!(manager.can_fit_two_pages(true));
-        
+
         // In interactive mode (fallback to 80), should not fit
         assert!(!manager.can_fit_two_pages(false));
     }
@@ -277,13 +273,13 @@ mod tests {
             ..WideModeConfig::default()
         };
         let manager = WideModeManager::new(config);
-        
+
         let game1 = create_test_game_row("Team1", "Team2");
         let game2 = create_test_game_row("Team3", "Team4");
         let games = vec![&game1, &game2];
-        
+
         let (left, right) = manager.distribute_games_for_wide_display(&games, true);
-        
+
         // When disabled, all games should go to left column
         assert_eq!(left.len(), 2);
         assert_eq!(right.len(), 0);
@@ -296,15 +292,15 @@ mod tests {
             ..WideModeConfig::default()
         };
         let manager = WideModeManager::new(config);
-        
+
         let game1 = create_test_game_row("Team1", "Team2");
         let game2 = create_test_game_row("Team3", "Team4");
         let game3 = create_test_game_row("Team5", "Team6");
         let game4 = create_test_game_row("Team7", "Team8");
         let games = vec![&game1, &game2, &game3, &game4];
-        
+
         let (left, right) = manager.distribute_games_for_wide_display(&games, true);
-        
+
         // With 4 games, should distribute 2-2
         assert_eq!(left.len(), 2);
         assert_eq!(right.len(), 2);
@@ -317,14 +313,14 @@ mod tests {
             ..WideModeConfig::default()
         };
         let manager = WideModeManager::new(config);
-        
+
         let game1 = create_test_game_row("Team1", "Team2");
         let game2 = create_test_game_row("Team3", "Team4");
         let game3 = create_test_game_row("Team5", "Team6");
         let games = vec![&game1, &game2, &game3];
-        
+
         let (left, right) = manager.distribute_games_for_wide_display(&games, true);
-        
+
         // With 3 games, left column should get the extra (2-1)
         assert_eq!(left.len(), 2);
         assert_eq!(right.len(), 1);
@@ -334,7 +330,7 @@ mod tests {
     fn test_get_right_column_start() {
         let manager = WideModeManager::default();
         let start_pos = manager.get_right_column_start();
-        
+
         // Should be column_width + separator_width
         assert_eq!(start_pos, 68); // 64 + 4
     }
@@ -343,7 +339,7 @@ mod tests {
     fn test_get_column_content_width() {
         let manager = WideModeManager::default();
         let content_width = manager.get_column_content_width();
-        
+
         // Should be column_width - margins
         assert_eq!(content_width, 60); // 64 - 4
     }
@@ -355,7 +351,7 @@ mod tests {
             ..WideModeConfig::default()
         };
         let manager = WideModeManager::new(config);
-        
+
         let validation = manager.validate_terminal_for_wide_mode(true);
         assert_eq!(validation, WideModeValidation::Disabled);
     }
@@ -367,9 +363,14 @@ mod tests {
             ..WideModeConfig::default()
         };
         let manager = WideModeManager::new(config);
-        
+
         let validation = manager.validate_terminal_for_wide_mode(true);
-        if let WideModeValidation::Suitable { terminal_width, required_width, excess_width } = validation {
+        if let WideModeValidation::Suitable {
+            terminal_width,
+            required_width,
+            excess_width,
+        } = validation
+        {
             assert_eq!(terminal_width, 136);
             assert_eq!(required_width, 128);
             assert_eq!(excess_width, 8);
@@ -385,9 +386,14 @@ mod tests {
             ..WideModeConfig::default()
         };
         let manager = WideModeManager::new(config);
-        
+
         let validation = manager.validate_terminal_for_wide_mode(false);
-        if let WideModeValidation::TooNarrow { terminal_width, required_width, shortfall } = validation {
+        if let WideModeValidation::TooNarrow {
+            terminal_width,
+            required_width,
+            shortfall,
+        } = validation
+        {
             assert_eq!(terminal_width, 80);
             assert_eq!(required_width, 128);
             assert_eq!(shortfall, 48);

@@ -1,10 +1,9 @@
 // src/teletext_ui/rendering.rs - Rendering utilities for TeletextPage display operations
 
 use super::core::{TeletextPage, TeletextRow};
-use crate::teletext_ui::{ScoreType, CONTENT_MARGIN};
-use crate::ui::teletext::colors::*;
 use super::utils::get_ansi_code;
-
+use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
+use crate::ui::teletext::colors::*;
 
 impl TeletextPage {
     /// Renders content in wide mode with two columns.
@@ -268,14 +267,10 @@ impl TeletextPage {
                         let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
                         let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
 
-                        let home_scorers: Vec<_> = goal_events
-                            .iter()
-                            .filter(|e| e.is_home_team)
-                            .collect();
-                        let away_scorers: Vec<_> = goal_events
-                            .iter()
-                            .filter(|e| !e.is_home_team)
-                            .collect();
+                        let home_scorers: Vec<_> =
+                            goal_events.iter().filter(|e| e.is_home_team).collect();
+                        let away_scorers: Vec<_> =
+                            goal_events.iter().filter(|e| !e.is_home_team).collect();
                         let max_scorers = home_scorers.len().max(away_scorers.len());
 
                         for i in 0..max_scorers {

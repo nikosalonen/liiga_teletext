@@ -6,8 +6,8 @@ use std::sync::LazyLock;
 use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 
-use crate::data_fetcher::models::GoalEventData;
 use super::types::CachedGoalEventsData;
+use crate::data_fetcher::models::GoalEventData;
 
 // LRU cache structure for processed goal events to avoid reprocessing
 pub static GOAL_EVENTS_CACHE: LazyLock<RwLock<LruCache<String, CachedGoalEventsData>>> =
