@@ -1,6 +1,7 @@
 pub mod core;
 pub mod game_status;
 pub mod goal_events;
+pub mod player_fetching;
 pub mod time_formatting;
 
 // Re-export all public items from core for backward compatibility
@@ -17,3 +18,6 @@ pub use goal_events::{
 
 // Re-export time formatting functions
 pub use time_formatting::{should_show_todays_games, should_show_todays_games_with_time};
+
+// Re-export player fetching functions
+pub use player_fetching::try_fetch_player_names_for_game;

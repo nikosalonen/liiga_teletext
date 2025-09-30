@@ -1,13 +1,8 @@
-use crate::constants::env_vars;
-use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, ScheduleGame};
-use crate::data_fetcher::player_names::{
-    DisambiguationContext, build_full_name, format_for_display,
-};
+use crate::data_fetcher::models::{GoalEvent, ScheduleGame, ScheduleTeam};
+use crate::data_fetcher::player_names::DisambiguationContext;
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
-use chrono::{DateTime, Local, Utc};
-use std::collections::{HashMap, HashSet};
-use tracing;
+use std::collections::HashMap;
 
 // Import game status functions from game_status module
 use super::game_status::{determine_game_status, format_time};
@@ -15,131 +10,13 @@ use super::game_status::{determine_game_status, format_time};
 use super::goal_events::{create_basic_goal_events, process_goal_events, process_goal_events_with_disambiguation, process_team_goals, process_team_goals_with_disambiguation};
 // Import time formatting functions from time_formatting module
 use super::time_formatting::{should_show_todays_games, should_show_todays_games_with_time};
+// Import player fetching functions from player_fetching module
+use super::player_fetching::try_fetch_player_names_for_game;
 
 
 
 
 
-/// Try to fetch player names for specific player IDs with a reduced timeout
-/// This is used as a fallback when cached player names are missing
-#[allow(dead_code)]
-async fn try_fetch_player_names_for_game(
-    api_domain: &str,
-    season: i32,
-    game_id: i32,
-    player_ids: &[i64],
-) -> Option<HashMap<i64, String>> {
-    use crate::data_fetcher::api::build_game_url;
-    use crate::data_fetcher::models::{DetailedGameResponse, Player};
-    use reqwest::Client;
-    use std::time::Duration;
-    use tracing::{debug, warn};
-
-    if player_ids.is_empty() {
-        return Some(HashMap::new());
-    }
-
-    debug!(
-        "Attempting to fetch player names for {} players in game ID {} (season {})",
-        player_ids.len(),
-        game_id,
-        season
-    );
-
-    // Get timeout from env var with 5 second default, clamped to safe range (1-30 seconds)
-    let timeout_secs = std::env::var(env_vars::API_FETCH_TIMEOUT)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(5)
-        .clamp(1, 30);
-
-    // Create a client with a configurable timeout for this fallback attempt
-    let client = match Client::builder()
-        .timeout(Duration::from_secs(timeout_secs))
-        .build()
-    {
-        Ok(client) => client,
-        Err(e) => {
-            warn!("Failed to create HTTP client for player name fetch: {}", e);
-            return None;
-        }
-    };
-
-    // Use the provided API domain and season
-    let url = build_game_url(api_domain, season, game_id);
-
-    match client.get(&url).send().await {
-        Ok(response) => {
-            // Check for HTTP errors before trying to parse JSON
-            let response = match response.error_for_status() {
-                Ok(response) => response,
-                Err(e) => {
-                    debug!(
-                        "HTTP error for player name fetch (game ID {}): {}",
-                        game_id, e
-                    );
-                    return None;
-                }
-            };
-
-            match response.json::<DetailedGameResponse>().await {
-                Ok(game_response) => {
-                    debug!(
-                        "Successfully fetched detailed game data for player name lookup (game ID: {})",
-                        game_id
-                    );
-
-                    let mut player_names = HashMap::new();
-                    // Convert player_ids to HashSet for O(1) lookup instead of O(n) contains()
-                    let mut wanted_ids: HashSet<i64> = HashSet::with_capacity(player_ids.len());
-                    wanted_ids.extend(player_ids.iter().copied());
-
-                    // Helper to process players and extract names for the requested IDs
-                    let mut process_players = |players: &[Player]| {
-                        for player in players {
-                            if wanted_ids.contains(&player.id) {
-                                let full_name =
-                                    build_full_name(&player.first_name, &player.last_name);
-                                let display_name = format_for_display(&full_name);
-                                player_names.insert(player.id, display_name);
-                            }
-                        }
-                    };
-
-                    // Process both home and away team players
-                    process_players(&game_response.home_team_players);
-                    process_players(&game_response.away_team_players);
-
-                    if !player_names.is_empty() {
-                        debug!(
-                            "Successfully fetched {} player names for game ID {}",
-                            player_names.len(),
-                            game_id
-                        );
-                        Some(player_names)
-                    } else {
-                        debug!(
-                            "No player names found for requested IDs in game ID {}",
-                            game_id
-                        );
-                        None
-                    }
-                }
-                Err(e) => {
-                    debug!("Failed to parse game response for player names: {}", e);
-                    None
-                }
-            }
-        }
-        Err(e) => {
-            debug!(
-                "Failed to fetch game data for player names (game ID {}): {}",
-                game_id, e
-            );
-            None
-        }
-    }
-}
 
 
 #[cfg(test)]
