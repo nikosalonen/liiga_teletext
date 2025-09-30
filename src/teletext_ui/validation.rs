@@ -3,6 +3,9 @@
 use super::core::{TeletextPage, TeletextRow};
 use crate::ui::teletext::compact_display::CompactModeValidation;
 
+#[cfg(test)]
+use crate::ui::teletext::compact_display::CompactDisplayConfig;
+
 impl TeletextPage {
     /// Validates compact mode compatibility with current page settings.
     /// Checks for potential issues and provides warnings for crowded displays.

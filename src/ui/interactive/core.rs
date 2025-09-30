@@ -16,9 +16,6 @@ use super::terminal_manager::{TerminalConfig, TerminalManager};
 
 // UI timing constants (removed unused constants)
 
-/// Parameters for keyboard event handling
-/// Handle keyboard events
-
 /// Runs the interactive UI with adaptive polling and change detection
 pub async fn run_interactive_ui(
     date: Option<String>,

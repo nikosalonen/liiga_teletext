@@ -32,6 +32,7 @@ pub struct RefreshResult {
     pub fetched_date: String,
     pub should_retry: bool,
     pub new_page: Option<TeletextPage>,
+    #[allow(dead_code)]
     pub needs_render: bool,
 }
 
@@ -85,6 +86,7 @@ impl RefreshCoordinator {
     }
 
     /// Create a refresh coordinator with custom cache monitoring configuration
+    #[allow(dead_code)]
     pub fn with_cache_config(cache_config: CacheMonitoringConfig) -> Self {
         Self {
             nav_manager: NavigationManager::new(),
@@ -385,7 +387,7 @@ impl RefreshCoordinator {
             self.log_game_changes(state, &result.games);
 
             // Update the current page if we have a new one
-            if let Some(new_page) = result.new_page.as_ref() {
+            if let Some(_new_page) = result.new_page.as_ref() {
                 // We need to take ownership of the page, not clone it
                 // Since we can't clone TeletextPage, we'll need to restructure this
                 // For now, we'll handle this in the calling code
@@ -412,11 +414,12 @@ impl RefreshCoordinator {
         // Update change detection variables only on successful fetch
         if !result.had_error {
             if let Some(page) = state.current_page_mut()
-                && page.is_error_warning_active() {
-                    page.hide_error_warning();
-                    state.request_render();
-                    needs_state_render = true;
-                }
+                && page.is_error_warning_active()
+            {
+                page.hide_error_warning();
+                state.request_render();
+                needs_state_render = true;
+            }
             state
                 .change_detection
                 .update_state(result.games.clone(), games_hash);

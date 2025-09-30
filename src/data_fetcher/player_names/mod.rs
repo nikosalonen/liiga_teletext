@@ -14,12 +14,7 @@ mod disambiguation;
 mod formatting;
 
 // Re-export public items from formatting
-pub use formatting::{
-    build_full_name, create_fallback_name,
-    format_for_display,
-};
+pub use formatting::{build_full_name, create_fallback_name, format_for_display};
 
 // Re-export public items from disambiguation
-pub use disambiguation::{
-    DisambiguationContext, format_with_disambiguation,
-};
+pub use disambiguation::{DisambiguationContext, format_with_disambiguation};

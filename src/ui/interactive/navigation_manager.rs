@@ -53,6 +53,7 @@ pub struct LoadingIndicatorConfig<'a> {
 }
 
 /// Result of a navigation operation
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum NavigationResult {
     /// Page was created successfully

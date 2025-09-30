@@ -26,6 +26,7 @@ pub enum EventResult {
 #[derive(Debug, Clone)]
 pub struct EventHandlerConfig {
     /// Whether debug mode is enabled (affects terminal handling)
+    #[allow(dead_code)]
     pub debug_mode: bool,
     /// Custom poll interval override (None for adaptive)
     pub poll_interval_override: Option<Duration>,
@@ -70,6 +71,7 @@ impl EventHandler {
     }
 
     /// Create event handler with custom poll interval
+    #[allow(dead_code)]
     pub fn with_poll_interval(interval: Duration) -> Self {
         Self::with_config(EventHandlerConfig {
             poll_interval_override: Some(interval),
@@ -188,13 +190,15 @@ impl EventHandler {
     }
 
     /// Check if the application should exit based on current state
-    pub fn should_exit(&self, state: &InteractiveState) -> bool {
+    #[allow(dead_code)]
+    pub fn should_exit(&self, _state: &InteractiveState) -> bool {
         // This could be extended with additional exit conditions
         // For now, exit is only determined by keyboard events
         false
     }
 
     /// Get the current event handler configuration
+    #[allow(dead_code)]
     pub fn config(&self) -> &EventHandlerConfig {
         &self.config
     }
@@ -207,10 +211,12 @@ impl Default for EventHandler {
 }
 
 /// Event handler builder for more complex configurations
+#[allow(dead_code)]
 pub struct EventHandlerBuilder {
     config: EventHandlerConfig,
 }
 
+#[allow(dead_code)]
 impl EventHandlerBuilder {
     /// Create a new event handler builder
     pub fn new() -> Self {

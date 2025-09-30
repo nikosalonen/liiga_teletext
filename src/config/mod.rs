@@ -141,6 +141,7 @@ impl Config {
     /// # Notes
     /// - Uses platform-specific config directory (e.g., ~/.config on Linux)
     /// - Falls back to current directory if config directory is unavailable
+    #[allow(dead_code)]
     pub fn get_config_path() -> String {
         paths::get_config_path()
     }

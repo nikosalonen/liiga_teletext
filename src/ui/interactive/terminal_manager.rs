@@ -2,7 +2,7 @@
 //!
 //! This module handles all terminal setup and cleanup operations including:
 //! - Raw mode enabling/disabling
-//! - Alternate screen management  
+//! - Alternate screen management
 //! - Terminal configuration for interactive mode
 //! - Error handling and recovery for terminal operations
 
@@ -14,12 +14,10 @@ use crossterm::{
 use std::io::stdout;
 
 /// Configuration for terminal management operations
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TerminalConfig {
     pub debug_mode: bool,
 }
-
 
 /// Terminal manager responsible for setup and cleanup operations
 pub struct TerminalManager {
@@ -69,6 +67,7 @@ impl TerminalManager {
     }
 
     /// Get the terminal configuration
+    #[allow(dead_code)]
     pub fn config(&self) -> &TerminalConfig {
         &self.config
     }

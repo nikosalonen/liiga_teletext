@@ -12,7 +12,7 @@ use liiga_teletext::data_fetcher::models::{GoalEvent, ScheduleGame, ScheduleTeam
 use liiga_teletext::data_fetcher::player_names::{
     DisambiguationContext, format_with_disambiguation,
 };
-use liiga_teletext::data_fetcher::processors::process_goal_events_with_disambiguation;
+use liiga_teletext::data_fetcher::processors::goal_events::process_goal_events_with_disambiguation;
 use liiga_teletext::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 
 /// Type alias for player data tuple: (id, first_name, last_name)

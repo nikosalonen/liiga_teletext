@@ -3,10 +3,7 @@
 use crate::config::Config;
 use crate::data_fetcher::GoalEventData;
 use crate::error::AppError;
-use crossterm::{
-    execute,
-    style::Print,
-};
+use crossterm::{execute, style::Print};
 use std::io::{Stdout, Write};
 use tracing::debug;
 
@@ -207,6 +204,7 @@ impl TeletextPage {
     /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
+    #[allow(dead_code)]
     pub fn handle_resize(&mut self) {
         // Update screen height
         if let Ok((_, height)) = crossterm::terminal::size() {
@@ -369,7 +367,6 @@ impl TeletextPage {
     /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
-
     /// Renders the page content using double buffering for reduced flickering.
     /// This method builds all terminal escape sequences and content in a buffer first,
     /// then writes everything in a single operation.
@@ -526,6 +523,9 @@ mod tests {
     use super::*;
     use crate::data_fetcher::GoalEventData;
     use crate::data_fetcher::models::GameData;
+    use crate::teletext_ui::formatting::get_team_abbreviation;
+    use crate::ui::teletext::{CompactModeValidation, TerminalWidthValidation};
+    use crossterm::style::Color;
 
     #[test]
     fn test_team_abbreviation() {

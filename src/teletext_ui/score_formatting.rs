@@ -19,6 +19,7 @@ use crate::ui::teletext::game_result::ScoreType;
 ///
 /// # Returns
 /// * `String` - The formatted score with styling
+#[allow(dead_code)]
 pub fn format_score_with_indicators(
     result: &str,
     score_type: &ScoreType,
@@ -57,6 +58,7 @@ pub fn format_score_with_indicators(
 ///
 /// # Returns
 /// * `String` - Formatted time string (e.g., "15:42" for 15 minutes 42 seconds)
+#[allow(dead_code)]
 pub fn format_playing_time(played_time: i32) -> String {
     if played_time <= 0 {
         return "0:00".to_string();
@@ -92,8 +94,8 @@ pub fn format_playing_time(played_time: i32) -> String {
 ///
 /// # Returns
 /// * `u8` - ANSI color code for the score
+#[allow(dead_code)]
 pub fn get_score_color(score_type: &ScoreType, is_overtime: bool, is_shootout: bool) -> u8 {
-    
     match score_type {
         ScoreType::Final => {
             if is_overtime || is_shootout {
@@ -114,6 +116,7 @@ pub fn get_score_color(score_type: &ScoreType, is_overtime: bool, is_shootout: b
 ///
 /// # Returns
 /// * `String` - Formatted time display
+#[allow(dead_code)]
 pub fn format_game_time(time: &str) -> String {
     if time.is_empty() {
         return "TBD".to_string();
@@ -121,9 +124,10 @@ pub fn format_game_time(time: &str) -> String {
 
     // Remove seconds if present (e.g., "18:30:00" -> "18:30")
     if let Some(colon_pos) = time.rfind(':')
-        && time.len() > colon_pos + 3 {
-            return time[..colon_pos].to_string();
-        }
+        && time.len() > colon_pos + 3
+    {
+        return time[..colon_pos].to_string();
+    }
 
     time.to_string()
 }
@@ -140,6 +144,7 @@ pub fn format_game_time(time: &str) -> String {
 ///
 /// # Returns
 /// * `String` - Complete formatted score line with ANSI colors
+#[allow(dead_code)]
 pub fn format_complete_score_line(
     result: &str,
     time: &str,
@@ -172,6 +177,7 @@ pub fn format_complete_score_line(
 ///
 /// # Returns
 /// * `bool` - Whether the score should be highlighted
+#[allow(dead_code)]
 pub fn should_highlight_score(
     score_type: &ScoreType,
     is_overtime: bool,
@@ -217,7 +223,7 @@ mod tests {
         assert_eq!(format_playing_time(0), "0:00");
         assert_eq!(format_playing_time(65), "1:05");
         assert_eq!(format_playing_time(900), "15:00");
-        assert_eq!(format_playing_time(1200), "2. 0:00"); // Start of second period  
+        assert_eq!(format_playing_time(1200), "2. 0:00"); // Start of second period
         assert_eq!(format_playing_time(2400), "3. 0:00"); // Start of third period
         assert_eq!(format_playing_time(3900), "JA 5:00"); // Overtime
     }
