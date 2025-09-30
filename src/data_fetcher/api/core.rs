@@ -33,7 +33,7 @@ use super::http_client::create_http_client_with_timeout;
 #[cfg(test)]
 use super::http_client::create_test_http_client;
 // URL builders available from sibling urls module
-use super::urls::{build_game_url, build_schedule_url, build_tournament_url, create_tournament_key};
+use super::urls::{build_game_url, build_tournament_url, create_tournament_key};
 // Date and season logic available from sibling date_logic module
 use super::date_logic::{determine_fetch_date, parse_date_and_season};
 #[cfg(test)]
@@ -67,6 +67,8 @@ use super::tournament_api::{
     fetch_tournament_data_with_cache_check, find_future_games_fallback, handle_no_games_found,
     process_next_game_dates, should_use_this_date,
 };
+// Season schedule utilities available from sibling season_schedule module
+use super::season_schedule::fetch_regular_season_start_date;
 
 
 #[instrument(skip(custom_date))]
@@ -184,54 +186,6 @@ pub async fn fetch_liiga_data(
     Ok((all_games, return_date))
 }
 
-/// Fetches the regular season schedule to determine the season start date.
-/// Returns the start date of the first regular season game.
-#[instrument(skip(client, config))]
-pub async fn fetch_regular_season_start_date(
-    client: &Client,
-    config: &Config,
-    season: i32,
-) -> Result<Option<String>, AppError> {
-    info!("Fetching regular season schedule for season: {}", season);
-    let url = build_schedule_url(&config.api_domain, season);
-
-    match fetch::<Vec<ScheduleApiGame>>(client, &url).await {
-        Ok(games) => {
-            if games.is_empty() {
-                info!("No regular season games found for season: {}", season);
-                Ok(None)
-            } else {
-                // Get the earliest start date from the games
-                let earliest_game = games
-                    .iter()
-                    .min_by_key(|game| &game.start)
-                    .expect("We already checked that games is not empty");
-
-                info!(
-                    "Found regular season start date: {} for season: {}",
-                    earliest_game.start, season
-                );
-                Ok(Some(earliest_game.start.clone()))
-            }
-        }
-        Err(e) => {
-            error!(
-                "Failed to fetch regular season schedule for season {}: {}",
-                season, e
-            );
-
-            // Transform API not found errors to season-specific errors
-            match &e {
-                AppError::ApiNotFound { .. } => Err(AppError::api_season_not_found(season)),
-                AppError::ApiNoData { .. } => {
-                    info!("Season {} schedule exists but contains no games", season);
-                    Ok(None)
-                }
-                _ => Err(e),
-            }
-        }
-    }
-}
 
 
 #[cfg(test)]
