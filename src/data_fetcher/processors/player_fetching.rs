@@ -33,7 +33,7 @@ use tracing::{debug, warn};
 ///         12345,
 ///         &player_ids
 ///     ).await;
-///     
+///
 ///     if let Some(name_map) = names {
 ///         println!("Found {} player names", name_map.len());
 ///     }

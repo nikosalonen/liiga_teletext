@@ -40,10 +40,10 @@ use super::tournament_api::{determine_return_date, fetch_day_data, handle_no_gam
 /// async fn main() -> Result<(), liiga_teletext::AppError> {
 ///     // Fetch data for today
 ///     let (games, date) = fetch_liiga_data(None).await?;
-///     
+///
 ///     // Fetch data for a specific date
 ///     let (games, date) = fetch_liiga_data(Some("2024-01-15".to_string())).await?;
-///     
+///
 ///     Ok(())
 /// }
 /// ```
