@@ -3,6 +3,7 @@ pub mod http_client;
 pub mod date_logic;
 pub mod tournament_logic;
 pub mod season_utils;
+mod fetch_utils;
 mod core;
 
 // Re-export URL utilities

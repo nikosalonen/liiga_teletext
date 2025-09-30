@@ -109,7 +109,7 @@ pub async fn fetch_tournament_games(
     season: i32,
 ) -> Vec<ScheduleApiGame> {
     // Import fetch function from core module
-    use super::core::fetch;
+    use super::fetch_utils::fetch;
     
     info!(
         "Fetching games from {} tournaments for season {}",
@@ -246,7 +246,7 @@ pub async fn determine_active_tournaments(
     date: &str,
 ) -> Result<(Vec<&'static str>, HashMap<String, ScheduleResponse>), AppError> {
     // Import fetch function from core module
-    use super::core::fetch;
+    use super::fetch_utils::fetch;
     
     info!(
         "Determining active tournaments for date: {} using API nextGameDate logic",
