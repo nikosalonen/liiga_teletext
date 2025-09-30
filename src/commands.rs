@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::data_fetcher::{fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::TeletextPage;
-use crate::ui::{create_future_games_page, create_page, format_date_for_display};
+use crate::ui::{NavigationManager, format_date_for_display};
 use crate::version;
 use chrono::{Local, Utc};
 use crossterm::{execute, style::Color, terminal::SetTitle};
@@ -154,10 +154,13 @@ pub async fn handle_once_command(args: &Args, version_check: tokio::task::JoinHa
         }
         no_games_page
     } else {
+        // Create navigation manager
+        let nav_manager = NavigationManager::new();
+        
         // Try to create a future games page, fall back to regular page if not future games
         // Only show future games header if no specific date was requested
         let show_future_header = args.date.is_none();
-        match create_future_games_page(
+        match nav_manager.create_future_games_page(
             &games,
             args.disable_links,
             true,
@@ -173,7 +176,7 @@ pub async fn handle_once_command(args: &Args, version_check: tokio::task::JoinHa
         {
             Some(page) => page,
             None => {
-                let mut page = create_page(
+                let mut page = nav_manager.create_page(
                     &games,
                     args.disable_links,
                     true,

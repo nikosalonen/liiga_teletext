@@ -8,6 +8,7 @@
 //! - `input_handler`: Keyboard input and date navigation
 //! - `state_manager`: State management and organization
 //! - `event_handler`: Event processing and coordination
+//! - `navigation_manager`: Page navigation and creation management
 //! - `core`: Main interactive UI loop and orchestration
 
 mod change_detection;
@@ -15,6 +16,7 @@ mod core;
 mod event_handler;
 mod indicators;
 mod input_handler;
+pub mod navigation_manager;
 mod refresh_manager;
 mod series_utils;
 mod state_manager;
