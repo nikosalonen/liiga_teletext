@@ -23,6 +23,10 @@ use tracing;
 use super::series_utils::get_subheader;
 use super::change_detection::{calculate_games_hash, detect_and_log_changes};
 use super::indicators::determine_indicator_states;
+use super::refresh_manager::{
+    calculate_poll_interval, calculate_auto_refresh_interval, calculate_min_refresh_interval,
+    should_trigger_auto_refresh, AutoRefreshParams,
+};
 
 // Teletext page constants (removed unused constants)
 
@@ -800,109 +804,6 @@ fn initialize_timers() -> (
     )
 }
 
-/// Calculate adaptive polling interval based on user activity
-fn calculate_poll_interval(time_since_activity: Duration) -> Duration {
-    if time_since_activity < Duration::from_secs(5) {
-        Duration::from_millis(50) // Active: 50ms (smooth interaction)
-    } else if time_since_activity < Duration::from_secs(30) {
-        Duration::from_millis(200) // Semi-active: 200ms (good responsiveness)
-    } else {
-        Duration::from_millis(500) // Idle: 500ms (conserve CPU)
-    }
-}
-
-/// Calculate auto-refresh interval based on game states
-fn calculate_auto_refresh_interval(games: &[GameData]) -> Duration {
-    if has_live_games_from_game_data(games) {
-        Duration::from_secs(15) // Increased from 8 to 15 seconds for live games
-    } else if games.iter().any(is_game_near_start_time) {
-        Duration::from_secs(30) // Increased from 10 to 30 seconds for games near start time
-    } else {
-        Duration::from_secs(60) // Standard interval for completed/scheduled games
-    }
-}
-
-/// Calculate minimum interval between refreshes based on game count
-fn calculate_min_refresh_interval(
-    game_count: usize,
-    min_refresh_interval: Option<u64>,
-) -> Duration {
-    if let Some(user_interval) = min_refresh_interval {
-        Duration::from_secs(user_interval) // Use user-specified interval
-    } else if game_count >= 6 {
-        Duration::from_secs(30) // Minimum 30 seconds between refreshes for 6+ games
-    } else if game_count >= 4 {
-        Duration::from_secs(20) // Minimum 20 seconds between refreshes for 4-5 games
-    } else {
-        Duration::from_secs(10) // Minimum 10 seconds between refreshes for 1-3 games
-    }
-}
-
-/// Parameters for auto-refresh checking
-struct AutoRefreshParams<'a> {
-    needs_refresh: bool,
-    games: &'a [GameData],
-    last_auto_refresh: Instant,
-    auto_refresh_interval: Duration,
-    min_interval_between_refreshes: Duration,
-    last_rate_limit_hit: Instant,
-    rate_limit_backoff: Duration,
-    current_date: &'a Option<String>,
-}
-
-/// Check if auto-refresh should be triggered
-fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool {
-    if params.needs_refresh {
-        return false;
-    }
-
-    if params.last_auto_refresh.elapsed() < params.auto_refresh_interval {
-        return false;
-    }
-
-    if params.last_auto_refresh.elapsed() < params.min_interval_between_refreshes {
-        return false;
-    }
-
-    if params.last_rate_limit_hit.elapsed() < params.rate_limit_backoff {
-        return false;
-    }
-
-    // Don't auto-refresh for historical dates
-    if let Some(date) = params.current_date.as_deref()
-        && is_historical_date(date)
-    {
-        tracing::debug!("Auto-refresh skipped for historical date: {}", date);
-        return false;
-    }
-
-    // After respecting timing/backoff/historical checks, recover from empty state
-    if params.games.is_empty() {
-        tracing::debug!("Auto-refresh triggered: games list empty (after guards)");
-        return true;
-    }
-
-    let has_ongoing_games = has_live_games_from_game_data(params.games);
-    let all_scheduled = !params.games.is_empty() && params.games.iter().all(is_future_game);
-
-    if has_ongoing_games {
-        tracing::info!("Auto-refresh triggered for ongoing games");
-        true
-    } else if !all_scheduled {
-        tracing::debug!("Auto-refresh triggered for non-scheduled games (mixed game states)");
-        true
-    } else {
-        // Enhanced check for games that might have started
-        let has_recently_started_games = params.games.iter().any(is_game_near_start_time);
-        if has_recently_started_games {
-            tracing::info!("Auto-refresh triggered for games that may have started");
-            true
-        } else {
-            tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
-            false
-        }
-    }
-}
 
 /// Handle data fetching with error handling and timeout
 async fn fetch_data_with_timeout(
