@@ -6,7 +6,7 @@
 //! - Deciding when to trigger auto-refresh
 //! - Rate limiting and backoff logic
 
-use crate::data_fetcher::{GameData, cache::has_live_games_from_game_data, is_historical_date};
+use crate::data_fetcher::{GameData, has_live_games_from_game_data, is_historical_date};
 use crate::teletext_ui::ScoreType;
 use std::time::{Duration, Instant};
 

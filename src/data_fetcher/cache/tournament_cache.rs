@@ -116,7 +116,7 @@ pub async fn get_cached_tournament_data_with_live_check(
     key: &str,
     current_games: &[GameData],
 ) -> Option<ScheduleResponse> {
-    use super::has_live_games_from_game_data;
+    use crate::data_fetcher::has_live_games_from_game_data;
     
     let mut cache = TOURNAMENT_CACHE.write().await;
 
