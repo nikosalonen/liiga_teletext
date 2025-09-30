@@ -1,4 +1,5 @@
 // src/main.rs
+mod app;
 mod cli;
 mod commands;
 mod config;
@@ -13,9 +14,7 @@ mod version;
 use clap::Parser;
 use cli::Args;
 use config::Config;
-use crossterm::{execute, terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode}};
 use error::AppError;
-use std::io::stdout;
 
 
 #[tokio::main]
@@ -56,33 +55,5 @@ async fn main() -> Result<(), AppError> {
     }
 
     // Interactive mode
-    enable_raw_mode()?;
-    let mut stdout = stdout();
-
-    // Set terminal title/header to show app name
-    execute!(stdout, crossterm::terminal::SetTitle("SM-LIIGA 221"))?;
-
-    execute!(stdout, EnterAlternateScreen)?;
-
-    // Run the interactive UI
-    let result = ui::run_interactive_ui(
-        args.date.clone(),
-        args.disable_links,
-        args.debug,
-        args.min_refresh_interval,
-        args.compact,
-        args.wide,
-    )
-    .await;
-
-    // Clean up terminal
-    execute!(stdout, LeaveAlternateScreen)?;
-    disable_raw_mode()?;
-
-    // Show version info after UI closes if update is available
-    if let Ok(Some(latest_version)) = version_check.await {
-        version::print_version_info(&latest_version);
-    }
-
-    result
+    app::run_interactive(&args, version_check).await
 }
