@@ -18,6 +18,7 @@ pub static TOURNAMENT_CACHE: LazyLock<RwLock<LruCache<String, CachedTournamentDa
     LazyLock::new(|| RwLock::new(LruCache::new(NonZeroUsize::new(50).unwrap())));
 
 /// Determines if a ScheduleResponse contains live games
+/// Determines if a ScheduleResponse contains live games
 pub fn has_live_games(response: &ScheduleResponse) -> bool {
     response.games.iter().any(|game| {
         // Game is live if it's started but not ended
@@ -241,7 +242,7 @@ pub async fn invalidate_cache_for_games_near_start_time(date: &str) {
 
 /// Completely bypasses cache for games that should be starting soon
 /// This ensures fresh data is always fetched for games near their start time
-pub async fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> bool {
+pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> bool {
     // Check if any games are near their start time
     let has_starting_games = current_games.iter().any(|game| {
         if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
