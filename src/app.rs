@@ -45,15 +45,16 @@ pub async fn run_interactive(
 ) -> Result<(), AppError> {
     // Interactive mode
     enable_raw_mode()?;
+
+    // Create RAII guard immediately to ensure cleanup happens even on panic or early return
+    // Note: We create the guard with stdout() to track cleanup responsibility
+    let _guard = TerminalGuard::new(stdout());
     let mut out = stdout();
 
     // Set terminal title/header to show app name
     execute!(out, SetTitle("SM-LIIGA 221"))?;
 
     execute!(out, EnterAlternateScreen)?;
-
-    // Create RAII guard to ensure cleanup happens even on panic or early return
-    let _guard = TerminalGuard::new(out);
 
     // Run the interactive UI
     let result = ui::run_interactive_ui(
