@@ -156,7 +156,7 @@ impl RefreshCoordinator {
                     (games, false, fetched_date, false)
                 }
                 Err(e) => {
-                    tracing::error!("Auto-refresh failed: {}", e);
+                    tracing::error!("Auto-refresh failed: {e}");
                     tracing::error!(
                         "Error details - Type: {}, Current date: {:?}",
                         std::any::type_name_of_val(&e),
@@ -210,7 +210,7 @@ impl RefreshCoordinator {
                             );
                         }
                         _ => {
-                            tracing::warn!("Auto-refresh error: {}, will retry on next cycle", e);
+                            tracing::warn!("Auto-refresh error: {e}, will retry on next cycle");
                         }
                     }
 
@@ -503,7 +503,7 @@ impl RefreshCoordinator {
         // Log detailed cache information for debugging if needed
         if tracing::enabled!(tracing::Level::TRACE) {
             let debug_info = get_detailed_cache_debug_info().await;
-            tracing::trace!("Detailed cache debug info: {}", debug_info);
+            tracing::trace!("Detailed cache debug info: {debug_info}");
         }
 
         // The LRU cache implementation automatically handles memory management,

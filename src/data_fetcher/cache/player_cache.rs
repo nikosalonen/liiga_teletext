@@ -51,7 +51,7 @@ pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
         );
         Some(players.clone())
     } else {
-        debug!("Cache miss for players: game_id={}", game_id);
+        debug!("Cache miss for players: game_id={game_id}");
         None
     }
 }
@@ -245,7 +245,7 @@ pub async fn get_cached_disambiguated_players(game_id: i32) -> Option<HashMap<i6
         );
         Some(players.clone())
     } else {
-        debug!("Cache miss for disambiguated players: game_id={}", game_id);
+        debug!("Cache miss for disambiguated players: game_id={game_id}");
         None
     }
 }
@@ -335,7 +335,7 @@ pub async fn has_cached_disambiguated_players(game_id: i32) -> bool {
     let cache = PLAYER_CACHE.read().await;
     let exists = cache.peek(&game_id).is_some();
 
-    debug!("Cache check result: game_id={}, exists={}", game_id, exists);
+    debug!("Cache check result: game_id={game_id}, exists={exists}");
 
     exists
 }

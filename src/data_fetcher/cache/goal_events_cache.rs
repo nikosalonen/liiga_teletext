@@ -55,7 +55,7 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
     let mut cache = GOAL_EVENTS_CACHE.write().await;
 
     if let Some(cached_entry) = cache.get(&key) {
-        debug!("Found cached goal events data: key={}", key);
+        debug!("Found cached goal events data: key={key}");
 
         if !cached_entry.is_expired() {
             let event_count = cached_entry.data.len();
@@ -77,7 +77,7 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
             cache.pop(&key);
         }
     } else {
-        debug!("Cache miss for goal events data: key={}", key);
+        debug!("Cache miss for goal events data: key={key}");
     }
 
     None
@@ -99,7 +99,7 @@ pub async fn get_cached_goal_events_entry(
     let mut cache = GOAL_EVENTS_CACHE.write().await;
 
     if let Some(cached_entry) = cache.get(&key) {
-        debug!("Found cached goal events entry: key={}", key);
+        debug!("Found cached goal events entry: key={key}");
 
         if !cached_entry.is_expired() {
             let event_count = cached_entry.data.len();
@@ -123,7 +123,7 @@ pub async fn get_cached_goal_events_entry(
             cache.pop(&key);
         }
     } else {
-        debug!("Cache miss for goal events entry: key={}", key);
+        debug!("Cache miss for goal events entry: key={key}");
     }
 
     None

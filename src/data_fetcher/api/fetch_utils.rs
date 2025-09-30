@@ -26,11 +26,11 @@ use crate::error::AppError;
 /// * `Result<T, AppError>` - Parsed response data or error
 #[instrument(skip(client))]
 pub(super) async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, AppError> {
-    info!("Fetching data from URL: {}", url);
+    info!("Fetching data from URL: {url}");
 
     // Check HTTP response cache first
     if let Some(cached_response) = get_cached_http_response(url).await {
-        debug!("Using cached HTTP response for URL: {}", url);
+        debug!("Using cached HTTP response for URL: {url}");
         match serde_json::from_str::<T>(&cached_response) {
             Ok(parsed) => return Ok(parsed),
             Err(e) => {
@@ -102,7 +102,7 @@ pub(super) async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Re
     let status = response.status();
     let headers = response.headers().clone();
 
-    debug!("Response status: {}", status);
+    debug!("Response status: {status}");
     debug!("Response headers: {:?}", headers);
 
     if !status.is_success() {
@@ -137,7 +137,7 @@ pub(super) async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Re
 
     debug!("Response length: {} bytes", response_text.len());
     let preview: String = response_text.chars().take(1024).collect();
-    debug!("Response text (first 1024 chars): {}", preview);
+    debug!("Response text (first 1024 chars): {preview}");
 
     // Determine TTL for successful HTTP responses
     let ttl_seconds = if url.contains("/games/") {

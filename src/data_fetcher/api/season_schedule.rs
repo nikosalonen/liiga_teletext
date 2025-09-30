@@ -17,13 +17,13 @@ pub async fn fetch_regular_season_start_date(
     config: &Config,
     season: i32,
 ) -> Result<Option<String>, AppError> {
-    info!("Fetching regular season schedule for season: {}", season);
+    info!("Fetching regular season schedule for season: {season}");
     let url = build_schedule_url(&config.api_domain, season);
 
     match fetch::<Vec<ScheduleApiGame>>(client, &url).await {
         Ok(games) => {
             if games.is_empty() {
-                info!("No regular season games found for season: {}", season);
+                info!("No regular season games found for season: {season}");
                 Ok(None)
             } else {
                 // Get the earliest start date from the games

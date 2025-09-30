@@ -87,7 +87,7 @@ pub(super) async fn process_single_game(
 
     let time = if matches!(score_type, ScoreType::Scheduled) {
         let formatted_time = format_time(&game.start).unwrap_or_default();
-        debug!("Game scheduled, formatted time: {}", formatted_time);
+        debug!("Game scheduled, formatted time: {formatted_time}");
         formatted_time
     } else {
         debug!("Game ongoing or finished, no time to display");
@@ -95,7 +95,7 @@ pub(super) async fn process_single_game(
     };
 
     let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-    debug!("Game result: {}", result);
+    debug!("Game result: {result}");
 
     // Always use schedule-provided goal events (with embedded names) to avoid per-game fetch
     let goal_events = create_basic_goal_events(&game, &config.api_domain).await;
@@ -224,7 +224,7 @@ pub(super) async fn fetch_game_data(
     let url = build_game_url(&config.api_domain, season, game_id);
 
     // Try to get detailed game response
-    info!("Making API request to: {}", url);
+    info!("Making API request to: {url}");
     let game_response: DetailedGameResponse = match fetch(client, &url).await {
         Ok(response) => {
             info!(
@@ -410,7 +410,7 @@ pub(super) fn filter_games_by_date(
     games: Vec<ScheduleApiGame>,
     target_date: &str,
 ) -> Vec<ScheduleApiGame> {
-    info!("Filtering games for target date: {}", target_date);
+    info!("Filtering games for target date: {target_date}");
 
     let matching_games: Vec<ScheduleApiGame> = games
         .into_iter()
@@ -630,7 +630,7 @@ pub(super) async fn fetch_historical_games(
     config: &Config,
     date: &str,
 ) -> Result<Vec<GameData>, AppError> {
-    info!("Fetching historical games for date: {}", date);
+    info!("Fetching historical games for date: {date}");
 
     // Parse the date and determine the season
     let (_, month, season) = parse_date_and_season(date);
@@ -667,7 +667,7 @@ pub(super) async fn fetch_historical_games(
             Ok(game) => schedule_games.push(game),
             Err(e) => {
                 failed_games += 1;
-                warn!("Failed to convert historical game: {}", e);
+                warn!("Failed to convert historical game: {e}");
             }
         }
     }

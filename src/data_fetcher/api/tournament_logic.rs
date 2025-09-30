@@ -309,7 +309,7 @@ pub async fn determine_active_tournaments(
             let tournament_name = tournament;
 
             async move {
-                info!("Checking tournament: {}", tournament_name);
+                info!("Checking tournament: {tournament_name}");
                 match fetch::<ScheduleResponse>(client, &url).await {
                     Ok(response) => Ok((tournament_name, response)),
                     Err(e) => {

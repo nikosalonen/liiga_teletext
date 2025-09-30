@@ -326,7 +326,7 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
             if let Some(prev_date) = result {
                 *params.current_date = Some(prev_date.clone());
                 *params.needs_refresh = true;
-                tracing::info!("Navigated to previous date: {}", prev_date);
+                tracing::info!("Navigated to previous date: {prev_date}");
             } else {
                 tracing::warn!("No previous date with games found");
             }
@@ -353,14 +353,14 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                 *params.needs_render = true;
             }
 
-            tracing::info!("Searching for next date with games from: {}", target_date);
+            tracing::info!("Searching for next date with games from: {target_date}");
 
             let result = find_next_date_with_games(&target_date).await;
 
             if let Some(next_date) = result {
                 *params.current_date = Some(next_date.clone());
                 *params.needs_refresh = true;
-                tracing::info!("Navigated to next date: {}", next_date);
+                tracing::info!("Navigated to next date: {next_date}");
             } else {
                 tracing::warn!("No next date with games found");
             }
@@ -391,7 +391,7 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                 if let Some(date) = params.current_date
                     && is_historical_date(date)
                 {
-                    tracing::info!("Manual refresh skipped for historical date: {}", date);
+                    tracing::info!("Manual refresh skipped for historical date: {date}");
                     return Ok(false); // Skip refresh for historical dates
                 }
 

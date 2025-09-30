@@ -74,7 +74,7 @@ pub async fn try_fetch_player_names_for_game(
     {
         Ok(client) => client,
         Err(e) => {
-            warn!("Failed to create HTTP client for player name fetch: {}", e);
+            warn!("Failed to create HTTP client for player name fetch: {e}");
             return None;
         }
     };
@@ -140,7 +140,7 @@ pub async fn try_fetch_player_names_for_game(
                     }
                 }
                 Err(e) => {
-                    debug!("Failed to parse game response for player names: {}", e);
+                    debug!("Failed to parse game response for player names: {e}");
                     None
                 }
             }

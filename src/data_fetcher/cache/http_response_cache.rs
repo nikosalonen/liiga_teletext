@@ -42,7 +42,7 @@ pub async fn get_cached_http_response(url: &str) -> Option<String> {
     let mut cache = HTTP_RESPONSE_CACHE.write().await;
 
     if let Some(cached_entry) = cache.get(url) {
-        debug!("Found cached HTTP response: url={}", url);
+        debug!("Found cached HTTP response: url={url}");
 
         if !cached_entry.is_expired() {
             let data_size = cached_entry.data.len();
@@ -64,7 +64,7 @@ pub async fn get_cached_http_response(url: &str) -> Option<String> {
             cache.pop(url);
         }
     } else {
-        debug!("Cache miss for HTTP response: url={}", url);
+        debug!("Cache miss for HTTP response: url={url}");
     }
 
     None

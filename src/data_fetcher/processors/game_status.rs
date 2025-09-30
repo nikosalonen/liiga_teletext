@@ -166,7 +166,7 @@ fn has_recent_events(game: &ScheduleGame) -> bool {
         });
 
     if has_recent_goals {
-        tracing::debug!("Recent goal events detected in game {}", game.id);
+        tracing::debug!("Recent goal events detected in game {0}", game.id);
         return true;
     }
 
