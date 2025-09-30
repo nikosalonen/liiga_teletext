@@ -284,69 +284,7 @@ impl TeletextPage {
 
 
 
-    /// Calculates the optimal number of games per line for the current terminal width.
-    ///
-    /// # Arguments
-    /// * `terminal_width` - Current terminal width in characters
-    ///
-    /// # Returns
-    /// * `usize` - Optimal number of games per line
-    #[cfg(test)]
-    fn calculate_compact_games_per_line(&self, terminal_width: usize) -> usize {
-        let config = CompactDisplayConfig::default();
-        config.calculate_games_per_line(terminal_width)
-    }
 
-    /// Checks if the current terminal width can accommodate compact mode.
-    ///
-    /// # Arguments
-    /// * `terminal_width` - Current terminal width in characters
-    ///
-    /// # Returns
-    /// * `bool` - True if terminal is wide enough for compact mode
-    #[cfg(test)]
-    fn is_terminal_suitable_for_compact(&self, terminal_width: usize) -> bool {
-        let config = CompactDisplayConfig::default();
-        config.is_terminal_width_sufficient(terminal_width)
-    }
-
-    /// Validates compact mode compatibility with current page settings
-    ///
-    /// # Returns
-    /// * `CompactModeValidation` - Validation result with any issues found
-    pub fn validate_compact_mode_compatibility(&self) -> CompactModeValidation {
-        let issues: Vec<String> = Vec::new();
-        let mut warnings: Vec<String> = Vec::new();
-
-        // Error messages are now properly handled in compact mode
-        // No need for warning anymore
-
-        // Loading indicators and auto-refresh indicators work fine in compact mode
-        // No need for warnings anymore
-
-        // Season countdown is now properly handled - suppressed when compact mode is enabled
-        // No need for warning anymore
-
-        // Future games headers are now properly supported in compact mode
-        // No need for warning anymore
-
-        // Check if we have many games (compact mode might be crowded)
-        let game_count = self
-            .content_rows
-            .iter()
-            .filter(|row| matches!(row, TeletextRow::GameResult { .. }))
-            .count();
-
-        if game_count > 20 {
-            warnings.push("Many games detected - compact mode may be crowded".to_string());
-        }
-
-        if issues.is_empty() && warnings.is_empty() {
-            CompactModeValidation::Compatible
-        } else {
-            CompactModeValidation::CompatibleWithWarnings { warnings }
-        }
-    }
 
     /// Renders only the loading indicator area without redrawing the entire screen
     #[allow(dead_code)] // Method for future use

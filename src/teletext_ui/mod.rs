@@ -7,6 +7,7 @@ pub mod indicators;
 pub mod content;
 pub mod formatting;
 pub mod rendering;
+pub mod validation;
 pub mod utils;
 pub mod season_utils;
 
