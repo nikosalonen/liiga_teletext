@@ -2,10 +2,10 @@
 
 ## Quick Status
 
-**Overall Progress:** 22/50+ tasks completed (44%)  
+**Overall Progress:** 23/50+ tasks completed (46%)  
 **Current Phase:** Phase 4 - Player Names & Interactive UI  
-**Current Task:** Task 4.4 - Modularize ui/interactive (In Progress)  
-**Last Updated:** 2025-09-30 07:34 UTC
+**Current Task:** Task 4.5 - Modularize teletext_ui.rs (Next)  
+**Last Updated:** 2025-09-30 07:59 UTC
 
 ---
 
@@ -85,13 +85,13 @@
 | 4.1 - Modularize player_names.rs (2,388 lines) | ✅ DONE | 1,652 lines | 45m | Completed 2025-09-30 |
 | 4.2 - Modularize api/core.rs (2,410 lines) | ⏸️ DEFERRED | N/A | N/A | Only 2 functions left |
 | 4.3 - Modularize cache/core.rs (2,146 lines) | ⏸️ DEFERRED | N/A | N/A | HTTP cache only |
-| 4.4 - Modularize ui/interactive.rs (2,181 lines) | 🔄 IN PROGRESS | 270 lines so far | Est 90m | 12% complete |
+|| 4.4 - Modularize ui/interactive.rs (2,181 lines) | ✅ DONE | 793 lines | 75m | Completed 2025-09-30 |
 | 4.5 - Modularize teletext_ui.rs (4,236 lines) | ⬜️ TODO | ~2,000 lines | Est 120m | Largest file |
 
 **Phase 4 Progress:**
-- **Task 4.1 Complete:** player_names.rs → 3 focused modules (formatting.rs, disambiguation.rs, mod.rs)
-- **Task 4.4 Progress:** interactive.rs → directory structure + 2 modules extracted so far
-- **Lines Modularized:** 1,922 / ~8,000 target (24%)
+-  **Task 4.1 Complete:** player_names.rs → 3 focused modules (formatting.rs, disambiguation.rs, mod.rs)
+-  **Task 4.4 Complete:** interactive.rs → directory with 5 focused modules + core coordinator
+-  **Lines Modularized:** 2,445 / ~8,000 target (31%)
 
 ---
 
@@ -183,10 +183,10 @@ Total New Modules:  50-60
 ```
 
 ### Progress Metrics
-- **Lines Refactored:** 7,727 / 22,665 (34.1%)
-- **Modules Created:** 31 / 50+ (Phase 1: 6, Phase 2: 9, Phase 3: 7, Phase 4: 9 so far)
-- **Phases Complete:** 3 / 8 (Phase 1: 6/6 ✅, Phase 2: 8/8 ✅, Phase 3: 5/5 ✅, Phase 4: 1.5/5 🔄)
-- **Tests Passing:** ✅ All 276 tests passing
+- **Lines Refactored:** 8,250 / 22,665 (36.4%)
+- **Modules Created:** 36 / 50+ (Phase 1: 6, Phase 2: 9, Phase 3: 7, Phase 4: 14 so far)
+- **Phases Complete:** 3 / 8 (Phase 1: 6/6 ✅, Phase 2: 8/8 ✅, Phase 3: 5/5 ✅, Phase 4: 2/5 ✅)
+- **Tests Passing:** ✅ All 278 tests passing
 
 ---
 
@@ -521,3 +521,27 @@ git checkout -b refactor/restart
 **Document Version:** 1.0  
 **Created:** 2025-09-30  
 **Total Estimated Time:** 25-35 hours (distributed work)
+### Task 4.4 - Modularize ui/interactive (2025-09-30) - COMPLETE ✅
+- ✅ Created ui/interactive/ directory structure  
+- ✅ Moved interactive.rs → interactive/core.rs
+- ✅ Created mod.rs with backward-compatible re-exports
+- ✅ Extracted series_utils.rs (122 lines) - Tournament series type classification
+- ✅ Extracted change_detection.rs (148 lines) - Game data change tracking
+- ✅ Extracted indicators.rs (40 lines) - Loading indicator management
+- ✅ Extracted refresh_manager.rs (156 lines) - Auto-refresh timing and logic
+- ✅ Integrated input_handler.rs (405 lines) - Keyboard input & date navigation
+- ✅ Removed ~405 lines duplicate input handling code from core.rs
+- ✅ Fixed KeyEventParams struct mismatch
+- ✅ Added TestDataBuilder::create_custom_game for backward compatibility
+- ✅ Removed ~110 lines duplicate SeriesType tests from core.rs
+- ✅ All 278 tests passing
+- ⏱️ Total time: ~75 minutes (estimated: 90m) - 17% faster!
+- 📝 Total extracted: 793 lines across 5 modules (36% of 2,181 total)
+- 📝 Core.rs reduced: 2,181 → 1,388 lines (36% reduction)
+- 📝 Module structure:
+  - core.rs (1,388 lines) - Main UI coordinator
+  - input_handler.rs (405 lines) - Keyboard input & navigation
+  - series_utils.rs (122 lines) - Series type utilities
+  - change_detection.rs (148 lines) - Data change detection
+  - indicators.rs (40 lines) - Loading indicators
+  - refresh_manager.rs (156 lines) - Auto-refresh logic
