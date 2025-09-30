@@ -80,17 +80,11 @@ pub(super) fn should_use_this_date(
 /// If games were found on a different date than the original (earliest_date is set),
 /// returns that date. Otherwise returns the original date.
 pub(super) fn determine_return_date(
-    games: &[GameData],
+    _games: &[GameData],
     earliest_date: Option<String>,
     original_date: &str,
 ) -> String {
-    if games.is_empty() {
-        earliest_date.unwrap_or_else(|| original_date.to_string())
-    } else {
-        // If we have games and earliest_date is set, it means we found games on a different date
-        // than the original requested date, so we should return that date
-        earliest_date.unwrap_or_else(|| original_date.to_string())
-    }
+    earliest_date.unwrap_or_else(|| original_date.to_string())
 }
 
 /// Fetches game data for a specific tournament and date from the API.
@@ -119,7 +113,7 @@ pub(super) async fn fetch_tournament_data_with_cache_check(
     let cache_key = create_tournament_key(tournament, date);
 
     // Check if we should completely bypass cache for starting games
-    if should_bypass_cache_for_starting_games(current_games).await {
+    if should_bypass_cache_for_starting_games(current_games) {
         debug!("Cache bypass enabled for starting games, fetching fresh data");
     } else {
         // Check cache first with enhanced validation

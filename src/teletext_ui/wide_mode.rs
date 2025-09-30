@@ -219,7 +219,10 @@ impl WideModeManager {
     /// # Returns
     /// * `WideModeValidation` - Validation result with details
     #[cfg(test)]
-    pub fn validate_terminal_for_wide_mode_with_width(&self, terminal_width: u16) -> WideModeValidation {
+    pub fn validate_terminal_for_wide_mode_with_width(
+        &self,
+        terminal_width: u16,
+    ) -> WideModeValidation {
         if !self.config.enabled {
             WideModeValidation::Disabled
         } else if terminal_width >= self.config.min_terminal_width {
