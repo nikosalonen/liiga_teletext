@@ -5,6 +5,7 @@ pub mod tournament_logic;
 pub mod season_utils;
 mod fetch_utils;
 mod game_api;
+mod tournament_api;
 mod core;
 
 // Re-export URL utilities
