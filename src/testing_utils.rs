@@ -22,6 +22,29 @@ impl TestDataBuilder {
         }
     }
 
+    /// Creates a basic game data with custom fields for testing
+    pub fn create_custom_game(
+        _id: i32,  // Kept for backwards compatibility but unused
+        home_team: &str,
+        away_team: &str,
+        result: &str,
+        serie: &str,
+    ) -> GameData {
+        GameData {
+            home_team: home_team.to_string(),
+            away_team: away_team.to_string(),
+            time: "18:30".to_string(),
+            result: result.to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: serie.to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        }
+    }
+
     /// Creates a game with overtime
     pub fn create_overtime_game(home_team: &str, away_team: &str) -> GameData {
         GameData {
@@ -161,6 +184,17 @@ impl TestDataBuilder {
             })
             .collect()
     }
+}
+
+// Re-export for backwards compatibility with tests expecting 5-parameter signature
+pub fn create_basic_game(
+    id: i32,
+    home_team: &str,
+    away_team: &str,
+    result: &str,
+    serie: &str,
+) -> GameData {
+    TestDataBuilder::create_custom_game(id, home_team, away_team, result, serie)
 }
 
 /// Property-based testing utilities
