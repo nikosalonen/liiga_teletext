@@ -102,7 +102,7 @@ pub(super) fn detect_and_log_changes(games: &[GameData], last_games: &[GameData]
 
         // Check if all games are scheduled (future games) - only relevant if no ongoing games
         let has_ongoing_games = has_live_games_from_game_data(games);
-        let all_scheduled = !games.is_empty() && games.iter().all(|g| is_future_game(g));
+        let all_scheduled = !games.is_empty() && games.iter().all(is_future_game);
 
         if all_scheduled && !has_ongoing_games {
             tracing::info!("All games are scheduled - auto-refresh disabled");
