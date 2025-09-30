@@ -14,37 +14,8 @@ use reqwest::Client;
 use std::io::{Stdout, Write};
 use tracing::debug;
 
-// Constants for teletext appearance
-fn header_bg() -> Color {
-    Color::AnsiValue(21)
-} // Bright blue
-fn header_fg() -> Color {
-    Color::AnsiValue(21)
-} // Bright blue
-fn subheader_fg() -> Color {
-    Color::AnsiValue(46)
-} // Bright green
-fn result_fg() -> Color {
-    Color::AnsiValue(46)
-} // Bright green
-fn text_fg() -> Color {
-    Color::AnsiValue(231)
-} // Pure white
-fn home_scorer_fg() -> Color {
-    Color::AnsiValue(51)
-} // Bright cyan
-fn away_scorer_fg() -> Color {
-    Color::AnsiValue(51)
-} // Bright cyan
-fn winning_goal_fg() -> Color {
-    Color::AnsiValue(201)
-} // Bright magenta
-fn goal_type_fg() -> Color {
-    Color::AnsiValue(226)
-} // Bright yellow
-fn title_bg() -> Color {
-    Color::AnsiValue(46)
-} // Bright green
+use crate::ui::teletext::colors::*;
+
 
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
 const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
