@@ -2,10 +2,10 @@
 
 ## Quick Status
 
-**Overall Progress:** 6/50+ tasks completed (12%)  
-**Current Phase:** Phase 1 - UI Module  
-**Current Task:** Task 1.8 - Extract Footer Rendering  
-**Last Updated:** 2025-09-30 08:58 UTC
+**Overall Progress:** 9/50+ tasks completed (18%)  
+**Current Phase:** Phase 2 - Data Fetcher API  
+**Current Task:** Task 2.4 - Extract Tournament Fetching  
+**Last Updated:** 2025-09-30 09:10 UTC
 
 ---
 
@@ -36,13 +36,13 @@
 
 ## Phase 2: Data Fetcher API (data_fetcher/api.rs → 4,537 lines)
 
-### Status: 🔴 Not Started
+### Status: 🔄 In Progress
 
 | Task | Status | Size Reduction | Time | Notes |
 |------|--------|----------------|------|-------|
-| 2.1 - Extract URL Builders | ⬜️ TODO | ~90 lines | 15m | Low Risk |
-| 2.2 - Extract HTTP Client | ⬜️ TODO | ~60 lines | 15m | Low Risk |
-| 2.3 - Extract Date Logic | ⬜️ TODO | ~200 lines | 25m | Medium Risk |
+| 2.1 - Extract URL Builders | ✅ DONE | ~108 lines | 12m | Completed 2025-09-30 |
+| 2.2 - Extract HTTP Client | ✅ DONE | ~29 lines | 8m | Completed 2025-09-30 |
+| 2.3 - Extract Date Logic | ✅ DONE | ~85 lines | 15m | Completed 2025-09-30 |
 | 2.4 - Extract Tournament Fetching | ⬜️ TODO | ~600 lines | 45m | High Risk |
 | 2.5 - Extract Game Details Fetching | ⬜️ TODO | ~700 lines | 50m | High Risk |
 | 2.6 - Extract Schedule Fetching | ⬜️ TODO | ~500 lines | 40m | High Risk |
@@ -178,9 +178,9 @@ Total New Modules:  50-60
 ```
 
 ### Progress Metrics
-- **Lines Refactored:** 439 / 22,665 (1.94%)
-- **Modules Created:** 8 / 50+ (colors.rs, abbreviations.rs, compact_display.rs, page_config.rs, game_result.rs, loading_indicator.rs, components/mod.rs, teletext/mod.rs)
-- **Phases Complete:** 0 / 8
+- **Lines Refactored:** 637 / 22,665 (2.81%)
+- **Modules Created:** 11 / 50+ (Phase 1: colors.rs, abbreviations.rs, compact_display.rs, page_config.rs, game_result.rs, loading_indicator.rs, components/mod.rs, teletext/mod.rs; Phase 2: urls.rs, http_client.rs, date_logic.rs)
+- **Phases Complete:** 0 / 8 (Phase 1: 6/6 extractable, Phase 2: 3/8)
 - **Tests Passing:** ✅ All 40 tests passing
 
 ---
@@ -294,6 +294,43 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 
 ### Task 1.8+ - [Deferred to Phase 2]
 - See Phase 1 completion note above
+
+### Task 2.1 - Extract URL Builders (2025-09-30)
+- ✅ Created src/data_fetcher/api/ subdirectory structure
+- ✅ Extracted 5 URL builder functions to api/urls.rs (108 lines)
+- ✅ Moved main API implementation to api/core.rs
+- ✅ Converted data_fetcher.rs to data_fetcher/mod.rs
+- ✅ Maintained backward compatibility via re-exports
+- ✅ All 40 tests still passing
+- ⏱️ Actual time: ~12 minutes (estimated: 15m) - efficient!
+- 📝 Core API reduced: 4,537 → 4,435 lines (102 lines extracted)
+- 📝 Clean module structure established for future extractions
+
+### Task 2.2 - Extract HTTP Client (2025-09-30)
+- ✅ Extracted 2 HTTP client creation functions to api/http_client.rs (29 lines)
+- ✅ Separated connection pooling and timeout configuration logic
+- ✅ Maintained backward compatibility via re-exports
+- ✅ All 40 tests still passing
+- ⏱️ Actual time: ~8 minutes (estimated: 15m) - very fast!
+- 📝 Core API reduced: 4,435 → 4,413 lines (22 lines extracted)
+- 📝 Small but focused module for HTTP client configuration
+
+### Task 2.3 - Extract Date Logic (2025-09-30)
+- ✅ Extracted 3 date/season functions and 4 constants to api/date_logic.rs (85 lines)
+- ✅ Removed duplicate date determination logic from core.rs
+- ✅ Maintained backward compatibility via re-exports
+- ✅ Conditional import for test function (determine_fetch_date_with_time)
+- ✅ All 40 tests still passing
+- ⏱️ Actual time: ~15 minutes (estimated: 25m) - faster than expected!
+- 📝 Core API reduced: 4,413 → 4,339 lines (74 lines extracted)
+- 📝 Cleaner separation of date/season logic from API logic
+
+**Phase 2 Progress So Far:**
+- ✅ 3 tasks completed (2.1-2.3)
+- ✅ Core API reduced by 4.4% (4,537 → 4,339 lines, 198 lines extracted)
+- ✅ 3 new focused modules created
+- ✅ All tests passing with zero breakage
+- ✅ Clean module structure for continued refactoring
 
 ---
 
