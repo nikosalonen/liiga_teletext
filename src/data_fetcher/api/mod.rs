@@ -8,6 +8,7 @@ mod fetch_utils;
 mod game_api;
 mod tournament_api;
 mod core;
+pub mod orchestrator;
 
 // Re-export URL utilities
 pub use urls::*;
@@ -28,3 +29,5 @@ pub use season_utils::*;
 pub use season_schedule::*;
 // Re-export core API functions
 pub use core::*;
+// Re-export orchestrator functions (main API entry point)
+pub use orchestrator::*;
