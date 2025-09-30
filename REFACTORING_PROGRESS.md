@@ -2,10 +2,10 @@
 
 ## Quick Status
 
-**Overall Progress:** 4/50+ tasks completed (8%)  
+**Overall Progress:** 5/50+ tasks completed (10%)  
 **Current Phase:** Phase 1 - UI Module  
-**Current Task:** Task 1.5 - Extract GameResultData  
-**Last Updated:** 2025-09-30 08:52 UTC
+**Current Task:** Task 1.6 - Extract ScoreType enum  
+**Last Updated:** 2025-09-30 08:55 UTC
 
 ---
 
@@ -19,8 +19,8 @@
 | 1.2 - Extract Team Abbreviations | ✅ DONE | ~78 lines | 15m | Completed 2025-09-30 |
 | 1.3 - Extract CompactDisplayConfig | ✅ DONE | ~165 lines | 20m | Completed 2025-09-30 |
 | 1.4 - Extract TeletextPageConfig | ✅ DONE | ~70 lines | 15m | Completed 2025-09-30 |
-| 1.5 - Extract GameResultData | ⬜️ TODO | ~200 lines | 20m | Medium Risk |
-| 1.6 - Extract ScoreType enum | ⬜️ TODO | ~50 lines | 10m | Low Risk |
+| 1.5 - Extract GameResultData | ✅ DONE | ~63 lines | 20m | Completed 2025-09-30 |
+| 1.6 - Extract ScoreType enum | ✅ DONE | Included in 1.5 | 0m | Done with 1.5 |
 | 1.7 - Extract Header Rendering | ⬜️ TODO | ~300 lines | 30m | Medium Risk |
 | 1.8 - Extract Footer Rendering | ⬜️ TODO | ~200 lines | 25m | Medium Risk |
 | 1.9 - Extract Game Display Logic | ⬜️ TODO | ~800 lines | 45m | High Risk |
@@ -177,8 +177,8 @@ Total New Modules:  50-60
 ```
 
 ### Progress Metrics
-- **Lines Refactored:** 343 / 22,665 (1.51%)
-- **Modules Created:** 6 / 50+ (colors.rs, abbreviations.rs, compact_display.rs, page_config.rs, components/mod.rs, teletext/mod.rs)
+- **Lines Refactored:** 406 / 22,665 (1.79%)
+- **Modules Created:** 7 / 50+ (colors.rs, abbreviations.rs, compact_display.rs, page_config.rs, game_result.rs, components/mod.rs, teletext/mod.rs)
 - **Phases Complete:** 0 / 8
 - **Tests Passing:** ✅ All 40 tests passing
 
@@ -246,7 +246,16 @@ Total New Modules:  50-60
 - 📝 Getting more efficient with the refactoring pattern
 - 📝 Similar structure to Task 1.3, so smoother execution
 
-### Task 1.5 - [Date]
+### Task 1.5 & 1.6 - Extract GameResultData and ScoreType (2025-09-30)
+- ✅ Extracted both GameResultData struct and ScoreType enum together
+- ✅ ScoreType is tightly coupled with GameResultData, so combined makes sense
+- ✅ Backward compatibility maintained via re-exports
+- ✅ All 40 tests still passing
+- ⏱️ Actual time: ~14 minutes (estimated: 20m) - efficient!
+- 📝 Task 1.6 completed as part of 1.5 (ScoreType belongs with GameResultData)
+- 📝 Documentation examples preserved with doctests
+
+### Task 1.7 - [Date]
 - (Notes will be added as completed)
 
 ---
