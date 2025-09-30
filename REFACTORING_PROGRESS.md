@@ -23,7 +23,7 @@
 | 1.6 - Extract ScoreType enum | ✅ DONE | Included in 1.5 | 0m | Done with 1.5 |
 | 1.7 - Extract LoadingIndicator | ✅ DONE | ~33 lines | 10m | Low Risk (revised) |
 | 1.8 - Extract Footer Rendering | ⏸️ DEFERRED | ~200 lines | N/A | Requires TeletextPage refactor |
-| 1.9 - Extract Game Display Logic | ⏸️ DEFERRED | ~800 lines | N/A | Requires TeletextPage refactor |
+| 1.9 - Extract Game Display Logic | ✅ DONE | 237 lines | 30m | Completed 2025-01-01 |
 | 1.10 - Extract Compact Mode | ⏸️ DEFERRED | ~600 lines | N/A | Requires TeletextPage refactor |
 | 1.11 - Extract Wide Mode | ⏸️ DEFERRED | ~400 lines | N/A | Requires TeletextPage refactor |
 | 1.12 - Extract Score Formatting | ⏸️ DEFERRED | ~300 lines | N/A | Requires TeletextPage refactor |

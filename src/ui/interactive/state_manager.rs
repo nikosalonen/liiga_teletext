@@ -26,26 +26,14 @@ impl TimerState {
     pub fn new() -> Self {
         let now = Instant::now();
         Self {
-            last_manual_refresh: now
-                .checked_sub(Duration::from_secs(15))
-                .unwrap_or(now),
-            last_auto_refresh: now
-                .checked_sub(Duration::from_secs(10))
-                .unwrap_or(now),
-            last_page_change: now
-                .checked_sub(Duration::from_millis(200))
-                .unwrap_or(now),
-            last_date_navigation: now
-                .checked_sub(Duration::from_millis(250))
-                .unwrap_or(now),
-            last_resize: now
-                .checked_sub(Duration::from_millis(500))
-                .unwrap_or(now),
+            last_manual_refresh: now.checked_sub(Duration::from_secs(15)).unwrap_or(now),
+            last_auto_refresh: now.checked_sub(Duration::from_secs(10)).unwrap_or(now),
+            last_page_change: now.checked_sub(Duration::from_millis(200)).unwrap_or(now),
+            last_date_navigation: now.checked_sub(Duration::from_millis(250)).unwrap_or(now),
+            last_resize: now.checked_sub(Duration::from_millis(500)).unwrap_or(now),
             last_activity: now,
             cache_monitor_timer: now,
-            last_rate_limit_hit: now
-                .checked_sub(Duration::from_secs(60))
-                .unwrap_or(now),
+            last_rate_limit_hit: now.checked_sub(Duration::from_secs(60)).unwrap_or(now),
         }
     }
 
@@ -297,9 +285,7 @@ impl AdaptivePollingState {
         let now = Instant::now();
         Self {
             retry_backoff: Duration::from_secs(0),
-            last_backoff_hit: now
-                .checked_sub(Duration::from_secs(60))
-                .unwrap_or(now),
+            last_backoff_hit: now.checked_sub(Duration::from_secs(60)).unwrap_or(now),
         }
     }
 
@@ -337,7 +323,9 @@ impl AdaptivePollingState {
         if self.retry_backoff.is_zero() {
             false
         } else {
-            let backoff_remaining = self.retry_backoff.saturating_sub(self.last_backoff_hit.elapsed());
+            let backoff_remaining = self
+                .retry_backoff
+                .saturating_sub(self.last_backoff_hit.elapsed());
             backoff_remaining > Duration::from_secs(0)
         }
     }
@@ -347,7 +335,8 @@ impl AdaptivePollingState {
         if self.retry_backoff.is_zero() {
             Duration::from_secs(0)
         } else {
-            self.retry_backoff.saturating_sub(self.last_backoff_hit.elapsed())
+            self.retry_backoff
+                .saturating_sub(self.last_backoff_hit.elapsed())
         }
     }
 

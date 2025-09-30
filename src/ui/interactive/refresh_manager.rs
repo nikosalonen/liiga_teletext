@@ -18,7 +18,7 @@ fn is_future_game(game: &GameData) -> bool {
 /// Checks if a game is scheduled to start within the next few minutes or has recently started
 fn is_game_near_start_time(game: &GameData) -> bool {
     use chrono::Utc;
-    
+
     if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
         return false;
     }

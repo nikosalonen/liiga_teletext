@@ -1,10 +1,10 @@
-pub mod types;
-pub mod tournament_cache;
-pub mod player_cache;
+mod core;
 pub mod detailed_game_cache;
 pub mod goal_events_cache;
 pub mod http_response_cache;
-mod core;
+pub mod player_cache;
+pub mod tournament_cache;
+pub mod types;
 
 // Re-export cache types
 pub use types::*;

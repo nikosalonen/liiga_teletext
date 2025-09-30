@@ -9,7 +9,9 @@ use reqwest::Client;
 use std::collections::HashMap;
 use tracing::{info, warn};
 
-use super::date_logic::{PLAYOFFS_END_MONTH, PLAYOFFS_START_MONTH, PRESEASON_END_MONTH, PRESEASON_START_MONTH};
+use super::date_logic::{
+    PLAYOFFS_END_MONTH, PLAYOFFS_START_MONTH, PRESEASON_END_MONTH, PRESEASON_START_MONTH,
+};
 use super::urls::{build_tournament_schedule_url, build_tournament_url, create_tournament_key};
 
 /// Represents a tournament type with its string identifier
@@ -110,7 +112,7 @@ pub async fn fetch_tournament_games(
 ) -> Vec<ScheduleApiGame> {
     // Import fetch function from core module
     use super::fetch_utils::fetch;
-    
+
     info!(
         "Fetching games from {} tournaments for season {}",
         tournaments.len(),
@@ -247,7 +249,7 @@ pub async fn determine_active_tournaments(
 ) -> Result<(Vec<&'static str>, HashMap<String, ScheduleResponse>), AppError> {
     // Import fetch function from core module
     use super::fetch_utils::fetch;
-    
+
     info!(
         "Determining active tournaments for date: {} using API nextGameDate logic",
         date

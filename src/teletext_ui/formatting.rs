@@ -1,6 +1,6 @@
 // src/teletext_ui/formatting.rs - Formatting utilities for TeletextPage display and layout
 
-use super::core::{TeletextPage, TeletextRow, CompactDisplayConfig};
+use super::core::{CompactDisplayConfig, TeletextPage, TeletextRow};
 use crate::teletext_ui::ScoreType;
 
 impl TeletextPage {
@@ -161,7 +161,7 @@ impl TeletextPage {
                 // Import color utilities
                 use super::utils::get_ansi_code;
                 use crate::ui::teletext::colors::*;
-                
+
                 let text_fg_code = get_ansi_code(text_fg(), 231);
                 let result_fg_code = get_ansi_code(result_fg(), 46);
 
@@ -223,7 +223,7 @@ impl TeletextPage {
                 // Import color utilities
                 use super::utils::get_ansi_code;
                 use crate::ui::teletext::colors::*;
-                
+
                 let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
 
                 // Format future games header for compact mode - intelligently abbreviate to preserve date
@@ -244,7 +244,7 @@ impl TeletextPage {
 }
 
 /// Gets a 3-letter abbreviation for a team name.
-/// Uses a predefined mapping for known Finnish Liiga teams, 
+/// Uses a predefined mapping for known Finnish Liiga teams,
 /// with fallback logic for unknown teams.
 ///
 /// # Arguments
@@ -278,7 +278,7 @@ pub fn get_team_abbreviation(team_name: &str) -> String {
                 .filter(|c| c.is_alphabetic())
                 .collect::<String>()
                 .to_uppercase();
-                
+
             if letters_only.len() >= 3 {
                 letters_only.chars().take(3).collect()
             } else if letters_only.is_empty() {

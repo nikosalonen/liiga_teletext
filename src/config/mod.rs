@@ -5,12 +5,12 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
 pub mod paths;
-pub mod validation;
 pub mod user_prompts;
+pub mod validation;
 
 use paths::{get_config_path, get_log_dir_path};
-use validation::validate_config;
 use user_prompts::prompt_for_api_domain;
+use validation::validate_config;
 
 /// Configuration structure for the application.
 /// Handles loading, saving, and managing application settings.

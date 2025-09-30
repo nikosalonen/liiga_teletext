@@ -4,7 +4,9 @@ use crate::ui;
 use crate::version;
 use crossterm::{
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, SetTitle},
+    terminal::{
+        EnterAlternateScreen, LeaveAlternateScreen, SetTitle, disable_raw_mode, enable_raw_mode,
+    },
 };
 use std::io::stdout;
 

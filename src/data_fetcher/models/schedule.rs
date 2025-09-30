@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::goals::GoalEvent;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScheduleTeam {
@@ -260,7 +260,10 @@ mod tests {
 
         let deserialized: ScheduleResponse = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.games.len(), 1);
-        assert_eq!(deserialized.previous_game_date, Some("2024-01-14".to_string()));
+        assert_eq!(
+            deserialized.previous_game_date,
+            Some("2024-01-14".to_string())
+        );
         assert_eq!(deserialized.next_game_date, Some("2024-01-16".to_string()));
     }
 }

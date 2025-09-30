@@ -37,4 +37,3 @@ pub(super) fn determine_indicator_states(
 
     (should_show_loading, should_show_indicator)
 }
-

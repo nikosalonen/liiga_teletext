@@ -29,14 +29,14 @@ pub fn format_score_with_indicators(
     match score_type {
         ScoreType::Final => {
             let mut formatted_score = result.to_string();
-            
+
             // Add overtime or shootout indicator
             if is_overtime {
                 formatted_score.push_str(" JA");
             } else if is_shootout {
                 formatted_score.push_str(" RL");
             }
-            
+
             formatted_score
         }
         ScoreType::Ongoing => {
@@ -64,13 +64,13 @@ pub fn format_playing_time(played_time: i32) -> String {
 
     let minutes = played_time / 60;
     let seconds = played_time % 60;
-    
+
     // For hockey, periods are typically 20 minutes
     // Show period notation for times over 20 minutes
     if minutes >= 20 {
         let period = (minutes / 20) + 1;
         let period_minutes = minutes % 20;
-        
+
         if period > 3 {
             // Overtime
             let ot_minutes = minutes - 60;
@@ -102,7 +102,7 @@ pub fn get_score_color(score_type: &ScoreType, is_overtime: bool, is_shootout: b
                 46 // Bright green for regular final games
             }
         }
-        ScoreType::Ongoing => 201, // Bright magenta for live games
+        ScoreType::Ongoing => 201,   // Bright magenta for live games
         ScoreType::Scheduled => 231, // White for scheduled games
     }
 }
@@ -118,14 +118,14 @@ pub fn format_game_time(time: &str) -> String {
     if time.is_empty() {
         return "TBD".to_string();
     }
-    
+
     // Remove seconds if present (e.g., "18:30:00" -> "18:30")
     if let Some(colon_pos) = time.rfind(':') {
         if time.len() > colon_pos + 3 {
             return time[..colon_pos].to_string();
         }
     }
-    
+
     time.to_string()
 }
 
@@ -150,8 +150,9 @@ pub fn format_complete_score_line(
     played_time: i32,
 ) -> String {
     let score_color = get_score_color(score_type, is_overtime, is_shootout);
-    let formatted_score = format_score_with_indicators(result, score_type, is_overtime, is_shootout, played_time);
-    
+    let formatted_score =
+        format_score_with_indicators(result, score_type, is_overtime, is_shootout, played_time);
+
     match score_type {
         ScoreType::Scheduled => {
             let formatted_time = format_game_time(time);
@@ -172,7 +173,11 @@ pub fn format_complete_score_line(
 ///
 /// # Returns
 /// * `bool` - Whether the score should be highlighted
-pub fn should_highlight_score(score_type: &ScoreType, is_overtime: bool, is_shootout: bool) -> bool {
+pub fn should_highlight_score(
+    score_type: &ScoreType,
+    is_overtime: bool,
+    is_shootout: bool,
+) -> bool {
     match score_type {
         ScoreType::Ongoing => true, // Always highlight ongoing games
         ScoreType::Final => is_overtime || is_shootout, // Highlight OT/SO games
@@ -188,10 +193,10 @@ mod tests {
     fn test_format_score_with_indicators_final() {
         let result = format_score_with_indicators("2-1", &ScoreType::Final, false, false, 0);
         assert_eq!(result, "2-1");
-        
+
         let result_ot = format_score_with_indicators("2-1", &ScoreType::Final, true, false, 0);
         assert_eq!(result_ot, "2-1 JA");
-        
+
         let result_so = format_score_with_indicators("2-1", &ScoreType::Final, false, true, 0);
         assert_eq!(result_so, "2-1 RL");
     }

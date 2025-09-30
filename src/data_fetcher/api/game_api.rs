@@ -4,8 +4,8 @@
 use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_players,
-    cache_players_with_disambiguation, get_cached_detailed_game_data,
-    get_cached_goal_events_data, get_cached_players,
+    cache_players_with_disambiguation, get_cached_detailed_game_data, get_cached_goal_events_data,
+    get_cached_players,
 };
 use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
@@ -25,7 +25,9 @@ use tracing::{debug, error, info, instrument, warn};
 // Import from sibling modules
 use super::date_logic::parse_date_and_season;
 use super::fetch_utils::fetch;
-use super::tournament_logic::{determine_tournaments_for_month, fetch_tournament_games, TournamentType};
+use super::tournament_logic::{
+    TournamentType, determine_tournaments_for_month, fetch_tournament_games,
+};
 use super::urls::build_game_url;
 
 /// Helper function to extract team name from a ScheduleTeam, with fallback logic.
@@ -404,7 +406,10 @@ pub(super) async fn process_game_response_with_cache(
 }
 
 /// Filters games to match the requested date
-pub(super) fn filter_games_by_date(games: Vec<ScheduleApiGame>, target_date: &str) -> Vec<ScheduleApiGame> {
+pub(super) fn filter_games_by_date(
+    games: Vec<ScheduleApiGame>,
+    target_date: &str,
+) -> Vec<ScheduleApiGame> {
     info!("Filtering games for target date: {}", target_date);
 
     let matching_games: Vec<ScheduleApiGame> = games

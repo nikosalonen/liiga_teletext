@@ -13,6 +13,7 @@ impl TeletextPage {
     /// # Example
     /// ```
     /// use liiga_teletext::TeletextPage;
+    /// use liiga_teletext::ui::teletext::compact_display::CompactModeValidation;
     ///
     /// let page = TeletextPage::new(
     ///     221,
@@ -27,13 +28,13 @@ impl TeletextPage {
     ///
     /// let validation = page.validate_compact_mode_compatibility();
     /// match validation {
-    ///     liiga_teletext::CompactModeValidation::Compatible => {
+    ///     CompactModeValidation::Compatible => {
     ///         println!("Compact mode is fully compatible");
     ///     }
-    ///     liiga_teletext::CompactModeValidation::CompatibleWithWarnings { warnings } => {
+    ///     CompactModeValidation::CompatibleWithWarnings { warnings } => {
     ///         println!("Compact mode works but with warnings: {:?}", warnings);
     ///     }
-    ///     liiga_teletext::CompactModeValidation::Incompatible { issues } => {
+    ///     CompactModeValidation::Incompatible { issues } => {
     ///         println!("Compact mode not compatible: {:?}", issues);
     ///     }
     /// }

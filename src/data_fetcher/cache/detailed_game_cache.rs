@@ -6,8 +6,8 @@ use std::sync::LazyLock;
 use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 
-use crate::data_fetcher::models::DetailedGameResponse;
 use super::types::CachedDetailedGameData;
+use crate::data_fetcher::models::DetailedGameResponse;
 
 // LRU cache structure for detailed game responses to avoid repeated API calls
 pub static DETAILED_GAME_CACHE: LazyLock<RwLock<LruCache<String, CachedDetailedGameData>>> =

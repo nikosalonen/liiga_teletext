@@ -3,8 +3,8 @@ use crate::config::Config;
 use crate::error::AppError;
 use std::io::stdout;
 use std::path::Path;
-use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 /// Sets up logging configuration for the application.

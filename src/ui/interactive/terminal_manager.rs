@@ -21,9 +21,7 @@ pub struct TerminalConfig {
 
 impl Default for TerminalConfig {
     fn default() -> Self {
-        Self {
-            debug_mode: false,
-        }
+        Self { debug_mode: false }
     }
 }
 
@@ -39,12 +37,12 @@ impl TerminalManager {
             config: TerminalConfig::default(),
         }
     }
-    
+
     /// Create a new terminal manager with custom configuration
     pub fn with_config(config: TerminalConfig) -> Self {
         Self { config }
     }
-    
+
     /// Setup terminal for interactive mode
     /// Returns a handle to stdout that can be used for rendering
     pub fn setup_terminal(&self) -> Result<std::io::Stdout, AppError> {
@@ -53,7 +51,7 @@ impl TerminalManager {
         if !self.config.debug_mode {
             // Enable raw mode for immediate key processing
             enable_raw_mode()?;
-            
+
             // Enter alternate screen to preserve terminal content
             execute!(stdout, EnterAlternateScreen)?;
         }
@@ -67,13 +65,13 @@ impl TerminalManager {
         if !self.config.debug_mode {
             // Disable raw mode to restore normal terminal behavior
             disable_raw_mode()?;
-            
+
             // Leave alternate screen to restore original content
             execute!(stdout, LeaveAlternateScreen)?;
         }
         Ok(())
     }
-    
+
     /// Get the terminal configuration
     pub fn config(&self) -> &TerminalConfig {
         &self.config

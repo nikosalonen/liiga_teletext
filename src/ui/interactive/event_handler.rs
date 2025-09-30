@@ -4,12 +4,12 @@
 //! coordinating between different event types (keyboard, resize, etc.)
 //! and managing their interaction with the state manager.
 
+use super::input_handler::{KeyEventParams, handle_key_event};
+use super::refresh_manager::calculate_poll_interval;
+use super::state_manager::InteractiveState;
 use crate::error::AppError;
 use crossterm::event::{self, Event, KeyCode};
 use std::time::Duration;
-use super::state_manager::InteractiveState;
-use super::input_handler::{handle_key_event, KeyEventParams};
-use super::refresh_manager::calculate_poll_interval;
 
 /// Result of processing an event
 #[derive(Debug, PartialEq)]
@@ -86,9 +86,14 @@ impl EventHandler {
     /// - Activity tracking in the state manager
     ///
     /// Returns EventResult indicating what action should be taken.
-    pub async fn process_events(&self, state: &mut InteractiveState) -> Result<EventResult, AppError> {
+    pub async fn process_events(
+        &self,
+        state: &mut InteractiveState,
+    ) -> Result<EventResult, AppError> {
         // Calculate poll interval (adaptive or override)
-        let poll_interval = self.config.poll_interval_override
+        let poll_interval = self
+            .config
+            .poll_interval_override
             .unwrap_or_else(|| calculate_poll_interval(state.time_since_activity()));
 
         // Check for events
@@ -98,9 +103,7 @@ impl EventHandler {
 
             // Read and process the event
             match event::read()? {
-                Event::Key(key_event) => {
-                    self.handle_keyboard_event(state, &key_event).await
-                }
+                Event::Key(key_event) => self.handle_keyboard_event(state, &key_event).await,
                 Event::Resize(_, _) => {
                     self.handle_resize_event(state);
                     Ok(EventResult::Handled)
@@ -270,12 +273,15 @@ mod tests {
     fn test_event_handler_creation() {
         let handler = EventHandler::new();
         assert!(!handler.config.debug_mode);
-        
+
         let debug_handler = EventHandler::for_debug();
         assert!(debug_handler.config.debug_mode);
-        
+
         let custom_handler = EventHandler::with_poll_interval(Duration::from_millis(100));
-        assert_eq!(custom_handler.config.poll_interval_override, Some(Duration::from_millis(100)));
+        assert_eq!(
+            custom_handler.config.poll_interval_override,
+            Some(Duration::from_millis(100))
+        );
     }
 
     #[test]
@@ -285,9 +291,12 @@ mod tests {
             .poll_interval(Duration::from_millis(50))
             .resize_debouncing(false)
             .build();
-        
+
         assert!(handler.config.debug_mode);
-        assert_eq!(handler.config.poll_interval_override, Some(Duration::from_millis(50)));
+        assert_eq!(
+            handler.config.poll_interval_override,
+            Some(Duration::from_millis(50))
+        );
         assert!(!handler.config.resize_debouncing);
     }
 
@@ -295,7 +304,7 @@ mod tests {
     fn test_event_handler_should_exit_default() {
         let handler = EventHandler::new();
         let state = InteractiveState::new(None);
-        
+
         // Default implementation should not exit
         assert!(!handler.should_exit(&state));
     }

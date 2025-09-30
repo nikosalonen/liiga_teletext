@@ -1,7 +1,7 @@
-use crate::teletext_ui::ScoreType;
+use super::detailed::{DetailedGame, DetailedTeam};
 use super::goals::{GoalEvent, GoalEventData};
 use super::schedule::{ScheduleGame, ScheduleTeam};
-use super::detailed::{DetailedGame, DetailedTeam};
+use crate::teletext_ui::ScoreType;
 
 #[derive(Debug, Clone, Hash)]
 pub struct GameData {
@@ -60,9 +60,9 @@ impl HasGoalEvents for DetailedTeam {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::models::goals::GoalEvent;
-    use crate::data_fetcher::models::schedule::{ScheduleTeam, ScheduleGame};
     use crate::data_fetcher::models::detailed::{DetailedGame, DetailedTeam};
+    use crate::data_fetcher::models::goals::GoalEvent;
+    use crate::data_fetcher::models::schedule::{ScheduleGame, ScheduleTeam};
 
     fn create_test_goal_event() -> GoalEvent {
         GoalEvent {

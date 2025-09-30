@@ -8,6 +8,7 @@
 //! - Season countdown display
 
 use crate::error::AppError;
+use crate::teletext_ui::utils::get_ansi_code;
 use crate::ui::teletext::colors::*;
 use crate::ui::teletext::loading_indicator::LoadingIndicator;
 use crossterm::{
@@ -16,10 +17,9 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
 };
 use std::io::{Stdout, Write};
-use crate::teletext_ui::utils::get_ansi_code;
 
 /// Renders footer with navigation controls, loading indicator, and error warning
-/// 
+///
 /// # Arguments
 /// * `stdout` - The stdout to write to
 /// * `buffer` - The buffer to write to
@@ -108,7 +108,7 @@ pub fn render_footer(
 /// Renders only the loading indicator area without redrawing the entire screen
 ///
 /// This is used for updating loading animations without redrawing the whole page.
-/// 
+///
 /// # Arguments
 /// * `stdout` - The stdout to write to
 /// * `screen_height` - The height of the terminal
@@ -176,9 +176,9 @@ pub fn render_loading_indicator_only(
 /// # Returns
 /// * `usize` - The y-coordinate of the footer
 pub fn calculate_footer_position(
-    ignore_height_limit: bool, 
+    ignore_height_limit: bool,
     current_line: usize,
-    screen_height: u16
+    screen_height: u16,
 ) -> usize {
     if ignore_height_limit {
         // In non-interactive mode, position footer after content
@@ -192,23 +192,23 @@ pub fn calculate_footer_position(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_calculate_footer_position_interactive() {
         let screen_height = 24;
         let current_line = 10;
         let position = calculate_footer_position(false, current_line, screen_height);
-        
+
         // In interactive mode, footer should be at bottom of screen
         assert_eq!(position, 23);
     }
-    
+
     #[test]
     fn test_calculate_footer_position_non_interactive() {
         let screen_height = 24;
         let current_line = 10;
         let position = calculate_footer_position(true, current_line, screen_height);
-        
+
         // In non-interactive mode, footer should be below content
         assert_eq!(position, 11);
     }

@@ -16,7 +16,6 @@ use cli::Args;
 use config::Config;
 use error::AppError;
 
-
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     let args = Args::parse();

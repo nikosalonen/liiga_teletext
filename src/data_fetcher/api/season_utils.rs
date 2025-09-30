@@ -12,7 +12,10 @@ pub fn is_historical_date(date: &str) -> bool {
 
 /// Internal function that determines if a date is historical given a specific current time.
 /// This allows for testing with mocked current times.
-pub fn is_historical_date_with_current_time(date: &str, current_time: chrono::DateTime<Local>) -> bool {
+pub fn is_historical_date_with_current_time(
+    date: &str,
+    current_time: chrono::DateTime<Local>,
+) -> bool {
     let date_parts: Vec<&str> = date.split('-').collect();
     if date_parts.len() < 2 {
         return false;

@@ -7,48 +7,41 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, trace, warn};
 
 use crate::constants::cache_ttl;
-use crate::data_fetcher::models::{
-    DetailedGameResponse, GoalEventData, ScheduleResponse,
-};
+use crate::data_fetcher::models::{DetailedGameResponse, GoalEventData, ScheduleResponse};
 use crate::data_fetcher::player_names::format_for_display;
 
 // Import cache types from sibling module
-use super::types::{
-    CachedDetailedGameData, CachedGoalEventsData,
-};
+use super::types::{CachedDetailedGameData, CachedGoalEventsData};
 // Import tournament cache items from sibling module
 use super::tournament_cache::{
-    cache_tournament_data, clear_tournament_cache, get_cached_tournament_data,
-    get_tournament_cache_capacity, get_tournament_cache_size, has_live_games, TOURNAMENT_CACHE,
+    TOURNAMENT_CACHE, cache_tournament_data, clear_tournament_cache, get_cached_tournament_data,
+    get_tournament_cache_capacity, get_tournament_cache_size, has_live_games,
 };
 // Import player cache items from sibling module
 use super::player_cache::{
-    cache_players, cache_players_with_disambiguation, cache_players_with_formatting,
+    PLAYER_CACHE, cache_players, cache_players_with_disambiguation, cache_players_with_formatting,
     clear_cache, get_cache_capacity, get_cache_size, get_cached_disambiguated_players,
-    get_cached_player_name, get_cached_players, has_cached_disambiguated_players, PLAYER_CACHE,
+    get_cached_player_name, get_cached_players, has_cached_disambiguated_players,
 };
 // Import detailed game cache items from sibling module
 use super::detailed_game_cache::{
-    cache_detailed_game_data, clear_detailed_game_cache, create_detailed_game_key,
-    get_cached_detailed_game_data, get_detailed_game_cache_capacity,
-    get_detailed_game_cache_size, DETAILED_GAME_CACHE,
+    DETAILED_GAME_CACHE, cache_detailed_game_data, clear_detailed_game_cache,
+    create_detailed_game_key, get_cached_detailed_game_data, get_detailed_game_cache_capacity,
+    get_detailed_game_cache_size,
 };
 // Import goal events cache items from sibling module
 use super::goal_events_cache::{
-    cache_goal_events_data, clear_goal_events_cache, clear_goal_events_cache_for_game,
-    create_goal_events_key, get_cached_goal_events_data, get_cached_goal_events_entry,
-    get_goal_events_cache_capacity, get_goal_events_cache_size, GOAL_EVENTS_CACHE,
+    GOAL_EVENTS_CACHE, cache_goal_events_data, clear_goal_events_cache,
+    clear_goal_events_cache_for_game, create_goal_events_key, get_cached_goal_events_data,
+    get_cached_goal_events_entry, get_goal_events_cache_capacity, get_goal_events_cache_size,
 };
 // Import HTTP response cache items from sibling module
 use super::http_response_cache::{
-    cache_http_response, clear_http_response_cache, get_cached_http_response,
-    get_http_response_cache_capacity, get_http_response_cache_size, HTTP_RESPONSE_CACHE,
+    HTTP_RESPONSE_CACHE, cache_http_response, clear_http_response_cache, get_cached_http_response,
+    get_http_response_cache_capacity, get_http_response_cache_size,
 };
 // Import game utilities from parent module
 use super::super::has_live_games_from_game_data;
-
-
-
 
 // Combined Cache Management Functions
 
@@ -212,7 +205,8 @@ pub async fn reset_all_caches_with_confirmation() -> String {
 mod tests {
     use super::*;
     use crate::data_fetcher::models::{
-        DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEventData, ScheduleGame, ScheduleTeam,
+        DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEventData, ScheduleGame,
+        ScheduleTeam,
     };
     use crate::teletext_ui::ScoreType;
     use serial_test::serial;

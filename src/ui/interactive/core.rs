@@ -7,22 +7,14 @@ use crate::error::AppError;
 use std::time::Duration;
 
 // Import utilities from sibling modules
-use super::state_manager::InteractiveState;
 use super::event_handler::{EventHandler, EventHandlerBuilder, EventResult};
 use super::refresh_coordinator::{RefreshCoordinator, RefreshCycleConfig};
-use super::terminal_manager::{TerminalManager, TerminalConfig};
+use super::state_manager::InteractiveState;
+use super::terminal_manager::{TerminalConfig, TerminalManager};
 
 // Teletext page constants (removed unused constants)
 
 // UI timing constants (removed unused constants)
-
-
-
-
-
-
-
-
 
 /// Parameters for keyboard event handling
 /// Handle keyboard events
@@ -39,20 +31,20 @@ pub async fn run_interactive_ui(
     // Create terminal manager and setup terminal for interactive mode
     let terminal_manager = TerminalManager::with_config(TerminalConfig { debug_mode });
     let mut stdout = terminal_manager.setup_terminal()?;
-    
+
     // Initialize all state through the state manager
     let mut state = InteractiveState::new(date);
-    
+
     // Create event handler with appropriate configuration
     let event_handler = if debug_mode {
         EventHandler::for_debug()
     } else {
         EventHandler::new()
     };
-    
+
     // Create refresh coordinator
     let refresh_coordinator = RefreshCoordinator::new();
-    
+
     // Create refresh cycle configuration
     let refresh_config = RefreshCycleConfig {
         min_refresh_interval,
@@ -70,19 +62,22 @@ pub async fn run_interactive_ui(
         // Data fetching with change detection using RefreshCoordinator
         if state.needs_refresh() {
             // Perform comprehensive refresh cycle
-            let mut refresh_result = refresh_coordinator.perform_refresh_cycle(&mut state, &refresh_config).await?;
-            
+            let mut refresh_result = refresh_coordinator
+                .perform_refresh_cycle(&mut state, &refresh_config)
+                .await?;
+
             // Update the current page if we have a new one (must be done before processing results)
             if let Some(new_page) = refresh_result.new_page.take() {
                 state.set_current_page(new_page);
             }
-            
+
             // Process refresh results and update state
-            let needs_state_render = refresh_coordinator.process_refresh_results(&mut state, &refresh_result);
+            let needs_state_render =
+                refresh_coordinator.process_refresh_results(&mut state, &refresh_result);
             if needs_state_render {
                 // State render was already requested by process_refresh_results
             }
-            
+
             // Update refresh timing and backoff state
             refresh_coordinator.update_refresh_timing(&mut state, refresh_result.should_retry);
         }
@@ -131,4 +126,3 @@ pub async fn run_interactive_ui(
     terminal_manager.cleanup_terminal(stdout)?;
     Ok(())
 }
-

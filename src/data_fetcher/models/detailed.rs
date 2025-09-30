@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use super::goals::GoalEvent;
 use super::players::Player;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Period {
@@ -86,7 +86,7 @@ pub struct DetailedGameResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::models::goals::{GoalEvent, EmbeddedPlayer};
+    use crate::data_fetcher::models::goals::{EmbeddedPlayer, GoalEvent};
     use serde_json;
 
     fn create_test_goal_event() -> GoalEvent {

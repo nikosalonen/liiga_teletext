@@ -71,8 +71,14 @@ mod tests {
         assert_eq!(SeriesType::from("playoffs"), SeriesType::Playoffs);
         assert_eq!(SeriesType::from("PLAYOFFS"), SeriesType::Playoffs);
         assert_eq!(SeriesType::from("playout"), SeriesType::Playout);
-        assert_eq!(SeriesType::from("qualifications"), SeriesType::Qualifications);
-        assert_eq!(SeriesType::from("valmistavat_ottelut"), SeriesType::Practice);
+        assert_eq!(
+            SeriesType::from("qualifications"),
+            SeriesType::Qualifications
+        );
+        assert_eq!(
+            SeriesType::from("valmistavat_ottelut"),
+            SeriesType::Practice
+        );
         assert_eq!(SeriesType::from("practice"), SeriesType::Practice);
         assert_eq!(SeriesType::from("runkosarja"), SeriesType::RegularSeason);
         assert_eq!(SeriesType::from("unknown"), SeriesType::RegularSeason);
