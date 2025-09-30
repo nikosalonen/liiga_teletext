@@ -5,6 +5,7 @@ pub mod pagination;
 pub mod mode_utils;
 pub mod indicators;
 pub mod content;
+pub mod formatting;
 pub mod utils;
 pub mod season_utils;
 
