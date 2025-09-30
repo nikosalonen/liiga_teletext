@@ -555,7 +555,6 @@ pub fn format_date_for_display(date_str: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_format_date_for_display() {
