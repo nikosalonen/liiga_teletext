@@ -2,10 +2,10 @@
 
 ## Quick Status
 
-**Overall Progress:** 10/50+ tasks completed (20%)  
+**Overall Progress:** 11/50+ tasks completed (22%)  
 **Current Phase:** Phase 2 - Data Fetcher API  
 **Current Task:** Task 2.5 - Extract Game Details Fetching  
-**Last Updated:** 2025-09-30 09:19 UTC
+**Last Updated:** 2025-09-30 09:27 UTC
 
 ---
 
@@ -47,7 +47,7 @@
 | 2.5 - Extract Game Details Fetching | ⬜️ TODO | ~700 lines | 50m | High Risk |
 | 2.6 - Extract Schedule Fetching | ⬜️ TODO | ~500 lines | 40m | High Risk |
 | 2.7 - Extract Generic Fetch Function | ⬜️ TODO | ~300 lines | 30m | Medium Risk |
-| 2.8 - Extract Season Detection | ⬜️ TODO | ~200 lines | 25m | Medium Risk |
+| 2.8 - Extract Season Detection | ✅ DONE | ~110 lines | 8m | Completed 2025-09-30 |
 
 **Phase 2 Total:** ~2,650 lines → distributed across 8+ files  
 **Target:** Each file <500 lines
@@ -178,9 +178,9 @@ Total New Modules:  50-60
 ```
 
 ### Progress Metrics
-- **Lines Refactored:** 1,020 / 22,665 (4.50%)
-- **Modules Created:** 12 / 50+ (Phase 1: colors.rs, abbreviations.rs, compact_display.rs, page_config.rs, game_result.rs, loading_indicator.rs, components/mod.rs, teletext/mod.rs; Phase 2: urls.rs, http_client.rs, date_logic.rs, tournament_logic.rs)
-- **Phases Complete:** 0 / 8 (Phase 1: 6/6 extractable, Phase 2: 4/8)
+- **Lines Refactored:** 1,122 / 22,665 (4.95%)
+- **Modules Created:** 13 / 50+ (Phase 1: colors.rs, abbreviations.rs, compact_display.rs, page_config.rs, game_result.rs, loading_indicator.rs, components/mod.rs, teletext/mod.rs; Phase 2: urls.rs, http_client.rs, date_logic.rs, tournament_logic.rs, season_utils.rs)
+- **Phases Complete:** 0 / 8 (Phase 1: 6/6 extractable, Phase 2: 5/8)
 - **Tests Passing:** ✅ All 40 tests passing
 
 ---
@@ -335,12 +335,22 @@ We'll develop patterns there that we can apply back to teletext_ui.rs.
 - 📝 Core API reduced: 4,339 → 3,956 lines (383 lines extracted, 8.8% reduction)
 - 📝 Largest single extraction in Phase 2 so far
 
+### Task 2.8 - Extract Season Detection (2025-09-30)
+- ✅ Extracted 4 season/date detection functions to api/season_utils.rs (110 lines)
+- ✅ Moved historical date detection and playoff schedule logic
+- ✅ Maintained backward compatibility via re-exports
+- ✅ All 40 tests still passing
+- ⏱️ Actual time: ~8 minutes (estimated: 25m) - very fast!
+- 📝 Core API reduced: 3,956 → 3,854 lines (102 lines extracted)
+- 📝 Clean separation of season logic utilities
+
 **Phase 2 Progress So Far:**
-- ✅ 4 tasks completed (2.1-2.4)
-- ✅ Core API reduced by 12.8% (4,537 → 3,956 lines, 581 lines extracted)
-- ✅ 4 new focused modules created
+- ✅ 5 tasks completed (2.1-2.4, 2.8)
+- ✅ Core API reduced by 15.1% (4,537 → 3,854 lines, 683 lines extracted)
+- ✅ 5 new focused modules created
 - ✅ All tests passing with zero breakage
 - ✅ Clean module structure for continued refactoring
+- ✅ Tasks 2.5-2.7 remain (game/schedule fetching - high complexity)
 
 ---
 
