@@ -10,6 +10,9 @@ pub mod rendering;
 pub mod validation;
 pub mod utils;
 pub mod season_utils;
+pub mod footer;
+pub mod score_formatting;
+pub mod wide_mode;
 
 // Re-export all public types and functions for backward compatibility
 pub use core::*;
