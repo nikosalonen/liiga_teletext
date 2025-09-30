@@ -1,6 +1,7 @@
 pub mod colors;
 pub mod compact_display;
 pub mod game_result;
+pub mod loading_indicator;
 pub mod page_config;
 
 // Re-export for backward compatibility

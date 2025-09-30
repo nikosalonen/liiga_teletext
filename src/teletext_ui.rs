@@ -17,11 +17,12 @@ use tracing::debug;
 use crate::ui::components::abbreviations::get_team_abbreviation;
 use crate::ui::teletext::colors::*;
 
-// Re-export compact display types for backward compatibility
+// Re-export types for backward compatibility
 pub use crate::ui::teletext::compact_display::{
     CompactDisplayConfig, CompactModeValidation, TerminalWidthValidation,
 };
 pub use crate::ui::teletext::game_result::{GameResultData, ScoreType};
+pub use crate::ui::teletext::loading_indicator::LoadingIndicator;
 pub use crate::ui::teletext::page_config::TeletextPageConfig;
 
 const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
@@ -101,40 +102,6 @@ async fn calculate_days_until_regular_season(
 
     // If all API calls failed or no valid dates found, return None
     None
-}
-
-/// Simple ASCII loading indicator with rotating animation
-#[derive(Debug, Clone)]
-pub struct LoadingIndicator {
-    message: String,
-    frame: usize,
-    frames: Vec<&'static str>,
-}
-
-impl LoadingIndicator {
-    /// Creates a new loading indicator with the specified message
-    pub fn new(message: String) -> Self {
-        Self {
-            message,
-            frame: 0,
-            frames: vec!["|", "/", "-", "\\"],
-        }
-    }
-
-    /// Gets the current animation frame character
-    pub fn current_frame(&self) -> &str {
-        self.frames[self.frame]
-    }
-
-    /// Gets the loading message
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-
-    /// Advances to the next animation frame
-    pub fn next_frame(&mut self) {
-        self.frame = (self.frame + 1) % self.frames.len();
-    }
 }
 
 #[derive(Debug)]
