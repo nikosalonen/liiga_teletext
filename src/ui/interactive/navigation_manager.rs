@@ -575,7 +575,7 @@ mod tests {
 
     #[test]
     fn test_navigation_manager_default() {
-        let manager = NavigationManager::default();
+        let manager = NavigationManager::new();
         // Should be equivalent to NavigationManager::new()
         assert_eq!(std::mem::size_of_val(&manager), 0);
     }

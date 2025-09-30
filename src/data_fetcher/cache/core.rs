@@ -175,9 +175,9 @@ mod tests {
     use crate::data_fetcher::cache::types::CachedGoalEventsData;
     use crate::data_fetcher::cache::{
         cache_detailed_game_data, cache_goal_events_data, cache_http_response, cache_players,
-        cache_players_with_disambiguation, cache_players_with_formatting,
-        cache_tournament_data, create_detailed_game_key, create_goal_events_key,
-        get_cache_size, get_cached_detailed_game_data, get_cached_disambiguated_players,
+        cache_players_with_disambiguation, cache_players_with_formatting, cache_tournament_data,
+        create_detailed_game_key, create_goal_events_key, get_cache_size,
+        get_cached_detailed_game_data, get_cached_disambiguated_players,
         get_cached_goal_events_data, get_cached_http_response, get_cached_player_name,
         get_cached_players, get_cached_tournament_data, get_tournament_cache_size,
         has_cached_disambiguated_players, has_live_games,
