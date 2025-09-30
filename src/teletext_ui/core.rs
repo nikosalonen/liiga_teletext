@@ -2,25 +2,18 @@
 
 use crate::config::Config;
 use crate::data_fetcher::GoalEventData;
-use crate::data_fetcher::api::fetch_regular_season_start_date;
 use crate::error::AppError;
-use chrono::{DateTime, Datelike, Local, Utc};
 use crossterm::{
-    cursor::MoveTo,
     execute,
-    style::{Color, Print, ResetColor, SetForegroundColor},
+    style::Print,
 };
-use reqwest::Client;
 use std::io::{Stdout, Write};
 use tracing::debug;
 
-use crate::ui::components::abbreviations::get_team_abbreviation;
 use crate::ui::teletext::colors::*;
 
 // Re-export types for backward compatibility
-pub use crate::ui::teletext::compact_display::{
-    CompactDisplayConfig, CompactModeValidation, TerminalWidthValidation,
-};
+pub use crate::ui::teletext::compact_display::CompactDisplayConfig;
 pub use crate::ui::teletext::game_result::{GameResultData, ScoreType};
 pub use crate::ui::teletext::loading_indicator::LoadingIndicator;
 pub use crate::ui::teletext::page_config::TeletextPageConfig;

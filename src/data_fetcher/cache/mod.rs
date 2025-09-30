@@ -7,7 +7,6 @@ pub mod tournament_cache;
 pub mod types;
 
 // Re-export cache types
-pub use types::*;
 // Re-export player cache functions
 pub use player_cache::*;
 // Re-export tournament cache functions

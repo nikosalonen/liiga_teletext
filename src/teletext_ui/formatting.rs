@@ -107,7 +107,7 @@ impl TeletextPage {
                 current_line = row_str;
                 games_in_current_line = 1;
             } else {
-                current_line.push_str(&config.game_separator);
+                current_line.push_str(config.game_separator);
                 current_line.push_str(&row_str);
                 games_in_current_line += 1;
             }

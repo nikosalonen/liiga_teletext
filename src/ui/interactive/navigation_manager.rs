@@ -9,9 +9,8 @@
 
 use super::series_utils::get_subheader;
 use crate::data_fetcher::{GameData, is_historical_date};
-use crate::error::AppError;
 use crate::teletext_ui::{GameResultData, ScoreType, TeletextPage};
-use chrono::{Datelike, Local, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 
 /// Configuration for creating or restoring a teletext page
 #[derive(Debug)]

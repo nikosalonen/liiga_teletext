@@ -15,15 +15,11 @@ use std::io::stdout;
 
 /// Configuration for terminal management operations
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct TerminalConfig {
     pub debug_mode: bool,
 }
 
-impl Default for TerminalConfig {
-    fn default() -> Self {
-        Self { debug_mode: false }
-    }
-}
 
 /// Terminal manager responsible for setup and cleanup operations
 pub struct TerminalManager {

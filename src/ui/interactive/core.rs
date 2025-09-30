@@ -7,7 +7,7 @@ use crate::error::AppError;
 use std::time::Duration;
 
 // Import utilities from sibling modules
-use super::event_handler::{EventHandler, EventHandlerBuilder, EventResult};
+use super::event_handler::{EventHandler, EventResult};
 use super::refresh_coordinator::{RefreshCoordinator, RefreshCycleConfig};
 use super::state_manager::InteractiveState;
 use super::terminal_manager::{TerminalConfig, TerminalManager};

@@ -6,7 +6,7 @@
 //! - Finding previous/next dates with games
 //! - Season boundary checking
 
-use crate::data_fetcher::{GameData, fetch_liiga_data, is_historical_date};
+use crate::data_fetcher::{fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::TeletextPage;
 use chrono::{Datelike, Local, NaiveDate, Utc};

@@ -6,8 +6,8 @@ pub mod schedule;
 
 // Re-export all public types for backward compatibility
 pub use common::{GameData, HasGoalEvents, HasTeams};
-pub use detailed::{DetailedGame, DetailedGameResponse, DetailedTeam, PenaltyEvent, Period};
-pub use goals::{EmbeddedPlayer, GoalEvent, GoalEventData};
+pub use detailed::{DetailedGame, DetailedGameResponse, DetailedTeam};
+pub use goals::{GoalEvent, GoalEventData};
 pub use players::Player;
 pub use schedule::{ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam};
 

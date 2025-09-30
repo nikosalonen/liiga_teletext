@@ -8,7 +8,7 @@ use super::input_handler::{KeyEventParams, handle_key_event};
 use super::refresh_manager::calculate_poll_interval;
 use super::state_manager::InteractiveState;
 use crate::error::AppError;
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event};
 use std::time::Duration;
 
 /// Result of processing an event

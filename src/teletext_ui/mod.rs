@@ -20,5 +20,3 @@ pub mod wide_mode;
 pub use core::*;
 
 // Re-export utilities
-pub use season_utils::calculate_days_until_regular_season;
-pub use utils::get_ansi_code;
