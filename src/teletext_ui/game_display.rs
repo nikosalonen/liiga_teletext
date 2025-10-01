@@ -1,6 +1,6 @@
 // src/teletext_ui/game_display.rs - Normal mode game rendering logic
 
-use super::core::{AWAY_TEAM_OFFSET, SEPARATOR_OFFSET};
+use super::core::AWAY_TEAM_OFFSET;
 use super::core::{TeletextPage, TeletextRow};
 use super::utils::get_ansi_code;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
@@ -128,22 +128,29 @@ impl TeletextPage {
         };
 
         // Build game line with precise positioning (using 1-based ANSI coordinates)
+        // Calculate positions based on constants
+        let home_pos = CONTENT_MARGIN + 1;
+        let separator_pos = 24; // Position after home team (20 chars) + margin
+        let away_pos = separator_pos + 3; // After " - " (3 chars)
+        let time_pos = 50; // Time display position
+        let score_pos = 56; // Score display position (fixed for alignment)
+
         if !time_display.is_empty() && !score_display.is_empty() {
             // For ongoing games: show time on the left, score on the right
             buffer.push_str(&format!(
-                "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{:<10}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                current_line, CONTENT_MARGIN + 1,
+                "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                current_line, home_pos,
                 text_fg_code,
                 home_team.chars().take(20).collect::<String>(),
-                current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
+                current_line, separator_pos,
                 text_fg_code,
-                current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                current_line, away_pos,
                 text_fg_code,
                 away_team.chars().take(20).collect::<String>(),
-                current_line, 35 + CONTENT_MARGIN + 1,
+                current_line, time_pos,
                 text_fg_code,
                 time_display,
-                current_line, 45 + CONTENT_MARGIN + 1,
+                current_line, score_pos,
                 result_color,
                 score_display
             ));
@@ -156,15 +163,15 @@ impl TeletextPage {
             };
             buffer.push_str(&format!(
                 "\x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m- \x1b[{};{}H\x1b[38;5;{}m{:<20}\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
-                current_line, CONTENT_MARGIN + 1,
+                current_line, home_pos,
                 text_fg_code,
                 home_team.chars().take(20).collect::<String>(),
-                current_line, SEPARATOR_OFFSET + CONTENT_MARGIN + 1,
+                current_line, separator_pos,
                 text_fg_code,
-                current_line, AWAY_TEAM_OFFSET + CONTENT_MARGIN + 1,
+                current_line, away_pos,
                 text_fg_code,
                 away_team.chars().take(20).collect::<String>(),
-                current_line, 45 + CONTENT_MARGIN + 1,
+                current_line, time_pos,
                 result_color,
                 display_text
             ));
