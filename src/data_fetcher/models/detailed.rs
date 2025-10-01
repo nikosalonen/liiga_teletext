@@ -274,6 +274,7 @@ mod tests {
             id: 12345,
             last_name: "Koivu".to_string(),
             first_name: "Mikko".to_string(),
+            ..Default::default()
         };
 
         let response = DetailedGameResponse {

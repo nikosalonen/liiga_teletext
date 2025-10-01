@@ -199,11 +199,13 @@ mod tests {
                 id: 123,
                 last_name: "Smith".to_string(),
                 first_name: "John".to_string(),
+                ..Default::default()
             }],
             away_team_players: vec![Player {
                 id: 456,
                 last_name: "Johnson".to_string(),
                 first_name: "Mike".to_string(),
+                ..Default::default()
             }],
         }
     }
@@ -993,11 +995,13 @@ mod tests {
                 id: 123,
                 first_name: "John".to_string(),
                 last_name: "Smith".to_string(),
+                ..Default::default()
             },
             Player {
                 id: 456,
                 first_name: "Mike".to_string(),
                 last_name: "Johnson".to_string(),
+                ..Default::default()
             },
         ];
 
@@ -1005,6 +1009,7 @@ mod tests {
             id: 789,
             first_name: "David".to_string(),
             last_name: "Brown".to_string(),
+            ..Default::default()
         }];
 
         // Create test game with goal events
@@ -1125,6 +1130,7 @@ mod tests {
             id: 123,
             first_name: "John".to_string(),
             last_name: "Smith".to_string(),
+            ..Default::default()
         }];
 
         let away_players = vec![];

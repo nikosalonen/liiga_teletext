@@ -325,6 +325,13 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
 
             if let Some(prev_date) = result {
                 *params.current_date = Some(prev_date.clone());
+
+                // Small delay to ensure all cache writes (especially roster data from concurrent fetches)
+                // are fully committed to the cache before triggering the refresh that renders the page.
+                // This prevents "Pelaaja <number>" from appearing for games whose rosters haven't
+                // been fully cached yet from the concurrent fetch operations (3 games at a time).
+                tokio::time::sleep(Duration::from_millis(100)).await;
+
                 *params.needs_refresh = true;
                 tracing::info!("Navigated to previous date: {prev_date}");
             } else {
@@ -359,6 +366,13 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
 
             if let Some(next_date) = result {
                 *params.current_date = Some(next_date.clone());
+
+                // Small delay to ensure all cache writes (especially roster data from concurrent fetches)
+                // are fully committed to the cache before triggering the refresh that renders the page.
+                // This prevents "Pelaaja <number>" from appearing for games whose rosters haven't
+                // been fully cached yet from the concurrent fetch operations (3 games at a time).
+                tokio::time::sleep(Duration::from_millis(100)).await;
+
                 *params.needs_refresh = true;
                 tracing::info!("Navigated to next date: {next_date}");
             } else {
