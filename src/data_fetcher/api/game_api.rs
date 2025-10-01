@@ -13,7 +13,8 @@ use crate::data_fetcher::models::{
 };
 use crate::data_fetcher::player_names::format_for_display;
 use crate::data_fetcher::processors::{
-    create_basic_goal_events, determine_game_status, format_time, process_goal_events,
+    create_basic_goal_events, create_goal_events_with_rosters, determine_game_status, format_time,
+    process_goal_events,
 };
 use crate::error::AppError;
 use crate::teletext_ui::ScoreType;
@@ -61,7 +62,7 @@ pub(super) fn should_fetch_detailed_data(_game: &ScheduleGame) -> bool {
 
 /// Processes a single game and returns GameData.
 pub(super) async fn process_single_game(
-    _client: &Client,
+    client: &Client,
     config: &Config,
     game: ScheduleGame,
     game_idx: usize,
@@ -97,8 +98,75 @@ pub(super) async fn process_single_game(
     let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
     debug!("Game result: {result}");
 
-    // Always use schedule-provided goal events (with embedded names) to avoid per-game fetch
-    let goal_events = create_basic_goal_events(&game, &config.api_domain).await;
+    // Try to get full roster for accurate disambiguation
+    // First check if we have cached detailed game data
+    let goal_events = if let Some(cached_detailed) =
+        get_cached_detailed_game_data(game.season, game.id).await
+    {
+        info!(
+            "Game ID {}: Using cached roster data for disambiguation ({} home, {} away players)",
+            game.id,
+            cached_detailed.home_team_players.len(),
+            cached_detailed.away_team_players.len()
+        );
+        create_goal_events_with_rosters(
+            &game,
+            &cached_detailed.home_team_players,
+            &cached_detailed.away_team_players,
+        )
+    } else {
+        // Try to fetch detailed game data for roster-based disambiguation
+        // Only for finished or ongoing games where roster matters
+        let should_fetch_roster = !matches!(score_type, ScoreType::Scheduled)
+            && (!game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty());
+
+        if should_fetch_roster {
+            debug!(
+                "Game ID {}: Attempting to fetch roster data for disambiguation",
+                game.id
+            );
+            let game_url = build_game_url(&config.api_domain, game.season, game.id);
+
+            match fetch::<DetailedGameResponse>(client, &game_url).await {
+                Ok(detailed_response) => {
+                    info!(
+                        "Game ID {}: Fetched roster data ({} home, {} away players)",
+                        game.id,
+                        detailed_response.home_team_players.len(),
+                        detailed_response.away_team_players.len()
+                    );
+
+                    // Cache the detailed response for future use
+                    let is_live = detailed_response.game.started && !detailed_response.game.ended;
+                    cache_detailed_game_data(
+                        game.season,
+                        game.id,
+                        detailed_response.clone(),
+                        is_live,
+                    )
+                    .await;
+
+                    // Use roster-based disambiguation
+                    create_goal_events_with_rosters(
+                        &game,
+                        &detailed_response.home_team_players,
+                        &detailed_response.away_team_players,
+                    )
+                }
+                Err(e) => {
+                    warn!(
+                        "Game ID {}: Failed to fetch roster data, using scorer-only disambiguation: {}",
+                        game.id, e
+                    );
+                    // Fallback to scorer-only disambiguation
+                    create_basic_goal_events(&game, &config.api_domain).await
+                }
+            }
+        } else {
+            // Scheduled game or no goals - use basic approach
+            create_basic_goal_events(&game, &config.api_domain).await
+        }
+    };
 
     info!(
         "Successfully processed game #{} in response #{}",
@@ -122,7 +190,10 @@ pub(super) async fn process_single_game(
     })
 }
 
-/// Processes all games in a single response.
+/// Processes all games in a single response with rate limiting to avoid API throttling.
+///
+/// Uses a semaphore to limit concurrent detailed game API requests to 3 at a time,
+/// preventing 429 rate limit errors when processing multiple games.
 pub(super) async fn process_response_games(
     client: &Client,
     config: &Config,
@@ -135,19 +206,51 @@ pub(super) async fn process_response_games(
     }
 
     info!(
-        "Processing response #{} with {} games",
+        "Processing response #{} with {} games (rate-limited: 3 concurrent, 1s delay between requests)",
         response_idx + 1,
         response.games.len()
     );
 
-    let games = futures::future::try_join_all(response.games.clone().into_iter().enumerate().map(
-        |(game_idx, game)| {
+    // Create a semaphore to limit concurrent API requests
+    // This prevents overwhelming the API with too many simultaneous requests
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
+
+    let semaphore = Arc::new(Semaphore::new(3)); // Max 3 concurrent requests
+
+    let game_futures: Vec<_> = response
+        .games
+        .clone()
+        .into_iter()
+        .enumerate()
+        .map(|(game_idx, game)| {
             let client = client.clone();
             let config = config.clone();
-            async move { process_single_game(&client, &config, game, game_idx, response_idx).await }
-        },
-    ))
-    .await?;
+            let sem = Arc::clone(&semaphore);
+
+            async move {
+                // Acquire semaphore permit before making request
+                let _permit = sem.acquire().await.unwrap();
+
+                // Add 1 second delay between requests to avoid overwhelming the API
+                if game_idx > 0 {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                }
+
+                debug!(
+                    "Processing game #{} of {} (game_idx={})",
+                    game_idx + 1,
+                    response.games.len(),
+                    game_idx
+                );
+
+                // Permit is automatically released when _permit is dropped
+                process_single_game(&client, &config, game, game_idx, response_idx).await
+            }
+        })
+        .collect();
+
+    let games = futures::future::try_join_all(game_futures).await?;
 
     info!(
         "Successfully processed all games in response #{}, adding {} games to result",
