@@ -1,9 +1,7 @@
-use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, ScheduleGame};
-use crate::data_fetcher::player_names::{
-    DisambiguationContext, create_fallback_name, format_for_display,
-};
+use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, Player, ScheduleGame};
+use crate::data_fetcher::player_names::{DisambiguationContext, create_fallback_name};
 use std::collections::HashMap;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 /// Processes goal events for both teams in a game with team-scoped disambiguation.
 /// This enhanced version applies disambiguation separately for home and away teams,
@@ -237,62 +235,101 @@ pub fn process_team_goals(
     }
 }
 
+/// Creates goal event data from a ScheduleGame with full roster-based disambiguation.
+/// This version uses the complete team rosters (if available) to determine disambiguation
+/// rather than only considering players who have actually scored.
+///
+/// **Important**: The **full roster** is used for disambiguation, including players who may
+/// not have line assignments or might be marked as injured, suspended, or removed. This ensures
+/// that all goal scorers can be properly identified, as the API data sometimes lacks line
+/// assignments for players who have scored.
+///
+/// # Arguments
+/// * `game` - The schedule game containing goal events
+/// * `home_roster` - Complete home team roster from the detailed game API
+/// * `away_roster` - Complete away team roster from the detailed game API
+///
+/// # Returns
+/// Vector of processed goal events with properly disambiguated player names
+#[allow(dead_code)]
+pub fn create_goal_events_with_rosters(
+    game: &ScheduleGame,
+    home_roster: &[Player],
+    away_roster: &[Player],
+) -> Vec<GoalEventData> {
+    debug!(
+        "Game ID {}: Creating goal events with full roster disambiguation ({} home, {} away players)",
+        game.id,
+        home_roster.len(),
+        away_roster.len()
+    );
+
+    // Convert full Player roster to the format expected by disambiguation
+    // Note: We use the full roster (not just active players) to ensure all goal scorers are included
+    // Some players who scored might not have line assignments or might be marked inactive in the API
+    let home_players: Vec<(i64, String, String)> = home_roster
+        .iter()
+        .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
+        .collect();
+
+    let away_players: Vec<(i64, String, String)> = away_roster
+        .iter()
+        .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
+        .collect();
+
+    // Use the full rosters for disambiguation
+    process_goal_events_with_disambiguation(game, &home_players, &away_players)
+}
+
 pub async fn create_basic_goal_events(
     game: &ScheduleGame,
     _api_domain: &str,
 ) -> Vec<GoalEventData> {
-    use tracing::{info, warn};
-
-    // If the game has goal events in the response, use them with cached names if available
+    // If the game has goal events in the response, use them with disambiguation
     if !game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty() {
         info!(
-            "Game ID {}: Using goal events from schedule response ({} home, {} away)",
+            "Game ID {}: Using goal events from schedule response with disambiguation ({} home, {} away)",
             game.id,
             game.home_team.goal_events.len(),
             game.away_team.goal_events.len()
         );
 
-        // Build names from embedded scorerPlayer when available; fallback to last name or numeric fallback
-        let mut basic_names: HashMap<i64, String> = HashMap::new();
+        // Build player data for disambiguation from embedded scorerPlayer information
+        // Use HashMap to deduplicate players who scored multiple goals
+        let mut home_players_map: HashMap<i64, (String, String)> = HashMap::new();
+        let mut away_players_map: HashMap<i64, (String, String)> = HashMap::new();
 
-        let mut collect_name =
-            |scorer_id: i64, maybe_first: Option<&str>, maybe_last: Option<&str>| {
-                if let Some(last) = maybe_last {
-                    // Prefer last name only per teletext style; add initial only if first is present and needed later
-                    basic_names.insert(scorer_id, format_for_display(last));
-                } else if let Some(first) = maybe_first {
-                    // No last name in payload, use first as display (rare)
-                    basic_names.insert(scorer_id, format_for_display(first));
-                } else {
-                    // Complete fallback
-                    basic_names.insert(scorer_id, create_fallback_name(scorer_id));
-                }
-            };
-
+        // Collect unique home team players who have scored
         for goal in &game.home_team.goal_events {
             if let Some(p) = &goal.scorer_player {
-                collect_name(
-                    goal.scorer_player_id,
-                    Some(&p.first_name),
-                    Some(&p.last_name),
-                );
-            } else {
-                collect_name(goal.scorer_player_id, None, None);
-            }
-        }
-        for goal in &game.away_team.goal_events {
-            if let Some(p) = &goal.scorer_player {
-                collect_name(
-                    goal.scorer_player_id,
-                    Some(&p.first_name),
-                    Some(&p.last_name),
-                );
-            } else {
-                collect_name(goal.scorer_player_id, None, None);
+                home_players_map
+                    .entry(goal.scorer_player_id)
+                    .or_insert((p.first_name.clone(), p.last_name.clone()));
             }
         }
 
-        return process_goal_events(game, &basic_names);
+        // Collect unique away team players who have scored
+        for goal in &game.away_team.goal_events {
+            if let Some(p) = &goal.scorer_player {
+                away_players_map
+                    .entry(goal.scorer_player_id)
+                    .or_insert((p.first_name.clone(), p.last_name.clone()));
+            }
+        }
+
+        // Convert to Vec format expected by disambiguation function
+        let home_players: Vec<(i64, String, String)> = home_players_map
+            .into_iter()
+            .map(|(id, (first, last))| (id, first, last))
+            .collect();
+        let away_players: Vec<(i64, String, String)> = away_players_map
+            .into_iter()
+            .map(|(id, (first, last))| (id, first, last))
+            .collect();
+
+        // Note: This uses only scorers for disambiguation. For full roster-based
+        // disambiguation, use create_goal_events_with_rosters() instead.
+        return process_goal_events_with_disambiguation(game, &home_players, &away_players);
     }
 
     // If no goal events but game has scores, create placeholder events

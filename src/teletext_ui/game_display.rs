@@ -289,18 +289,18 @@ impl TeletextPage {
         if let Some(url) = &event.video_clip_url {
             if !self.disable_video_links {
                 buffer.push_str(&format!(
-                    "\x1b[38;5;{}m{:<12}\x1B]8;;{}\x07▶\x1B]8;;\x07",
+                    "\x1b[38;5;{}m{:<17}\x1b]8;;{}\x07▶\x1b]8;;\x07",
                     scorer_color, event.scorer_name, url
                 ));
             } else {
                 buffer.push_str(&format!(
-                    "\x1b[38;5;{}m{:<12}",
+                    "\x1b[38;5;{}m{:<17}",
                     scorer_color, event.scorer_name
                 ));
             }
         } else {
             buffer.push_str(&format!(
-                "\x1b[38;5;{}m{:<12}",
+                "\x1b[38;5;{}m{:<17}",
                 scorer_color, event.scorer_name
             ));
         }

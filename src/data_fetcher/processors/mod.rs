@@ -12,8 +12,8 @@ pub use game_status::{determine_game_status, format_time};
 // Re-export goal event processing functions
 #[allow(unused_imports)]
 pub use goal_events::{
-    create_basic_goal_events, process_goal_events, process_team_goals,
-    process_team_goals_with_disambiguation,
+    create_basic_goal_events, create_goal_events_with_rosters, process_goal_events,
+    process_team_goals, process_team_goals_with_disambiguation,
 };
 
 // Re-export time formatting functions

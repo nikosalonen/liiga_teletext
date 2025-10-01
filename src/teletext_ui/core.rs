@@ -15,8 +15,8 @@ pub use crate::ui::teletext::game_result::{GameResultData, ScoreType};
 pub use crate::ui::teletext::loading_indicator::LoadingIndicator;
 pub use crate::ui::teletext::page_config::TeletextPageConfig;
 
-pub(super) const AWAY_TEAM_OFFSET: usize = 25; // Reduced from 30 to bring teams closer
-pub(super) const SEPARATOR_OFFSET: usize = 23; // New constant for separator position
+pub(super) const AWAY_TEAM_OFFSET: usize = 33; // Space for 17-char names + goal type indicators
+pub(super) const SEPARATOR_OFFSET: usize = 31; // New constant for separator position
 pub const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
 
 // Import utilities from modules
