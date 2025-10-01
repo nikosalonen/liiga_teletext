@@ -255,31 +255,27 @@ pub fn create_goal_events_with_rosters(
     home_roster: &[Player],
     away_roster: &[Player],
 ) -> Vec<GoalEventData> {
-    // Filter to only active players (have line assignment, not injured/suspended/removed)
-    let active_home: Vec<&Player> = home_roster.iter().filter(|p| p.is_active()).collect();
-    let active_away: Vec<&Player> = away_roster.iter().filter(|p| p.is_active()).collect();
-
     debug!(
-        "Game ID {}: Creating goal events with active roster disambiguation ({}/{} home, {}/{} away players active)",
+        "Game ID {}: Creating goal events with full roster disambiguation ({} home, {} away players)",
         game.id,
-        active_home.len(),
         home_roster.len(),
-        active_away.len(),
         away_roster.len()
     );
 
-    // Convert active Player roster to the format expected by disambiguation
-    let home_players: Vec<(i64, String, String)> = active_home
+    // Convert full Player roster to the format expected by disambiguation
+    // Note: We use the full roster (not just active players) to ensure all goal scorers are included
+    // Some players who scored might not have line assignments or might be marked inactive in the API
+    let home_players: Vec<(i64, String, String)> = home_roster
         .iter()
         .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
         .collect();
 
-    let away_players: Vec<(i64, String, String)> = active_away
+    let away_players: Vec<(i64, String, String)> = away_roster
         .iter()
         .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
         .collect();
 
-    // Use the active rosters for disambiguation
+    // Use the full rosters for disambiguation
     process_goal_events_with_disambiguation(game, &home_players, &away_players)
 }
 
