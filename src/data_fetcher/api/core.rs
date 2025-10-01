@@ -250,6 +250,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_fetch_tournament_data_no_games() {
         clear_all_caches_for_test().await;
 
@@ -279,6 +280,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_fetch_tournament_data_server_error() {
         clear_all_caches_for_test().await;
 
@@ -303,6 +305,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_fetch_tournament_data_not_found() {
         clear_all_caches_for_test().await;
 
