@@ -125,6 +125,17 @@ pub(super) async fn process_single_game(
                 "Game ID {}: Attempting to fetch roster data for disambiguation",
                 game.id
             );
+
+            // Add delay before roster fetch to avoid overwhelming the API
+            // Only delay for games that will actually make an API call
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static ROSTER_FETCH_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+            let fetch_number = ROSTER_FETCH_COUNT.fetch_add(1, Ordering::SeqCst);
+            if fetch_number > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
+
             let game_url = build_game_url(&config.api_domain, game.season, game.id);
 
             match fetch::<DetailedGameResponse>(client, &game_url).await {
@@ -206,7 +217,7 @@ pub(super) async fn process_response_games(
     }
 
     info!(
-        "Processing response #{} with {} games (rate-limited: 3 concurrent, 1s delay between requests)",
+        "Processing response #{} with {} games (rate-limited: 3 concurrent, 1s delay between roster fetches)",
         response_idx + 1,
         response.games.len()
     );
@@ -231,11 +242,6 @@ pub(super) async fn process_response_games(
             async move {
                 // Acquire semaphore permit before making request
                 let _permit = sem.acquire().await.unwrap();
-
-                // Add 1 second delay between requests to avoid overwhelming the API
-                if game_idx > 0 {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                }
 
                 debug!(
                     "Processing game #{} of {} (game_idx={})",
