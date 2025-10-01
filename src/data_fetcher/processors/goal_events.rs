@@ -239,8 +239,10 @@ pub fn process_team_goals(
 /// This version uses the complete team rosters (if available) to determine disambiguation
 /// rather than only considering players who have actually scored.
 ///
-/// **Important**: Only **active** players are included in disambiguation. A player is considered
-/// active if they have a line assignment and are not injured, suspended, or removed from the roster.
+/// **Important**: The **full roster** is used for disambiguation, including players who may
+/// not have line assignments or might be marked as injured, suspended, or removed. This ensures
+/// that all goal scorers can be properly identified, as the API data sometimes lacks line
+/// assignments for players who have scored.
 ///
 /// # Arguments
 /// * `game` - The schedule game containing goal events
