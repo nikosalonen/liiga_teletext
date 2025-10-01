@@ -4,11 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Rust terminal application that displays Finnish Hockey League (Liiga) results in authentic YLE Teksti-TV style. The app features real-time data fetching, teletext-style UI rendering, and comprehensive CLI options.
+This is a Rust terminal application that displays Finnish Hockey League (Liiga) results in authentic YLE Teksti-TV style. The app features real-time data fetching, teletext-style UI rendering, and comprehensive CLI options.## Development Notes
+
+- **Rust Edition**: 2024 (requires Rust 1.89+)
 
 ## Development Commands
 
 ### Building and Testing
+
 ```bash
 # Build the project
 cargo build --release
@@ -27,6 +30,7 @@ cargo clippy --all-features --all-targets -- -D warnings
 ```
 
 ### Running the Application
+
 ```bash
 # Interactive mode (default)
 cargo run --release
@@ -47,6 +51,7 @@ cargo run --release -- --wide
 ## Code Architecture
 
 ### Module Structure
+
 The codebase follows a modular architecture with clear separation of concerns:
 
 - **`src/main.rs`** - Entry point and CLI argument handling
@@ -64,6 +69,7 @@ The codebase follows a modular architecture with clear separation of concerns:
 ### Key Design Patterns
 
 **Async/Await Architecture**: All I/O operations use Tokio's async runtime
+
 ```rust
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -72,6 +78,7 @@ async fn main() -> Result<(), AppError> {
 ```
 
 **Error Handling**: Uses thiserror for comprehensive error types
+
 ```rust
 // Always propagate errors with ?
 let config = Config::load().await?;
@@ -79,6 +86,7 @@ let data = fetch_liiga_data(&config).await?;
 ```
 
 **Configuration Management**: Platform-specific config directories
+
 ```rust
 // Config automatically loaded from:
 // Linux: ~/.config/liiga_teletext/config.toml
@@ -90,11 +98,13 @@ let config = Config::load().await?;
 ## Critical Requirements
 
 ### Before Any Commit
+
 1. **MUST run and pass**: `cargo test --all-features`
 2. **MUST pass with zero warnings**: `cargo clippy --all-features --all-targets -- -D warnings`
 3. **MUST format**: `cargo fmt`
 
 ### Common Clippy Issues to Avoid
+
 - **await_holding_lock**: Use `tokio::sync::Mutex` instead of `std::sync::Mutex` in async code
 - **uninlined_format_args**: Use `format!("{var}")` instead of `format!("{}", var)`
 - **assertions_on_constants**: Remove `assert!(true)` or similar constant assertions
@@ -102,6 +112,7 @@ let config = Config::load().await?;
 - **unused_mut**: Remove unnecessary `mut` keywords
 
 ### Testing Guidelines
+
 - Use `#[tokio::test]` for async test functions
 - Mock external dependencies with wiremock for HTTP calls
 - Use tempfile for file operations in tests
@@ -119,6 +130,7 @@ log_file_path = "/custom/path/to/logfile.log"  # Optional
 ```
 
 Configuration is managed through:
+
 ```bash
 # Update API domain
 cargo run -- --config
