@@ -297,18 +297,18 @@ impl TeletextPage {
                                 if !self.disable_video_links {
                                     if let Some(ref url) = event.video_clip_url {
                                         buffer.push_str(&format!(
-                                            "\x1b]8;;{}\x07\x1b[38;5;{}m{:<15}\x1b]8;;\x07",
-                                            url, scorer_color, event.scorer_name
+                                            "\x1b[38;5;{}m{:<17}\x1b]8;;{}\x07▶\x1b]8;;\x07",
+                                            scorer_color, event.scorer_name, url
                                         ));
                                     } else {
                                         buffer.push_str(&format!(
-                                            "\x1b[38;5;{}m{:<15}",
+                                            "\x1b[38;5;{}m{:<17}",
                                             scorer_color, event.scorer_name
                                         ));
                                     }
                                 } else {
                                     buffer.push_str(&format!(
-                                        "\x1b[38;5;{}m{:<15}",
+                                        "\x1b[38;5;{}m{:<17}",
                                         scorer_color, event.scorer_name
                                     ));
                                 }
@@ -350,18 +350,18 @@ impl TeletextPage {
                                 if !self.disable_video_links {
                                     if let Some(ref url) = event.video_clip_url {
                                         buffer.push_str(&format!(
-                                            "\x1b]8;;{}\x07\x1b[38;5;{}m{:<15}\x1b]8;;\x07",
-                                            url, scorer_color, event.scorer_name
+                                            "\x1b[38;5;{}m{:<17}\x1b]8;;{}\x07▶\x1b]8;;\x07",
+                                            scorer_color, event.scorer_name, url
                                         ));
                                     } else {
                                         buffer.push_str(&format!(
-                                            "\x1b[38;5;{}m{:<15}",
+                                            "\x1b[38;5;{}m{:<17}",
                                             scorer_color, event.scorer_name
                                         ));
                                     }
                                 } else {
                                     buffer.push_str(&format!(
-                                        "\x1b[38;5;{}m{:<15}",
+                                        "\x1b[38;5;{}m{:<17}",
                                         scorer_color, event.scorer_name
                                     ));
                                 }
@@ -547,21 +547,20 @@ impl TeletextPage {
 
                             let goal_type = event.get_goal_type_display();
                             let goal_type_str = if !goal_type.is_empty() {
-                                let truncated_type: String = goal_type.chars().take(3).collect();
-                                format!(" \x1b[38;5;{goal_type_fg_code}m{truncated_type}\x1b[0m")
+                                format!(" \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m")
                             } else {
                                 String::new()
                             };
 
                             format!(
-                                " \x1b[38;5;{}m{:2} {:<15}\x1b[0m{}",
+                                " \x1b[38;5;{}m{:2} {:<17}\x1b[0m{}",
                                 scorer_color,
                                 event.minute,
-                                event.scorer_name.chars().take(15).collect::<String>(),
+                                event.scorer_name.chars().take(17).collect::<String>(),
                                 goal_type_str
                             )
                         } else {
-                            "                         ".to_string() // 25 spaces to maintain alignment (was 22, now 22+3)
+                            "                         ".to_string() // 25 spaces: 1 + 2 (minute) + 1 + 17 (name) + 4 (margin)
                         };
 
                         scorer_line.push_str(&home_side);
