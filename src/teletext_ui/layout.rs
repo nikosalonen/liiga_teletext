@@ -2659,14 +2659,14 @@ mod tests {
     #[test]
     fn test_layout_config_default() {
         let config = LayoutConfig::default();
-        assert_eq!(config.home_team_width, 20);
+        assert_eq!(config.home_team_width, 26); // Updated to match new default
         assert_eq!(config.separator_width, 3);
         assert_eq!(config.away_team_width, 20);
-        assert_eq!(config.time_column, 50);
-        assert_eq!(config.score_column, 56);
-        assert_eq!(config.play_icon_column, 45);
+        assert_eq!(config.time_column, 51); // Updated to match new default
+        assert_eq!(config.score_column, 62); // Updated to match new default
+        assert_eq!(config.play_icon_column, 51); // Updated to match new default
         assert_eq!(config.max_player_name_width, 17);
-        assert_eq!(config.max_goal_types_width, 6);
+        assert_eq!(config.max_goal_types_width, 8); // Updated to match new default
     }
 
     #[test]
@@ -2744,7 +2744,7 @@ mod tests {
         let layout = manager.calculate_layout(&games);
 
         // Should maintain default team widths
-        assert_eq!(layout.home_team_width, 20);
+        assert_eq!(layout.home_team_width, 26); // Updated to match new default
         assert_eq!(layout.away_team_width, 20);
         assert_eq!(layout.separator_width, 3);
 
@@ -2801,9 +2801,9 @@ mod tests {
         let manager = ColumnLayoutManager::new(80, 2);
         let layout = LayoutConfig::default();
 
-        assert_eq!(manager.get_home_team_width(&layout), 20);
+        assert_eq!(manager.get_home_team_width(&layout), 26);
         assert_eq!(manager.get_away_team_width(&layout), 20);
-        assert_eq!(manager.get_play_icon_column(&layout), 45);
+        assert_eq!(manager.get_play_icon_column(&layout), 51);
     }
 
     #[test]
@@ -2971,7 +2971,7 @@ mod tests {
         let layout = manager.calculate_wide_mode_layout(&games);
 
         // Should use normal team widths for wider columns
-        assert_eq!(layout.home_team_width, 20);
+        assert_eq!(layout.home_team_width, 26);
         assert_eq!(layout.away_team_width, 20);
         assert_eq!(layout.separator_width, 3);
 
@@ -3137,7 +3137,7 @@ mod tests {
         let layout = manager.calculate_layout(&games);
 
         // Should use normal layout
-        assert_eq!(layout.home_team_width, 20);
+        assert_eq!(layout.home_team_width, 26);
         assert_eq!(layout.away_team_width, 20);
     }
 
