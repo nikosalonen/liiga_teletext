@@ -51,27 +51,81 @@ pub struct GoalEventData {
 }
 
 impl GoalEventData {
+    /// Gets the display string for goal types with safe fallbacks for missing data
+    /// Ensures rendering continues even with problematic goal type data (Requirement 4.1)
     pub fn get_goal_type_display(&self) -> String {
+        // Handle missing or empty goal types safely
+        if self.goal_types.is_empty() {
+            return String::new();
+        }
+
         let mut indicators = Vec::new();
-        if self.goal_types.contains(&"YV".to_string()) {
+        let valid_goal_types = ["EV", "YV", "YV2", "IM", "VT", "AV", "TM", "VL", "MV", "RV"];
+
+        // Process goal types in fixed priority order to maintain consistent display
+        // This preserves the original behavior while adding safe fallbacks
+
+        // First, validate and clean the goal types
+        let mut valid_goal_types_set = std::collections::HashSet::new();
+        for goal_type in &self.goal_types {
+            let goal_type_str = goal_type.trim();
+            if !goal_type_str.is_empty() && valid_goal_types.contains(&goal_type_str) {
+                valid_goal_types_set.insert(goal_type_str);
+            } else if !goal_type_str.is_empty() {
+                tracing::debug!(
+                    "Invalid goal type '{}' found, excluding from display",
+                    goal_type_str
+                );
+            }
+        }
+
+        // Add goal types in fixed priority order (maintains original behavior)
+        if valid_goal_types_set.contains("YV") {
             indicators.push("YV");
         }
-        if self.goal_types.contains(&"YV2".to_string()) {
+        if valid_goal_types_set.contains("YV2") {
             indicators.push("YV2");
         }
-        if self.goal_types.contains(&"IM".to_string()) {
+        if valid_goal_types_set.contains("IM") {
             indicators.push("IM");
         }
-        if self.goal_types.contains(&"VT".to_string()) {
+        if valid_goal_types_set.contains("VT") {
             indicators.push("VT");
         }
-        if self.goal_types.contains(&"AV".to_string()) {
+        if valid_goal_types_set.contains("AV") {
             indicators.push("AV");
         }
-        if self.goal_types.contains(&"TM".to_string()) {
+        if valid_goal_types_set.contains("TM") {
             indicators.push("TM");
         }
-        indicators.join(" ")
+        if valid_goal_types_set.contains("VL") {
+            indicators.push("VL");
+        }
+        if valid_goal_types_set.contains("MV") {
+            indicators.push("MV");
+        }
+        if valid_goal_types_set.contains("RV") {
+            indicators.push("RV");
+        }
+        // EV (Even strength) is the default, only show if no other types
+        if valid_goal_types_set.contains("EV") && self.goal_types.len() == 1 {
+            indicators.push("EV");
+        }
+
+        // Join with space separator, ensuring safe string operations
+        let result = indicators.join(" ");
+
+        // Validate result length to prevent layout issues
+        if result.len() > 20 {
+            // Reasonable maximum for goal type display
+            tracing::warn!(
+                "Goal type display '{}' is unusually long ({}), may cause layout issues",
+                result,
+                result.len()
+            );
+        }
+
+        result
     }
 }
 
@@ -185,6 +239,83 @@ mod tests {
             video_clip_url: None,
         };
         assert_eq!(no_types.get_goal_type_display(), "");
+    }
+
+    #[test]
+    fn test_goal_type_display_safe_fallbacks() {
+        // Test invalid goal types are filtered out
+        let invalid_types = GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Player".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec![
+                "INVALID".to_string(),
+                "YV".to_string(),
+                "BADTYPE".to_string(),
+            ],
+            is_home_team: true,
+            video_clip_url: None,
+        };
+        assert_eq!(invalid_types.get_goal_type_display(), "YV");
+
+        // Test empty strings in goal types are handled
+        let empty_strings = GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Player".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["".to_string(), "IM".to_string(), "   ".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        };
+        assert_eq!(empty_strings.get_goal_type_display(), "IM");
+
+        // Test duplicate goal types are removed
+        let duplicates = GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Player".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["YV".to_string(), "IM".to_string(), "YV".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        };
+        assert_eq!(duplicates.get_goal_type_display(), "YV IM");
+
+        // Test EV (even strength) is only shown when it's the only type
+        let ev_only = GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Player".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["EV".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        };
+        assert_eq!(ev_only.get_goal_type_display(), "EV");
+
+        // Test EV is not shown when other types are present
+        let ev_with_others = GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Player".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["EV".to_string(), "YV".to_string()],
+            is_home_team: true,
+            video_clip_url: None,
+        };
+        assert_eq!(ev_with_others.get_goal_type_display(), "YV");
     }
 
     #[test]
