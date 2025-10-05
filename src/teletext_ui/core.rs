@@ -18,7 +18,6 @@ pub use crate::ui::teletext::page_config::TeletextPageConfig;
 // Import layout management components
 use super::layout::ColumnLayoutManager;
 
-pub(super) const AWAY_TEAM_OFFSET: usize = 30; // Position for away team content (updated for wider home column: 26 + 3 + 1)
 pub const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
 
 // Import utilities from modules
@@ -240,6 +239,9 @@ impl TeletextPage {
         if let Ok((width, height)) = crossterm::terminal::size() {
             self.screen_height = height;
 
+            // Clear old layout manager caches before creating new one
+            self.layout_manager.clear_caches();
+
             // Update layout manager with new terminal width
             self.layout_manager = ColumnLayoutManager::new(width as usize, CONTENT_MARGIN);
 
@@ -261,6 +263,14 @@ impl TeletextPage {
 
             // Ensure current_page is within bounds
             self.current_page = self.current_page.min(current_page);
+
+            tracing::debug!(
+                "Resize handled: new dimensions {}x{}, current_page: {}, total_pages: {}",
+                width,
+                height,
+                self.current_page,
+                current_page
+            );
         }
     }
 

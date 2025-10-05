@@ -1,6 +1,6 @@
 [package]
 name = "liiga_teletext"
-version = "0.17.2"
+version = "0.17.5"
 edition = "2024"
 authors = ["Niko Salonen <nikotsalonen@gmail.com>"]
 description = "YLE Teksti-TV 221 in your terminal - Finnish Liiga hockey results with authentic teletext aesthetics"
