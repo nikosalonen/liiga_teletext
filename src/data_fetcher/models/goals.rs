@@ -107,10 +107,6 @@ impl GoalEventData {
         if valid_goal_types_set.contains("RV") {
             indicators.push("RV");
         }
-        // EV (Even strength) is the default, only show if no other types
-        if valid_goal_types_set.contains("EV") && self.goal_types.len() == 1 {
-            indicators.push("EV");
-        }
 
         // Join with space separator, ensuring safe string operations
         let result = indicators.join(" ");
