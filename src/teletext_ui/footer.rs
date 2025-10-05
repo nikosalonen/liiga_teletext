@@ -70,9 +70,10 @@ pub fn render_footer(
         let countdown_y = footer_y.saturating_sub(1);
 
         // Use optimized ANSI code generation for countdown (requirement 4.3)
+        // Convert 0-based countdown_y to 1-based for ANSI cursor positioning
         let countdown_code = format!(
             "\x1b[{};1H\x1b[38;5;{}m{:^width$}\x1b[0m",
-            countdown_y,
+            countdown_y + 1,
             get_ansi_code(Color::AnsiValue(226), 226), // Bright yellow
             countdown,
             width = width
@@ -100,9 +101,10 @@ pub fn render_footer(
     let footer_width = width.saturating_sub(6);
     let header_bg_code = get_ansi_code(header_bg(), 21);
 
+    // Convert 0-based footer_y to 1-based for ANSI cursor positioning
     let footer_code = format!(
         "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
-        footer_y,
+        footer_y + 1,
         header_bg_code,
         "   ",
         footer_text,
