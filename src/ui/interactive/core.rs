@@ -52,7 +52,9 @@ pub async fn run_interactive_ui(
 
     loop {
         // Process pending resize events after debounce period
-        if state.ui.pending_resize && state.timers.last_resize.elapsed() >= Duration::from_millis(200) {
+        if state.ui.pending_resize
+            && state.timers.last_resize.elapsed() >= Duration::from_millis(200)
+        {
             tracing::debug!("Processing debounced resize event");
             state.handle_resize();
             state.ui.pending_resize = false;
