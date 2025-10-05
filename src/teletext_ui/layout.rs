@@ -221,14 +221,14 @@ pub struct LayoutConfig {
 impl Default for LayoutConfig {
     fn default() -> Self {
         Self {
-            home_team_width: 26, // Increased from 20 to 26 to provide more space for score types
-            separator_width: 3,
-            away_team_width: 20,  // Keep away team width the same
-            time_column: 51,      // Moved time column to the left (was 56)
-            score_column: 62,     // Keep score column position for alignment
-            play_icon_column: 51, // Adjusted to account for wider home column
+            home_team_width: 20, // Reduced back to 20 for better spacing
+            separator_width: 7,  // Increased from 3 to 7 to add more breathing room between columns
+            away_team_width: 20,
+            time_column: 51,
+            score_column: 62,
+            play_icon_column: 51,
             max_player_name_width: 17,
-            max_goal_types_width: 8, // Increased from 6 to 8 to accommodate more score types
+            max_goal_types_width: 8,
         }
     }
 }
@@ -776,7 +776,7 @@ impl ColumnLayoutManager {
     /// * `String` - Complete formatted ANSI string for separator
     pub fn format_separator(&mut self, line: usize, column: usize, color: u8) -> String {
         let position_code = self.get_color_position_code(line, column, color);
-        format!("{}- \x1b[0m", position_code)
+        format!("{}   -   \x1b[0m", position_code) // Changed from "- " to "   -   " for better spacing (7 chars total)
     }
 
     /// Generates optimized ANSI codes for time/score display

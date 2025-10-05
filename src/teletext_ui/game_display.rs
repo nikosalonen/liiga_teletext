@@ -1,6 +1,5 @@
 // src/teletext_ui/game_display.rs - Normal mode game rendering logic
 
-use super::core::AWAY_TEAM_OFFSET;
 use super::core::{TeletextPage, TeletextRow};
 use super::layout::{ColumnLayoutManager, LayoutConfig};
 use super::utils::get_ansi_code;
@@ -441,8 +440,6 @@ impl TeletextPage {
         goal_type_fg_code: u8,
         layout_config: &LayoutConfig,
     ) -> Result<(), String> {
-        use super::layout::AlignmentCalculator;
-
         // Determine if this is a winning goal (overtime/shootout winner or "VL" penalty shot goal)
         let scorer_color = if (event.is_winning_goal && (is_overtime || is_shootout))
             || event.goal_types.contains(&"VL".to_string())
@@ -480,13 +477,14 @@ impl TeletextPage {
             event.scorer_name.clone()
         };
 
-        let player_name_length = safe_player_name.len();
+        // Store original length before truncation for spacing calculation
+        let original_player_name_length = safe_player_name.len();
 
         // Use intelligent truncation for player names (requirement 3.2)
         use super::layout::IntelligentTruncator;
         let truncator = IntelligentTruncator::new();
 
-        let player_name_display = if player_name_length > layout_config.max_player_name_width {
+        let player_name_display = if original_player_name_length > layout_config.max_player_name_width {
             // Use intelligent truncation with ellipsis only as last resort (requirement 3.2)
             truncator.truncate_player_name(
                 &safe_player_name,
@@ -497,6 +495,28 @@ impl TeletextPage {
             safe_player_name
         };
 
+        // Calculate available space for player name based on team position
+        // This prevents padding from pushing into adjacent content areas
+        let available_space_for_name = if event.is_home_team {
+            // For home team: calculate space until away team starts
+            let home_pos = CONTENT_MARGIN + 1;
+            let away_team_start = home_pos + layout_config.home_team_width + layout_config.separator_width;
+            let name_start = column_offset + 3; // minute (2) + space (1)
+            let goal_type_len = event.get_goal_type_display().len();
+            let space_needed_for_goal_types = if goal_type_len > 0 { goal_type_len + 1 } else { 0 }; // +1 for space before goal types
+            away_team_start.saturating_sub(name_start).saturating_sub(space_needed_for_goal_types).saturating_sub(2) // -2 for margin
+        } else {
+            // For away team: calculate space until time column
+            let name_start = column_offset + 3;
+            let goal_type_len = event.get_goal_type_display().len();
+            let space_needed_for_goal_types = if goal_type_len > 0 { goal_type_len + 1 } else { 0 };
+            layout_config.time_column.saturating_sub(name_start).saturating_sub(space_needed_for_goal_types).saturating_sub(2)
+        };
+        
+        // Pad player name to available space, but not more than max_player_name_width
+        let padding_width = available_space_for_name.min(layout_config.max_player_name_width);
+        let padded_player_name = format!("{:<width$}", player_name_display, width = padding_width);
+        
         // Render player name (make it clickable if there's a video link)
         let player_name_with_link = if let Some(url) = &event.video_clip_url {
             if !self.disable_video_links {
@@ -519,53 +539,25 @@ impl TeletextPage {
                     // Wrap the player name in a clickable link while preserving colors
                     format!(
                         "\x1b[38;5;{}m\x1b]8;;{}\x07{}\x1b]8;;\x07",
-                        scorer_color, validated_url, player_name_display
+                        scorer_color, validated_url, padded_player_name
                     )
                 } else {
-                    format!("\x1b[38;5;{}m{}", scorer_color, player_name_display)
+                    format!("\x1b[38;5;{}m{}", scorer_color, padded_player_name)
                 }
             } else {
-                format!("\x1b[38;5;{}m{}", scorer_color, player_name_display)
+                format!("\x1b[38;5;{}m{}", scorer_color, padded_player_name)
             }
         } else {
-            format!("\x1b[38;5;{}m{}", scorer_color, player_name_display)
+            format!("\x1b[38;5;{}m{}", scorer_color, padded_player_name)
         };
 
         buffer.push_str(&player_name_with_link);
 
-        // Use AlignmentCalculator to calculate goal type positions and prevent overflow
-        let mut alignment_calculator = AlignmentCalculator::new();
-        let goal_type_positions = alignment_calculator
-            .calculate_goal_type_positions(std::slice::from_ref(event), layout_config);
-
         // Get goal type display with safe fallback for missing data (requirement 4.1)
         let goal_type = event.get_goal_type_display();
 
-        // Calculate dynamic spacing based on AlignmentCalculator positioning
-        let dynamic_spacing = if let Some(goal_position) = goal_type_positions.first() {
-            // Validate that goal types won't overflow into away team area (requirement 3.2)
-            if !alignment_calculator.validate_no_overflow(goal_position, layout_config) {
-                // If overflow would occur, reduce spacing but never truncate goal types (requirement 3.4)
-                let max_safe_position = 43_usize.saturating_sub(goal_type.len());
-                let current_position = column_offset + 3 + player_name_display.len(); // 3 for minute + space
-                if current_position < max_safe_position {
-                    max_safe_position - current_position
-                } else {
-                    1 // Minimum spacing
-                }
-            } else {
-                // Use calculated spacing from layout manager
-                let spacing_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-                spacing_manager.calculate_dynamic_spacing(player_name_display.len(), layout_config)
-            }
-        } else {
-            // Fallback to layout manager calculation
-            let spacing_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-            spacing_manager.calculate_dynamic_spacing(player_name_display.len(), layout_config)
-        };
-
-        // Add the calculated spacing
-        buffer.push_str(&" ".repeat(dynamic_spacing));
+        // Add single space before goal type (player name is already padded to fixed width)
+        buffer.push_str(" ");
 
         // Video link functionality is now handled by making player names clickable above
         // This eliminates the need for separate play icons and creates a cleaner layout
@@ -584,14 +576,18 @@ impl TeletextPage {
             }
 
             // Calculate safe position for goal types based on team (home vs away)
+            // Player name is padded to max_player_name_width, plus 1 space before goal type
             let goal_type_start_position =
-                column_offset + 3 + player_name_display.len() + dynamic_spacing;
+                column_offset + 3 + layout_config.max_player_name_width + 1;
             let goal_type_end_position = goal_type_start_position + goal_type.len();
 
             // Calculate the boundary based on whether this is home or away team
             let boundary_column = if event.is_home_team {
                 // For home team: don't extend beyond the away team start position
-                AWAY_TEAM_OFFSET + CONTENT_MARGIN - 1 // 30 + 2 - 1 = 31
+                // Calculate actual away team position: home_pos + home_width + separator_width
+                let home_pos = CONTENT_MARGIN + 1;
+                let away_team_start = home_pos + layout_config.home_team_width + layout_config.separator_width;
+                away_team_start.saturating_sub(2) // Leave 2 spaces before away team for better separation
             } else {
                 // For away team: use the time column position minus some margin
                 layout_config.time_column.saturating_sub(2) // Leave space before time column

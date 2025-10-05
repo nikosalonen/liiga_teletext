@@ -80,32 +80,38 @@ impl GoalEventData {
         }
 
         // Add goal types in fixed priority order (maintains original behavior)
-        if valid_goal_types_set.contains("YV") {
-            indicators.push("YV");
-        }
-        if valid_goal_types_set.contains("YV2") {
-            indicators.push("YV2");
-        }
-        if valid_goal_types_set.contains("IM") {
-            indicators.push("IM");
-        }
-        if valid_goal_types_set.contains("VT") {
-            indicators.push("VT");
-        }
-        if valid_goal_types_set.contains("AV") {
-            indicators.push("AV");
-        }
-        if valid_goal_types_set.contains("TM") {
-            indicators.push("TM");
-        }
-        if valid_goal_types_set.contains("VL") {
-            indicators.push("VL");
-        }
-        if valid_goal_types_set.contains("MV") {
-            indicators.push("MV");
-        }
-        if valid_goal_types_set.contains("RV") {
-            indicators.push("RV");
+        // EV (even strength) is only shown when it's the only type
+        if valid_goal_types_set.len() == 1 && valid_goal_types_set.contains("EV") {
+            indicators.push("EV");
+        } else {
+            // For all other cases, show special goal types in priority order
+            if valid_goal_types_set.contains("YV") {
+                indicators.push("YV");
+            }
+            if valid_goal_types_set.contains("YV2") {
+                indicators.push("YV2");
+            }
+            if valid_goal_types_set.contains("IM") {
+                indicators.push("IM");
+            }
+            if valid_goal_types_set.contains("VT") {
+                indicators.push("VT");
+            }
+            if valid_goal_types_set.contains("AV") {
+                indicators.push("AV");
+            }
+            if valid_goal_types_set.contains("TM") {
+                indicators.push("TM");
+            }
+            if valid_goal_types_set.contains("VL") {
+                indicators.push("VL");
+            }
+            if valid_goal_types_set.contains("MV") {
+                indicators.push("MV");
+            }
+            if valid_goal_types_set.contains("RV") {
+                indicators.push("RV");
+            }
         }
 
         // Join with space separator, ensuring safe string operations

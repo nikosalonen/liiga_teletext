@@ -268,6 +268,8 @@ impl TeletextPage {
                     // Separator with layout-based width
                     let separator = match layout_config.separator_width {
                         3 => " - ",
+                        5 => "  -  ",
+                        7 => "   -   ",
                         _ => "   -   ", // Fallback for different separator widths
                     };
                     line.push_str(separator);
@@ -323,20 +325,14 @@ impl TeletextPage {
                             };
 
                             let goal_type = event.get_goal_type_display();
-                            let goal_type_str = if !goal_type.is_empty() {
-                                let truncated_type: String = goal_type
-                                    .chars()
-                                    .take(layout_config.max_goal_types_width)
-                                    .collect();
-                                format!(" \x1b[38;5;{goal_type_fg_code}m{truncated_type}\x1b[0m")
-                            } else {
-                                String::new()
-                            };
 
                             // Use layout config for player name width
                             let player_name_width = layout_config.max_player_name_width;
-                            format!(
-                                " \x1b[38;5;{}m{:2} {:<width$}\x1b[0m{}",
+                            
+                            // Create a fixed-width area for minute + player name, then add goal types
+                            // This ensures goal types always start at the same column position
+                            let base_content = format!(
+                                " \x1b[38;5;{}m{:2} {:<width$}\x1b[0m",
                                 scorer_color,
                                 event.minute,
                                 event
@@ -344,9 +340,15 @@ impl TeletextPage {
                                     .chars()
                                     .take(player_name_width)
                                     .collect::<String>(),
-                                goal_type_str,
                                 width = player_name_width
-                            )
+                            );
+                            
+                            // Add goal type with consistent spacing
+                            if !goal_type.is_empty() {
+                                format!("{} \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m", base_content)
+                            } else {
+                                base_content
+                            }
                         } else {
                             // Calculate empty space based on layout config
                             let total_width = 1
@@ -372,22 +374,15 @@ impl TeletextPage {
                             };
 
                             let goal_type = event.get_goal_type_display();
-                            let goal_type_str = if !goal_type.is_empty() {
-                                let truncated_type: String = goal_type
-                                    .chars()
-                                    .take(layout_config.max_goal_types_width)
-                                    .collect();
-                                format!(" \x1b[38;5;{goal_type_fg_code}m{truncated_type}\x1b[0m")
-                            } else {
-                                String::new()
-                            };
 
                             // Use layout config for away team positioning and spacing
                             let away_start_spacing = layout_config.separator_width + 2; // Separator width plus some spacing
                             let away_player_name_width =
                                 layout_config.max_player_name_width.min(15); // Cap for away side
-                            scorer_line.push_str(&format!(
-                                "{:width$}\x1b[38;5;{}m{:2} {:<name_width$}\x1b[0m{}",
+                            
+                            // Create base content with fixed-width player area
+                            let base_content = format!(
+                                "{:width$}\x1b[38;5;{}m{:2} {:<name_width$}\x1b[0m",
                                 "",
                                 scorer_color,
                                 event.minute,
@@ -396,10 +391,18 @@ impl TeletextPage {
                                     .chars()
                                     .take(away_player_name_width)
                                     .collect::<String>(),
-                                goal_type_str,
                                 width = away_start_spacing,
                                 name_width = away_player_name_width
-                            ));
+                            );
+                            
+                            // Add goal type with consistent spacing
+                            let final_content = if !goal_type.is_empty() {
+                                format!("{} \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m", base_content)
+                            } else {
+                                base_content
+                            };
+                            
+                            scorer_line.push_str(&final_content);
                         }
 
                         if !scorer_line.trim().is_empty() {

@@ -51,6 +51,13 @@ pub async fn run_interactive_ui(
     };
 
     loop {
+        // Process pending resize events after debounce period
+        if state.ui.pending_resize && state.timers.last_resize.elapsed() >= Duration::from_millis(200) {
+            tracing::debug!("Processing debounced resize event");
+            state.handle_resize();
+            state.ui.pending_resize = false;
+        }
+
         // Check if auto-refresh should be triggered
         if refresh_coordinator.should_trigger_refresh(&state, &refresh_config) {
             state.request_refresh();
