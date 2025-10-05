@@ -328,7 +328,7 @@ impl TeletextPage {
 
                             // Use layout config for player name width
                             let player_name_width = layout_config.max_player_name_width;
-                            
+
                             // Create a fixed-width area for minute + player name, then add goal types
                             // This ensures goal types always start at the same column position
                             let base_content = format!(
@@ -342,10 +342,13 @@ impl TeletextPage {
                                     .collect::<String>(),
                                 width = player_name_width
                             );
-                            
+
                             // Add goal type with consistent spacing
                             if !goal_type.is_empty() {
-                                format!("{} \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m", base_content)
+                                format!(
+                                    "{} \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m",
+                                    base_content
+                                )
                             } else {
                                 base_content
                             }
@@ -379,7 +382,7 @@ impl TeletextPage {
                             let away_start_spacing = layout_config.separator_width + 2; // Separator width plus some spacing
                             let away_player_name_width =
                                 layout_config.max_player_name_width.min(15); // Cap for away side
-                            
+
                             // Create base content with fixed-width player area
                             let base_content = format!(
                                 "{:width$}\x1b[38;5;{}m{:2} {:<name_width$}\x1b[0m",
@@ -394,14 +397,17 @@ impl TeletextPage {
                                 width = away_start_spacing,
                                 name_width = away_player_name_width
                             );
-                            
+
                             // Add goal type with consistent spacing
                             let final_content = if !goal_type.is_empty() {
-                                format!("{} \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m", base_content)
+                                format!(
+                                    "{} \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m",
+                                    base_content
+                                )
                             } else {
                                 base_content
                             };
-                            
+
                             scorer_line.push_str(&final_content);
                         }
 

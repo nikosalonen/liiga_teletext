@@ -105,9 +105,9 @@ async fn test_complete_game_display_with_layout_calculation() {
     let layout_config = layout_manager.calculate_layout(&games);
 
     // Verify layout configuration is calculated correctly
-    assert_eq!(layout_config.home_team_width, 26); // Default is 26 to accommodate score types
+    assert_eq!(layout_config.home_team_width, 20);
     assert_eq!(layout_config.away_team_width, 20);
-    assert_eq!(layout_config.separator_width, 3);
+    assert_eq!(layout_config.separator_width, 5);
     assert!(layout_config.play_icon_column > 43); // Should be positioned after team areas
     assert!(layout_config.max_player_name_width >= 10); // Should accommodate content
     assert!(layout_config.max_goal_types_width >= 2); // Should accommodate goal types
@@ -701,9 +701,11 @@ async fn test_layout_system_integration_different_widths() {
             "Away team width should be reasonable (got {})",
             layout_config.away_team_width
         );
-        assert_eq!(
-            layout_config.separator_width, 3,
-            "Separator width should be consistent"
+        // Separator width may be reduced for narrow terminals (3) or use default (5)
+        assert!(
+            layout_config.separator_width == 3 || layout_config.separator_width == 5,
+            "Separator width should be 3 or 5 (got {})",
+            layout_config.separator_width
         );
 
         // Play icon should be positioned after team areas
@@ -876,9 +878,11 @@ async fn test_wide_mode_rendering_with_layout_system() {
         "Wide mode should use appropriate team width ({})",
         wide_layout_config.away_team_width
     );
-    assert_eq!(
-        wide_layout_config.separator_width, 3,
-        "Separator width should remain consistent"
+    // Separator width may be reduced for narrow columns (3) or use default (5)
+    assert!(
+        wide_layout_config.separator_width == 3 || wide_layout_config.separator_width == 5,
+        "Separator width should be 3 or 5 (got {})",
+        wide_layout_config.separator_width
     );
 
     // Test alignment calculations for wide mode

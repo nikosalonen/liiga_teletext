@@ -158,12 +158,14 @@ impl EventHandler {
         if self.config.resize_debouncing {
             // Always update the resize timer to track the most recent resize event
             state.timers.update_resize();
-            
+
             // Mark that a resize is pending - it will be processed in the main loop
             // after the resize events stop coming (debouncing happens in main loop)
             state.ui.pending_resize = true;
-            
-            tracing::debug!("Resize event marked as pending (will be processed after debounce period)");
+
+            tracing::debug!(
+                "Resize event marked as pending (will be processed after debounce period)"
+            );
         } else {
             // Process resize immediately without debouncing
             tracing::debug!("Processing immediate resize event");

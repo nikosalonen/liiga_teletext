@@ -484,39 +484,56 @@ impl TeletextPage {
         use super::layout::IntelligentTruncator;
         let truncator = IntelligentTruncator::new();
 
-        let player_name_display = if original_player_name_length > layout_config.max_player_name_width {
-            // Use intelligent truncation with ellipsis only as last resort (requirement 3.2)
-            truncator.truncate_player_name(
-                &safe_player_name,
-                layout_config.max_player_name_width,
-                Some(5),
-            )
-        } else {
-            safe_player_name
-        };
+        let player_name_display =
+            if original_player_name_length > layout_config.max_player_name_width {
+                // Use intelligent truncation with ellipsis only as last resort (requirement 3.2)
+                truncator.truncate_player_name(
+                    &safe_player_name,
+                    layout_config.max_player_name_width,
+                    Some(5),
+                )
+            } else {
+                safe_player_name
+            };
 
         // Calculate available space for player name based on team position
         // This prevents padding from pushing into adjacent content areas
         let available_space_for_name = if event.is_home_team {
             // For home team: calculate space until away team starts
             let home_pos = CONTENT_MARGIN + 1;
-            let away_team_start = home_pos + layout_config.home_team_width + layout_config.separator_width;
+            let away_team_start =
+                home_pos + layout_config.home_team_width + layout_config.separator_width;
             let name_start = column_offset + 3; // minute (2) + space (1)
             let goal_type_len = event.get_goal_type_display().len();
-            let space_needed_for_goal_types = if goal_type_len > 0 { goal_type_len + 1 } else { 0 }; // +1 for space before goal types
-            away_team_start.saturating_sub(name_start).saturating_sub(space_needed_for_goal_types).saturating_sub(2) // -2 for margin
+            let space_needed_for_goal_types = if goal_type_len > 0 {
+                goal_type_len + 1
+            } else {
+                0
+            }; // +1 for space before goal types
+            away_team_start
+                .saturating_sub(name_start)
+                .saturating_sub(space_needed_for_goal_types)
+                .saturating_sub(2) // -2 for margin
         } else {
             // For away team: calculate space until time column
             let name_start = column_offset + 3;
             let goal_type_len = event.get_goal_type_display().len();
-            let space_needed_for_goal_types = if goal_type_len > 0 { goal_type_len + 1 } else { 0 };
-            layout_config.time_column.saturating_sub(name_start).saturating_sub(space_needed_for_goal_types).saturating_sub(2)
+            let space_needed_for_goal_types = if goal_type_len > 0 {
+                goal_type_len + 1
+            } else {
+                0
+            };
+            layout_config
+                .time_column
+                .saturating_sub(name_start)
+                .saturating_sub(space_needed_for_goal_types)
+                .saturating_sub(2)
         };
-        
+
         // Pad player name to available space, but not more than max_player_name_width
         let padding_width = available_space_for_name.min(layout_config.max_player_name_width);
         let padded_player_name = format!("{:<width$}", player_name_display, width = padding_width);
-        
+
         // Render player name (make it clickable if there's a video link)
         let player_name_with_link = if let Some(url) = &event.video_clip_url {
             if !self.disable_video_links {
@@ -557,7 +574,7 @@ impl TeletextPage {
         let goal_type = event.get_goal_type_display();
 
         // Add single space before goal type (player name is already padded to fixed width)
-        buffer.push_str(" ");
+        buffer.push(' ');
 
         // Video link functionality is now handled by making player names clickable above
         // This eliminates the need for separate play icons and creates a cleaner layout
@@ -586,7 +603,8 @@ impl TeletextPage {
                 // For home team: don't extend beyond the away team start position
                 // Calculate actual away team position: home_pos + home_width + separator_width
                 let home_pos = CONTENT_MARGIN + 1;
-                let away_team_start = home_pos + layout_config.home_team_width + layout_config.separator_width;
+                let away_team_start =
+                    home_pos + layout_config.home_team_width + layout_config.separator_width;
                 away_team_start.saturating_sub(2) // Leave 2 spaces before away team for better separation
             } else {
                 // For away team: use the time column position minus some margin
