@@ -68,13 +68,17 @@ pub fn render_footer(
     // Add season countdown above the footer if available
     if let Some(countdown) = season_countdown {
         let countdown_y = footer_y.saturating_sub(1);
-        buffer.push_str(&format!(
+
+        // Use optimized ANSI code generation for countdown (requirement 4.3)
+        // Convert 0-based countdown_y to 1-based for ANSI cursor positioning
+        let countdown_code = format!(
             "\x1b[{};1H\x1b[38;5;{}m{:^width$}\x1b[0m",
-            countdown_y,
+            countdown_y + 1,
             get_ansi_code(Color::AnsiValue(226), 226), // Bright yellow
             countdown,
             width = width
-        ));
+        );
+        buffer.push_str(&countdown_code);
     }
 
     // Add loading indicator or auto-refresh indicator if active
@@ -93,15 +97,21 @@ pub fn render_footer(
         footer_text.push_str("  ⚠️");
     }
 
-    buffer.push_str(&format!(
+    // Batch footer ANSI code generation for better performance (requirement 4.3)
+    let footer_width = width.saturating_sub(6);
+    let header_bg_code = get_ansi_code(header_bg(), 21);
+
+    // Convert 0-based footer_y to 1-based for ANSI cursor positioning
+    let footer_code = format!(
         "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
-        footer_y,
-        get_ansi_code(header_bg(), 21),
+        footer_y + 1,
+        header_bg_code,
         "   ",
         footer_text,
         "   ",
-        width = width.saturating_sub(6)
-    ));
+        width = footer_width
+    );
+    buffer.push_str(&footer_code);
 
     Ok(())
 }
