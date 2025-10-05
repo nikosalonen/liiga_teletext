@@ -160,6 +160,14 @@ impl UIState {
     pub fn handle_resize(&mut self) {
         self.pending_resize = true;
         self.resize_timer = Instant::now();
+
+        // Immediately update the current page's layout and trigger re-render
+        if let Some(page) = &mut self.current_page {
+            page.handle_resize();
+        }
+
+        // Request immediate re-render to show the updated layout
+        self.needs_render = true;
     }
 
     /// Check if resize is ready to process

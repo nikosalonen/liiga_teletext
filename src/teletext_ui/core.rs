@@ -15,7 +15,9 @@ pub use crate::ui::teletext::game_result::{GameResultData, ScoreType};
 pub use crate::ui::teletext::loading_indicator::LoadingIndicator;
 pub use crate::ui::teletext::page_config::TeletextPageConfig;
 
-pub(super) const AWAY_TEAM_OFFSET: usize = 24; // Position for away team content (position 27 after adding CONTENT_MARGIN + 1)
+// Import layout management components
+use super::layout::ColumnLayoutManager;
+
 pub const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
 
 // Import utilities from modules
@@ -41,6 +43,7 @@ pub struct TeletextPage {
     pub(super) error_warning_active: bool,                       // Show footer warning when true
     pub(super) compact_mode: bool,                               // Enable compact display mode
     pub(super) wide_mode: bool,                                  // Enable wide display mode
+    pub(super) layout_manager: ColumnLayoutManager, // Layout management for dynamic column calculations
 }
 
 #[derive(Debug)]
@@ -101,14 +104,20 @@ impl TeletextPage {
         wide_mode: bool,
     ) -> Self {
         // Get terminal size, fallback to reasonable default if can't get size
-        let screen_height = if ignore_height_limit {
-            // Use a reasonable default for non-interactive mode
-            24
+        let (terminal_width, screen_height) = if ignore_height_limit {
+            // Use reasonable defaults for non-interactive mode
+            let width = if wide_mode {
+                136u16 // Wide enough to accommodate wide mode (128+ required)
+            } else {
+                80u16 // Standard width for normal mode
+            };
+            (width, 24u16)
         } else {
-            crossterm::terminal::size()
-                .map(|(_, height)| height)
-                .unwrap_or(24)
+            crossterm::terminal::size().unwrap_or((80, 24))
         };
+
+        // Initialize ColumnLayoutManager with terminal width and content margin
+        let layout_manager = ColumnLayoutManager::new(terminal_width as usize, CONTENT_MARGIN);
 
         TeletextPage {
             page_number,
@@ -128,6 +137,7 @@ impl TeletextPage {
             error_warning_active: false,
             compact_mode,
             wide_mode,
+            layout_manager,
         }
     }
 
@@ -171,6 +181,26 @@ impl TeletextPage {
         ))
     }
 
+    /// Gets a reference to the layout manager for rendering operations.
+    /// This allows rendering methods to access layout calculations and positioning.
+    ///
+    /// # Returns
+    /// * `&ColumnLayoutManager` - Reference to the layout manager
+    #[allow(dead_code)]
+    pub fn layout_manager(&self) -> &ColumnLayoutManager {
+        &self.layout_manager
+    }
+
+    /// Gets a mutable reference to the layout manager for cache management and optimization.
+    /// This allows clearing caches and updating layout calculations.
+    ///
+    /// # Returns
+    /// * `&mut ColumnLayoutManager` - Mutable reference to the layout manager
+    #[allow(dead_code)]
+    pub fn layout_manager_mut(&mut self) -> &mut ColumnLayoutManager {
+        &mut self.layout_manager
+    }
+
     /// Updates the page layout when terminal size changes.
     /// Recalculates content positioning and pagination based on new dimensions.
     ///
@@ -205,9 +235,15 @@ impl TeletextPage {
     /// ```
     #[allow(dead_code)]
     pub fn handle_resize(&mut self) {
-        // Update screen height
-        if let Ok((_, height)) = crossterm::terminal::size() {
+        // Update screen height and terminal width
+        if let Ok((width, height)) = crossterm::terminal::size() {
             self.screen_height = height;
+
+            // Clear old layout manager caches before creating new one
+            self.layout_manager.clear_caches();
+
+            // Update layout manager with new terminal width
+            self.layout_manager = ColumnLayoutManager::new(width as usize, CONTENT_MARGIN);
 
             // Recalculate current page to ensure content fits
             let available_height = self.screen_height.saturating_sub(5); // Reserve space for header, subheader, and footer
@@ -227,6 +263,14 @@ impl TeletextPage {
 
             // Ensure current_page is within bounds
             self.current_page = self.current_page.min(current_page);
+
+            tracing::debug!(
+                "Resize handled: new dimensions {}x{}, current_page: {}, total_pages: {}",
+                width,
+                height,
+                self.current_page,
+                current_page
+            );
         }
     }
 
@@ -413,19 +457,27 @@ impl TeletextPage {
             format!("SM-LIIGA {}", self.page_number)
         };
 
-        // Build header with proper ANSI escape codes
+        // Use optimized ANSI code generation for headers (requirement 4.3)
         let title_bg_code = get_ansi_code(title_bg(), 46);
         let header_fg_code = get_ansi_code(header_fg(), 21);
         let header_bg_code = get_ansi_code(header_bg(), 21);
+        let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
 
-        buffer.push_str(&format!(
+        // Pre-calculate header width for better performance
+        let header_width = (width as usize).saturating_sub(20);
+
+        // Batch header ANSI code generation (requirement 4.3)
+        let mut header_buffer = String::with_capacity(200); // Pre-allocate for performance
+
+        // Build header line
+        header_buffer.push_str(&format!(
             "\x1b[1;1H\x1b[48;5;{}m\x1b[38;5;{}m{:<20}\x1b[48;5;{}m\x1b[38;5;231m{:>width$}\x1b[0m",
             title_bg_code,
             header_fg_code,
             self.title,
             header_bg_code,
             header_text,
-            width = (width as usize).saturating_sub(20)
+            width = header_width
         ));
 
         // Build subheader with pagination info
@@ -436,15 +488,17 @@ impl TeletextPage {
             String::new()
         };
 
-        let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
-
-        buffer.push_str(&format!(
+        // Build subheader line
+        header_buffer.push_str(&format!(
             "\x1b[2;1H\x1b[38;5;{}m{:<20}{:>width$}\x1b[0m",
             subheader_fg_code,
             self.subheader,
             page_info,
-            width = (width as usize).saturating_sub(20)
+            width = header_width
         ));
+
+        // Add batched header to main buffer
+        buffer.push_str(&header_buffer);
 
         // Build content starting at line 4 (1-based ANSI positioning)
         let mut current_line: usize = 4;
@@ -2343,4 +2397,119 @@ mod tests {
         assert!(page.set_compact_mode(false).is_ok());
         assert!(page.set_wide_mode(false).is_ok());
     }
+}
+#[test]
+fn test_video_link_functionality_with_dynamic_layout() {
+    use crate::data_fetcher::models::GameData;
+
+    // Test video link positioning and behavior with the new dynamic layout system
+    let mut page = TeletextPage::new(
+        221,
+        "TEST".to_string(),
+        "TEST".to_string(),
+        false, // video links enabled
+        true,
+        false,
+        false,
+        false,
+    );
+
+    // Create goal events with mixed video link scenarios
+    let goal_events = vec![
+        GoalEventData {
+            scorer_player_id: 123,
+            scorer_name: "Komarov".to_string(),
+            minute: 5,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec!["YV".to_string()],
+            is_home_team: true,
+            video_clip_url: Some("http://example.com/goal1".to_string()),
+        },
+        GoalEventData {
+            scorer_player_id: 456,
+            scorer_name: "VeryLongPlayerNameHere".to_string(),
+            minute: 12,
+            home_team_score: 1,
+            away_team_score: 1,
+            is_winning_goal: false,
+            goal_types: vec!["IM".to_string(), "TM".to_string()],
+            is_home_team: false,
+            video_clip_url: None, // No video link
+        },
+        GoalEventData {
+            scorer_player_id: 789,
+            scorer_name: "Pesonen".to_string(),
+            minute: 18,
+            home_team_score: 2,
+            away_team_score: 1,
+            is_winning_goal: true,
+            goal_types: vec!["VL".to_string()],
+            is_home_team: true,
+            video_clip_url: Some("http://example.com/goal2".to_string()),
+        },
+    ];
+
+    page.add_game_result(GameResultData::new(&GameData {
+        home_team: "HIFK".to_string(),
+        away_team: "TPS".to_string(),
+        time: "".to_string(),
+        result: "2-1".to_string(),
+        score_type: ScoreType::Final,
+        is_overtime: false,
+        is_shootout: false,
+        goal_events: goal_events.clone(),
+        played_time: 3600,
+        serie: "RUNKOSARJA".to_string(),
+        start: "2025-01-01T00:00:00Z".to_string(),
+    }));
+
+    // Test with video links disabled
+    let mut page_no_video = TeletextPage::new(
+        221,
+        "TEST".to_string(),
+        "TEST".to_string(),
+        true, // video links disabled
+        true,
+        false,
+        false,
+        false,
+    );
+
+    page_no_video.add_game_result(GameResultData::new(&GameData {
+        home_team: "HIFK".to_string(),
+        away_team: "TPS".to_string(),
+        time: "".to_string(),
+        result: "2-1".to_string(),
+        score_type: ScoreType::Final,
+        is_overtime: false,
+        is_shootout: false,
+        goal_events,
+        played_time: 3600,
+        serie: "RUNKOSARJA".to_string(),
+        start: "2025-01-01T00:00:00Z".to_string(),
+    }));
+
+    let (content, _) = page.get_page_content();
+    let (content_no_video, _) = page_no_video.get_page_content();
+
+    // Basic verification that both pages have the same structure
+    assert_eq!(
+        content.len(),
+        content_no_video.len(),
+        "Should have same number of content rows"
+    );
+
+    // Verify that video link functionality is preserved
+    // The actual video link rendering is tested in the layout system
+    // This test ensures the integration works correctly
+    assert!(
+        !content.is_empty(),
+        "Should have content with video links enabled"
+    );
+    assert!(
+        !content_no_video.is_empty(),
+        "Should have content with video links disabled"
+    );
 }

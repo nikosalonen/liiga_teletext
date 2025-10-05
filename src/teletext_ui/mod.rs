@@ -7,6 +7,7 @@ pub mod footer;
 pub mod formatting;
 pub mod game_display;
 pub mod indicators;
+pub mod layout;
 pub mod mode_utils;
 pub mod pagination;
 pub mod rendering;
