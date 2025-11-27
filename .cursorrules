@@ -24,58 +24,183 @@ The application follows a modular architecture with clear separation of concerns
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   CLI/Main      │───▶│   Data Fetcher   │───▶│  Teletext UI    │
-│  (main.rs)      │    │ (data_fetcher/)  │    │(teletext_ui.rs) │
+│  (cli.rs,       │    │ (data_fetcher/)  │    │ (teletext_ui/)  │
+│   commands.rs)  │    │                  │    │                 │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
          │                        │                       │
          ▼                        ▼                       ▼
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Config        │    │     Models       │    │   Rendering     │
-│  (config.rs)    │    │   (models.rs)    │    │   & Events      │
+│   Config        │    │     Models       │    │   Interactive   │
+│  (config/)      │    │   (models/)      │    │   UI (ui/)      │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Error Handling │
-│   (error.rs)    │
-└─────────────────┘
+         │                        │
+         ▼                        ▼
+┌─────────────────┐    ┌──────────────────┐
+│  Error Handling │    │     Cache        │
+│   (error.rs)    │    │   (cache/)       │
+└─────────────────┘    └──────────────────┘
 ```
 
 ## Project Structure Details
 
+### Complete Module Tree
+
+```
+src/
+├── app.rs                    # Application entry and terminal management
+├── cli.rs                    # CLI argument definitions (clap)
+├── commands.rs               # Command handlers
+├── config/                   # Configuration management
+│   ├── mod.rs
+│   ├── paths.rs
+│   ├── user_prompts.rs
+│   └── validation.rs
+├── constants.rs              # Application constants
+├── data_fetcher/             # API and data processing
+│   ├── api/                  # HTTP client and API calls
+│   │   ├── core.rs
+│   │   ├── date_logic.rs
+│   │   ├── fetch_utils.rs
+│   │   ├── game_api.rs
+│   │   ├── http_client.rs
+│   │   ├── mod.rs
+│   │   ├── orchestrator.rs
+│   │   ├── season_schedule.rs
+│   │   ├── season_utils.rs
+│   │   ├── tournament_api.rs
+│   │   ├── tournament_logic.rs
+│   │   └── urls.rs
+│   ├── cache/                # Response caching
+│   │   ├── core.rs
+│   │   ├── detailed_game_cache.rs
+│   │   ├── goal_events_cache.rs
+│   │   ├── http_response_cache.rs
+│   │   ├── mod.rs
+│   │   ├── player_cache.rs
+│   │   ├── tournament_cache.rs
+│   │   └── types.rs
+│   ├── models/               # Data structures
+│   │   ├── common.rs
+│   │   ├── detailed.rs
+│   │   ├── goals.rs
+│   │   ├── mod.rs
+│   │   ├── players.rs
+│   │   └── schedule.rs
+│   ├── player_names/         # Player name handling
+│   │   ├── disambiguation.rs
+│   │   ├── formatting.rs
+│   │   └── mod.rs
+│   ├── processors/           # Data transformation
+│   │   ├── core.rs
+│   │   ├── game_status.rs
+│   │   ├── goal_events.rs
+│   │   ├── mod.rs
+│   │   ├── player_fetching.rs
+│   │   └── time_formatting.rs
+│   ├── game_utils.rs
+│   └── mod.rs
+├── error.rs                  # Error types (thiserror)
+├── lib.rs                    # Library exports
+├── logging.rs                # Logging setup (tracing)
+├── main.rs                   # Entry point
+├── performance.rs            # Performance utilities
+├── schemas/                  # JSON schemas
+│   ├── game_schedule_schema.json
+│   └── game_schema.json
+├── teletext_ui/              # Teletext rendering (core)
+│   ├── compact_mode_rendering.rs
+│   ├── content.rs
+│   ├── core.rs
+│   ├── footer.rs
+│   ├── formatting.rs
+│   ├── game_display.rs
+│   ├── indicators.rs
+│   ├── layout.rs
+│   ├── mod.rs
+│   ├── mode_utils.rs
+│   ├── pagination.rs
+│   ├── rendering.rs
+│   ├── score_formatting.rs
+│   ├── season_utils.rs
+│   ├── utils.rs
+│   ├── validation.rs
+│   └── wide_mode.rs
+├── testing_utils.rs          # Test utilities
+├── ui/                       # UI components and interactive mode
+│   ├── components/
+│   │   ├── abbreviations.rs
+│   │   └── mod.rs
+│   ├── interactive/          # Interactive UI loop
+│   │   ├── change_detection.rs
+│   │   ├── core.rs
+│   │   ├── event_handler.rs
+│   │   ├── indicators.rs
+│   │   ├── input_handler.rs
+│   │   ├── mod.rs
+│   │   ├── navigation_manager.rs
+│   │   ├── refresh_coordinator.rs
+│   │   ├── refresh_manager.rs
+│   │   ├── series_utils.rs
+│   │   ├── state_manager.rs
+│   │   └── terminal_manager.rs
+│   ├── teletext/             # Teletext UI types (re-exports)
+│   │   ├── colors.rs
+│   │   ├── compact_display.rs
+│   │   ├── game_result.rs
+│   │   ├── loading_indicator.rs
+│   │   ├── mod.rs
+│   │   └── page_config.rs
+│   └── mod.rs
+└── version.rs                # Version checking
+```
+
 ### Core Modules
 
-#### `src/main.rs` (832 lines)
-- **Purpose**: Application entry point and interactive UI event loop
+#### `src/main.rs`
+- **Purpose**: Application entry point
 - **Key Components**:
-  - CLI argument parsing with clap
+  - Initializes logging and configuration
+  - Delegates to app.rs for main execution
+
+#### `src/app.rs`
+- **Purpose**: Application entry and terminal management
+- **Key Components**:
   - Interactive mode with crossterm for terminal manipulation
   - Non-interactive mode for scripting
   - Version checking and update notifications
   - Automatic refresh logic based on game states
-- **Important Functions**:
-  - `main()`: Entry point with comprehensive error handling
-  - `run_interactive_ui()`: Main event loop for interactive mode
-  - `is_noninteractive_mode()`: Determines execution mode based on CLI args
-  - `create_page()` & `create_future_games_page()`: Page factory functions
 
-#### `src/lib.rs` (58 lines)
+#### `src/cli.rs`
+- **Purpose**: CLI argument definitions using clap
+- **Key Components**:
+  - Defines all command-line arguments and options
+  - Help text and argument validation
+  - Subcommand definitions
+
+#### `src/commands.rs`
+- **Purpose**: Command handlers for CLI subcommands
+- **Key Components**:
+  - Implements logic for each CLI command
+  - Coordinates between CLI args and application logic
+
+#### `src/lib.rs`
 - **Purpose**: Library interface and public API exports
 - **Key Exports**: Common types, constants, and convenience re-exports
 - **Usage**: Provides clean API for both binary and library usage
 
-#### `src/config.rs` (405 lines)
+#### `src/config/`
 - **Purpose**: Configuration management with TOML serialization
-- **Key Features**:
-  - Platform-specific config directories using `dirs` crate
-  - Automatic https:// prefix handling for API domains
-  - Custom log file path management
-  - Comprehensive error handling for file operations
+- **Submodules**:
+  - `mod.rs`: Main config struct and loading logic
+  - `paths.rs`: Platform-specific config directory handling using `dirs` crate
+  - `user_prompts.rs`: Interactive prompts for missing configuration
+  - `validation.rs`: Config validation (API domain prefixes, etc.)
 - **Best Practices**:
   - Always use `Config::load()` for initialization
   - Validate API domains have proper protocol prefixes
   - Handle missing config files gracefully with user prompts
 
-#### `src/error.rs` (52 lines)
+#### `src/error.rs`
 - **Purpose**: Centralized error handling with thiserror
 - **Error Types**:
   - `ApiFetch`: Network and HTTP errors
@@ -85,13 +210,38 @@ The application follows a modular architecture with clear separation of concerns
   - `LogSetup`: Logging initialization errors
 - **Best Practice**: Always use context-specific error constructors
 
-#### `src/teletext_ui.rs` (1431 lines)
-- **Purpose**: Teletext-style UI rendering and page management
-- **Key Components**:
-  - `TeletextPage`: Main page container with pagination
-  - `TeletextRow`: Individual content row types
-  - `GameResultData`: Game information display object
-  - Color constants matching authentic teletext appearance
+#### `src/logging.rs`
+- **Purpose**: Logging setup using tracing
+- **Key Features**:
+  - Structured logging with file rotation
+  - Configurable log levels via RUST_LOG
+  - Platform-specific log file locations
+
+#### `src/version.rs`
+- **Purpose**: Version management and update checking
+- **Key Features**:
+  - Semantic versioning support
+  - Automatic update notifications
+  - Version comparison utilities
+
+#### `src/teletext_ui/`
+- **Purpose**: Teletext-style UI rendering and page management (core rendering logic)
+- **Submodules**:
+  - `core.rs`: Main `TeletextPage` struct and core rendering
+  - `content.rs`: Content generation and row types
+  - `layout.rs`: Page layout calculations
+  - `pagination.rs`: Page splitting and navigation
+  - `formatting.rs`: Text formatting utilities
+  - `score_formatting.rs`: Score display formatting
+  - `game_display.rs`: Game result rendering
+  - `indicators.rs`: Status indicators (live, finished, etc.)
+  - `footer.rs`: Page footer rendering
+  - `compact_mode_rendering.rs`: Compact display mode
+  - `wide_mode.rs`: Wide display mode
+  - `mode_utils.rs`: Display mode utilities
+  - `season_utils.rs`: Season-related utilities
+  - `utils.rs`: General utilities
+  - `validation.rs`: Input validation
 - **Rendering Features**:
   - Automatic pagination based on terminal height
   - Goal scorer information with timestamps
@@ -99,20 +249,75 @@ The application follows a modular architecture with clear separation of concerns
   - Season countdown for off-season periods
   - Responsive layout adjustments
 
+#### `src/ui/`
+- **Purpose**: UI components and interactive mode
+- **Submodules**:
+  - `components/`: Reusable UI components (abbreviations, etc.)
+  - `interactive/`: Interactive terminal UI loop
+  - `teletext/`: Teletext UI type definitions and re-exports
+
+### Module Relationship: teletext_ui/ vs ui/teletext/
+
+**src/teletext_ui/** - Core teletext rendering logic:
+- Contains the main `TeletextPage` struct and rendering implementation
+- Handles layout, pagination, formatting, and display modes
+- This is where the actual teletext-style output is generated
+
+**src/ui/teletext/** - UI type definitions and re-exports:
+- Contains type definitions like `GameResultData`, `ScoreType`, `TeletextPageConfig`
+- Provides re-exports for backward compatibility with older code
+- Acts as a bridge between the interactive UI and teletext rendering
+
+**src/ui/interactive/** - Interactive terminal UI:
+- Handles keyboard input, navigation, refresh coordination
+- Manages application state during interactive mode
+- Coordinates between user input and data fetching/rendering
+
 ### Data Fetcher Module (`src/data_fetcher/`)
 
-#### `api.rs` (1588 lines)
-- **Purpose**: HTTP client and API integration
+The data fetcher module has been expanded into multiple submodules for better organization:
+
+#### `api/` - HTTP Client and API Integration
+- **Submodules**:
+  - `core.rs`: Core API functionality and main entry points
+  - `http_client.rs`: HTTP client configuration and request handling
+  - `fetch_utils.rs`: Common fetch utilities and helpers
+  - `game_api.rs`: Game-specific API calls
+  - `tournament_api.rs`: Tournament data fetching
+  - `tournament_logic.rs`: Tournament type classification and logic
+  - `season_schedule.rs`: Season schedule fetching
+  - `season_utils.rs`: Season-related utilities
+  - `date_logic.rs`: Date handling and calculations
+  - `orchestrator.rs`: Coordinates multiple API calls
+  - `urls.rs`: API URL construction
 - **Key Functions**:
   - `fetch_liiga_data()`: Main data fetching entry point
   - `fetch_schedule_games()`: Schedule API calls
   - `fetch_game_details()`: Detailed game information
   - `fetch_regular_season_start_date()`: Season timing
 - **Error Handling**: Comprehensive retry logic and timeout handling
-- **Caching**: Built-in response caching with time-based invalidation
 
-#### `models.rs` (280 lines)
-- **Purpose**: Data structures and API response models
+#### `cache/` - Response Caching
+- **Submodules**:
+  - `core.rs`: Core caching functionality
+  - `types.rs`: Cache type definitions
+  - `http_response_cache.rs`: HTTP response caching
+  - `detailed_game_cache.rs`: Game details caching
+  - `goal_events_cache.rs`: Goal events caching
+  - `player_cache.rs`: Player data caching
+  - `tournament_cache.rs`: Tournament data caching
+- **Features**:
+  - In-memory caching with time-based expiration
+  - Configurable TTL per cache entry
+  - Thread-safe access with Arc<Mutex<>>
+
+#### `models/` - Data Structures
+- **Submodules**:
+  - `common.rs`: Common/shared model types
+  - `schedule.rs`: Schedule-related models (`ScheduleGame`)
+  - `detailed.rs`: Detailed game models (`DetailedGame`)
+  - `goals.rs`: Goal event models (`GoalEvent`, `GoalEventData`)
+  - `players.rs`: Player models (`Player`)
 - **Key Structures**:
   - `GameData`: Processed game information
   - `ScheduleGame` & `DetailedGame`: Raw API response models
@@ -120,20 +325,29 @@ The application follows a modular architecture with clear separation of concerns
   - `Player`: Player information
 - **Traits**: `HasTeams` and `HasGoalEvents` for polymorphic game handling
 
-#### `processors.rs` (228 lines)
-- **Purpose**: Data transformation and business logic
+#### `processors/` - Data Transformation
+- **Submodules**:
+  - `core.rs`: Core processing functionality
+  - `game_status.rs`: Game state determination (ongoing, finished, scheduled)
+  - `goal_events.rs`: Goal event processing
+  - `player_fetching.rs`: Player data fetching and resolution
+  - `time_formatting.rs`: Time display formatting
 - **Key Functions**:
   - Game state determination (ongoing, finished, scheduled)
   - Score formatting with overtime/shootout indicators
   - Goal event processing and player name resolution
   - Tournament type classification
 
-#### `cache.rs` (177 lines)
-- **Purpose**: HTTP response caching with time-based expiration
+#### `player_names/` - Player Name Handling
+- **Submodules**:
+  - `disambiguation.rs`: Handles players with same last names
+  - `formatting.rs`: Name formatting utilities
 - **Features**:
-  - In-memory caching with LRU eviction
-  - Configurable TTL per cache entry
-  - Thread-safe access with Arc<Mutex<>>
+  - Automatic disambiguation when multiple players share last names
+  - Consistent name formatting across the application
+
+#### `game_utils.rs` - Game Utilities
+- **Purpose**: Common game-related utility functions
 
 ## Development Best Practices
 
