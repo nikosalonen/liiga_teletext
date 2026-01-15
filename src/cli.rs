@@ -59,7 +59,13 @@ pub struct Args {
     pub wide: bool,
 
     /// Update API domain in config. Will prompt for new domain if not provided.
-    #[arg(long = "config", help_heading = "Configuration")]
+    #[arg(
+        long = "config",
+        help_heading = "Configuration",
+        value_name = "API_DOMAIN",
+        num_args = 0..=1,
+        default_missing_value = ""
+    )]
     pub new_api_domain: Option<String>,
 
     /// Update log file path in config. This sets a persistent custom log file location.
