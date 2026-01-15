@@ -1,4 +1,16 @@
+use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::Parser;
+
+fn get_styles() -> Styles {
+    Styles::styled()
+        .header(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+        .usage(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+        .literal(AnsiColor::Green.on_default())
+        .placeholder(AnsiColor::Yellow.on_default())
+        .error(AnsiColor::Red.on_default().effects(Effects::BOLD))
+        .valid(AnsiColor::Green.on_default())
+        .invalid(AnsiColor::Red.on_default())
+}
 
 /// Determines if the application should run in non-interactive mode
 /// Non-interactive mode is used when any of these conditions are met:
@@ -35,6 +47,7 @@ pub fn is_noninteractive_mode(args: &Args) -> bool {
 #[derive(Parser, Debug)]
 #[command(author = "Niko Salonen", about, long_about = None)]
 #[command(disable_version_flag = true)]
+#[command(styles = get_styles())]
 pub struct Args {
     /// Show scores once and exit immediately. Useful for scripts or quick score checks.
     /// The output stays visible in terminal history.
