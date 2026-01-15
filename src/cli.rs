@@ -1,5 +1,5 @@
-use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::Parser;
+use clap::builder::styling::{AnsiColor, Effects, Styles};
 
 fn get_styles() -> Styles {
     Styles::styled()
