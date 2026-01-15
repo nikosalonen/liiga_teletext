@@ -168,16 +168,12 @@ impl Config {
     /// - Shows config file location and current settings
     /// - Handles case when no config file exists
     pub async fn display() -> Result<(), AppError> {
+        use crate::constants::colors::*;
         use crossterm::{
             execute,
-            style::{Color, Print, ResetColor, SetForegroundColor},
+            style::{Print, ResetColor, SetForegroundColor},
         };
         use std::io::stdout;
-
-        const TELETEXT_WHITE: Color = Color::AnsiValue(231);
-        const TELETEXT_CYAN: Color = Color::AnsiValue(51);
-        const TELETEXT_GREEN: Color = Color::AnsiValue(46);
-        const TELETEXT_YELLOW: Color = Color::AnsiValue(226);
 
         let config_path = get_config_path();
         let log_dir = get_log_dir_path();
