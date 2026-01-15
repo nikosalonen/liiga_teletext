@@ -179,6 +179,50 @@ impl Config {
         let log_dir = get_log_dir_path();
 
         // Print header box
+        Self::print_header()?;
+
+        if Path::new(&config_path).exists() {
+            let config = Config::load().await?;
+            Self::print_config_details(&config, &config_path, &log_dir)?;
+        } else if std::env::var("LIIGA_API_DOMAIN").is_ok() {
+            let config = Config::load().await?;
+            let _ = execute!(
+                stdout(),
+                SetForegroundColor(TELETEXT_YELLOW),
+                Print("  ⚠ No config file - using environment variables\n\n"),
+                ResetColor
+            );
+            Self::print_config_details(&config, &config_path, &log_dir)?;
+        } else {
+            let _ = execute!(
+                stdout(),
+                SetForegroundColor(TELETEXT_YELLOW),
+                Print("  ⚠ No configuration found\n\n"),
+                SetForegroundColor(TELETEXT_CYAN),
+                Print("  Expected location:\n"),
+                SetForegroundColor(TELETEXT_WHITE),
+                Print(format!("  {config_path}\n\n")),
+                SetForegroundColor(TELETEXT_WHITE),
+                Print("  Run the app to create a config, or use:\n"),
+                SetForegroundColor(TELETEXT_GREEN),
+                Print("  liiga_teletext --config\n"),
+                ResetColor
+            );
+        }
+
+        println!();
+        Ok(())
+    }
+
+    /// Prints the configuration header box
+    fn print_header() -> Result<(), AppError> {
+        use crate::constants::colors::*;
+        use crossterm::{
+            execute,
+            style::{Print, ResetColor, SetForegroundColor},
+        };
+        use std::io::stdout;
+
         let width = 50;
         let border_top = format!("╔{:═<width$}╗", "", width = width - 2);
         let border_bottom = format!("╚{:═<width$}╝", "", width = width - 2);
@@ -208,173 +252,97 @@ impl Config {
             ResetColor
         );
 
-        if Path::new(&config_path).exists() {
-            let config = Config::load().await?;
+        Ok(())
+    }
 
-            // Config Location
+    /// Prints detailed configuration information
+    fn print_config_details(
+        config: &Config,
+        config_path: &str,
+        log_dir: &str,
+    ) -> Result<(), AppError> {
+        use crate::constants::colors::*;
+        use crossterm::{
+            execute,
+            style::{Print, ResetColor, SetForegroundColor},
+        };
+        use std::io::stdout;
+
+        // Config Location
+        let _ = execute!(
+            stdout(),
+            SetForegroundColor(TELETEXT_CYAN),
+            Print("  Config Location\n"),
+            SetForegroundColor(TELETEXT_WHITE),
+            Print(format!("  {config_path}\n\n")),
+            ResetColor
+        );
+
+        // API Domain
+        let api_domain_source = if std::env::var("LIIGA_API_DOMAIN").is_ok() {
+            " (from env)"
+        } else {
+            ""
+        };
+        let _ = execute!(
+            stdout(),
+            SetForegroundColor(TELETEXT_CYAN),
+            Print(format!("  API Domain{api_domain_source}\n")),
+            SetForegroundColor(TELETEXT_GREEN),
+            Print(format!("  {}\n\n", config.api_domain)),
+            ResetColor
+        );
+
+        // HTTP Timeout
+        let timeout_source = if std::env::var("LIIGA_HTTP_TIMEOUT").is_ok() {
+            " (from env)"
+        } else {
+            ""
+        };
+        let _ = execute!(
+            stdout(),
+            SetForegroundColor(TELETEXT_CYAN),
+            Print(format!("  HTTP Timeout{timeout_source}\n")),
+            SetForegroundColor(TELETEXT_WHITE),
+            Print(format!("  {} seconds\n\n", config.http_timeout_seconds)),
+            ResetColor
+        );
+
+        // Log File Location
+        let _ = execute!(
+            stdout(),
+            SetForegroundColor(TELETEXT_CYAN),
+            Print("  Log File Location\n"),
+            ResetColor
+        );
+
+        if let Ok(env_log_path) = std::env::var("LIIGA_LOG_FILE") {
             let _ = execute!(
                 stdout(),
-                SetForegroundColor(TELETEXT_CYAN),
-                Print("  Config Location\n"),
                 SetForegroundColor(TELETEXT_WHITE),
-                Print(format!("  {config_path}\n\n")),
-                ResetColor
-            );
-
-            // API Domain
-            let api_domain_source = if std::env::var("LIIGA_API_DOMAIN").is_ok() {
-                " (from env)"
-            } else {
-                ""
-            };
-            let _ = execute!(
-                stdout(),
-                SetForegroundColor(TELETEXT_CYAN),
-                Print(format!("  API Domain{api_domain_source}\n")),
-                SetForegroundColor(TELETEXT_GREEN),
-                Print(format!("  {}\n\n", config.api_domain)),
-                ResetColor
-            );
-
-            // HTTP Timeout
-            let timeout_source = if std::env::var("LIIGA_HTTP_TIMEOUT").is_ok() {
-                " (from env)"
-            } else {
-                ""
-            };
-            let _ = execute!(
-                stdout(),
-                SetForegroundColor(TELETEXT_CYAN),
-                Print(format!("  HTTP Timeout{timeout_source}\n")),
-                SetForegroundColor(TELETEXT_WHITE),
-                Print(format!("  {} seconds\n\n", config.http_timeout_seconds)),
-                ResetColor
-            );
-
-            // Log File Location
-            let _ = execute!(
-                stdout(),
-                SetForegroundColor(TELETEXT_CYAN),
-                Print("  Log File Location\n"),
-                ResetColor
-            );
-
-            if let Ok(env_log_path) = std::env::var("LIIGA_LOG_FILE") {
-                let _ = execute!(
-                    stdout(),
-                    SetForegroundColor(TELETEXT_WHITE),
-                    Print(format!("  {env_log_path}\n")),
-                    SetForegroundColor(TELETEXT_YELLOW),
-                    Print("  (from env)\n"),
-                    ResetColor
-                );
-            } else if let Some(custom_path) = &config.log_file_path {
-                let _ = execute!(
-                    stdout(),
-                    SetForegroundColor(TELETEXT_WHITE),
-                    Print(format!("  {custom_path}\n")),
-                    ResetColor
-                );
-            } else {
-                let _ = execute!(
-                    stdout(),
-                    SetForegroundColor(TELETEXT_WHITE),
-                    Print(format!("  {log_dir}/liiga_teletext.log\n")),
-                    SetForegroundColor(TELETEXT_YELLOW),
-                    Print("  (default)\n"),
-                    ResetColor
-                );
-            }
-        } else if std::env::var("LIIGA_API_DOMAIN").is_ok() {
-            let config = Config::load().await?;
-
-            let _ = execute!(
-                stdout(),
+                Print(format!("  {env_log_path}\n")),
                 SetForegroundColor(TELETEXT_YELLOW),
-                Print("  ⚠ No config file - using environment variables\n\n"),
+                Print("  (from env)\n"),
                 ResetColor
             );
-
-            // Config Location
+        } else if let Some(custom_path) = &config.log_file_path {
             let _ = execute!(
                 stdout(),
-                SetForegroundColor(TELETEXT_CYAN),
-                Print("  Config Location\n"),
                 SetForegroundColor(TELETEXT_WHITE),
-                Print(format!("  {config_path}\n\n")),
+                Print(format!("  {custom_path}\n")),
                 ResetColor
             );
-
-            // API Domain
-            let _ = execute!(
-                stdout(),
-                SetForegroundColor(TELETEXT_CYAN),
-                Print("  API Domain (from env)\n"),
-                SetForegroundColor(TELETEXT_GREEN),
-                Print(format!("  {}\n\n", config.api_domain)),
-                ResetColor
-            );
-
-            // HTTP Timeout
-            let timeout_source = if std::env::var("LIIGA_HTTP_TIMEOUT").is_ok() {
-                " (from env)"
-            } else {
-                ""
-            };
-            let _ = execute!(
-                stdout(),
-                SetForegroundColor(TELETEXT_CYAN),
-                Print(format!("  HTTP Timeout{timeout_source}\n")),
-                SetForegroundColor(TELETEXT_WHITE),
-                Print(format!("  {} seconds\n\n", config.http_timeout_seconds)),
-                ResetColor
-            );
-
-            // Log File Location
-            let _ = execute!(
-                stdout(),
-                SetForegroundColor(TELETEXT_CYAN),
-                Print("  Log File Location\n"),
-                ResetColor
-            );
-
-            if let Ok(env_log_path) = std::env::var("LIIGA_LOG_FILE") {
-                let _ = execute!(
-                    stdout(),
-                    SetForegroundColor(TELETEXT_WHITE),
-                    Print(format!("  {env_log_path}\n")),
-                    SetForegroundColor(TELETEXT_YELLOW),
-                    Print("  (from env)\n"),
-                    ResetColor
-                );
-            } else {
-                let _ = execute!(
-                    stdout(),
-                    SetForegroundColor(TELETEXT_WHITE),
-                    Print(format!("  {log_dir}/liiga_teletext.log\n")),
-                    SetForegroundColor(TELETEXT_YELLOW),
-                    Print("  (default)\n"),
-                    ResetColor
-                );
-            }
         } else {
             let _ = execute!(
                 stdout(),
+                SetForegroundColor(TELETEXT_WHITE),
+                Print(format!("  {log_dir}/liiga_teletext.log\n")),
                 SetForegroundColor(TELETEXT_YELLOW),
-                Print("  ⚠ No configuration found\n\n"),
-                SetForegroundColor(TELETEXT_CYAN),
-                Print("  Expected location:\n"),
-                SetForegroundColor(TELETEXT_WHITE),
-                Print(format!("  {config_path}\n\n")),
-                SetForegroundColor(TELETEXT_WHITE),
-                Print("  Run the app to create a config, or use:\n"),
-                SetForegroundColor(TELETEXT_GREEN),
-                Print("  liiga_teletext --config\n"),
+                Print("  (default)\n"),
                 ResetColor
             );
         }
 
-        println!();
         Ok(())
     }
 
