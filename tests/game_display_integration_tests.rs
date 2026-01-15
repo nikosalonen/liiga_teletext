@@ -1698,7 +1698,7 @@ async fn test_wide_mode_vs_normal_mode_play_icon_consistency() {
 #[tokio::test]
 async fn test_game_display_error_handling() {
     // Test with edge case data
-    let edge_case_games = vec![
+    let edge_case_games = [
         // Game with empty team names
         GameData {
             home_team: "".to_string(),

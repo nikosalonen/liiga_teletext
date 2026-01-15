@@ -905,7 +905,7 @@ dependencies = [
 
 [[package]]
 name = "liiga_teletext"
-version = "0.17.6"
+version = "0.18.0"
 dependencies = [
  "atomic-waker",
  "bytes",

@@ -80,6 +80,26 @@ pub mod ui {
     pub const MAX_LINES_PER_PAGE: usize = 20;
 }
 
+/// Teletext color constants
+pub mod colors {
+    use crossterm::style::Color;
+
+    /// Teletext white color
+    pub const TELETEXT_WHITE: Color = Color::AnsiValue(231);
+
+    /// Teletext cyan color
+    pub const TELETEXT_CYAN: Color = Color::AnsiValue(51);
+
+    /// Teletext green color
+    pub const TELETEXT_GREEN: Color = Color::AnsiValue(46);
+
+    /// Teletext yellow color
+    pub const TELETEXT_YELLOW: Color = Color::AnsiValue(226);
+
+    /// Teletext red color
+    pub const TELETEXT_RED: Color = Color::AnsiValue(196);
+}
+
 /// Environment variable names
 pub mod env_vars {
     /// Environment variable for API domain override
