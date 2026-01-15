@@ -8,7 +8,7 @@ use crate::ui::{NavigationManager, format_date_for_display};
 use crate::version;
 use chrono::{Local, Utc};
 use crossterm::{execute, style::Color, terminal::SetTitle};
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 
 /// Validates command line argument combinations.
 ///
