@@ -1365,7 +1365,7 @@ mod tests {
 
         let config = CompactDisplayConfig::new(2, 10, 8, " | ");
 
-        let games = vec![
+        let games = [
             TeletextRow::GameResult {
                 home_team: "Tappara".to_string(),
                 away_team: "HIFK".to_string(),

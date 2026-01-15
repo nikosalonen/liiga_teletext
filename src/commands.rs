@@ -84,7 +84,13 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
     const TELETEXT_GREEN: Color = Color::AnsiValue(46);
     const TELETEXT_YELLOW: Color = Color::AnsiValue(226);
 
-    let mut config = Config::load().await.unwrap_or_default();
+    let mut config = match Config::load().await {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            tracing::warn!("Failed to load config: {e}, using default configuration");
+            Config::default()
+        }
+    };
 
     if let Some(new_domain) = &args.new_api_domain {
         if new_domain.trim().is_empty() {

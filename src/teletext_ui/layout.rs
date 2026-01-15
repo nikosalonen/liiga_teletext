@@ -3605,7 +3605,7 @@ mod tests {
         let layout = LayoutConfig::default();
 
         // Test positions that are exactly at the boundary
-        let boundary_cases = vec![
+        let boundary_cases = [
             GoalTypePosition {
                 event_index: 0,
                 column_position: 43,
