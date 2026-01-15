@@ -69,7 +69,7 @@ fn println_colored(text: &str, color: Color) {
 }
 
 /// Animated spinner during API test
-async fn test_api_with_animation(api_url: &str) -> Result<(), String> {
+pub async fn test_api_with_animation(api_url: &str) -> Result<(), String> {
     let url = if api_url.starts_with("http://") || api_url.starts_with("https://") {
         api_url.to_string()
     } else {
@@ -143,41 +143,6 @@ async fn test_api_with_animation(api_url: &str) -> Result<(), String> {
                 return Err("Connection test interrupted".to_string());
             }
         }
-    }
-}
-
-/// Tests if the API URL is reachable by calling the /tournament endpoint.
-///
-/// # Arguments
-/// * `api_url` - The API URL to test (with or without https://)
-///
-/// # Returns
-/// * `Ok(())` - API is reachable
-/// * `Err(String)` - Error message describing the failure
-pub async fn test_api_url(api_url: &str) -> Result<(), String> {
-    let url = if api_url.starts_with("http://") || api_url.starts_with("https://") {
-        api_url.to_string()
-    } else {
-        format!("https://{api_url}")
-    };
-
-    let test_url = format!("{}/tournament", url.trim_end_matches('/'));
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
-
-    let response = client
-        .get(&test_url)
-        .send()
-        .await
-        .map_err(|e| format!("Connection failed: {e}"))?;
-
-    if response.status().is_success() {
-        Ok(())
-    } else {
-        Err(format!("API returned error status: {}", response.status()))
     }
 }
 
