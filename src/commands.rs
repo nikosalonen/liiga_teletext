@@ -1,6 +1,6 @@
 use crate::cli::Args;
 use crate::config::Config;
-use crate::config::user_prompts::{prompt_for_api_domain, test_api_url};
+use crate::config::user_prompts::{prompt_for_api_domain, test_api_with_animation};
 use crate::data_fetcher::{fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::TeletextPage;
@@ -8,7 +8,7 @@ use crate::ui::{NavigationManager, format_date_for_display};
 use crate::version;
 use chrono::{Local, Utc};
 use crossterm::{execute, style::Color, terminal::SetTitle};
-use std::io::{Write, stdout};
+use std::io::stdout;
 
 /// Validates command line argument combinations.
 ///
@@ -99,67 +99,21 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
             config.api_domain = api_domain;
         } else {
             // Test the provided URL before saving (with spinner)
-            let spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-            let (tx, mut rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
-
-            let domain_clone = new_domain.clone();
-            tokio::spawn(async move {
-                let result = test_api_url(&domain_clone).await;
-                let _ = tx.send(result);
-            });
-
-            let mut frame = 0;
-            loop {
-                match rx.try_recv() {
-                    Ok(Ok(())) => {
-                        let _ = execute!(
-                            stdout(),
-                            crossterm::cursor::MoveToColumn(0),
-                            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
-                            SetForegroundColor(TELETEXT_GREEN),
-                            Print("  ✓ "),
-                            Print("API connection successful!\n"),
-                            ResetColor
-                        );
-                        config.api_domain = new_domain.clone();
-                        break;
-                    }
-                    Ok(Err(e)) => {
-                        let _ = execute!(
-                            stdout(),
-                            crossterm::cursor::MoveToColumn(0),
-                            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
-                            ResetColor
-                        );
-                        return Err(AppError::config_error(format!(
-                            "API test failed: {e}\n\nExpected format: https://example.com/api/v2"
-                        )));
-                    }
-                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
-                        let _ = execute!(
-                            stdout(),
-                            crossterm::cursor::MoveToColumn(0),
-                            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
-                            SetForegroundColor(TELETEXT_YELLOW),
-                            Print(spinner_frames[frame]),
-                            Print(" "),
-                            SetForegroundColor(TELETEXT_WHITE),
-                            Print("Testing API connection..."),
-                            ResetColor
-                        );
-                        let _ = stdout().flush();
-                        frame = (frame + 1) % spinner_frames.len();
-                        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-                    }
-                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                        let _ = execute!(
-                            stdout(),
-                            crossterm::cursor::MoveToColumn(0),
-                            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
-                            ResetColor
-                        );
-                        return Err(AppError::config_error("Connection test interrupted"));
-                    }
+            match test_api_with_animation(new_domain).await {
+                Ok(()) => {
+                    let _ = execute!(
+                        stdout(),
+                        SetForegroundColor(TELETEXT_GREEN),
+                        Print("  ✓ "),
+                        Print("API connection successful!\n"),
+                        ResetColor
+                    );
+                    config.api_domain = new_domain.clone();
+                }
+                Err(e) => {
+                    return Err(AppError::config_error(format!(
+                        "API test failed: {e}\n\nExpected format: https://example.com/api/v2"
+                    )));
                 }
             }
         }
