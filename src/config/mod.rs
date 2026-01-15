@@ -216,42 +216,9 @@ impl Config {
 
     /// Prints the configuration header box
     fn print_header() -> Result<(), AppError> {
-        use crate::constants::colors::*;
-        use crossterm::{
-            execute,
-            style::{Print, ResetColor, SetForegroundColor},
-        };
-        use std::io::stdout;
-
-        let width = 50;
-        let border_top = format!("╔{:═<width$}╗", "", width = width - 2);
-        let border_bottom = format!("╚{:═<width$}╝", "", width = width - 2);
-        let title = "CURRENT CONFIGURATION";
-        let title_padding = (width - 2 - title.len()) / 2;
-        let title_line = format!(
-            "║{:>pad$}{}{:<pad2$}║",
-            "",
-            title,
-            "",
-            pad = title_padding,
-            pad2 = width - 2 - title_padding - title.len()
-        );
-
-        let _ = execute!(
-            stdout(),
-            Print("\n"),
-            SetForegroundColor(TELETEXT_CYAN),
-            Print(&border_top),
-            Print("\n"),
-            SetForegroundColor(TELETEXT_WHITE),
-            Print(&title_line),
-            Print("\n"),
-            SetForegroundColor(TELETEXT_CYAN),
-            Print(&border_bottom),
-            Print("\n\n"),
-            ResetColor
-        );
-
+        use crate::config::user_prompts::print_header_box;
+        print_header_box("CURRENT CONFIGURATION");
+        println!();
         Ok(())
     }
 

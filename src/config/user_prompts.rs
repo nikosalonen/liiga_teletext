@@ -15,7 +15,7 @@ use std::time::Duration;
 use tokio::io::{self, AsyncBufReadExt};
 
 /// Prints a teletext-style header box
-fn print_header_box(title: &str) {
+pub fn print_header_box(title: &str) {
     let width = 50;
     let border_top = format!("╔{:═<width$}╗", "", width = width - 2);
     let border_bottom = format!("╚{:═<width$}╝", "", width = width - 2);
