@@ -77,12 +77,8 @@ pub async fn handle_list_config_command() -> Result<(), AppError> {
 /// Handles domain updates, log file path changes, and clearing log file paths.
 /// Tests API URL before saving when a new domain is provided.
 pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
-    use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
-
-    const TELETEXT_WHITE: Color = Color::AnsiValue(231);
-    const TELETEXT_CYAN: Color = Color::AnsiValue(51);
-    const TELETEXT_GREEN: Color = Color::AnsiValue(46);
-    const TELETEXT_YELLOW: Color = Color::AnsiValue(226);
+    use crate::constants::colors::*;
+    use crossterm::style::{Print, ResetColor, SetForegroundColor};
 
     let mut config = match Config::load().await {
         Ok(cfg) => cfg,

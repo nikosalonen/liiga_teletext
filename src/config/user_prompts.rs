@@ -3,6 +3,7 @@
 //! This module handles user prompts and input collection for configuration
 //! initialization when config files don't exist or need user input.
 
+use crate::constants::colors::*;
 use crate::error::AppError;
 use crossterm::{
     cursor, execute,
@@ -12,13 +13,6 @@ use crossterm::{
 use std::io::{Write, stdout};
 use std::time::Duration;
 use tokio::io::{self, AsyncBufReadExt};
-
-// Teletext colors
-const TELETEXT_WHITE: Color = Color::AnsiValue(231);
-const TELETEXT_CYAN: Color = Color::AnsiValue(51);
-const TELETEXT_GREEN: Color = Color::AnsiValue(46);
-const TELETEXT_YELLOW: Color = Color::AnsiValue(226);
-const TELETEXT_RED: Color = Color::AnsiValue(196);
 
 /// Prints a teletext-style header box
 fn print_header_box(title: &str) {
