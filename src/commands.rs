@@ -1,5 +1,6 @@
 use crate::cli::Args;
 use crate::config::Config;
+use crate::config::user_prompts::{prompt_for_api_domain, test_api_with_animation};
 use crate::data_fetcher::{fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::TeletextPage;
@@ -74,26 +75,74 @@ pub async fn handle_list_config_command() -> Result<(), AppError> {
 ///
 /// Updates configuration based on the provided arguments and saves changes.
 /// Handles domain updates, log file path changes, and clearing log file paths.
+/// Tests API URL before saving when a new domain is provided.
 pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
-    let mut config = Config::load().await.unwrap_or_else(|_| Config {
-        api_domain: String::new(),
-        log_file_path: None,
-        http_timeout_seconds: crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS,
-    });
+    use crate::constants::colors::*;
+    use crossterm::style::{Print, ResetColor, SetForegroundColor};
+
+    let mut config = match Config::load().await {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            tracing::warn!("Failed to load config: {e}, using default configuration");
+            Config::default()
+        }
+    };
 
     if let Some(new_domain) = &args.new_api_domain {
-        config.api_domain = new_domain.clone();
+        if new_domain.trim().is_empty() {
+            // Prompt interactively (includes API testing with animation)
+            let api_domain = prompt_for_api_domain().await?;
+            config.api_domain = api_domain;
+        } else {
+            // Test the provided URL before saving (with spinner)
+            match test_api_with_animation(new_domain).await {
+                Ok(()) => {
+                    let _ = execute!(
+                        stdout(),
+                        SetForegroundColor(TELETEXT_GREEN),
+                        Print("  ✓ "),
+                        Print("API connection successful!\n"),
+                        ResetColor
+                    );
+                    config.api_domain = new_domain.clone();
+                }
+                Err(e) => {
+                    return Err(AppError::config_error(format!(
+                        "API test failed: {e}\n\nExpected format: https://example.com/api/v2"
+                    )));
+                }
+            }
+        }
     }
 
     if let Some(new_log_path) = &args.new_log_file_path {
         config.log_file_path = Some(new_log_path.clone());
     } else if args.clear_log_file_path {
         config.log_file_path = None;
-        println!("Custom log file path cleared. Using default location.");
+        let _ = execute!(
+            stdout(),
+            SetForegroundColor(TELETEXT_YELLOW),
+            Print("  Custom log file path cleared. Using default location.\n"),
+            ResetColor
+        );
     }
 
+    config.validate()?;
     config.save().await?;
-    println!("Config updated successfully!");
+
+    let _ = execute!(
+        stdout(),
+        Print("\n"),
+        SetForegroundColor(TELETEXT_GREEN),
+        Print("  ✓ "),
+        Print("Config updated successfully!\n"),
+        SetForegroundColor(TELETEXT_CYAN),
+        Print("  Saved to: "),
+        SetForegroundColor(TELETEXT_WHITE),
+        Print(Config::get_config_path()),
+        Print("\n\n"),
+        ResetColor
+    );
 
     Ok(())
 }
