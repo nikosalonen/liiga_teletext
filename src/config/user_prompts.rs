@@ -5,12 +5,11 @@
 
 use crate::error::AppError;
 use crossterm::{
-    cursor,
-    execute,
+    cursor, execute,
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{Clear, ClearType},
 };
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::time::Duration;
 use tokio::io::{self, AsyncBufReadExt};
 
@@ -55,12 +54,7 @@ fn print_header_box(title: &str) {
 
 /// Prints colored text
 fn print_colored(text: &str, color: Color) {
-    let _ = execute!(
-        stdout(),
-        SetForegroundColor(color),
-        Print(text),
-        ResetColor
-    );
+    let _ = execute!(stdout(), SetForegroundColor(color), Print(text), ResetColor);
 }
 
 /// Prints colored text with newline
@@ -183,10 +177,7 @@ pub async fn test_api_url(api_url: &str) -> Result<(), String> {
     if response.status().is_success() {
         Ok(())
     } else {
-        Err(format!(
-            "API returned error status: {}",
-            response.status()
-        ))
+        Err(format!("API returned error status: {}", response.status()))
     }
 }
 
@@ -223,7 +214,10 @@ pub async fn prompt_for_api_domain() -> Result<String, AppError> {
     print_header_box("API DOMAIN CONFIGURATION");
 
     println!();
-    println_colored("  Enter the API domain URL for fetching game data.", TELETEXT_WHITE);
+    println_colored(
+        "  Enter the API domain URL for fetching game data.",
+        TELETEXT_WHITE,
+    );
     println!();
 
     print_colored("  Format: ", TELETEXT_WHITE);
@@ -231,7 +225,10 @@ pub async fn prompt_for_api_domain() -> Result<String, AppError> {
 
     println!();
     print_colored("  • ", TELETEXT_CYAN);
-    println_colored("Include https:// prefix (or it will be added)", TELETEXT_WHITE);
+    println_colored(
+        "Include https:// prefix (or it will be added)",
+        TELETEXT_WHITE,
+    );
 
     print_colored("  • ", TELETEXT_CYAN);
     println_colored("Do NOT include trailing slash", TELETEXT_WHITE);
@@ -276,7 +273,10 @@ pub async fn prompt_for_api_domain() -> Result<String, AppError> {
                 print_colored("API test failed: ", TELETEXT_RED);
                 println_colored(&e, TELETEXT_WHITE);
                 println!();
-                print_colored("  Please check the URL and try again, or press ", TELETEXT_WHITE);
+                print_colored(
+                    "  Please check the URL and try again, or press ",
+                    TELETEXT_WHITE,
+                );
                 print_colored("Enter", TELETEXT_YELLOW);
                 println_colored(" to cancel.", TELETEXT_WHITE);
             }
