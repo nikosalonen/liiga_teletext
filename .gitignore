@@ -2,3 +2,5 @@
 /config.toml
 log.*
 .claude/*
+
+.claude/
