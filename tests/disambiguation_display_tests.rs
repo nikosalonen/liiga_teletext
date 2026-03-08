@@ -151,6 +151,9 @@ fn create_raw_schedule_game_with_disambiguation() -> ScheduleGame {
         ended: true,
         game_time: 3600, // 60 minutes in seconds
         serie: "RUNKOSARJA".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
     }
 }
 

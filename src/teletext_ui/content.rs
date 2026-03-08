@@ -38,6 +38,10 @@ impl TeletextPage {
     ///     goal_events: vec![],
     ///     played_time: 60,
     ///     start: "2024-01-15T18:30:00Z".to_string(),
+    ///     play_off_phase: None,
+    ///     play_off_pair: None,
+    ///     play_off_req_wins: None,
+    ///     series_score: None,
     /// });
     ///
     /// page.add_game_result(game);

@@ -39,6 +39,9 @@ use chrono::{DateTime, Local, Utc};
 ///     ended: false,
 ///     game_time: 1200,
 ///     serie: "RUNKOSARJA".to_string(),
+///     play_off_phase: None,
+///     play_off_pair: None,
+///     play_off_req_wins: None,
 /// };
 ///
 /// let (score_type, is_overtime, is_shootout) = determine_game_status(&game);

@@ -106,6 +106,9 @@ mod tests {
                 ended: true,
                 game_time: 3600,
                 serie: "runkosarja".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
             }],
             previous_game_date: Some("2024-01-14".to_string()),
             next_game_date: Some("2024-01-16".to_string()),
@@ -616,6 +619,9 @@ mod tests {
             started: false,
             ended: false,
             game_time: None,
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         }];
 
         Mock::given(method("GET"))
@@ -794,6 +800,9 @@ mod tests {
             ended: true,
             game_time: 3600,
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         };
         assert!(has_actual_goals(&game));
     }
@@ -838,6 +847,9 @@ mod tests {
             ended: true,
             game_time: 3600,
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         };
         assert!(!has_actual_goals(&game));
     }
@@ -895,6 +907,9 @@ mod tests {
             ended: true,
             game_time: 3600,
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         };
         assert!(!should_fetch_detailed_data(&game));
     }
@@ -939,6 +954,9 @@ mod tests {
             ended: false,
             game_time: 0,
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         };
         assert!(!should_fetch_detailed_data(&game));
     }
@@ -984,6 +1002,9 @@ mod tests {
             ended: true,
             game_time: 3600,
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         };
         assert!(!should_fetch_detailed_data(&game));
     }
@@ -1733,6 +1754,9 @@ mod tests {
                 ended: true,
                 game_time: 3600,
                 serie: "runkosarja".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
             }],
             previous_game_date: Some("2024-01-14".to_string()),
             next_game_date: Some("2024-01-16".to_string()),

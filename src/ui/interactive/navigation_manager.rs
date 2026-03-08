@@ -636,6 +636,10 @@ mod tests {
             goal_events: vec![],
             played_time: 0,
             start: "2030-01-15T18:30:00Z".to_string(), // Future date
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         };
 
         assert!(manager.is_future_game(&future_game));
@@ -653,6 +657,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2020-01-15T18:30:00Z".to_string(), // Past date
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         };
 
         assert!(!manager.is_future_game(&past_game));

@@ -150,6 +150,9 @@ fn create_realistic_schedule_game() -> ScheduleGame {
         ended: true,
         game_time: 3600,
         serie: "runkosarja".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
     }
 }
 
@@ -494,6 +497,9 @@ async fn test_goal_events_show_correct_disambiguated_scorer_names() {
         ended: true,
         game_time: 3600,
         serie: "runkosarja".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
     };
 
     // Process goal events with disambiguation
@@ -676,6 +682,9 @@ async fn test_performance_impact_with_large_datasets() {
         ended: true,
         game_time: 3600,
         serie: "runkosarja".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
     };
 
     // Measure disambiguation performance
@@ -850,6 +859,9 @@ async fn test_cross_team_disambiguation_isolation() {
         ended: true,
         game_time: 3600,
         serie: "runkosarja".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
     };
 
     // Process goal events with disambiguation

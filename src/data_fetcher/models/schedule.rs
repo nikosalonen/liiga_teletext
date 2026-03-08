@@ -48,6 +48,12 @@ pub struct ScheduleGame {
     #[serde(rename = "gameTime", default)]
     pub game_time: i32,
     pub serie: String,
+    #[serde(rename = "playOffPhase", default)]
+    pub play_off_phase: Option<i32>,
+    #[serde(rename = "playOffPair", default)]
+    pub play_off_pair: Option<i32>,
+    #[serde(rename = "playOffReqWins", default)]
+    pub play_off_req_wins: Option<i32>,
 }
 
 /// Model for the schedule API response structure
@@ -67,6 +73,12 @@ pub struct ScheduleApiGame {
     pub ended: bool,
     #[serde(rename = "gameTime")]
     pub game_time: Option<i32>, // Can be null in the API response
+    #[serde(rename = "playOffPhase", default)]
+    pub play_off_phase: Option<i32>,
+    #[serde(rename = "playOffPair", default)]
+    pub play_off_pair: Option<i32>,
+    #[serde(rename = "playOffReqWins", default)]
+    pub play_off_req_wins: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -131,6 +143,9 @@ mod tests {
             ended: true,
             game_time: 3600,
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         }
     }
 
@@ -233,6 +248,9 @@ mod tests {
             started: false,
             ended: false,
             game_time: Some(0),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         };
 
         let json = serde_json::to_string(&api_game).unwrap();

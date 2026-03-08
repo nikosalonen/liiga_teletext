@@ -37,6 +37,10 @@ impl TeletextPage {
                         goal_events: goal_events.clone(),
                         played_time: *played_time,
                         start: "".to_string(), // Not needed for layout calculation
+                        play_off_phase: None,
+                        play_off_pair: None,
+                        play_off_req_wins: None,
+                        series_score: None,
                     })
                 } else {
                     None

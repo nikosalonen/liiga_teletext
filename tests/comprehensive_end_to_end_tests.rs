@@ -63,6 +63,10 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             ],
             played_time: 3900, // Overtime
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         // Scenario 2: Ongoing game with current score
         GameData {
@@ -87,6 +91,10 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             }],
             played_time: 2400, // 40 minutes played
             start: "2024-01-15T19:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         // Scenario 3: Scheduled game (no goals yet)
         GameData {
@@ -101,6 +109,10 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             goal_events: vec![],
             played_time: 0,
             start: "2024-01-15T19:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         // Scenario 4: Shootout game
         GameData {
@@ -138,6 +150,10 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             ],
             played_time: 3900, // Full game + shootout
             start: "2024-01-15T20:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         // Scenario 5: Playoffs game
         GameData {
@@ -162,6 +178,10 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             }],
             played_time: 3720, // Overtime
             start: "2024-03-15T18:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
     ]
 }
@@ -585,6 +605,10 @@ async fn test_error_handling_comprehensive_scenarios() {
         }],
         played_time: 0,
         start: "invalid-date".to_string(), // Invalid date
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     }];
 
     // Test layout system with malformed data

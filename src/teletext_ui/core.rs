@@ -765,6 +765,10 @@ mod tests {
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
                 start: "2025-01-01T00:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             }));
         }
 
@@ -832,6 +836,10 @@ mod tests {
                 played_time: 1200,
                 serie: "RUNKOSARJA".to_string(),
                 start: "2025-01-01T00:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             }));
         }
 
@@ -879,6 +887,10 @@ mod tests {
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }));
 
         // Test game with goals
@@ -906,6 +918,10 @@ mod tests {
             played_time: 600,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }));
 
         let (content, _) = page.get_page_content();
@@ -961,6 +977,10 @@ mod tests {
             played_time: 0,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }));
 
         // Test ongoing game with goals
@@ -1001,6 +1021,10 @@ mod tests {
             played_time: 1500,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }));
 
         // Test finished game with overtime
@@ -1016,6 +1040,10 @@ mod tests {
             played_time: 3900,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }));
 
         // Test finished game with shootout
@@ -1031,6 +1059,10 @@ mod tests {
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }));
 
         let (content, _) = page.get_page_content();
@@ -1107,6 +1139,10 @@ mod tests {
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }));
 
         // Create another page with video links disabled
@@ -1133,6 +1169,10 @@ mod tests {
             played_time: 3600,
             serie: "RUNKOSARJA".to_string(),
             start: "2025-01-01T00:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }));
 
         let (content, _) = page.get_page_content();
@@ -1559,6 +1599,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3600,
                 start: "2024-01-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             };
             let game_data = GameResultData::new(&game);
             many_games_page.add_game_result(game_data);
@@ -2011,6 +2055,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         };
         let test_game_data = GameResultData::new(&test_game);
         page.add_game_result(test_game_data);
@@ -2048,6 +2096,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         };
         let test_game_data = GameResultData::new(&test_game);
         page.add_game_result(test_game_data);
@@ -2086,6 +2138,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3600,
                 start: "2024-01-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             };
             let test_game_data = GameResultData::new(&test_game);
             page.add_game_result(test_game_data);
@@ -2130,6 +2186,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3600,
                 start: "2024-01-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             };
             let test_game_data = GameResultData::new(&test_game);
             page.add_game_result(test_game_data);
@@ -2174,6 +2234,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         };
 
         let test_game2 = GameData {
@@ -2188,6 +2252,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T19:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         };
 
         page.add_game_result(GameResultData::new(&test_game1));
@@ -2492,6 +2560,10 @@ fn test_video_link_functionality_with_dynamic_layout() {
         played_time: 3600,
         serie: "RUNKOSARJA".to_string(),
         start: "2025-01-01T00:00:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     }));
 
     // Test with video links disabled
@@ -2518,6 +2590,10 @@ fn test_video_link_functionality_with_dynamic_layout() {
         played_time: 3600,
         serie: "RUNKOSARJA".to_string(),
         start: "2025-01-01T00:00:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     }));
 
     let (content, _) = page.get_page_content();

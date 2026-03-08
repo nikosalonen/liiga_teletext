@@ -92,6 +92,9 @@ where
 ///     ended: true,
 ///     game_time: 60,
 ///     serie: "RUNKOSARJA".to_string(),
+///     play_off_phase: None,
+///     play_off_pair: None,
+///     play_off_req_wins: None,
 /// };
 ///
 /// let events = process_goal_events(&game, &player_names);

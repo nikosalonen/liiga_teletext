@@ -61,6 +61,9 @@ mod tests {
             ended: false,
             game_time: 1200, // 20 minutes
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         }
     }
 

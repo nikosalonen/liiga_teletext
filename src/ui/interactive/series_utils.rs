@@ -115,6 +115,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }
     }
 

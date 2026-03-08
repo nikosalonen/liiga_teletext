@@ -90,6 +90,10 @@ fn create_test_game_data(
         played_time: 3600,
         serie: "RUNKOSARJA".to_string(),
         start: "2025-01-15T19:30:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     }
 }
 

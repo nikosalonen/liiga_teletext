@@ -198,6 +198,10 @@ pub(super) async fn process_single_game(
         goal_events,
         played_time: game.game_time,
         start: game.start.clone(),
+        play_off_phase: game.play_off_phase,
+        play_off_pair: game.play_off_pair,
+        play_off_req_wins: game.play_off_req_wins,
+        series_score: None,
     })
 }
 
@@ -728,6 +732,9 @@ async fn convert_api_game_to_schedule_game(
         ended: api_game.ended,
         game_time: api_game.game_time.unwrap_or(0),
         serie: tournament.as_str().to_string(),
+        play_off_phase: api_game.play_off_phase,
+        play_off_pair: api_game.play_off_pair,
+        play_off_req_wins: api_game.play_off_req_wins,
     })
 }
 
