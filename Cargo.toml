@@ -1,6 +1,6 @@
 [package]
 name = "liiga_teletext"
-version = "0.20.0"
+version = "0.20.1"
 edition = "2024"
 authors = ["Niko Salonen <nikotsalonen@gmail.com>"]
 description = "YLE Teksti-TV 221 in your terminal - Finnish Liiga hockey results with authentic teletext aesthetics"
@@ -31,7 +31,7 @@ reqwest = { version = "0.13", features = ["json"] }
 tokio = { version = "1.46", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "0.9.2"
+toml = "1.0"
 dirs = "6.0.0"
 futures = "0.3"
 
