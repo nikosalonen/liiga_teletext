@@ -1,7 +1,29 @@
 {
   "permissions": {
     "allow": [
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(ls:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(gh api:*)",
+      "Bash(python:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:crates.io)",
+      "Bash(cargo install:*)",
+      "Bash(cargo update:*)",
+      "Bash(cargo build:*)",
+      "Bash(where:*)",
+      "Bash(cargo clean:*)",
+      "Bash(cmd:*)",
+      "Read(//c/Program Files/Microsoft Visual Studio/**)",
+      "Read(//c/Program Files \\(x86\\)/Microsoft Visual Studio/**)",
+      "Bash(powershell:*)",
+      "Bash(echo:*)",
+      "Bash(rustup default:*)",
+      "Bash(rustup component:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)"
     ]
   }
 }
