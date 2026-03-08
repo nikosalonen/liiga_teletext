@@ -18,24 +18,9 @@ use crossterm::{
 };
 use std::io::{Stdout, Write};
 
-/// Renders footer with navigation controls, loading indicator, and error warning
-///
-/// # Arguments
-/// * `stdout` - The stdout to write to
-/// * `buffer` - The buffer to write to
-/// * `footer_y` - The vertical position of the footer
-/// * `width` - The width of the terminal
-/// * `total_pages` - The total number of pages
-/// * `loading_indicator` - Optional loading indicator
-/// * `auto_refresh_indicator` - Optional auto-refresh indicator
-/// * `auto_refresh_disabled` - Whether auto-refresh is disabled
-/// * `error_warning_active` - Whether to show an error warning
-/// * `season_countdown` - Optional season countdown text
-///
-/// # Returns
-/// * `Result<(), AppError>` - Result indicating success or failure
+/// Renders footer with view-mode-aware controls
 #[allow(clippy::too_many_arguments)]
-pub fn render_footer(
+pub fn render_footer_with_view(
     _stdout: &mut Stdout,
     buffer: &mut String,
     footer_y: usize,
@@ -46,23 +31,48 @@ pub fn render_footer(
     auto_refresh_disabled: bool,
     error_warning_active: bool,
     season_countdown: &Option<String>,
+    view_mode: Option<&crate::ui::interactive::state_manager::ViewMode>,
 ) -> Result<(), AppError> {
-    // Determine navigation controls based on page count
-    let controls = if total_pages > 1 {
-        "q=Lopeta ←→=Sivut"
-    } else {
-        "q=Lopeta"
-    };
-
-    // Add auto-refresh disabled note if needed
-    let controls = if auto_refresh_disabled {
-        if total_pages > 1 {
-            "q=Lopeta ←→=Sivut (Ei päivity)"
-        } else {
-            "q=Lopeta (Ei päivity)"
+    // Determine navigation controls based on view mode and page count
+    let controls = match view_mode {
+        Some(crate::ui::interactive::state_manager::ViewMode::Standings { live_mode }) => {
+            if *live_mode {
+                if auto_refresh_disabled {
+                    if total_pages > 1 {
+                        "q=Lopeta ←→=Sivut s=Ottelut l=Live ✓ (Ei päivity)"
+                    } else {
+                        "q=Lopeta s=Ottelut l=Live ✓ (Ei päivity)"
+                    }
+                } else if total_pages > 1 {
+                    "q=Lopeta ←→=Sivut s=Ottelut l=Live ✓"
+                } else {
+                    "q=Lopeta s=Ottelut l=Live ✓"
+                }
+            } else if auto_refresh_disabled {
+                if total_pages > 1 {
+                    "q=Lopeta ←→=Sivut s=Ottelut l=Live (Ei päivity)"
+                } else {
+                    "q=Lopeta s=Ottelut l=Live (Ei päivity)"
+                }
+            } else if total_pages > 1 {
+                "q=Lopeta ←→=Sivut s=Ottelut l=Live"
+            } else {
+                "q=Lopeta s=Ottelut l=Live"
+            }
         }
-    } else {
-        controls
+        _ => {
+            if auto_refresh_disabled {
+                if total_pages > 1 {
+                    "q=Lopeta ←→=Sivut s=Taulukko (Ei päivity)"
+                } else {
+                    "q=Lopeta s=Taulukko (Ei päivity)"
+                }
+            } else if total_pages > 1 {
+                "q=Lopeta ←→=Sivut s=Taulukko"
+            } else {
+                "q=Lopeta s=Taulukko"
+            }
+        }
     };
 
     // Add season countdown above the footer if available

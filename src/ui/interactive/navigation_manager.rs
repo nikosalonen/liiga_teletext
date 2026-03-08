@@ -535,6 +535,45 @@ impl NavigationManager {
             }
         }
     }
+
+    /// Creates a TeletextPage for standings display
+    pub fn create_standings_page(
+        &self,
+        standings: &[crate::data_fetcher::models::standings::StandingsEntry],
+        playoffs_lines: &[u16],
+        live_mode: bool,
+        disable_links: bool,
+        _compact_mode: bool,
+        _wide_mode: bool,
+    ) -> TeletextPage {
+        let subheader = if live_mode {
+            "SARJATAULUKKO (LIVE)".to_string()
+        } else {
+            "SARJATAULUKKO".to_string()
+        };
+
+        // Force normal mode for standings - compact/wide renderers don't support standings rows
+        let mut page = TeletextPage::new(
+            230,
+            "JÄÄKIEKKO".to_string(),
+            subheader,
+            disable_links,
+            true,
+            false,
+            false,
+            false,
+        );
+
+        page.set_standings_mode(true, live_mode);
+        page.set_playoffs_lines(playoffs_lines);
+        page.add_standings_header();
+
+        for (i, entry) in standings.iter().enumerate() {
+            page.add_standings_row((i + 1) as u16, entry);
+        }
+
+        page
+    }
 }
 
 impl Default for NavigationManager {

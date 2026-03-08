@@ -44,6 +44,9 @@ pub struct TeletextPage {
     pub(super) compact_mode: bool,                               // Enable compact display mode
     pub(super) wide_mode: bool,                                  // Enable wide display mode
     pub(super) layout_manager: ColumnLayoutManager, // Layout management for dynamic column calculations
+    pub(super) is_standings_page: bool,             // Whether this is a standings page
+    pub(super) standings_live_mode: bool,           // Whether live mode is active in standings
+    pub(super) playoffs_lines: Vec<u16>, // Positions after which to draw playoff separator lines
 }
 
 #[derive(Debug)]
@@ -61,6 +64,21 @@ pub enum TeletextRow {
     },
     ErrorMessage(String),
     FutureGamesHeader(String), // For "Seuraavat ottelut {date}" line
+    StandingsHeader,
+    StandingsRow {
+        position: u16,
+        team_name: String,
+        games_played: u16,
+        wins: u16,
+        ot_wins: u16,
+        ot_losses: u16,
+        losses: u16,
+        goals_for: u16,
+        goals_against: u16,
+        points: u16,
+        live_points_delta: Option<i16>,
+        live_position_change: Option<i16>,
+    },
 }
 
 impl TeletextPage {
@@ -138,6 +156,9 @@ impl TeletextPage {
             compact_mode,
             wide_mode,
             layout_manager,
+            is_standings_page: false,
+            standings_live_mode: false,
+            playoffs_lines: Vec::new(),
         }
     }
 
@@ -251,7 +272,7 @@ impl TeletextPage {
             let mut current_page = 0;
 
             for game in &self.content_rows {
-                let game_height = Self::calculate_game_height(game);
+                let game_height = self.calculate_game_height(game);
 
                 if current_height + game_height > available_height {
                     current_page += 1;
@@ -546,7 +567,14 @@ impl TeletextPage {
                 self.screen_height,
             );
 
-            super::footer::render_footer(
+            let view_mode = if self.is_standings_page {
+                Some(crate::ui::interactive::state_manager::ViewMode::Standings {
+                    live_mode: self.standings_live_mode,
+                })
+            } else {
+                Some(crate::ui::interactive::state_manager::ViewMode::Games)
+            };
+            super::footer::render_footer_with_view(
                 stdout,
                 &mut buffer,
                 footer_y,
@@ -557,6 +585,7 @@ impl TeletextPage {
                 self.auto_refresh_disabled,
                 self.error_warning_active,
                 &self.season_countdown,
+                view_mode.as_ref(),
             )?;
         }
 

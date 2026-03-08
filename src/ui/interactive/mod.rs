@@ -22,7 +22,7 @@ pub mod navigation_manager;
 mod refresh_coordinator;
 mod refresh_manager;
 mod series_utils;
-mod state_manager;
+pub mod state_manager;
 mod terminal_manager;
 
 // Re-export all public items from core for backward compatibility
