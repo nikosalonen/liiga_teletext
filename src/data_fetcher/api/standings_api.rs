@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::data_fetcher::models::standings::{StandingsEntry, StandingsResponse};
 use crate::error::AppError;
-use chrono::{Datelike, Local, Utc};
+use chrono::{Datelike, Utc};
 use std::collections::HashMap;
 use tracing::{info, instrument};
 
@@ -67,7 +67,7 @@ pub async fn fetch_standings(
 /// The API uses the ending year as the season identifier (e.g., 2026 for 2025-2026).
 /// Regular season runs roughly September to March.
 fn determine_current_season() -> i32 {
-    let now = Utc::now().with_timezone(&Local);
+    let now = Utc::now();
     let year = now.year();
     let month = now.month();
 
@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn test_determine_current_season() {
         let season = determine_current_season();
-        let now = Utc::now().with_timezone(&Local);
+        let now = Utc::now();
         let year = now.year();
         let month = now.month();
 

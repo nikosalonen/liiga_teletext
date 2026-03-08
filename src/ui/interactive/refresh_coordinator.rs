@@ -348,7 +348,9 @@ impl RefreshCoordinator {
 
         // Branch on view mode
         if let super::state_manager::ViewMode::Standings { live_mode } = state.current_view() {
-            return self.perform_standings_refresh(config, live_mode).await;
+            return self
+                .perform_standings_refresh(config, live_mode, state.preserved_page())
+                .await;
         }
 
         // Restore preserved games page when switching back from standings
@@ -382,6 +384,7 @@ impl RefreshCoordinator {
         &self,
         config: &RefreshCycleConfig,
         live_mode: bool,
+        preserved_page: Option<usize>,
     ) -> Result<RefreshResult, AppError> {
         tracing::info!("Fetching standings data (live_mode: {live_mode})");
 
@@ -406,14 +409,18 @@ impl RefreshCoordinator {
             };
 
         let new_page = if !had_error {
-            Some(self.nav_manager.create_standings_page(
+            let mut page = self.nav_manager.create_standings_page(
                 &standings,
                 &playoffs_lines,
                 live_mode,
                 config.disable_links,
                 config.compact_mode,
                 config.wide_mode,
-            ))
+            );
+            if let Some(saved_page) = preserved_page {
+                page.set_current_page(saved_page);
+            }
+            Some(page)
         } else {
             let mut error_page = TeletextPage::new(
                 230,
