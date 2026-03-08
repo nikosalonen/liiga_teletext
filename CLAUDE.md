@@ -4,295 +4,127 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Rust terminal application that displays Finnish Hockey League (Liiga) results in authentic YLE Teksti-TV style. The app features real-time data fetching, teletext-style UI rendering, and comprehensive CLI options.
+Rust terminal application displaying Finnish Hockey League (Liiga) results in authentic YLE Teksti-TV (teletext) style. Features real-time data fetching from the Liiga API, multi-level caching, interactive page navigation, and multiple display modes.
+
+- **Rust Edition**: 2024 (requires Rust 1.89+)
+- **Async Runtime**: Tokio (full features)
+- **Terminal**: Crossterm for cross-platform raw mode / alternate screen
 
 ## Development Commands
 
-### Building and Testing
-
 ```bash
-# Build the project
+# Build
 cargo build --release
-
-# Run the application
-cargo run --release
 
 # Run tests (MUST pass before any commit)
 cargo test --all-features
 
-# Format code
+# Run a single test by name
+cargo test test_name_here
+
+# Run tests in a specific module
+cargo test --all-features -- module_name::
+
+# Clippy (MUST pass with zero warnings before any commit)
+cargo clippy --all-features --all-targets -- -D warnings
+
+# Format (MUST run before any commit)
 cargo fmt
 
-# Run clippy (MUST pass with zero warnings)
-cargo clippy --all-features --all-targets -- -D warnings
-```
-
-### Running the Application
-
-```bash
-# Interactive mode (default)
-cargo run --release
-
-# Show games for specific date
-cargo run --release -- --date 2025-01-15
-
-# One-time display (no refresh loop)
-cargo run --release -- --once
-
-# Compact multi-column layout
-cargo run --release -- --compact
-
-# Wide two-column layout (requires 128+ character terminal)
-cargo run --release -- --wide
+# Run the app
+cargo run --release                          # Interactive mode (default)
+cargo run --release -- --once                # One-shot display, exit immediately
+cargo run --release -- --date 2025-01-15     # Specific date
+cargo run --release -- --compact             # Compact multi-column layout
+cargo run --release -- --wide                # Wide two-column (128+ chars terminal)
 ```
 
 ## Code Architecture
 
-### Module Structure
-
-The codebase follows a modular architecture with clear separation of concerns:
+### Data Flow
 
 ```
-src/
-├── main.rs                   # Entry point
-├── lib.rs                    # Library exports
-├── app.rs                    # Application entry and terminal management
-├── cli.rs                    # CLI argument definitions (clap)
-├── commands.rs               # Command handlers
-├── constants.rs              # Application constants
-├── error.rs                  # Error types (thiserror)
-├── logging.rs                # Logging setup (tracing)
-├── performance.rs            # Performance utilities
-├── testing_utils.rs          # Test utilities
-├── version.rs                # Version checking
-├── config/                   # Configuration management
-│   ├── mod.rs
-│   ├── paths.rs              # Platform-specific config paths
-│   ├── user_prompts.rs       # User interaction prompts
-│   └── validation.rs         # Config validation
-├── data_fetcher/             # API and data processing
-│   ├── mod.rs
-│   ├── game_utils.rs         # Game data utilities
-│   ├── api/                  # HTTP client and API calls
-│   │   ├── mod.rs
-│   │   ├── core.rs           # Core API functionality
-│   │   ├── date_logic.rs     # Date handling logic
-│   │   ├── fetch_utils.rs    # Fetch utilities
-│   │   ├── game_api.rs       # Game data API
-│   │   ├── http_client.rs    # HTTP client wrapper
-│   │   ├── orchestrator.rs   # API call orchestration
-│   │   ├── season_schedule.rs # Season schedule handling
-│   │   ├── season_utils.rs   # Season utilities
-│   │   ├── tournament_api.rs # Tournament API
-│   │   ├── tournament_logic.rs # Tournament logic
-│   │   └── urls.rs           # API URL construction
-│   ├── cache/                # Response caching
-│   │   ├── mod.rs
-│   │   ├── core.rs           # Core cache functionality
-│   │   ├── detailed_game_cache.rs
-│   │   ├── goal_events_cache.rs
-│   │   ├── http_response_cache.rs
-│   │   ├── player_cache.rs
-│   │   ├── tournament_cache.rs
-│   │   └── types.rs          # Cache type definitions
-│   ├── models/               # Data structures
-│   │   ├── mod.rs
-│   │   ├── common.rs         # Common model types
-│   │   ├── detailed.rs       # Detailed game models
-│   │   ├── goals.rs          # Goal event models
-│   │   ├── players.rs        # Player models
-│   │   └── schedule.rs       # Schedule models
-│   ├── player_names/         # Player name handling
-│   │   ├── mod.rs
-│   │   ├── disambiguation.rs # Name disambiguation logic
-│   │   └── formatting.rs     # Name formatting
-│   └── processors/           # Data transformation
-│       ├── mod.rs
-│       ├── core.rs           # Core processing
-│       ├── game_status.rs    # Game status processing
-│       ├── goal_events.rs    # Goal event processing
-│       ├── player_fetching.rs # Player data fetching
-│       └── time_formatting.rs # Time formatting
-├── teletext_ui/              # Teletext rendering (core logic)
-│   ├── mod.rs
-│   ├── compact_mode_rendering.rs
-│   ├── content.rs            # Content generation
-│   ├── core.rs               # Core rendering
-│   ├── footer.rs             # Footer rendering
-│   ├── formatting.rs         # Text formatting
-│   ├── game_display.rs       # Game display logic
-│   ├── indicators.rs         # Status indicators
-│   ├── layout.rs             # Layout management
-│   ├── mode_utils.rs         # Display mode utilities
-│   ├── pagination.rs         # Page pagination
-│   ├── rendering.rs          # Main rendering logic
-│   ├── score_formatting.rs   # Score formatting
-│   ├── season_utils.rs       # Season utilities
-│   ├── utils.rs              # General utilities
-│   ├── validation.rs         # Input validation
-│   └── wide_mode.rs          # Wide display mode
-├── ui/                       # UI components and interactive mode
-│   ├── mod.rs
-│   ├── components/           # Reusable UI components
-│   │   ├── mod.rs
-│   │   └── abbreviations.rs  # Team abbreviations
-│   ├── interactive/          # Interactive UI loop
-│   │   ├── mod.rs
-│   │   ├── change_detection.rs
-│   │   ├── core.rs
-│   │   ├── event_handler.rs
-│   │   ├── indicators.rs
-│   │   ├── input_handler.rs
-│   │   ├── navigation_manager.rs
-│   │   ├── refresh_coordinator.rs
-│   │   ├── refresh_manager.rs
-│   │   ├── series_utils.rs
-│   │   ├── state_manager.rs
-│   │   └── terminal_manager.rs
-│   └── teletext/             # Teletext UI types (re-exports)
-│       ├── mod.rs
-│       ├── colors.rs         # Color definitions
-│       ├── compact_display.rs
-│       ├── game_result.rs    # Game result types
-│       ├── loading_indicator.rs
-│       └── page_config.rs    # Page configuration
-└── schemas/                  # JSON schemas
-    ├── game_schedule_schema.json
-    └── game_schema.json
+main.rs (CLI parsing via clap)
+  → commands.rs (dispatch: --once, --version, config ops)
+  → app.rs (interactive mode: RAII terminal setup, enters ui::run_interactive_ui)
+
+Data Fetching:
+  data_fetcher/api/orchestrator.rs::fetch_liiga_data()
+    → determine date → build tournament list → fetch from Liiga API
+    → data_fetcher/processors/ (game status, goal events, player names)
+    → Returns Vec<GameData> + date string
+
+Rendering:
+  teletext_ui/ (TeletextPage: paginated content, buffered rendering)
+  ui/interactive/ (event loop: state management, refresh coordination, input handling)
 ```
 
-### Module Relationships: teletext_ui/ vs ui/teletext/
+### Module Responsibilities
 
-The project has two teletext-related modules that serve different purposes:
+- **`cli.rs`** — Clap `Args` struct with all CLI flags
+- **`commands.rs`** — Command handlers for non-interactive modes
+- **`app.rs`** — Terminal setup (raw mode, alternate screen) with RAII cleanup
+- **`data_fetcher/api/`** — HTTP client, API orchestration, URL building, date/season logic
+- **`data_fetcher/models/`** — API response types (`GameData`, `ScheduleResponse`, `DetailedGameResponse`)
+- **`data_fetcher/processors/`** — Game status determination, goal processing, player name fetching
+- **`data_fetcher/cache/`** — Multi-level TTL caching (HTTP responses, tournaments, games, goals, players)
+- **`data_fetcher/player_names/`** — Name formatting and disambiguation (e.g., "Saarela #7")
+- **`teletext_ui/`** — Teletext page structure, rendering pipeline, pagination, display modes
+- **`ui/interactive/`** — Interactive event loop: state, navigation, refresh coordination, input handling
+- **`ui/components/`** — Team abbreviations
+- **`ui/teletext/`** — Colors, game result display, loading indicators, page config
+- **`config/`** — TOML config with platform-specific paths, validation, user prompts
+- **`error.rs`** — `AppError` enum via thiserror (API, network, config, validation errors)
+- **`constants.rs`** — Cache TTLs, polling intervals, timeouts
+- **`logging.rs`** — Tracing setup with daily rolling file appender
+- **`version.rs`** — Crates.io version check
 
-**`src/teletext_ui/`** - Core Teletext Rendering Logic:
-- Contains the main `TeletextPage` struct and rendering implementation
-- Handles layout calculation, pagination, and text formatting
-- Generates the actual teletext-style output with proper spacing and alignment
-- Manages display modes (standard, compact, wide)
-- This is where the visual teletext output is produced
+### Interactive Mode Event Loop (`ui/interactive/core.rs`)
 
-**`src/ui/teletext/`** - UI Type Definitions and Re-exports:
-- Contains type definitions like `GameResultData`, `ScoreType`, `TeletextPageConfig`
-- Provides re-exports for backward compatibility with older code paths
-- Acts as a bridge between the interactive UI (`ui/interactive/`) and teletext rendering
-- Defines color schemes and display configuration types
-
-**Why two modules?** The separation allows:
-1. Core rendering logic to remain independent of interactive UI concerns
-2. Type definitions to be shared across different UI components
-3. Backward compatibility when refactoring the rendering pipeline
-
-### Core Modules Overview
-
-| Module | Purpose |
-|--------|---------|
-| `main.rs` | Application entry point, initializes logging and runs the app |
-| `lib.rs` | Library exports for integration tests |
-| `app.rs` | Main application logic, terminal setup, and run loop |
-| `cli.rs` | CLI argument definitions using clap derive macros |
-| `commands.rs` | Command handlers for config, version check, etc. |
-| `logging.rs` | Tracing/logging setup with file and console output |
-| `version.rs` | Version checking against GitHub releases |
-| `error.rs` | Centralized error types using thiserror |
-| `constants.rs` | Application-wide constants (URLs, timeouts, etc.) |
-| `config/` | TOML configuration loading, validation, and platform paths |
-| `data_fetcher/` | API client, caching, models, and data processing |
-| `teletext_ui/` | Core teletext-style rendering and layout |
-| `ui/` | Interactive mode, components, and type definitions |
-
-### Key Design Patterns
-
-**Async/Await Architecture**: All I/O operations use Tokio's async runtime
-
-```rust
-#[tokio::main]
-async fn main() -> Result<(), AppError> {
-    // Implementation
+```
+loop {
+  1. Check if auto-refresh needed (RefreshCoordinator)
+  2. Fetch data if refresh requested → update state
+  3. Render page if state changed (buffered output)
+  4. Process keyboard events (←/→ pages, Shift+←/→ dates, 'r' refresh, 'q' quit)
+  5. Sleep 50ms
 }
 ```
 
-**Error Handling**: Uses thiserror for comprehensive error types
+Auto-refresh intervals: 1 minute during live games, 1 hour for completed games only. Polling rate adapts to idle time (50ms → 200ms → 500ms).
 
-```rust
-// Always propagate errors with ?
-let config = Config::load().await?;
-let data = fetch_liiga_data(&config).await?;
-```
+### Caching Strategy
 
-**Configuration Management**: Platform-specific config directories
+TTL varies by game state:
+- Live games: 15s
+- Completed games: 1 hour
+- Starting soon: 30s
+- Player data: 24 hours
 
-```rust
-// Config automatically loaded from:
-// Linux: ~/.config/liiga_teletext/config.toml
-// macOS: ~/Library/Application Support/liiga_teletext/config.toml
-// Windows: %APPDATA%\liiga_teletext\config.toml
-let config = Config::load().await?;
-```
+### Configuration
+
+TOML config at platform-specific paths (Linux: `~/.config/liiga_teletext/`, macOS: `~/Library/Application Support/liiga_teletext/`, Windows: `%APPDATA%\liiga_teletext/`).
+
+Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTTP_TIMEOUT`.
 
 ## Critical Requirements
 
 ### Before Any Commit
 
-1. **MUST run and pass**: `cargo test --all-features`
-2. **MUST pass with zero warnings**: `cargo clippy --all-features --all-targets -- -D warnings`
-3. **MUST format**: `cargo fmt`
+1. `cargo test --all-features` — must pass
+2. `cargo clippy --all-features --all-targets -- -D warnings` — zero warnings
+3. `cargo fmt` — must be formatted
 
 ### Common Clippy Issues to Avoid
 
-- **await_holding_lock**: Use `tokio::sync::Mutex` instead of `std::sync::Mutex` in async code
-- **uninlined_format_args**: Use `format!("{var}")` instead of `format!("{}", var)`
-- **assertions_on_constants**: Remove `assert!(true)` or similar constant assertions
-- **needless_return**: Remove explicit `return` on last expression
-- **unused_mut**: Remove unnecessary `mut` keywords
+- `await_holding_lock`: Use `tokio::sync::Mutex` instead of `std::sync::Mutex` in async code
+- `uninlined_format_args`: Use `format!("{var}")` not `format!("{}", var)`
+- `needless_return`: Omit explicit `return` on last expression
+- `unused_mut`: Remove unnecessary `mut` keywords
 
-### Testing Guidelines
+### Testing Conventions
 
-- Use `#[tokio::test]` for async test functions
-- Mock external dependencies with wiremock for HTTP calls
-- Use tempfile for file operations in tests
-- Test both success and failure scenarios
-- Add tests for any new functionality
-
-## Configuration
-
-The application uses TOML configuration stored in platform-specific directories:
-
-```toml
-# config.toml
-api_domain = "https://liiga.fi/api/v2"
-log_file_path = "/custom/path/to/logfile.log"  # Optional
-```
-
-Configuration is managed through:
-
-```bash
-# Update API domain
-cargo run -- --config
-
-# List current config
-cargo run -- --list-config
-
-# Set custom log file
-cargo run -- --set-log-file /path/to/logfile.log
-```
-
-## Key Dependencies
-
-- **tokio**: Async runtime (with "full" features)
-- **reqwest**: HTTP client (with "json" and "blocking" features)
-- **crossterm**: Cross-platform terminal manipulation
-- **clap**: CLI parsing (with "derive" features)
-- **serde**: Serialization (with "derive" features)
-- **chrono**: Date/time handling
-- **thiserror**: Error handling
-
-## Development Notes
-
-- **Rust Edition**: 2024 (requires Rust 1.89+)
-- **Target Platforms**: Linux, macOS, Windows
-- **Terminal Requirements**: Unicode support recommended
-- **API Integration**: Real-time data from Liiga API with intelligent caching
-- **UI Style**: Authentic YLE Teksti-TV channel 221 aesthetics
-
-When adding new features, follow existing patterns for error handling, async/await usage, and configuration management. Always test both interactive and non-interactive modes.
+- `#[tokio::test]` for async tests
+- `wiremock` for HTTP mocking, `tempfile` for file ops
+- `TestDataBuilder` in `testing_utils.rs` for mock game data
+- Integration tests in `tests/` directory
