@@ -6,7 +6,7 @@ pub mod schedule;
 pub mod standings;
 
 // Re-export all public types for backward compatibility
-pub use common::{GameData, HasGoalEvents, HasTeams};
+pub use common::{GameData, HasGoalEvents, HasTeams, PlayoffSeriesScore};
 pub use detailed::{DetailedGame, DetailedGameResponse, DetailedTeam};
 pub use goals::{GoalEvent, GoalEventData};
 pub use players::Player;
@@ -66,6 +66,9 @@ mod tests {
             ended: true,
             game_time: 3600,
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         };
         let cloned_game = game.clone();
         assert_eq!(game.id, cloned_game.id);
@@ -121,6 +124,9 @@ mod tests {
             ended: true,
             game_time: 3600,
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         };
         let debug_string = format!("{game:?}");
         assert!(debug_string.contains("ScheduleGame"));

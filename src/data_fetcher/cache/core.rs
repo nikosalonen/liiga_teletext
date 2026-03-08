@@ -456,6 +456,9 @@ mod tests {
                 ended: false,    // Live game
                 game_time: 1800, // 30 minutes played
                 serie: "runkosarja".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
             }],
             previous_game_date: None,
             next_game_date: None,
@@ -518,6 +521,9 @@ mod tests {
                 ended: false, // Live game
                 game_time: 1800,
                 serie: "runkosarja".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
             }],
             previous_game_date: None,
             next_game_date: None,
@@ -565,6 +571,9 @@ mod tests {
                 ended: true, // Completed game
                 game_time: 3600,
                 serie: "runkosarja".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
             }],
             previous_game_date: None,
             next_game_date: None,
@@ -589,6 +598,10 @@ mod tests {
             goal_events: vec![],
             played_time: 1800,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }];
 
         assert!(has_live_games_from_game_data(&live_games));
@@ -606,6 +619,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }];
 
         assert!(!has_live_games_from_game_data(&completed_games));
@@ -1040,6 +1057,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 1800,
                 start: "2024-01-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1053,6 +1074,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 2400,
                 start: "2024-01-15T19:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1066,6 +1091,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 900,
                 start: "2024-01-15T19:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
         ];
 
@@ -1090,6 +1119,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3900,
                 start: "2024-01-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1103,6 +1136,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3600,
                 start: "2024-01-15T19:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1116,6 +1153,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3900,
                 start: "2024-01-15T19:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
         ];
 
@@ -1140,6 +1181,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 0,
                 start: "2024-01-16T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1153,6 +1198,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 0,
                 start: "2024-01-16T19:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
         ];
 
@@ -1177,6 +1226,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3600,
                 start: "2024-01-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1190,6 +1243,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 2100,
                 start: "2024-01-15T19:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1203,6 +1260,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 0,
                 start: "2024-01-15T20:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
         ];
 
@@ -1230,6 +1291,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3900,
                 start: "2024-01-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1243,6 +1308,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3600,
                 start: "2024-01-15T19:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1256,6 +1325,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 0,
                 start: "2024-01-15T20:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
         ];
 
@@ -1289,6 +1362,10 @@ mod tests {
             goal_events: vec![],
             played_time: 600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }];
 
         let result = has_live_games_from_game_data(&single_ongoing);
@@ -1311,6 +1388,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }];
 
         let result = has_live_games_from_game_data(&single_completed);
@@ -1333,6 +1414,10 @@ mod tests {
             goal_events: vec![],
             played_time: 0,
             start: "2024-01-16T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }];
 
         let result = has_live_games_from_game_data(&single_scheduled);
@@ -1356,6 +1441,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 1800,
                 start: "2024-01-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1369,6 +1458,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 1200,
                 start: "2024-01-15T19:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1382,6 +1475,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 2700,
                 start: "2024-01-15T19:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "TPS".to_string(),
@@ -1395,6 +1492,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3000,
                 start: "2024-01-15T20:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
         ];
 
@@ -1419,6 +1520,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 2400,
                 start: "2024-03-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1432,6 +1537,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 600,
                 start: "2024-03-15T19:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
         ];
 
@@ -1457,6 +1566,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3900,
                 start: "2024-01-15T18:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             // Ongoing regular season game
             GameData {
@@ -1471,6 +1584,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 2100,
                 start: "2024-01-15T19:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             // Scheduled playoff game
             GameData {
@@ -1485,6 +1602,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 0,
                 start: "2024-03-15T20:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             // Completed playoff game with shootout
             GameData {
@@ -1499,6 +1620,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 3900,
                 start: "2024-03-14T18:00:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
             // Another ongoing game
             GameData {
@@ -1513,6 +1638,10 @@ mod tests {
                 goal_events: vec![],
                 played_time: 900,
                 start: "2024-01-15T19:30:00Z".to_string(),
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                series_score: None,
             },
         ];
 

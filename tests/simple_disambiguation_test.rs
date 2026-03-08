@@ -102,6 +102,7 @@ fn test_ui_modes_with_verified_disambiguation() {
         is_shootout: false,
         goal_events: goal_events.clone(),
         played_time: 60,
+        series_score: None,
     };
 
     // Test normal mode (Requirement 3.1)
@@ -224,6 +225,7 @@ fn test_disambiguation_error_scenarios() {
         is_shootout: false,
         goal_events: vec![goal_with_missing_id],
         played_time: 60,
+        series_score: None,
     };
 
     let mut error_page = TeletextPage::new(
@@ -357,6 +359,7 @@ fn test_name_truncation_with_disambiguation() {
         is_shootout: false,
         goal_events: long_disambiguated_names,
         played_time: 60,
+        series_score: None,
     };
 
     let mut truncation_page = TeletextPage::new(
@@ -423,6 +426,7 @@ fn test_disambiguation_consistency_across_modes() {
         is_shootout: false,
         goal_events,
         played_time: 60,
+        series_score: None,
     };
 
     // Test all modes store the same disambiguation results

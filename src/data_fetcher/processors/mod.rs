@@ -2,6 +2,7 @@ pub mod core;
 pub mod game_status;
 pub mod goal_events;
 pub mod player_fetching;
+pub mod playoff_series;
 pub mod time_formatting;
 
 // Re-export all public items from core for backward compatibility

@@ -198,6 +198,10 @@ pub(super) async fn process_single_game(
         goal_events,
         played_time: game.game_time,
         start: game.start.clone(),
+        play_off_phase: game.play_off_phase,
+        play_off_pair: game.play_off_pair,
+        play_off_req_wins: game.play_off_req_wins,
+        series_score: None,
     })
 }
 
@@ -728,6 +732,9 @@ async fn convert_api_game_to_schedule_game(
         ended: api_game.ended,
         game_time: api_game.game_time.unwrap_or(0),
         serie: tournament.as_str().to_string(),
+        play_off_phase: api_game.play_off_phase,
+        play_off_pair: api_game.play_off_pair,
+        play_off_req_wins: api_game.play_off_req_wins,
     })
 }
 
@@ -754,6 +761,16 @@ pub(super) async fn fetch_historical_games(
         info!("No games found in any tournament for season {}", season);
         return Ok(Vec::new());
     }
+
+    // Check if any games have playoff data before cloning for series calculation
+    let has_playoff_games = all_schedule_games
+        .iter()
+        .any(|g| g.play_off_phase.is_some());
+    let full_schedule = if has_playoff_games {
+        Some(all_schedule_games.clone())
+    } else {
+        None
+    };
 
     // Filter games to match the requested date
     let matching_games = filter_games_by_date(all_schedule_games, date);
@@ -793,7 +810,17 @@ pub(super) async fn fetch_historical_games(
 
     // Process the games using the existing logic
     let response_data = vec![schedule_response];
-    process_games(client, config, response_data).await
+    let mut games = process_games(client, config, response_data).await?;
+
+    // Calculate series scores for playoff games
+    if let Some(ref schedule) = full_schedule
+        && games.iter().any(|g| g.play_off_phase.is_some())
+    {
+        use crate::data_fetcher::processors::playoff_series::calculate_series_scores;
+        calculate_series_scores(schedule, &mut games, date);
+    }
+
+    Ok(games)
 }
 
 /// Fetches detailed game data for a historical game to get actual scores and goal events.

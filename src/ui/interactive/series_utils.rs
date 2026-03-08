@@ -62,6 +62,23 @@ pub(super) fn get_subheader(games: &[GameData]) -> String {
         .to_string()
 }
 
+/// Returns the Finnish name for a playoff phase based on phase number and serie type.
+pub fn playoff_phase_name(phase: i32, serie: &str) -> &'static str {
+    match serie.to_ascii_lowercase().as_str() {
+        "playoffs" => match phase {
+            1 => "1. KIERROS",
+            2 => "PUOLIVÄLIERÄT",
+            3 => "VÄLIERÄT",
+            4 => "PRONSSIOTTELU",
+            5 => "FINAALI",
+            _ => "PLAYOFFS",
+        },
+        "playout" => "PLAYOUT",
+        "qualifications" => "LIIGAKARSINTA",
+        _ => "OTTELUT",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +132,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         }
     }
 
@@ -138,5 +159,18 @@ mod tests {
         // Test with empty games list
         let empty_games: Vec<GameData> = vec![];
         assert_eq!(get_subheader(&empty_games), "SM-LIIGA");
+    }
+
+    #[test]
+    fn test_playoff_phase_name() {
+        assert_eq!(playoff_phase_name(1, "playoffs"), "1. KIERROS");
+        assert_eq!(playoff_phase_name(2, "playoffs"), "PUOLIVÄLIERÄT");
+        assert_eq!(playoff_phase_name(3, "playoffs"), "VÄLIERÄT");
+        assert_eq!(playoff_phase_name(4, "playoffs"), "PRONSSIOTTELU");
+        assert_eq!(playoff_phase_name(5, "playoffs"), "FINAALI");
+        assert_eq!(playoff_phase_name(99, "playoffs"), "PLAYOFFS");
+        assert_eq!(playoff_phase_name(1, "playout"), "PLAYOUT");
+        assert_eq!(playoff_phase_name(1, "qualifications"), "LIIGAKARSINTA");
+        assert_eq!(playoff_phase_name(1, "runkosarja"), "OTTELUT");
     }
 }

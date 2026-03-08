@@ -4,6 +4,13 @@ use super::schedule::{ScheduleGame, ScheduleTeam};
 use crate::teletext_ui::ScoreType;
 
 #[derive(Debug, Clone, Hash)]
+pub struct PlayoffSeriesScore {
+    pub home_team_wins: u8,
+    pub away_team_wins: u8,
+    pub req_wins: u8,
+}
+
+#[derive(Debug, Clone, Hash)]
 pub struct GameData {
     pub home_team: String,
     pub away_team: String,
@@ -16,6 +23,10 @@ pub struct GameData {
     pub goal_events: Vec<GoalEventData>,
     pub played_time: i32,
     pub start: String,
+    pub play_off_phase: Option<i32>,
+    pub play_off_pair: Option<i32>,
+    pub play_off_req_wins: Option<i32>,
+    pub series_score: Option<PlayoffSeriesScore>,
 }
 
 pub trait HasTeams {
@@ -111,6 +122,9 @@ mod tests {
             ended: true,
             game_time: 3600,
             serie: "runkosarja".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
         }
     }
 
@@ -197,6 +211,10 @@ mod tests {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         };
 
         assert_eq!(game_data.home_team, "HIFK");

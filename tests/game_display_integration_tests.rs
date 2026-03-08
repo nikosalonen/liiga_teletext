@@ -36,6 +36,10 @@ fn create_test_game_data(
         goal_events,
         played_time: 3600,
         start: "2024-01-15T18:30:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     }
 }
 
@@ -1712,6 +1716,10 @@ async fn test_game_display_error_handling() {
             goal_events: vec![],
             played_time: 0,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         // Game with very long team names
         GameData {
@@ -1745,6 +1753,10 @@ async fn test_game_display_error_handling() {
             }],
             played_time: 3600,
             start: "2024-01-15T19:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
     ];
 

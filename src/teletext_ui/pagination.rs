@@ -23,6 +23,7 @@ impl TeletextPage {
             }
             TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
             TeletextRow::FutureGamesHeader(_) => 1u16, // Single line for future games header
+            TeletextRow::PlayoffPhaseHeader(_) => 2u16, // Reserve space for header + at least one following row
             TeletextRow::StandingsHeader => {
                 if self.standings_use_spacing() {
                     2u16

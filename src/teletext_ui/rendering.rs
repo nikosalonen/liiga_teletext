@@ -203,7 +203,7 @@ impl TeletextPage {
                 is_shootout,
                 goal_events,
                 played_time,
-                ..
+                series_score,
             } => {
                 let text_fg_code = get_ansi_code(text_fg(), 231);
                 let result_fg_code = get_ansi_code(result_fg(), 46);
@@ -288,7 +288,22 @@ impl TeletextPage {
                     format!("\x1b[38;5;{text_fg_code}m{line}\x1b[0m")
                 };
 
-                lines.push(team_score_line);
+                // Add series win indicators for playoff games
+                if let Some(score) = series_score
+                    && score.req_wins > 1
+                {
+                    use super::game_display::format_team_series_indicator;
+                    let home_indicator =
+                        format_team_series_indicator(score.home_team_wins, score.req_wins);
+                    let away_indicator =
+                        format_team_series_indicator(score.away_team_wins, score.req_wins);
+                    let series_line = format!(
+                        "{team_score_line} \x1b[38;5;{goal_type_fg_code}m{home_indicator}  {away_indicator}\x1b[0m"
+                    );
+                    lines.push(series_line);
+                } else {
+                    lines.push(team_score_line);
+                }
 
                 // Goal events - position scorers under their respective teams like normal mode
                 // Limit goal scorers for performance (max 15 per team to prevent excessive rendering)
@@ -325,6 +340,16 @@ impl TeletextPage {
                             };
 
                             let goal_type = event.get_goal_type_display();
+                            let has_video = !self.disable_video_links
+                                && event
+                                    .video_clip_url
+                                    .as_ref()
+                                    .is_some_and(|url| !url.trim().is_empty());
+                            let video_icon = if has_video {
+                                format!("\x1b[38;5;{home_scorer_fg_code}m▶\x1b[0m")
+                            } else {
+                                String::new()
+                            };
 
                             // Use layout config for player name width
                             let player_name_width = layout_config.max_player_name_width;
@@ -332,7 +357,7 @@ impl TeletextPage {
                             // Create a fixed-width area for minute + player name, then add goal types
                             // This ensures goal types always start at the same column position
                             let base_content = format!(
-                                " \x1b[38;5;{}m{:2} {:<width$}\x1b[0m",
+                                " \x1b[38;5;{}m{:2} {:<width$}\x1b[0m{}",
                                 scorer_color,
                                 event.minute,
                                 event
@@ -340,6 +365,7 @@ impl TeletextPage {
                                     .chars()
                                     .take(player_name_width)
                                     .collect::<String>(),
+                                video_icon,
                                 width = player_name_width
                             );
 
@@ -377,6 +403,16 @@ impl TeletextPage {
                             };
 
                             let goal_type = event.get_goal_type_display();
+                            let has_video = !self.disable_video_links
+                                && event
+                                    .video_clip_url
+                                    .as_ref()
+                                    .is_some_and(|url| !url.trim().is_empty());
+                            let video_icon = if has_video {
+                                format!("\x1b[38;5;{away_scorer_fg_code}m▶\x1b[0m")
+                            } else {
+                                String::new()
+                            };
 
                             // Use layout config for away team positioning and spacing
                             let away_start_spacing = layout_config.separator_width + 2; // Separator width plus some spacing
@@ -385,7 +421,7 @@ impl TeletextPage {
 
                             // Create base content with fixed-width player area
                             let base_content = format!(
-                                "{:width$}\x1b[38;5;{}m{:2} {:<name_width$}\x1b[0m",
+                                "{:width$}\x1b[38;5;{}m{:2} {:<name_width$}\x1b[0m{}",
                                 "",
                                 scorer_color,
                                 event.minute,
@@ -394,6 +430,7 @@ impl TeletextPage {
                                     .chars()
                                     .take(away_player_name_width)
                                     .collect::<String>(),
+                                video_icon,
                                 width = away_start_spacing,
                                 name_width = away_player_name_width
                             );
@@ -423,7 +460,8 @@ impl TeletextPage {
                 let text_fg_code = get_ansi_code(text_fg(), 231);
                 format!("\x1b[38;5;{text_fg_code}m{message}\x1b[0m")
             }
-            TeletextRow::FutureGamesHeader(header_text) => {
+            TeletextRow::FutureGamesHeader(header_text)
+            | TeletextRow::PlayoffPhaseHeader(header_text) => {
                 let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
                 format!("\x1b[38;5;{subheader_fg_code}m{header_text}\x1b[0m")
             }

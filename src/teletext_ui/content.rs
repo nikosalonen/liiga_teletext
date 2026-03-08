@@ -38,6 +38,10 @@ impl TeletextPage {
     ///     goal_events: vec![],
     ///     played_time: 60,
     ///     start: "2024-01-15T18:30:00Z".to_string(),
+    ///     play_off_phase: None,
+    ///     play_off_pair: None,
+    ///     play_off_req_wins: None,
+    ///     series_score: None,
     /// });
     ///
     /// page.add_game_result(game);
@@ -53,7 +57,14 @@ impl TeletextPage {
             is_shootout: game_data.is_shootout,
             goal_events: game_data.goal_events,
             played_time: game_data.played_time,
+            series_score: game_data.series_score,
         });
+    }
+
+    /// Adds a playoff phase header row (e.g., "PUOLIVÄLIERÄT", "FINAALI").
+    pub fn add_playoff_phase_header(&mut self, header_text: String) {
+        self.content_rows
+            .push(TeletextRow::PlayoffPhaseHeader(header_text));
     }
 
     /// Adds an error message to be displayed on the page.

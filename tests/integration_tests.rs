@@ -90,6 +90,10 @@ async fn test_page_navigation() {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         };
         page.add_game_result(GameResultData::new(&game));
     }
@@ -149,6 +153,10 @@ async fn test_game_result_data_creation() {
         goal_events: vec![],
         played_time: 3900,
         start: "2024-01-15T18:30:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     };
 
     // Create game result data
@@ -180,6 +188,10 @@ async fn test_teletext_ui_generation() {
         goal_events: vec![],
         played_time: 3600,
         start: "2024-01-15T18:30:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     };
 
     // Create teletext page
@@ -255,6 +267,10 @@ async fn test_end_to_end_multiple_games() {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         GameData {
             home_team: "Kärpät".to_string(),
@@ -268,6 +284,10 @@ async fn test_end_to_end_multiple_games() {
             goal_events: vec![],
             played_time: 3600,
             start: "2024-01-15T19:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
     ];
 
@@ -309,6 +329,10 @@ async fn test_different_tournament_types() {
         goal_events: vec![],
         played_time: 3600,
         start: "2024-03-15T18:30:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     };
 
     // Create teletext page
@@ -347,6 +371,10 @@ async fn test_ongoing_games() {
         goal_events: vec![],
         played_time: 1800, // Half time
         start: "2024-01-15T18:30:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     };
 
     // Verify game data
@@ -371,6 +399,10 @@ async fn test_special_situations() {
         goal_events: vec![],
         played_time: 3900, // Regular time + overtime
         start: "2024-01-15T18:30:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     };
 
     // Verify game data
@@ -395,6 +427,10 @@ async fn test_compact_mode_non_interactive() {
             goal_events: vec![],
             played_time: 3900,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         GameData {
             home_team: "Kärpät".to_string(),
@@ -408,6 +444,10 @@ async fn test_compact_mode_non_interactive() {
             goal_events: vec![],
             played_time: 3900,
             start: "2024-01-15T19:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         GameData {
             home_team: "Ilves".to_string(),
@@ -421,6 +461,10 @@ async fn test_compact_mode_non_interactive() {
             goal_events: vec![],
             played_time: 0,
             start: "2024-01-15T19:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
     ];
 
@@ -477,6 +521,10 @@ async fn test_compact_mode_with_dates() {
         goal_events: vec![],
         played_time: 3600,
         start: "2024-01-15T18:30:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     };
 
     let future_game = GameData {
@@ -491,6 +539,10 @@ async fn test_compact_mode_with_dates() {
         goal_events: vec![],
         played_time: 0,
         start: "2024-12-15T19:00:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     };
 
     // Test with past game (compact mode should work)
@@ -611,6 +663,10 @@ async fn test_compact_mode_preserves_styling() {
             goal_events: vec![],
             played_time: 3900,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         GameData {
             home_team: "Kärpät".to_string(),
@@ -624,6 +680,10 @@ async fn test_compact_mode_preserves_styling() {
             goal_events: vec![],
             played_time: 2400,
             start: "2024-01-15T19:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         GameData {
             home_team: "Ilves".to_string(),
@@ -637,6 +697,10 @@ async fn test_compact_mode_preserves_styling() {
             goal_events: vec![],
             played_time: 0,
             start: "2024-01-15T19:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
     ];
 
@@ -766,6 +830,10 @@ async fn test_compact_mode_basic_functionality() {
             goal_events: vec![],
             played_time: 3900,
             start: "2024-01-15T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
         GameData {
             home_team: "Kärpät".to_string(),
@@ -779,6 +847,10 @@ async fn test_compact_mode_basic_functionality() {
             goal_events: vec![],
             played_time: 0,
             start: "2024-01-15T19:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
         },
     ];
 
@@ -1183,6 +1255,10 @@ fn create_test_game_data() -> GameData {
         goal_events: vec![],
         played_time: 3600,
         start: "2024-01-15T18:30:00Z".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+        series_score: None,
     }
 }
 

@@ -7,6 +7,12 @@ use crate::data_fetcher::models::GameData;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
 
+pub(crate) fn format_team_series_indicator(wins: u8, req_wins: u8) -> String {
+    let filled = "●".repeat(wins as usize);
+    let empty = "○".repeat(req_wins.saturating_sub(wins) as usize);
+    format!("{filled}{empty}")
+}
+
 impl TeletextPage {
     /// Extracts GameData from TeletextRows for layout calculation
     pub(crate) fn extract_games_for_layout(&self, visible_rows: &[&TeletextRow]) -> Vec<GameData> {
@@ -23,6 +29,7 @@ impl TeletextPage {
                     is_shootout,
                     goal_events,
                     played_time,
+                    ..
                 } = row
                 {
                     Some(GameData {
@@ -37,6 +44,10 @@ impl TeletextPage {
                         goal_events: goal_events.clone(),
                         played_time: *played_time,
                         start: "".to_string(), // Not needed for layout calculation
+                        play_off_phase: None,
+                        play_off_pair: None,
+                        play_off_req_wins: None,
+                        series_score: None,
                     })
                 } else {
                     None
@@ -101,6 +112,7 @@ impl TeletextPage {
                     is_shootout,
                     goal_events,
                     played_time,
+                    series_score,
                 } => {
                     self.render_game_result_row(
                         buffer,
@@ -113,6 +125,7 @@ impl TeletextPage {
                         *is_shootout,
                         goal_events,
                         *played_time,
+                        series_score.as_ref(),
                         current_line,
                         text_fg_code,
                         result_fg_code,
@@ -122,7 +135,8 @@ impl TeletextPage {
                 TeletextRow::ErrorMessage(message) => {
                     self.render_error_message(buffer, message, current_line, text_fg_code);
                 }
-                TeletextRow::FutureGamesHeader(header_text) => {
+                TeletextRow::FutureGamesHeader(header_text)
+                | TeletextRow::PlayoffPhaseHeader(header_text) => {
                     self.render_future_games_header(
                         buffer,
                         header_text,
@@ -198,6 +212,7 @@ impl TeletextPage {
         is_shootout: bool,
         goal_events: &[crate::data_fetcher::GoalEventData],
         played_time: i32,
+        series_score: Option<&crate::data_fetcher::models::PlayoffSeriesScore>,
         current_line: &mut usize,
         text_fg_code: u8,
         result_fg_code: u8,
@@ -294,6 +309,32 @@ impl TeletextPage {
                 result_color,
             );
             buffer.push_str(&formatted_line);
+        }
+
+        // Render series win indicators after each team name
+        if let Some(score) = series_score
+            && score.req_wins > 1
+        {
+            let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
+            let home_pos = CONTENT_MARGIN + 1;
+
+            // Home team indicator: after home team name
+            let home_indicator = format_team_series_indicator(score.home_team_wins, score.req_wins);
+            let home_indicator_pos = home_pos + home_team.len() + 1;
+            let home_code = layout_manager.get_position_code(*current_line, home_indicator_pos);
+            buffer.push_str(&format!(
+                "{home_code}\x1b[38;5;{goal_type_fg_code}m{home_indicator}\x1b[0m"
+            ));
+
+            // Away team indicator: after away team name
+            let away_indicator = format_team_series_indicator(score.away_team_wins, score.req_wins);
+            let separator_pos = home_pos + layout_config.home_team_width;
+            let away_pos = separator_pos + layout_config.separator_width;
+            let away_indicator_pos = away_pos + away_team.len() + 1;
+            let away_code = layout_manager.get_position_code(*current_line, away_indicator_pos);
+            buffer.push_str(&format!(
+                "{away_code}\x1b[38;5;{goal_type_fg_code}m{away_indicator}\x1b[0m"
+            ));
         }
 
         *current_line += 1;
@@ -565,8 +606,21 @@ impl TeletextPage {
         };
 
         // Pad player name to available space, but not more than max_player_name_width
-        let padding_width = available_space_for_name.min(layout_config.max_player_name_width);
-        let padded_player_name = format!("{:<width$}", player_name_display, width = padding_width);
+        // Reserve 1 character for play icon (▶) when video link is available
+        let has_video = !self.disable_video_links
+            && event
+                .video_clip_url
+                .as_ref()
+                .is_some_and(|url| !url.trim().is_empty());
+        let play_icon_width = if has_video { 1 } else { 0 };
+        let padding_width = available_space_for_name
+            .min(layout_config.max_player_name_width)
+            .saturating_sub(play_icon_width);
+        // Truncate player name to fit within padding_width so the play icon doesn't overflow
+        let truncated_player_name: String =
+            player_name_display.chars().take(padding_width).collect();
+        let padded_player_name =
+            format!("{:<width$}", truncated_player_name, width = padding_width);
 
         // Render player name (make it clickable if there's a video link)
         let player_name_with_link = if let Some(url) = &event.video_clip_url {
@@ -604,14 +658,17 @@ impl TeletextPage {
 
         buffer.push_str(&player_name_with_link);
 
+        // Show play icon when goal has a video clip link
+        if has_video {
+            let play_icon_fg_code = get_ansi_code(home_scorer_fg(), 51);
+            buffer.push_str(&format!("\x1b[38;5;{play_icon_fg_code}m▶\x1b[0m"));
+        }
+
         // Get goal type display with safe fallback for missing data (requirement 4.1)
         let goal_type = event.get_goal_type_display();
 
         // Add single space before goal type (player name is already padded to fixed width)
         buffer.push(' ');
-
-        // Video link functionality is now handled by making player names clickable above
-        // This eliminates the need for separate play icons and creates a cleaner layout
 
         // Add goal type indicators with overflow prevention and validation (requirements 3.1, 3.2, 3.4)
         if !goal_type.is_empty() {
