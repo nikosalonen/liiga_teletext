@@ -388,6 +388,23 @@ impl RefreshCoordinator {
     ) -> Result<RefreshResult, AppError> {
         tracing::info!("Fetching standings data (live_mode: {live_mode})");
 
+        // Show loading indicator immediately so the UI feels responsive
+        {
+            let mut loading_page = TeletextPage::new(
+                230,
+                "JÄÄKIEKKO".to_string(),
+                "SARJATAULUKKO".to_string(),
+                config.disable_links,
+                true,
+                false,
+                false,
+                false,
+            );
+            loading_page.add_error_message("Haetaan sarjataulukkoa...");
+            let mut stdout = std::io::stdout();
+            let _ = loading_page.render_buffered(&mut stdout);
+        }
+
         let app_config = crate::config::Config::load().await?;
         let timeout_duration = Duration::from_secs(15);
         let fetch_future = fetch_standings(&app_config, live_mode);
