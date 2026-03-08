@@ -81,16 +81,20 @@ pub fn calculate_series_scores(
             .or_else(|| series_req_wins.get(&key).copied())
             .unwrap_or(4);
 
-        if let Some(wins) = series_wins.get(&key) {
-            let home_wins = wins.get(&game.home_team).copied().unwrap_or(0);
-            let away_wins = wins.get(&game.away_team).copied().unwrap_or(0);
+        let (home_wins, away_wins) = if let Some(wins) = series_wins.get(&key) {
+            (
+                wins.get(&game.home_team).copied().unwrap_or(0),
+                wins.get(&game.away_team).copied().unwrap_or(0),
+            )
+        } else {
+            (0, 0)
+        };
 
-            game.series_score = Some(PlayoffSeriesScore {
-                home_team_wins: home_wins,
-                away_team_wins: away_wins,
-                req_wins,
-            });
-        }
+        game.series_score = Some(PlayoffSeriesScore {
+            home_team_wins: home_wins,
+            away_team_wins: away_wins,
+            req_wins,
+        });
     }
 }
 

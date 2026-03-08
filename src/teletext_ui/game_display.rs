@@ -616,7 +616,11 @@ impl TeletextPage {
         let padding_width = available_space_for_name
             .min(layout_config.max_player_name_width)
             .saturating_sub(play_icon_width);
-        let padded_player_name = format!("{:<width$}", player_name_display, width = padding_width);
+        // Truncate player name to fit within padding_width so the play icon doesn't overflow
+        let truncated_player_name: String =
+            player_name_display.chars().take(padding_width).collect();
+        let padded_player_name =
+            format!("{:<width$}", truncated_player_name, width = padding_width);
 
         // Render player name (make it clickable if there's a video link)
         let player_name_with_link = if let Some(url) = &event.video_clip_url {

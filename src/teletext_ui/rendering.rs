@@ -340,10 +340,11 @@ impl TeletextPage {
                             };
 
                             let goal_type = event.get_goal_type_display();
-                            let has_video = event
-                                .video_clip_url
-                                .as_ref()
-                                .is_some_and(|url| !url.trim().is_empty());
+                            let has_video = !self.disable_video_links
+                                && event
+                                    .video_clip_url
+                                    .as_ref()
+                                    .is_some_and(|url| !url.trim().is_empty());
                             let video_icon = if has_video {
                                 format!("\x1b[38;5;{home_scorer_fg_code}m▶\x1b[0m")
                             } else {
@@ -402,10 +403,11 @@ impl TeletextPage {
                             };
 
                             let goal_type = event.get_goal_type_display();
-                            let has_video = event
-                                .video_clip_url
-                                .as_ref()
-                                .is_some_and(|url| !url.trim().is_empty());
+                            let has_video = !self.disable_video_links
+                                && event
+                                    .video_clip_url
+                                    .as_ref()
+                                    .is_some_and(|url| !url.trim().is_empty());
                             let video_icon = if has_video {
                                 format!("\x1b[38;5;{away_scorer_fg_code}m▶\x1b[0m")
                             } else {
