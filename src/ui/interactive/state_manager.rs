@@ -548,3 +548,82 @@ impl Default for InteractiveState {
         Self::new(None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_view_mode_default_is_games() {
+        let nav = NavigationState::new(None);
+        assert_eq!(nav.current_view, ViewMode::Games);
+    }
+
+    #[test]
+    fn test_toggle_view_games_to_standings() {
+        let mut nav = NavigationState::new(None);
+        nav.toggle_view();
+        assert_eq!(nav.current_view, ViewMode::Standings { live_mode: false });
+    }
+
+    #[test]
+    fn test_toggle_view_standings_to_games() {
+        let mut nav = NavigationState::new(None);
+        nav.toggle_view(); // → Standings
+        nav.toggle_view(); // → Games
+        assert_eq!(nav.current_view, ViewMode::Games);
+    }
+
+    #[test]
+    fn test_toggle_view_standings_with_live_returns_to_games() {
+        let mut nav = NavigationState::new(None);
+        nav.toggle_view(); // → Standings { live_mode: false }
+        nav.toggle_live_mode(); // → Standings { live_mode: true }
+        nav.toggle_view(); // → Games (live_mode state is discarded)
+        assert_eq!(nav.current_view, ViewMode::Games);
+    }
+
+    #[test]
+    fn test_toggle_live_mode_in_standings() {
+        let mut nav = NavigationState::new(None);
+        nav.toggle_view(); // → Standings { live_mode: false }
+        nav.toggle_live_mode();
+        assert_eq!(nav.current_view, ViewMode::Standings { live_mode: true });
+        nav.toggle_live_mode();
+        assert_eq!(nav.current_view, ViewMode::Standings { live_mode: false });
+    }
+
+    #[test]
+    fn test_toggle_live_mode_noop_in_games() {
+        let mut nav = NavigationState::new(None);
+        nav.toggle_live_mode(); // should be a no-op
+        assert_eq!(nav.current_view, ViewMode::Games);
+    }
+
+    #[test]
+    fn test_interactive_state_view_delegates() {
+        let mut state = InteractiveState::new(None);
+        assert_eq!(state.current_view(), ViewMode::Games);
+
+        state.toggle_view();
+        assert_eq!(
+            state.current_view(),
+            ViewMode::Standings { live_mode: false }
+        );
+
+        state.toggle_live_mode();
+        assert_eq!(
+            state.current_view(),
+            ViewMode::Standings { live_mode: true }
+        );
+    }
+
+    #[test]
+    fn test_preserved_games_page() {
+        let mut nav = NavigationState::new(None);
+        assert_eq!(nav.preserved_games_page, None);
+
+        nav.preserved_games_page = Some(3);
+        assert_eq!(nav.preserved_games_page, Some(3));
+    }
+}
