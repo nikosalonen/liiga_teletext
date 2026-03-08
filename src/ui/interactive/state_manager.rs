@@ -8,6 +8,13 @@ use crate::data_fetcher::GameData;
 use crate::teletext_ui::TeletextPage;
 use std::time::{Duration, Instant};
 
+/// Which view mode is active in the interactive UI
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ViewMode {
+    Games,
+    Standings { live_mode: bool },
+}
+
 /// Timer state for various interactive UI operations
 #[derive(Debug)]
 pub struct TimerState {
@@ -194,6 +201,9 @@ impl Default for UIState {
 pub struct NavigationState {
     pub current_date: Option<String>,
     pub preserved_page_for_restoration: Option<usize>,
+    pub current_view: ViewMode,
+    /// Preserved game page number when switching to standings
+    pub preserved_games_page: Option<usize>,
 }
 
 impl NavigationState {
@@ -202,6 +212,27 @@ impl NavigationState {
         Self {
             current_date: initial_date,
             preserved_page_for_restoration: None,
+            current_view: ViewMode::Games,
+            preserved_games_page: None,
+        }
+    }
+
+    /// Toggle between Games and Standings view
+    #[allow(dead_code)]
+    pub fn toggle_view(&mut self) {
+        self.current_view = match self.current_view {
+            ViewMode::Games => ViewMode::Standings { live_mode: false },
+            ViewMode::Standings { .. } => ViewMode::Games,
+        };
+    }
+
+    /// Toggle live mode within standings view
+    #[allow(dead_code)]
+    pub fn toggle_live_mode(&mut self) {
+        if let ViewMode::Standings { live_mode } = self.current_view {
+            self.current_view = ViewMode::Standings {
+                live_mode: !live_mode,
+            };
         }
     }
 
@@ -492,6 +523,23 @@ impl InteractiveState {
     /// Get preserved page number without clearing (delegates to navigation state)
     pub fn preserved_page(&self) -> Option<usize> {
         self.navigation.preserved_page()
+    }
+
+    /// Get current view mode
+    pub fn current_view(&self) -> ViewMode {
+        self.navigation.current_view
+    }
+
+    /// Toggle between Games and Standings view
+    #[allow(dead_code)]
+    pub fn toggle_view(&mut self) {
+        self.navigation.toggle_view();
+    }
+
+    /// Toggle live mode within standings view
+    #[allow(dead_code)]
+    pub fn toggle_live_mode(&mut self) {
+        self.navigation.toggle_live_mode();
     }
 }
 
