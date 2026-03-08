@@ -279,18 +279,28 @@ impl NavigationManager {
             page.add_future_games_header(header);
         }
 
-        // Sort games by play_off_phase for grouping, then add phase headers
+        // Sort games by serie then play_off_phase for grouping, then add phase headers.
+        // Playoffs come before playout/qualifications so they display first.
         let mut sorted_games: Vec<&GameData> = games.iter().collect();
-        sorted_games.sort_by_key(|g| g.play_off_phase.unwrap_or(i32::MAX));
+        sorted_games.sort_by_key(|g| {
+            let serie_order = match g.serie.as_str() {
+                "playoffs" => 0,
+                "playout" => 1,
+                "qualifications" => 2,
+                _ => 3,
+            };
+            (serie_order, g.play_off_phase.unwrap_or(i32::MAX))
+        });
 
-        let mut last_phase: Option<i32> = None;
+        let mut last_header: Option<(&str, i32)> = None;
         for game in &sorted_games {
-            if let Some(phase) = game.play_off_phase
-                && last_phase != Some(phase)
-            {
-                let header = playoff_phase_name(phase, &game.serie);
-                page.add_playoff_phase_header(header.to_string());
-                last_phase = Some(phase);
+            if let Some(phase) = game.play_off_phase {
+                let key = (game.serie.as_str(), phase);
+                if last_header != Some(key) {
+                    let header = playoff_phase_name(phase, &game.serie);
+                    page.add_playoff_phase_header(header.to_string());
+                    last_header = Some(key);
+                }
             }
             page.add_game_result(GameResultData::new(game));
         }
