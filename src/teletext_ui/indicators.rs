@@ -66,6 +66,17 @@ impl TeletextPage {
         self.auto_refresh_disabled = disabled;
     }
 
+    /// Sets whether this page is a standings page
+    pub fn set_standings_mode(&mut self, is_standings: bool, live_mode: bool) {
+        self.is_standings_page = is_standings;
+        self.standings_live_mode = live_mode;
+    }
+
+    /// Sets the playoff separator line positions (from API playoffsLines field)
+    pub fn set_playoffs_lines(&mut self, lines: &[u16]) {
+        self.playoffs_lines = lines.to_vec();
+    }
+
     /// Gets whether auto-refresh is disabled for this page.
     /// Returns true if automatic updates are disabled.
     pub fn is_auto_refresh_disabled(&self) -> bool {

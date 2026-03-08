@@ -427,6 +427,10 @@ impl TeletextPage {
                 let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
                 format!("\x1b[38;5;{subheader_fg_code}m{header_text}\x1b[0m")
             }
+            TeletextRow::StandingsHeader | TeletextRow::StandingsRow { .. } => {
+                // Standings rows are rendered in normal mode only (not wide column mode)
+                String::new()
+            }
         }
     }
 }

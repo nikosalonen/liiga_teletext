@@ -44,6 +44,13 @@ impl TeletextPage {
                     // Header: actual length + ANSI sequences
                     size += header.len() + 30;
                 }
+                TeletextRow::StandingsHeader => {
+                    size += 100;
+                }
+                TeletextRow::StandingsRow { .. } => {
+                    // Standings row: ~80 chars + ANSI sequences
+                    size += 150;
+                }
             }
         }
 

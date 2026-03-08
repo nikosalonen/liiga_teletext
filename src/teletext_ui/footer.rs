@@ -35,6 +35,7 @@ use std::io::{Stdout, Write};
 /// # Returns
 /// * `Result<(), AppError>` - Result indicating success or failure
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub fn render_footer(
     _stdout: &mut Stdout,
     buffer: &mut String,
@@ -47,22 +48,65 @@ pub fn render_footer(
     error_warning_active: bool,
     season_countdown: &Option<String>,
 ) -> Result<(), AppError> {
-    // Determine navigation controls based on page count
-    let controls = if total_pages > 1 {
-        "q=Lopeta ←→=Sivut"
-    } else {
-        "q=Lopeta"
-    };
+    render_footer_with_view(
+        _stdout,
+        buffer,
+        footer_y,
+        width,
+        total_pages,
+        loading_indicator,
+        auto_refresh_indicator,
+        auto_refresh_disabled,
+        error_warning_active,
+        season_countdown,
+        None,
+    )
+}
 
-    // Add auto-refresh disabled note if needed
-    let controls = if auto_refresh_disabled {
-        if total_pages > 1 {
-            "q=Lopeta ←→=Sivut (Ei päivity)"
-        } else {
-            "q=Lopeta (Ei päivity)"
+/// Renders footer with view-mode-aware controls
+#[allow(clippy::too_many_arguments)]
+pub fn render_footer_with_view(
+    _stdout: &mut Stdout,
+    buffer: &mut String,
+    footer_y: usize,
+    width: usize,
+    total_pages: usize,
+    loading_indicator: &Option<LoadingIndicator>,
+    auto_refresh_indicator: &Option<LoadingIndicator>,
+    auto_refresh_disabled: bool,
+    error_warning_active: bool,
+    season_countdown: &Option<String>,
+    view_mode: Option<&crate::ui::interactive::state_manager::ViewMode>,
+) -> Result<(), AppError> {
+    // Determine navigation controls based on view mode and page count
+    let controls = match view_mode {
+        Some(crate::ui::interactive::state_manager::ViewMode::Standings { live_mode }) => {
+            if *live_mode {
+                "q=Lopeta s=Ottelut l=Live ✓"
+            } else if total_pages > 1 {
+                "q=Lopeta ←→=Sivut s=Ottelut l=Live"
+            } else {
+                "q=Lopeta s=Ottelut l=Live"
+            }
         }
-    } else {
-        controls
+        _ => {
+            // Games view (default)
+            let base = if total_pages > 1 {
+                "q=Lopeta ←→=Sivut s=Taulukko"
+            } else {
+                "q=Lopeta s=Taulukko"
+            };
+
+            if auto_refresh_disabled {
+                if total_pages > 1 {
+                    "q=Lopeta ←→=Sivut s=Taulukko (Ei päivity)"
+                } else {
+                    "q=Lopeta s=Taulukko (Ei päivity)"
+                }
+            } else {
+                base
+            }
+        }
     };
 
     // Add season countdown above the footer if available

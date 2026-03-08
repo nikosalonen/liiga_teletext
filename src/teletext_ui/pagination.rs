@@ -11,7 +11,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `u16` - Height in terminal lines required for this row
-    pub(super) fn calculate_game_height(game: &TeletextRow) -> u16 {
+    pub(super) fn calculate_game_height(&self, game: &TeletextRow) -> u16 {
         match game {
             TeletextRow::GameResult { goal_events, .. } => {
                 let base_height = 1; // Game result line
@@ -23,6 +23,19 @@ impl TeletextPage {
             }
             TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
             TeletextRow::FutureGamesHeader(_) => 1u16, // Single line for future games header
+            TeletextRow::StandingsHeader => 1u16,
+            TeletextRow::StandingsRow { position, .. } => {
+                // Add extra line for playoff separator (drawn before positions after playoff lines)
+                if self
+                    .playoffs_lines
+                    .iter()
+                    .any(|&line| *position == line + 1)
+                {
+                    2u16
+                } else {
+                    1u16
+                }
+            }
         }
     }
 
@@ -35,7 +48,7 @@ impl TeletextPage {
     /// # Returns
     /// * `u16` - Effective height in terminal lines considering layout mode
     pub(super) fn calculate_effective_game_height(&self, game: &TeletextRow) -> u16 {
-        let base_height = Self::calculate_game_height(game);
+        let base_height = self.calculate_game_height(game);
         if self.wide_mode && self.can_fit_two_pages() {
             // In wide mode, we can fit two games in the same vertical space
             // Add spacing between games (1 extra line per game except the last)
