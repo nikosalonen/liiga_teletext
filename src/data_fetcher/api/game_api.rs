@@ -808,7 +808,7 @@ pub(super) async fn fetch_historical_games(
     // Calculate series scores for playoff games
     if games.iter().any(|g| g.play_off_phase.is_some()) {
         use crate::data_fetcher::processors::playoff_series::calculate_series_scores;
-        calculate_series_scores(&full_schedule, &mut games);
+        calculate_series_scores(&full_schedule, &mut games, date);
     }
 
     Ok(games)

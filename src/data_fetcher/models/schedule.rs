@@ -79,6 +79,10 @@ pub struct ScheduleApiGame {
     pub play_off_pair: Option<i32>,
     #[serde(rename = "playOffReqWins", default)]
     pub play_off_req_wins: Option<i32>,
+    #[serde(rename = "homeTeamGoals", default)]
+    pub home_team_goals: i32,
+    #[serde(rename = "awayTeamGoals", default)]
+    pub away_team_goals: i32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -251,6 +255,8 @@ mod tests {
             play_off_phase: None,
             play_off_pair: None,
             play_off_req_wins: None,
+            home_team_goals: 0,
+            away_team_goals: 0,
         };
 
         let json = serde_json::to_string(&api_game).unwrap();

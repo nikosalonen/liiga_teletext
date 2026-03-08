@@ -622,6 +622,8 @@ mod tests {
             play_off_phase: None,
             play_off_pair: None,
             play_off_req_wins: None,
+            home_team_goals: 0,
+            away_team_goals: 0,
         }];
 
         Mock::given(method("GET"))
