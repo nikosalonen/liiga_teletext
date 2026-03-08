@@ -113,9 +113,8 @@ impl TeletextPage {
         } else {
             let live_suffix = match live_points_delta {
                 Some(d) if *d > 0 => format!(" \x1b[38;5;{magenta_code}m+{d}\x1b[0m"),
-                Some(0) => String::new(),
-                Some(d) => format!(" \x1b[38;5;{magenta_code}m{d}\x1b[0m"),
-                None => String::new(),
+                Some(d) if *d != 0 => format!(" \x1b[38;5;{magenta_code}m{d}\x1b[0m"),
+                _ => String::new(),
             };
 
             format!(
