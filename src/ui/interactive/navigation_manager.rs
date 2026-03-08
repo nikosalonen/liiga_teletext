@@ -7,7 +7,7 @@
 //! - Game analysis and validation for navigation decisions
 //! - Loading indicator coordination
 
-use super::series_utils::get_subheader;
+use super::series_utils::{get_subheader, playoff_phase_name};
 use crate::data_fetcher::{GameData, is_historical_date};
 use crate::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use chrono::{NaiveDate, Utc};
@@ -279,7 +279,19 @@ impl NavigationManager {
             page.add_future_games_header(header);
         }
 
-        for game in games {
+        // Sort games by play_off_phase for grouping, then add phase headers
+        let mut sorted_games: Vec<&GameData> = games.iter().collect();
+        sorted_games.sort_by_key(|g| g.play_off_phase.unwrap_or(i32::MAX));
+
+        let mut last_phase: Option<i32> = None;
+        for game in &sorted_games {
+            if let Some(phase) = game.play_off_phase
+                && last_phase != Some(phase)
+            {
+                let header = playoff_phase_name(phase, &game.serie);
+                page.add_playoff_phase_header(header.to_string());
+                last_phase = Some(phase);
+            }
             page.add_game_result(GameResultData::new(game));
         }
 

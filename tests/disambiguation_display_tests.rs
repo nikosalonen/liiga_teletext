@@ -222,6 +222,7 @@ fn test_normal_mode_displays_disambiguated_names_correctly() {
         is_shootout: false,
         goal_events: disambiguated_goal_events,
         played_time: 60,
+        series_score: None,
     };
 
     let mut page = create_test_page(false, false); // normal mode
@@ -323,6 +324,7 @@ fn test_compact_mode_handles_disambiguated_names_within_space_constraints() {
             },
         ],
         played_time: 60,
+        series_score: None,
     };
 
     let mut page = create_test_page(true, false); // compact mode
@@ -384,6 +386,7 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
         is_shootout: false,
         goal_events: disambiguated_events1,
         played_time: 60,
+        series_score: None,
     };
 
     // Test disambiguation context for second game
@@ -423,6 +426,7 @@ fn test_wide_mode_maintains_consistent_disambiguation_logic() {
             video_clip_url: None,
         }],
         played_time: 60,
+        series_score: None,
     };
 
     let mut page = create_test_page(false, true); // wide mode
@@ -660,6 +664,7 @@ fn test_name_truncation_works_properly_with_disambiguated_names() {
             },
         ],
         played_time: 60,
+        series_score: None,
     };
 
     let mut page = create_test_page(false, false); // normal mode
@@ -762,6 +767,7 @@ fn test_all_modes_handle_unicode_disambiguated_names() {
         is_shootout: false,
         goal_events,
         played_time: 60,
+        series_score: None,
     };
 
     // Test normal mode
@@ -851,6 +857,7 @@ fn test_disambiguation_error_scenarios_in_display() {
             video_clip_url: None,
         }],
         played_time: 60,
+        series_score: None,
     };
 
     // Test that all UI modes can handle error scenarios without crashing
@@ -976,6 +983,7 @@ fn test_disambiguation_performance_with_many_players() {
             },
         ],
         played_time: 60,
+        series_score: None,
     };
 
     // Test that UI can handle large player sets

@@ -57,7 +57,14 @@ impl TeletextPage {
             is_shootout: game_data.is_shootout,
             goal_events: game_data.goal_events,
             played_time: game_data.played_time,
+            series_score: game_data.series_score,
         });
+    }
+
+    /// Adds a playoff phase header row (e.g., "PUOLIVÄLIERÄT", "FINAALI").
+    pub fn add_playoff_phase_header(&mut self, header_text: String) {
+        self.content_rows
+            .push(TeletextRow::PlayoffPhaseHeader(header_text));
     }
 
     /// Adds an error message to be displayed on the page.

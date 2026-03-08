@@ -3,9 +3,17 @@
 use super::core::{TeletextPage, TeletextRow};
 use super::layout::{ColumnLayoutManager, LayoutConfig};
 use super::utils::get_ansi_code;
-use crate::data_fetcher::models::GameData;
+use crate::data_fetcher::models::{GameData, PlayoffSeriesScore};
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
+
+fn format_series_indicator(score: &PlayoffSeriesScore) -> String {
+    let home_filled = "■".repeat(score.home_team_wins as usize);
+    let home_empty = "□".repeat(score.req_wins.saturating_sub(score.home_team_wins) as usize);
+    let away_filled = "■".repeat(score.away_team_wins as usize);
+    let away_empty = "□".repeat(score.req_wins.saturating_sub(score.away_team_wins) as usize);
+    format!("{home_filled}{home_empty}-{away_filled}{away_empty}")
+}
 
 impl TeletextPage {
     /// Extracts GameData from TeletextRows for layout calculation
@@ -23,6 +31,7 @@ impl TeletextPage {
                     is_shootout,
                     goal_events,
                     played_time,
+                    ..
                 } = row
                 {
                     Some(GameData {
@@ -105,6 +114,7 @@ impl TeletextPage {
                     is_shootout,
                     goal_events,
                     played_time,
+                    series_score,
                 } => {
                     self.render_game_result_row(
                         buffer,
@@ -117,6 +127,7 @@ impl TeletextPage {
                         *is_shootout,
                         goal_events,
                         *played_time,
+                        series_score.as_ref(),
                         current_line,
                         text_fg_code,
                         result_fg_code,
@@ -126,7 +137,8 @@ impl TeletextPage {
                 TeletextRow::ErrorMessage(message) => {
                     self.render_error_message(buffer, message, current_line, text_fg_code);
                 }
-                TeletextRow::FutureGamesHeader(header_text) => {
+                TeletextRow::FutureGamesHeader(header_text)
+                | TeletextRow::PlayoffPhaseHeader(header_text) => {
                     self.render_future_games_header(
                         buffer,
                         header_text,
@@ -202,6 +214,7 @@ impl TeletextPage {
         is_shootout: bool,
         goal_events: &[crate::data_fetcher::GoalEventData],
         played_time: i32,
+        series_score: Option<&crate::data_fetcher::models::PlayoffSeriesScore>,
         current_line: &mut usize,
         text_fg_code: u8,
         result_fg_code: u8,
@@ -279,6 +292,19 @@ impl TeletextPage {
             ));
 
             buffer.push_str(&game_line);
+
+            // Render series indicator for ongoing games
+            if let Some(score) = series_score
+                && score.req_wins > 1
+            {
+                let indicator = format_series_indicator(score);
+                let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
+                let indicator_pos = layout_config.score_column + 8;
+                let pos_code = layout_manager.get_position_code(*current_line, indicator_pos);
+                buffer.push_str(&format!(
+                    "{pos_code}\x1b[38;5;{goal_type_fg_code}m{indicator}\x1b[0m"
+                ));
+            }
         } else {
             // For scheduled/final games: show time or score on the right
             let display_text = if !time_display.is_empty() {
@@ -298,6 +324,19 @@ impl TeletextPage {
                 result_color,
             );
             buffer.push_str(&formatted_line);
+
+            // Render series indicator after score if present
+            if let Some(score) = series_score
+                && score.req_wins > 1
+            {
+                let indicator = format_series_indicator(score);
+                let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
+                let indicator_pos = layout_config.score_column + 8; // After score text
+                let pos_code = layout_manager.get_position_code(*current_line, indicator_pos);
+                buffer.push_str(&format!(
+                    "{pos_code}\x1b[38;5;{goal_type_fg_code}m{indicator}\x1b[0m"
+                ));
+            }
         }
 
         *current_line += 1;

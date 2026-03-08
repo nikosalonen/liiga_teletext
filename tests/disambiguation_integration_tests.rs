@@ -320,6 +320,7 @@ async fn test_complete_data_flow_api_to_display() {
             },
         ],
         played_time: 3600,
+        series_score: None,
     };
 
     // Step 4: Test display in all UI modes

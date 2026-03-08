@@ -2,6 +2,7 @@
 
 use crate::config::Config;
 use crate::data_fetcher::GoalEventData;
+use crate::data_fetcher::models::PlayoffSeriesScore;
 use crate::error::AppError;
 use crossterm::{execute, style::Print};
 use std::io::{Stdout, Write};
@@ -61,9 +62,11 @@ pub enum TeletextRow {
         is_shootout: bool,
         goal_events: Vec<GoalEventData>,
         played_time: i32,
+        series_score: Option<PlayoffSeriesScore>,
     },
     ErrorMessage(String),
     FutureGamesHeader(String), // For "Seuraavat ottelut {date}" line
+    PlayoffPhaseHeader(String),
     StandingsHeader,
     StandingsRow {
         position: u16,
@@ -1242,6 +1245,7 @@ mod tests {
             is_shootout: false,
             goal_events,
             played_time: 3600,
+            series_score: None,
         };
 
         let game_rows = vec![&game_row];
@@ -1395,6 +1399,7 @@ mod tests {
             is_shootout: false,
             goal_events: vec![],
             played_time: 0,
+            series_score: None,
         };
 
         let formatted = page.format_compact_game(&scheduled_game, &config);
@@ -1412,6 +1417,7 @@ mod tests {
             is_shootout: false,
             goal_events: vec![],
             played_time: 3900,
+            series_score: None,
         };
 
         let formatted = page.format_compact_game(&final_game, &config);
@@ -1445,6 +1451,7 @@ mod tests {
                 is_shootout: false,
                 goal_events: vec![],
                 played_time: 3900,
+                series_score: None,
             },
             TeletextRow::GameResult {
                 home_team: "HIFK".to_string(),
@@ -1456,6 +1463,7 @@ mod tests {
                 is_shootout: false,
                 goal_events: vec![],
                 played_time: 3900,
+                series_score: None,
             },
         ];
 
@@ -1755,6 +1763,7 @@ mod tests {
             is_shootout: false,
             goal_events: Vec::new(),
             played_time: 0,
+            series_score: None,
         };
 
         let game2 = TeletextRow::GameResult {
@@ -1767,6 +1776,7 @@ mod tests {
             is_shootout: false,
             goal_events: Vec::new(),
             played_time: 0,
+            series_score: None,
         };
 
         let game3 = TeletextRow::GameResult {
@@ -1779,6 +1789,7 @@ mod tests {
             is_shootout: false,
             goal_events: Vec::new(),
             played_time: 0,
+            series_score: None,
         };
 
         let rows = vec![&game1, &game2, &game3];
@@ -1826,6 +1837,7 @@ mod tests {
             is_shootout: false,
             goal_events: vec![],
             played_time: 0,
+            series_score: None,
         };
 
         let formatted = page.format_compact_game(&scheduled_game, &config);
@@ -1843,6 +1855,7 @@ mod tests {
             is_shootout: false,
             goal_events: vec![],
             played_time: 2400, // 40 minutes
+            series_score: None,
         };
 
         let formatted = page.format_compact_game(&ongoing_game, &config);
@@ -1860,6 +1873,7 @@ mod tests {
             is_shootout: false,
             goal_events: vec![],
             played_time: 3900,
+            series_score: None,
         };
 
         let formatted = page.format_compact_game(&overtime_game, &config);
@@ -1877,6 +1891,7 @@ mod tests {
             is_shootout: true,
             goal_events: vec![],
             played_time: 3900,
+            series_score: None,
         };
 
         let formatted = page.format_compact_game(&shootout_game, &config);

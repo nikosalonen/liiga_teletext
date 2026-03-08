@@ -277,6 +277,7 @@ mod tests {
             is_shootout: false,
             goal_events: vec![],
             played_time: 3600,
+            series_score: None,
         }
     }
 

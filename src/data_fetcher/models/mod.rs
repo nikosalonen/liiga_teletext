@@ -6,7 +6,7 @@ pub mod schedule;
 pub mod standings;
 
 // Re-export all public types for backward compatibility
-pub use common::{GameData, HasGoalEvents, HasTeams};
+pub use common::{GameData, HasGoalEvents, HasTeams, PlayoffSeriesScore};
 pub use detailed::{DetailedGame, DetailedGameResponse, DetailedTeam};
 pub use goals::{GoalEvent, GoalEventData};
 pub use players::Player;

@@ -1,6 +1,7 @@
 //! Game result data structures and types
 
 use crate::data_fetcher::GoalEventData;
+use crate::data_fetcher::models::PlayoffSeriesScore;
 
 #[derive(Debug, Clone, Hash, PartialEq)]
 pub enum ScoreType {
@@ -22,6 +23,7 @@ pub struct GameResultData {
     pub is_shootout: bool,
     pub goal_events: Vec<GoalEventData>,
     pub played_time: i32,
+    pub series_score: Option<PlayoffSeriesScore>,
 }
 
 impl GameResultData {
@@ -66,6 +68,7 @@ impl GameResultData {
             is_shootout: game_data.is_shootout,
             goal_events: game_data.goal_events.clone(),
             played_time: game_data.played_time,
+            series_score: game_data.series_score.clone(),
         }
     }
 }
