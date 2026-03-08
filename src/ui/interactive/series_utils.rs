@@ -66,8 +66,9 @@ pub(super) fn get_subheader(games: &[GameData]) -> String {
 pub fn playoff_phase_name(phase: i32, serie: &str) -> &'static str {
     match serie.to_ascii_lowercase().as_str() {
         "playoffs" => match phase {
-            1 => "PUOLIVÄLIERÄT",
-            2 => "VÄLIERÄT",
+            1 => "1. KIERROS",
+            2 => "PUOLIVÄLIERÄT",
+            3 => "VÄLIERÄT",
             4 => "PRONSSIOTTELU",
             5 => "FINAALI",
             _ => "PLAYOFFS",
@@ -162,8 +163,9 @@ mod tests {
 
     #[test]
     fn test_playoff_phase_name() {
-        assert_eq!(playoff_phase_name(1, "playoffs"), "PUOLIVÄLIERÄT");
-        assert_eq!(playoff_phase_name(2, "playoffs"), "VÄLIERÄT");
+        assert_eq!(playoff_phase_name(1, "playoffs"), "1. KIERROS");
+        assert_eq!(playoff_phase_name(2, "playoffs"), "PUOLIVÄLIERÄT");
+        assert_eq!(playoff_phase_name(3, "playoffs"), "VÄLIERÄT");
         assert_eq!(playoff_phase_name(4, "playoffs"), "PRONSSIOTTELU");
         assert_eq!(playoff_phase_name(5, "playoffs"), "FINAALI");
         assert_eq!(playoff_phase_name(99, "playoffs"), "PLAYOFFS");
