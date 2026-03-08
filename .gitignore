@@ -1,4 +1,4 @@
 /target
 /config.toml
 log.*
-.claude/
+.claude/*
