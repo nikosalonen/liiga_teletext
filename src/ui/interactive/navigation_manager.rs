@@ -289,7 +289,11 @@ impl NavigationManager {
                 "qualifications" => 2,
                 _ => 3,
             };
-            (serie_order, g.play_off_phase.unwrap_or(i32::MAX))
+            (
+                serie_order,
+                g.play_off_phase.unwrap_or(i32::MAX),
+                g.play_off_pair.unwrap_or(i32::MAX),
+            )
         });
 
         let mut last_header: Option<(&str, i32)> = None;

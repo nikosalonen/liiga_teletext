@@ -24,6 +24,14 @@ pub(super) fn calculate_games_hash(games: &[GameData]) -> u64 {
         game.serie.hash(&mut hasher);
         game.played_time.hash(&mut hasher);
         game.start.hash(&mut hasher);
+        game.play_off_phase.hash(&mut hasher);
+        game.play_off_pair.hash(&mut hasher);
+        game.play_off_req_wins.hash(&mut hasher);
+        if let Some(ref score) = game.series_score {
+            score.home_team_wins.hash(&mut hasher);
+            score.away_team_wins.hash(&mut hasher);
+            score.req_wins.hash(&mut hasher);
+        }
 
         // Hash only essential goal event fields for efficient change detection
         // These fields capture the most important changes: new goals, score updates, and timing
@@ -32,11 +40,7 @@ pub(super) fn calculate_games_hash(games: &[GameData]) -> u64 {
             goal.minute.hash(&mut hasher);
             goal.home_team_score.hash(&mut hasher);
             goal.away_team_score.hash(&mut hasher);
-            // Omitted fields for performance:
-            // - scorer_name: derived from scorer_player_id via players cache
-            // - is_winning_goal: calculated field, can be derived
-            // - is_home_team: derived from team comparison
-            // - goal_types: less critical for change detection, rarely updated
+            goal.video_clip_url.hash(&mut hasher);
         }
     }
 
@@ -163,5 +167,59 @@ mod tests {
         let games3 = vec![make_game("TPS", "HIFK", "4-2", "runkosarja")];
         let hash3 = calculate_games_hash(&games3);
         assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_series_score_change_detected() {
+        use crate::data_fetcher::models::PlayoffSeriesScore;
+
+        let mut game1 = make_game("TPS", "HIFK", "3-2", "playoffs");
+        let mut game2 = game1.clone();
+
+        game1.series_score = None;
+        game2.series_score = Some(PlayoffSeriesScore {
+            home_team_wins: 2,
+            away_team_wins: 1,
+            req_wins: 4,
+        });
+
+        let hash1 = calculate_games_hash(&[game1]);
+        let hash2 = calculate_games_hash(&[game2]);
+        assert_ne!(
+            hash1, hash2,
+            "series_score change should produce different hash"
+        );
+    }
+
+    #[test]
+    fn test_video_clip_url_change_detected() {
+        use crate::data_fetcher::GoalEventData;
+
+        let mut game1 = make_game("TPS", "HIFK", "3-2", "runkosarja");
+        let mut game2 = game1.clone();
+
+        let goal = GoalEventData {
+            scorer_player_id: 1,
+            scorer_name: "Test".to_string(),
+            minute: 10,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: vec![],
+            is_home_team: true,
+            video_clip_url: None,
+        };
+
+        game1.goal_events = vec![goal.clone()];
+        let mut goal_with_video = goal;
+        goal_with_video.video_clip_url = Some("https://example.com/video.mp4".to_string());
+        game2.goal_events = vec![goal_with_video];
+
+        let hash1 = calculate_games_hash(&[game1]);
+        let hash2 = calculate_games_hash(&[game2]);
+        assert_ne!(
+            hash1, hash2,
+            "video_clip_url change should produce different hash"
+        );
     }
 }

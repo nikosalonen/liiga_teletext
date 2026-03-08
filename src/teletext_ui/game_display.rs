@@ -7,7 +7,7 @@ use crate::data_fetcher::models::GameData;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
 
-fn format_team_series_indicator(wins: u8, req_wins: u8) -> String {
+pub(crate) fn format_team_series_indicator(wins: u8, req_wins: u8) -> String {
     let filled = "●".repeat(wins as usize);
     let empty = "○".repeat(req_wins.saturating_sub(wins) as usize);
     format!("{filled}{empty}")
@@ -656,7 +656,8 @@ impl TeletextPage {
 
         // Show play icon when goal has a video clip link
         if has_video {
-            buffer.push_str("\x1b[38;5;51m▶\x1b[0m");
+            let play_icon_fg_code = get_ansi_code(home_scorer_fg(), 51);
+            buffer.push_str(&format!("\x1b[38;5;{play_icon_fg_code}m▶\x1b[0m"));
         }
 
         // Get goal type display with safe fallback for missing data (requirement 4.1)

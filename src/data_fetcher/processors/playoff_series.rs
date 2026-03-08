@@ -46,6 +46,10 @@ pub fn calculate_series_scores(
         }
 
         // Determine winner from schedule game scores directly
+        // Skip games with tied or zero-zero scores (data may be incomplete)
+        if sched_game.home_team_goals == sched_game.away_team_goals {
+            continue;
+        }
         let winner = if sched_game.home_team_goals > sched_game.away_team_goals {
             &sched_game.home_team_name
         } else {

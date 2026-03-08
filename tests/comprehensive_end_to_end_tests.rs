@@ -7,7 +7,7 @@
 //! - Requirements: 4.2
 
 use liiga_teletext::data_fetcher::GoalEventData;
-use liiga_teletext::data_fetcher::models::GameData;
+use liiga_teletext::data_fetcher::models::{GameData, PlayoffSeriesScore};
 use liiga_teletext::teletext_ui::CONTENT_MARGIN;
 use liiga_teletext::teletext_ui::layout::{AlignmentCalculator, ColumnLayoutManager};
 use liiga_teletext::teletext_ui::{GameResultData, ScoreType, TeletextPage};
@@ -178,10 +178,14 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             }],
             played_time: 3720, // Overtime
             start: "2024-03-15T18:00:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
+            play_off_phase: Some(1),
+            play_off_pair: Some(1),
+            play_off_req_wins: Some(4),
+            series_score: Some(PlayoffSeriesScore {
+                home_team_wins: 2,
+                away_team_wins: 1,
+                req_wins: 4,
+            }),
         },
     ]
 }
