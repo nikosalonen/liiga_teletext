@@ -762,8 +762,15 @@ pub(super) async fn fetch_historical_games(
         return Ok(Vec::new());
     }
 
-    // Keep a copy of all schedule games for series score calculation
-    let full_schedule = all_schedule_games.clone();
+    // Check if any games have playoff data before cloning for series calculation
+    let has_playoff_games = all_schedule_games
+        .iter()
+        .any(|g| g.play_off_phase.is_some());
+    let full_schedule = if has_playoff_games {
+        Some(all_schedule_games.clone())
+    } else {
+        None
+    };
 
     // Filter games to match the requested date
     let matching_games = filter_games_by_date(all_schedule_games, date);
@@ -806,9 +813,11 @@ pub(super) async fn fetch_historical_games(
     let mut games = process_games(client, config, response_data).await?;
 
     // Calculate series scores for playoff games
-    if games.iter().any(|g| g.play_off_phase.is_some()) {
+    if let Some(ref schedule) = full_schedule
+        && games.iter().any(|g| g.play_off_phase.is_some())
+    {
         use crate::data_fetcher::processors::playoff_series::calculate_series_scores;
-        calculate_series_scores(&full_schedule, &mut games, date);
+        calculate_series_scores(schedule, &mut games, date);
     }
 
     Ok(games)

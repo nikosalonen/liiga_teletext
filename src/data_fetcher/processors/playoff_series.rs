@@ -45,8 +45,9 @@ pub fn calculate_series_scores(
             series_req_wins.insert(key, req_wins as u8);
         }
 
-        // Determine winner from schedule game scores directly
-        // Skip games with tied or zero-zero scores (data may be incomplete)
+        // Determine winner from schedule game scores.
+        // In playoffs, games cannot end in a tie (OT/SO always decides).
+        // If scores are equal, the API data may be incomplete — skip these.
         if sched_game.home_team_goals == sched_game.away_team_goals {
             continue;
         }
@@ -120,16 +121,13 @@ mod tests {
             self
         }
 
-        #[allow(clippy::too_many_arguments)]
-        fn game(
+        fn ended(
             &self,
             id: i32,
             home: &str,
             away: &str,
             start: &str,
-            ended: bool,
-            home_goals: i32,
-            away_goals: i32,
+            score: (i32, i32),
         ) -> ScheduleApiGame {
             ScheduleApiGame {
                 id,
@@ -138,19 +136,15 @@ mod tests {
                 home_team_name: home.to_string(),
                 away_team_name: away.to_string(),
                 serie: self.serie,
-                finished_type: if ended {
-                    Some("FINISHED".to_string())
-                } else {
-                    None
-                },
-                started: ended,
-                ended,
-                game_time: if ended { Some(3600) } else { None },
+                finished_type: Some("FINISHED".to_string()),
+                started: true,
+                ended: true,
+                game_time: Some(3600),
                 play_off_phase: Some(self.phase),
                 play_off_pair: Some(self.pair),
                 play_off_req_wins: Some(self.req_wins),
-                home_team_goals: home_goals,
-                away_team_goals: away_goals,
+                home_team_goals: score.0,
+                away_team_goals: score.1,
             }
         }
     }
@@ -189,9 +183,9 @@ mod tests {
     fn test_series_with_3_games_one_team_leads_2_1() {
         let b = ScheduleApiGameBuilder::new(1, 1, 4);
         let schedule = vec![
-            b.game(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", true, 3, 1),
-            b.game(2, "HIFK", "TPS", "2024-03-22T18:00:00Z", true, 4, 2),
-            b.game(3, "TPS", "HIFK", "2024-03-24T18:00:00Z", true, 2, 1),
+            b.ended(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", (3, 1)),
+            b.ended(2, "HIFK", "TPS", "2024-03-22T18:00:00Z", (4, 2)),
+            b.ended(3, "TPS", "HIFK", "2024-03-24T18:00:00Z", (2, 1)),
         ];
 
         let mut games = vec![
@@ -243,10 +237,10 @@ mod tests {
     fn test_decided_series_4_wins() {
         let b = ScheduleApiGameBuilder::new(1, 1, 4);
         let schedule = vec![
-            b.game(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", true, 3, 1),
-            b.game(2, "HIFK", "TPS", "2024-03-22T18:00:00Z", true, 1, 4),
-            b.game(3, "TPS", "HIFK", "2024-03-24T18:00:00Z", true, 2, 1),
-            b.game(4, "HIFK", "TPS", "2024-03-26T18:00:00Z", true, 0, 3),
+            b.ended(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", (3, 1)),
+            b.ended(2, "HIFK", "TPS", "2024-03-22T18:00:00Z", (1, 4)),
+            b.ended(3, "TPS", "HIFK", "2024-03-24T18:00:00Z", (2, 1)),
+            b.ended(4, "HIFK", "TPS", "2024-03-26T18:00:00Z", (0, 3)),
         ];
 
         let mut games = vec![
@@ -303,7 +297,7 @@ mod tests {
     #[test]
     fn test_bronze_game_req_wins_1() {
         let b = ScheduleApiGameBuilder::new(4, 1, 1);
-        let schedule = vec![b.game(1, "TPS", "HIFK", "2024-04-01T18:00:00Z", true, 3, 2)];
+        let schedule = vec![b.ended(1, "TPS", "HIFK", "2024-04-01T18:00:00Z", (3, 2))];
         let mut games = vec![make_game_data(
             "TPS",
             "HIFK",
@@ -328,8 +322,8 @@ mod tests {
         let b1 = ScheduleApiGameBuilder::new(1, 1, 4);
         let b2 = ScheduleApiGameBuilder::new(2, 1, 4);
         let schedule = vec![
-            b1.game(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", true, 3, 1),
-            b2.game(2, "Lukko", "Ilves", "2024-03-20T18:00:00Z", true, 2, 1),
+            b1.ended(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", (3, 1)),
+            b2.ended(2, "Lukko", "Ilves", "2024-03-20T18:00:00Z", (2, 1)),
         ];
 
         let mut games = vec![
@@ -397,11 +391,11 @@ mod tests {
         // Target date is 2024-03-24, so only games 1-3 should be counted.
         let b = ScheduleApiGameBuilder::new(1, 1, 4);
         let schedule = vec![
-            b.game(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", true, 3, 1), // TPS wins
-            b.game(2, "HIFK", "TPS", "2024-03-22T18:00:00Z", true, 4, 2), // HIFK wins
-            b.game(3, "TPS", "HIFK", "2024-03-24T18:00:00Z", true, 2, 1), // TPS wins
-            b.game(4, "HIFK", "TPS", "2024-03-26T18:00:00Z", true, 1, 3), // future: TPS wins
-            b.game(5, "TPS", "HIFK", "2024-03-28T18:00:00Z", true, 0, 2), // future: HIFK wins
+            b.ended(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", (3, 1)), // TPS wins
+            b.ended(2, "HIFK", "TPS", "2024-03-22T18:00:00Z", (4, 2)), // HIFK wins
+            b.ended(3, "TPS", "HIFK", "2024-03-24T18:00:00Z", (2, 1)), // TPS wins
+            b.ended(4, "HIFK", "TPS", "2024-03-26T18:00:00Z", (1, 3)), // future: TPS wins
+            b.ended(5, "TPS", "HIFK", "2024-03-28T18:00:00Z", (0, 2)), // future: HIFK wins
         ];
 
         // Viewing date 2024-03-24: only game 3 is on this date
@@ -435,12 +429,12 @@ mod tests {
 
         let schedule = vec![
             // 3 completed playoff games
-            playoffs_builder.game(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", true, 3, 1),
-            playoffs_builder.game(2, "HIFK", "TPS", "2024-03-22T18:00:00Z", true, 4, 2),
-            playoffs_builder.game(3, "TPS", "HIFK", "2024-03-24T18:00:00Z", true, 2, 1),
+            playoffs_builder.ended(1, "TPS", "HIFK", "2024-03-20T18:00:00Z", (3, 1)),
+            playoffs_builder.ended(2, "HIFK", "TPS", "2024-03-22T18:00:00Z", (4, 2)),
+            playoffs_builder.ended(3, "TPS", "HIFK", "2024-03-24T18:00:00Z", (2, 1)),
             // 1 completed playout game (same phase=1, pair=1!)
-            playout_builder.game(4, "Jukurit", "Pelicans", "2024-03-20T18:00:00Z", true, 3, 2),
-            playout_builder.game(5, "Pelicans", "Jukurit", "2024-03-22T18:00:00Z", true, 1, 4),
+            playout_builder.ended(4, "Jukurit", "Pelicans", "2024-03-20T18:00:00Z", (3, 2)),
+            playout_builder.ended(5, "Pelicans", "Jukurit", "2024-03-22T18:00:00Z", (1, 4)),
         ];
 
         // Target: only the playout game on 2024-03-22
