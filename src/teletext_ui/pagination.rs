@@ -23,17 +23,28 @@ impl TeletextPage {
             }
             TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
             TeletextRow::FutureGamesHeader(_) => 1u16, // Single line for future games header
-            TeletextRow::StandingsHeader => 1u16,
+            TeletextRow::StandingsHeader => {
+                if self.standings_use_spacing() {
+                    2u16
+                } else {
+                    1u16
+                }
+            }
             TeletextRow::StandingsRow { position, .. } => {
+                let base = if self.standings_use_spacing() {
+                    2u16
+                } else {
+                    1u16
+                };
                 // Add extra line for playoff separator (drawn before positions after playoff lines)
                 if self
                     .playoffs_lines
                     .iter()
                     .any(|&line| *position == line + 1)
                 {
-                    2u16
+                    base + 1
                 } else {
-                    1u16
+                    base
                 }
             }
         }
@@ -58,6 +69,27 @@ impl TeletextPage {
         } else {
             base_height
         }
+    }
+
+    /// Returns true if standings rows should have blank-line spacing between them.
+    /// Spacing is used when the terminal is tall enough to fit all standings content
+    /// with extra blank lines, making the table easier to read.
+    pub(super) fn standings_use_spacing(&self) -> bool {
+        if !self.is_standings_page {
+            return false;
+        }
+        let available_height = self.screen_height.saturating_sub(5);
+        let standings_rows = self
+            .content_rows
+            .iter()
+            .filter(|r| matches!(r, TeletextRow::StandingsRow { .. }))
+            .count() as u16;
+        let header_lines = 1u16; // StandingsHeader
+        let separator_lines = self.playoffs_lines.len() as u16;
+        // With spacing: header + blank + (each row + blank) + separators
+        // Last row doesn't strictly need a blank after it, but it's fine
+        let total_with_spacing = (header_lines + 1) + (standings_rows * 2) + separator_lines;
+        total_with_spacing <= available_height
     }
 
     /// Calculates and returns the content that should be displayed on the current page.

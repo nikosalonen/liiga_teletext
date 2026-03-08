@@ -29,6 +29,11 @@ impl TeletextPage {
         );
         buffer.push_str(&line_code);
         *current_line += 1;
+
+        // Add blank line after header when terminal is tall enough
+        if self.standings_use_spacing() {
+            *current_line += 1;
+        }
     }
 
     /// Renders a playoff separator line (─── across table width).
@@ -131,6 +136,11 @@ impl TeletextPage {
         let line_code = format!("\x1b[{};{}H{}", *current_line + 1, CONTENT_MARGIN + 1, row);
         buffer.push_str(&line_code);
         *current_line += 1;
+
+        // Add blank line between rows when terminal is tall enough
+        if self.standings_use_spacing() {
+            *current_line += 1;
+        }
     }
 }
 
