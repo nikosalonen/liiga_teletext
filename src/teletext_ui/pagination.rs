@@ -11,7 +11,7 @@ impl TeletextPage {
     ///
     /// # Returns
     /// * `u16` - Height in terminal lines required for this row
-    pub(super) fn calculate_game_height(game: &TeletextRow) -> u16 {
+    pub(super) fn calculate_game_height(&self, game: &TeletextRow) -> u16 {
         match game {
             TeletextRow::GameResult { goal_events, .. } => {
                 let base_height = 1; // Game result line
@@ -23,6 +23,30 @@ impl TeletextPage {
             }
             TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
             TeletextRow::FutureGamesHeader(_) => 1u16, // Single line for future games header
+            TeletextRow::StandingsHeader => {
+                if self.standings_use_spacing() {
+                    2u16
+                } else {
+                    1u16
+                }
+            }
+            TeletextRow::StandingsRow { position, .. } => {
+                let base = if self.standings_use_spacing() {
+                    2u16
+                } else {
+                    1u16
+                };
+                // Add extra line for playoff separator (drawn before positions after playoff lines)
+                if self
+                    .playoffs_lines
+                    .iter()
+                    .any(|&line| *position == line + 1)
+                {
+                    base + 1
+                } else {
+                    base
+                }
+            }
         }
     }
 
@@ -35,7 +59,7 @@ impl TeletextPage {
     /// # Returns
     /// * `u16` - Effective height in terminal lines considering layout mode
     pub(super) fn calculate_effective_game_height(&self, game: &TeletextRow) -> u16 {
-        let base_height = Self::calculate_game_height(game);
+        let base_height = self.calculate_game_height(game);
         if self.wide_mode && self.can_fit_two_pages() {
             // In wide mode, we can fit two games in the same vertical space
             // Add spacing between games (1 extra line per game except the last)
@@ -45,6 +69,27 @@ impl TeletextPage {
         } else {
             base_height
         }
+    }
+
+    /// Returns true if standings rows should have blank-line spacing between them.
+    /// Spacing is used when the terminal is tall enough to fit all standings content
+    /// with extra blank lines, making the table easier to read.
+    pub(super) fn standings_use_spacing(&self) -> bool {
+        if !self.is_standings_page {
+            return false;
+        }
+        let available_height = self.screen_height.saturating_sub(5);
+        let standings_rows = self
+            .content_rows
+            .iter()
+            .filter(|r| matches!(r, TeletextRow::StandingsRow { .. }))
+            .count() as u16;
+        let header_lines = 1u16; // StandingsHeader
+        let separator_lines = self.playoffs_lines.len() as u16;
+        // With spacing: header + blank + (each row + blank) + separators
+        // Last row doesn't strictly need a blank after it, but it's fine
+        let total_with_spacing = (header_lines + 1) + (standings_rows * 2) + separator_lines;
+        total_with_spacing <= available_height
     }
 
     /// Calculates and returns the content that should be displayed on the current page.

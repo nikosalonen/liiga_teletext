@@ -96,4 +96,31 @@ impl TeletextPage {
         self.content_rows
             .push(TeletextRow::FutureGamesHeader(header_text));
     }
+
+    /// Adds the standings column header row.
+    pub fn add_standings_header(&mut self) {
+        self.content_rows.push(TeletextRow::StandingsHeader);
+    }
+
+    /// Adds a standings entry row.
+    pub fn add_standings_row(
+        &mut self,
+        position: u16,
+        entry: &crate::data_fetcher::models::standings::StandingsEntry,
+    ) {
+        self.content_rows.push(TeletextRow::StandingsRow {
+            position,
+            team_name: entry.team_name.clone(),
+            games_played: entry.games_played,
+            wins: entry.wins,
+            ot_wins: entry.ot_wins,
+            ot_losses: entry.ot_losses,
+            losses: entry.losses,
+            goals_for: entry.goals_for,
+            goals_against: entry.goals_against,
+            points: entry.points,
+            live_points_delta: entry.live_points_delta,
+            live_position_change: entry.live_position_change,
+        });
+    }
 }

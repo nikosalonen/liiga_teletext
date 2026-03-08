@@ -3,6 +3,7 @@ pub mod detailed;
 pub mod goals;
 pub mod players;
 pub mod schedule;
+pub mod standings;
 
 // Re-export all public types for backward compatibility
 pub use common::{GameData, HasGoalEvents, HasTeams};

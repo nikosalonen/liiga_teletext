@@ -10,9 +10,11 @@ use crate::data_fetcher::{fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::TeletextPage;
 use chrono::{Datelike, Local, NaiveDate, Utc};
-use crossterm::event::{self, KeyCode, KeyModifiers};
+use crossterm::event::{self, KeyCode, KeyEventKind, KeyModifiers};
 use std::io::stdout;
 use std::time::{Duration, Instant};
+
+use super::state_manager::ViewMode;
 
 /// Parameters for keyboard event handling
 pub(super) struct KeyEventParams<'a> {
@@ -24,6 +26,8 @@ pub(super) struct KeyEventParams<'a> {
     pub last_manual_refresh: &'a mut Instant,
     pub last_page_change: &'a mut Instant,
     pub last_date_navigation: &'a mut Instant,
+    pub current_view: &'a mut ViewMode,
+    pub preserved_games_page: &'a mut Option<usize>,
 }
 
 /// Checks if the given key event matches the date navigation shortcut.
@@ -293,14 +297,22 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
 
 /// Handle keyboard events
 pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> {
+    // Only handle key press events, ignore Release/Repeat to prevent double-toggling on Windows
+    if params.key_event.kind != KeyEventKind::Press {
+        return Ok(false);
+    }
+
     tracing::debug!(
         "Key event: {:?}, modifiers: {:?}",
         params.key_event.code,
         params.key_event.modifiers
     );
 
+    // Disable date navigation in standings view
+    let is_standings = matches!(params.current_view, ViewMode::Standings { .. });
+
     // Check for date navigation first (Shift + Arrow keys)
-    if is_date_navigation_key(params.key_event, true) {
+    if !is_standings && is_date_navigation_key(params.key_event, true) {
         // Shift + Left: Previous date with games
         if params.last_date_navigation.elapsed() >= Duration::from_millis(250) {
             tracing::info!("Previous date navigation requested");
@@ -344,7 +356,7 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
             }
             *params.last_date_navigation = Instant::now();
         }
-    } else if is_date_navigation_key(params.key_event, false) {
+    } else if !is_standings && is_date_navigation_key(params.key_event, false) {
         // Shift + Right: Next date with games
         if params.last_date_navigation.elapsed() >= Duration::from_millis(250) {
             tracing::info!("Next date navigation requested");
@@ -431,6 +443,31 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                         *params.needs_render = true;
                     }
                     *params.last_page_change = Instant::now();
+                }
+            }
+            KeyCode::Char('s') => {
+                tracing::info!("View toggle requested");
+                match *params.current_view {
+                    ViewMode::Games => {
+                        // Preserve current games page
+                        if let Some(page) = params.current_page.as_ref() {
+                            *params.preserved_games_page = Some(page.get_current_page());
+                        }
+                        *params.current_view = ViewMode::Standings { live_mode: false };
+                    }
+                    ViewMode::Standings { .. } => {
+                        *params.current_view = ViewMode::Games;
+                    }
+                }
+                *params.needs_refresh = true;
+            }
+            KeyCode::Char('l') => {
+                if let ViewMode::Standings { live_mode } = *params.current_view {
+                    tracing::info!("Live mode toggle requested");
+                    *params.current_view = ViewMode::Standings {
+                        live_mode: !live_mode,
+                    };
+                    *params.needs_refresh = true;
                 }
             }
             _ => {}

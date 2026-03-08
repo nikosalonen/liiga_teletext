@@ -130,6 +130,40 @@ impl TeletextPage {
                         subheader_fg_code,
                     );
                 }
+                TeletextRow::StandingsHeader => {
+                    self.render_standings_header(buffer, current_line, text_fg_code);
+                }
+                TeletextRow::StandingsRow {
+                    position,
+                    team_name,
+                    games_played,
+                    wins,
+                    ot_wins,
+                    ot_losses,
+                    losses,
+                    goals_for,
+                    goals_against,
+                    points,
+                    live_points_delta,
+                    live_position_change,
+                } => {
+                    self.render_standings_row(
+                        buffer,
+                        *position,
+                        team_name,
+                        *games_played,
+                        *wins,
+                        *ot_wins,
+                        *ot_losses,
+                        *losses,
+                        *goals_for,
+                        *goals_against,
+                        *points,
+                        live_points_delta,
+                        live_position_change,
+                        current_line,
+                    );
+                }
             }
         }
     }
