@@ -7,6 +7,7 @@ pub mod http_client;
 pub mod orchestrator;
 pub mod season_schedule;
 pub mod season_utils;
+pub mod standings_api;
 mod tournament_api;
 pub mod tournament_logic;
 pub mod urls;

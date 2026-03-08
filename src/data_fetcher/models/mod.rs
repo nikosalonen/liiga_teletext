@@ -3,6 +3,7 @@ pub mod detailed;
 pub mod goals;
 pub mod players;
 pub mod schedule;
+pub mod standings;
 
 // Re-export all public types for backward compatibility
 pub use common::{GameData, HasGoalEvents, HasTeams};
@@ -10,6 +11,8 @@ pub use detailed::{DetailedGame, DetailedGameResponse, DetailedTeam};
 pub use goals::{GoalEvent, GoalEventData};
 pub use players::Player;
 pub use schedule::{ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam};
+#[allow(unused_imports)]
+pub use standings::{ApiStandingsTeam, StandingsEntry, StandingsResponse};
 
 #[cfg(test)]
 mod tests {

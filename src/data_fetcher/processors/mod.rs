@@ -2,6 +2,8 @@ pub mod core;
 pub mod game_status;
 pub mod goal_events;
 pub mod player_fetching;
+#[allow(dead_code)]
+pub mod standings_calculator;
 pub mod time_formatting;
 
 // Re-export all public items from core for backward compatibility

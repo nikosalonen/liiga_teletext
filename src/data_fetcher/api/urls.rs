@@ -87,6 +87,26 @@ pub fn build_tournament_schedule_url(api_domain: &str, tournament: &str, season:
     format!("{api_domain}/schedule?tournament={tournament}&week=1&season={season}")
 }
 
+/// Builds a standings URL for fetching league standings.
+///
+/// # Arguments
+/// * `api_domain` - The base API domain
+/// * `season` - The season year
+///
+/// # Returns
+/// * `String` - The complete standings URL
+///
+/// # Example
+/// ```
+/// use liiga_teletext::data_fetcher::api::build_standings_url;
+///
+/// let url = build_standings_url("https://api.example.com", 2026);
+/// assert_eq!(url, "https://api.example.com/standings/?season=2026");
+/// ```
+pub fn build_standings_url(api_domain: &str, season: i32) -> String {
+    format!("{api_domain}/standings/?season={season}")
+}
+
 /// Creates a tournament key for caching and identification purposes.
 /// This combines tournament name and date into a unique identifier.
 ///
