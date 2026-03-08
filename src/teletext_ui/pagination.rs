@@ -13,13 +13,22 @@ impl TeletextPage {
     /// * `u16` - Height in terminal lines required for this row
     pub(super) fn calculate_game_height(&self, game: &TeletextRow) -> u16 {
         match game {
-            TeletextRow::GameResult { goal_events, .. } => {
+            TeletextRow::GameResult {
+                goal_events,
+                series_score,
+                ..
+            } => {
                 let base_height = 1; // Game result line
+                let series_line = if series_score.as_ref().is_some_and(|s| s.req_wins > 1) {
+                    1
+                } else {
+                    0
+                };
                 let home_scorers = goal_events.iter().filter(|e| e.is_home_team).count();
                 let away_scorers = goal_events.iter().filter(|e| !e.is_home_team).count();
                 let scorer_lines = home_scorers.max(away_scorers);
                 let spacer = 1; // Space between games
-                base_height + scorer_lines as u16 + spacer
+                base_height + series_line + scorer_lines as u16 + spacer
             }
             TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
             TeletextRow::FutureGamesHeader(_) => 1u16, // Single line for future games header

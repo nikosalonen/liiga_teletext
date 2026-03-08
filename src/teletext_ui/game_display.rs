@@ -292,19 +292,6 @@ impl TeletextPage {
             ));
 
             buffer.push_str(&game_line);
-
-            // Render series indicator for ongoing games
-            if let Some(score) = series_score
-                && score.req_wins > 1
-            {
-                let indicator = format_series_indicator(score);
-                let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
-                let indicator_pos = layout_config.score_column + 8;
-                let pos_code = layout_manager.get_position_code(*current_line, indicator_pos);
-                buffer.push_str(&format!(
-                    "{pos_code}\x1b[38;5;{goal_type_fg_code}m{indicator}\x1b[0m"
-                ));
-            }
         } else {
             // For scheduled/final games: show time or score on the right
             let display_text = if !time_display.is_empty() {
@@ -324,22 +311,23 @@ impl TeletextPage {
                 result_color,
             );
             buffer.push_str(&formatted_line);
-
-            // Render series indicator after score if present
-            if let Some(score) = series_score
-                && score.req_wins > 1
-            {
-                let indicator = format_series_indicator(score);
-                let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
-                let indicator_pos = layout_config.score_column + 8; // After score text
-                let pos_code = layout_manager.get_position_code(*current_line, indicator_pos);
-                buffer.push_str(&format!(
-                    "{pos_code}\x1b[38;5;{goal_type_fg_code}m{indicator}\x1b[0m"
-                ));
-            }
         }
 
         *current_line += 1;
+
+        // Render series indicator on a separate line below the score
+        if let Some(score) = series_score
+            && score.req_wins > 1
+        {
+            let indicator = format_series_indicator(score);
+            let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
+            let indicator_pos = layout_config.score_column;
+            let pos_code = layout_manager.get_position_code(*current_line, indicator_pos);
+            buffer.push_str(&format!(
+                "{pos_code}\x1b[38;5;{goal_type_fg_code}m{indicator}\x1b[0m"
+            ));
+            *current_line += 1;
+        }
 
         // Add goal events for finished/ongoing games
         if matches!(score_type, ScoreType::Ongoing | ScoreType::Final) && !goal_events.is_empty() {
