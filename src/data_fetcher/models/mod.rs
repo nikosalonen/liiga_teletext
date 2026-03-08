@@ -11,8 +11,6 @@ pub use detailed::{DetailedGame, DetailedGameResponse, DetailedTeam};
 pub use goals::{GoalEvent, GoalEventData};
 pub use players::Player;
 pub use schedule::{ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam};
-#[allow(unused_imports)]
-pub use standings::{ApiStandingsTeam, StandingsEntry, StandingsResponse};
 
 #[cfg(test)]
 mod tests {
