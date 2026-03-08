@@ -31,9 +31,6 @@ pub mod cache_ttl {
     #[allow(dead_code)]
     pub const HTTP_RESPONSE_SECONDS: u64 = 300;
 
-    /// TTL for standings data (5 minutes)
-    #[allow(dead_code)]
-    pub const STANDINGS_SECONDS: u64 = 300;
 }
 
 /// UI polling intervals in milliseconds
