@@ -38,7 +38,13 @@ pub fn render_footer_with_view(
         Some(crate::ui::interactive::state_manager::ViewMode::Standings { live_mode }) => {
             if *live_mode {
                 if auto_refresh_disabled {
-                    "q=Lopeta s=Ottelut l=Live ✓ (Ei päivity)"
+                    if total_pages > 1 {
+                        "q=Lopeta ←→=Sivut s=Ottelut l=Live ✓ (Ei päivity)"
+                    } else {
+                        "q=Lopeta s=Ottelut l=Live ✓ (Ei päivity)"
+                    }
+                } else if total_pages > 1 {
+                    "q=Lopeta ←→=Sivut s=Ottelut l=Live ✓"
                 } else {
                     "q=Lopeta s=Ottelut l=Live ✓"
                 }

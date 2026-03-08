@@ -44,7 +44,7 @@ impl TeletextPage {
         let separator: String = "\u{2500}".repeat(width);
 
         let line_code = format!(
-            "\x1b[{};{}H\x1b[38;5;{dim_code}m {separator}\x1b[0m",
+            "\x1b[{};{}H\x1b[38;5;{dim_code}m{separator}\x1b[0m",
             *current_line + 1,
             CONTENT_MARGIN + 1,
         );
@@ -143,7 +143,7 @@ impl TeletextPage {
     }
 }
 
-/// Color for position numbers (yellow)
+/// Color for position numbers (yellow) — delegates to the shared teletext palette
 fn position_fg() -> crossterm::style::Color {
-    crossterm::style::Color::AnsiValue(226)
+    goal_type_fg()
 }
