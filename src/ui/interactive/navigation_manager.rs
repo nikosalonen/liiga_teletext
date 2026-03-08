@@ -543,8 +543,8 @@ impl NavigationManager {
         playoffs_lines: &[u16],
         live_mode: bool,
         disable_links: bool,
-        compact_mode: bool,
-        wide_mode: bool,
+        _compact_mode: bool,
+        _wide_mode: bool,
     ) -> TeletextPage {
         let subheader = if live_mode {
             "SARJATAULUKKO (LIVE)".to_string()
@@ -552,6 +552,7 @@ impl NavigationManager {
             "SARJATAULUKKO".to_string()
         };
 
+        // Force normal mode for standings - compact/wide renderers don't support standings rows
         let mut page = TeletextPage::new(
             230,
             "JÄÄKIEKKO".to_string(),
@@ -559,8 +560,8 @@ impl NavigationManager {
             disable_links,
             true,
             false,
-            compact_mode,
-            wide_mode,
+            false,
+            false,
         );
 
         page.set_standings_mode(true, live_mode);
