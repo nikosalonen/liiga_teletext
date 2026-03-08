@@ -348,9 +348,7 @@ impl RefreshCoordinator {
 
         // Branch on view mode
         if let super::state_manager::ViewMode::Standings { live_mode } = state.current_view() {
-            return self
-                .perform_standings_refresh(config, live_mode)
-                .await;
+            return self.perform_standings_refresh(config, live_mode).await;
         }
 
         // Restore preserved games page when switching back from standings

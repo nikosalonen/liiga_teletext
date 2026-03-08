@@ -510,7 +510,6 @@ impl InteractiveState {
     pub fn current_view(&self) -> ViewMode {
         self.navigation.current_view
     }
-
 }
 
 impl Default for InteractiveState {
