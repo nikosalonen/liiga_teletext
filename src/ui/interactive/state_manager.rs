@@ -217,25 +217,6 @@ impl NavigationState {
         }
     }
 
-    /// Toggle between Games and Standings view
-    #[allow(dead_code)]
-    pub fn toggle_view(&mut self) {
-        self.current_view = match self.current_view {
-            ViewMode::Games => ViewMode::Standings { live_mode: false },
-            ViewMode::Standings { .. } => ViewMode::Games,
-        };
-    }
-
-    /// Toggle live mode within standings view
-    #[allow(dead_code)]
-    pub fn toggle_live_mode(&mut self) {
-        if let ViewMode::Standings { live_mode } = self.current_view {
-            self.current_view = ViewMode::Standings {
-                live_mode: !live_mode,
-            };
-        }
-    }
-
     /// Set current date
     pub fn set_current_date(&mut self, date: Option<String>) {
         self.current_date = date;
@@ -530,22 +511,40 @@ impl InteractiveState {
         self.navigation.current_view
     }
 
-    /// Toggle between Games and Standings view
-    #[allow(dead_code)]
-    pub fn toggle_view(&mut self) {
-        self.navigation.toggle_view();
-    }
-
-    /// Toggle live mode within standings view
-    #[allow(dead_code)]
-    pub fn toggle_live_mode(&mut self) {
-        self.navigation.toggle_live_mode();
-    }
 }
 
 impl Default for InteractiveState {
     fn default() -> Self {
         Self::new(None)
+    }
+}
+
+#[cfg(test)]
+impl NavigationState {
+    pub fn toggle_view(&mut self) {
+        self.current_view = match self.current_view {
+            ViewMode::Games => ViewMode::Standings { live_mode: false },
+            ViewMode::Standings { .. } => ViewMode::Games,
+        };
+    }
+
+    pub fn toggle_live_mode(&mut self) {
+        if let ViewMode::Standings { live_mode } = self.current_view {
+            self.current_view = ViewMode::Standings {
+                live_mode: !live_mode,
+            };
+        }
+    }
+}
+
+#[cfg(test)]
+impl InteractiveState {
+    pub fn toggle_view(&mut self) {
+        self.navigation.toggle_view();
+    }
+
+    pub fn toggle_live_mode(&mut self) {
+        self.navigation.toggle_live_mode();
     }
 }
 
