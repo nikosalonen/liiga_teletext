@@ -3,8 +3,6 @@
 //! This module centralizes all magic numbers and configuration constants
 //! to improve maintainability and make the codebase more configurable.
 
-#![allow(dead_code)]
-
 /// Default timeout for HTTP requests in seconds
 pub const DEFAULT_HTTP_TIMEOUT_SECONDS: u64 = 30;
 
@@ -25,14 +23,17 @@ pub mod cache_ttl {
     pub const STARTING_GAMES_SECONDS: u64 = 30;
 
     /// TTL for player data (24 hours)
+    #[allow(dead_code)]
     pub const PLAYER_DATA_SECONDS: u64 = 86400;
 
     /// Default TTL for HTTP responses (5 minutes). Note: Actual TTL is determined dynamically
     /// based on URL type and game state in the fetch function.
+    #[allow(dead_code)]
     pub const HTTP_RESPONSE_SECONDS: u64 = 300;
 }
 
 /// UI polling intervals in milliseconds
+#[allow(dead_code)]
 pub mod polling {
     /// Polling interval for active use (< 5 seconds idle)
     pub const ACTIVE_MS: u64 = 50;
@@ -51,6 +52,7 @@ pub mod polling {
 }
 
 /// Tournament season constants for month-based logic
+#[allow(dead_code)]
 pub mod tournament {
     /// Preseason start month (May)
     pub const PRESEASON_START_MONTH: u32 = 5;
@@ -66,6 +68,7 @@ pub mod tournament {
 }
 
 /// UI layout constants
+#[allow(dead_code)]
 pub mod ui {
     /// Offset for away team display
     pub const AWAY_TEAM_OFFSET: usize = 25;
@@ -81,6 +84,7 @@ pub mod ui {
 }
 
 /// Teletext color constants
+#[allow(dead_code)]
 pub mod colors {
     use crossterm::style::Color;
 
@@ -103,15 +107,19 @@ pub mod colors {
 /// Environment variable names
 pub mod env_vars {
     /// Environment variable for API domain override
+    #[allow(dead_code)]
     pub const API_DOMAIN: &str = "LIIGA_API_DOMAIN";
 
     /// Environment variable for log file path override
+    #[allow(dead_code)]
     pub const LOG_FILE: &str = "LIIGA_LOG_FILE";
 
     /// Environment variable for debug mode
+    #[allow(dead_code)]
     pub const DEBUG_MODE: &str = "LIIGA_DEBUG";
 
     /// Environment variable for cache size override
+    #[allow(dead_code)]
     pub const CACHE_SIZE: &str = "LIIGA_CACHE_SIZE";
 
     /// Environment variable for API fetch timeout in seconds (default: 5)
@@ -120,6 +128,7 @@ pub mod env_vars {
 
     /// Environment variable for HTTP client timeout in seconds (default: 30)
     /// Controls the timeout for all HTTP requests made by the application
+    #[allow(dead_code)]
     pub const HTTP_TIMEOUT: &str = "LIIGA_HTTP_TIMEOUT";
 }
 
@@ -129,24 +138,35 @@ pub mod retry {
     pub const MAX_ATTEMPTS: u32 = 3;
 
     /// Base delay for exponential backoff (milliseconds)
+    #[allow(dead_code)]
     pub const BASE_DELAY_MS: u64 = 1000;
 
+    /// Initial backoff delay for HTTP fetch retries (milliseconds)
+    /// Shorter than BASE_DELAY_MS for faster recovery on transient HTTP errors
+    pub const INITIAL_BACKOFF_MS: u64 = 250;
+
     /// Maximum delay between retries (seconds)
+    #[allow(dead_code)]
     pub const MAX_DELAY_SECONDS: u64 = 30;
 
     /// Retry delay for rate limit errors (seconds)
+    #[allow(dead_code)]
     pub const RATE_LIMIT_DELAY_SECONDS: u64 = 60;
 
     /// Retry delay for server errors (seconds)
+    #[allow(dead_code)]
     pub const SERVER_ERROR_DELAY_SECONDS: u64 = 5;
 
     /// Retry delay for service unavailable errors (seconds)
+    #[allow(dead_code)]
     pub const SERVICE_UNAVAILABLE_DELAY_SECONDS: u64 = 30;
 
     /// Retry delay for network timeout errors (seconds)
+    #[allow(dead_code)]
     pub const NETWORK_TIMEOUT_DELAY_SECONDS: u64 = 2;
 
     /// Retry delay for network connection errors (seconds)
+    #[allow(dead_code)]
     pub const NETWORK_CONNECTION_DELAY_SECONDS: u64 = 10;
 }
 
@@ -155,6 +175,7 @@ pub mod retry {
 pub use validation::MAX_PLAYER_NAME_LENGTH;
 
 /// Validation limits
+#[allow(dead_code)]
 pub mod validation {
     /// Maximum reasonable game time in minutes
     pub const MAX_GAME_TIME_MINUTES: i32 = 200;

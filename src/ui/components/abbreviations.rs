@@ -20,43 +20,26 @@
 /// assert_eq!(get_team_abbreviation("HC Blues"), "HCB");
 /// assert_eq!(get_team_abbreviation("K-Espoo"), "KES");
 /// ```
-#[allow(dead_code)]
 pub fn get_team_abbreviation(team_name: &str) -> String {
     match team_name {
         // Current Liiga teams (2024-25 season)
-        "Tappara" => "TAP".to_string(),
-        "HIFK" => "IFK".to_string(),
-        "TPS" => "TPS".to_string(),
-        "JYP" => "JYP".to_string(),
-        "Ilves" => "ILV".to_string(),
+        "Tappara" | "Tampereen Tappara" => "TAP".to_string(),
+        "HIFK" | "HIFK Helsinki" => "IFK".to_string(),
+        "TPS" | "TPS Turku" => "TPS".to_string(),
+        "JYP" | "Jyväskylän JYP" => "JYP".to_string(),
+        "Ilves" | "Tampereen Ilves" => "ILV".to_string(),
         "KalPa" => "KAL".to_string(),
-        "Kärpät" => "KÄR".to_string(),
-        "Lukko" => "LUK".to_string(),
-        "Pelicans" => "PEL".to_string(),
-        "SaiPa" => "SAI".to_string(),
-        "Sport" => "SPO".to_string(),
-        "HPK" => "HPK".to_string(),
-        "Jukurit" => "JUK".to_string(),
-        "Ässät" => "ÄSS".to_string(),
-        "KooKoo" => "KOO".to_string(),
+        "Kuopion KalPa" => "KUO".to_string(),
+        "Kärpät" | "Oulun Kärpät" => "KÄR".to_string(),
+        "Lukko" | "Rauman Lukko" => "LUK".to_string(),
+        "Pelicans" | "Lahden Pelicans" => "PEL".to_string(),
+        "SaiPa" | "Lappeenrannan SaiPa" => "SAI".to_string(),
+        "Sport" | "Vaasan Sport" => "SPO".to_string(),
+        "HPK" | "Hämeenlinnan HPK" => "HPK".to_string(),
+        "Jukurit" | "Mikkelin Jukurit" => "JUK".to_string(),
+        "Ässät" | "Porin Ässät" => "ÄSS".to_string(),
+        "KooKoo" | "Kouvolan KooKoo" => "KOO".to_string(),
         "K-Espoo" => "KES".to_string(),
-
-        // Alternative team name formats that might appear in API
-        "HIFK Helsinki" => "IFK".to_string(),
-        "TPS Turku" => "TPS".to_string(),
-        "Tampereen Tappara" => "TAP".to_string(),
-        "Tampereen Ilves" => "ILV".to_string(),
-        "Jyväskylän JYP" => "JYP".to_string(),
-        "Kuopion KalPa" => "KAL".to_string(),
-        "Oulun Kärpät" => "KÄR".to_string(),
-        "Rauman Lukko" => "LUK".to_string(),
-        "Lahden Pelicans" => "PEL".to_string(),
-        "Lappeenrannan SaiPa" => "SAI".to_string(),
-        "Vaasan Sport" => "SPO".to_string(),
-        "Hämeenlinnan HPK" => "HPK".to_string(),
-        "Mikkelin Jukurit" => "JUK".to_string(),
-        "Porin Ässät" => "ÄSS".to_string(),
-        "Kouvolan KooKoo" => "KOO".to_string(),
 
         // Fallback for unknown team names - extract letters only, uppercase, take first 3-4 chars
         _ => {
@@ -67,12 +50,13 @@ pub fn get_team_abbreviation(team_name: &str) -> String {
                 .to_uppercase();
 
             if letters_only.len() >= 3 {
-                letters_only[..3.min(letters_only.len())].to_string()
-            } else if !letters_only.is_empty() {
-                letters_only
-            } else {
-                // If no letters found, use original team name as last resort
+                letters_only.chars().take(3).collect()
+            } else if letters_only.is_empty() {
+                // If no letters found, return original string
                 team_name.to_string()
+            } else {
+                // Less than 3 letters, return what we have
+                letters_only
             }
         }
     }

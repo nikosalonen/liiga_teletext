@@ -119,8 +119,22 @@ pub(super) fn detect_and_log_changes(games: &[GameData], last_games: &[GameData]
 #[cfg(test)]
 mod tests {
     use super::*;
-    // TODO: Fix testing_utils import issue
-    // use super::super::super::testing_utils::create_basic_game;
+
+    fn make_game(home: &str, away: &str, result: &str, serie: &str) -> GameData {
+        GameData {
+            home_team: home.to_string(),
+            away_team: away.to_string(),
+            time: "18:30".to_string(),
+            result: result.to_string(),
+            score_type: ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: serie.to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        }
+    }
 
     #[test]
     fn test_calculate_games_hash_empty() {
@@ -130,21 +144,20 @@ mod tests {
         assert!(hash > 0);
     }
 
-    // TODO: Re-enable when testing_utils import issue is resolved
-    // #[test]
-    // fn test_calculate_games_hash() {
-    //     let games1 = vec![create_basic_game(1, "TPS", "HIFK", "3-2", "runkosarja")];
-    //     let games2 = vec![create_basic_game(1, "TPS", "HIFK", "3-2", "runkosarja")];
-    //
-    //     let hash1 = calculate_games_hash(&games1);
-    //     let hash2 = calculate_games_hash(&games2);
-    //
-    //     // Same data should produce same hash
-    //     assert_eq!(hash1, hash2);
-    //
-    //     // Different data should produce different hash
-    //     let games3 = vec![create_basic_game(1, "TPS", "HIFK", "4-2", "runkosarja")];
-    //     let hash3 = calculate_games_hash(&games3);
-    //     assert_ne!(hash1, hash3);
-    // }
+    #[test]
+    fn test_calculate_games_hash() {
+        let games1 = vec![make_game("TPS", "HIFK", "3-2", "runkosarja")];
+        let games2 = vec![make_game("TPS", "HIFK", "3-2", "runkosarja")];
+
+        let hash1 = calculate_games_hash(&games1);
+        let hash2 = calculate_games_hash(&games2);
+
+        // Same data should produce same hash
+        assert_eq!(hash1, hash2);
+
+        // Different data should produce different hash
+        let games3 = vec![make_game("TPS", "HIFK", "4-2", "runkosarja")];
+        let hash3 = calculate_games_hash(&games3);
+        assert_ne!(hash1, hash3);
+    }
 }
