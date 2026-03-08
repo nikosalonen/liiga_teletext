@@ -7,6 +7,7 @@
 //! - Cache monitoring and maintenance
 //! - Backoff and retry logic coordination
 
+use crate::data_fetcher::api::standings_api::fetch_standings;
 use crate::data_fetcher::{GameData, fetch_liiga_data, has_live_games_from_game_data};
 use crate::error::AppError;
 use crate::teletext_ui::{ScoreType, TeletextPage};
@@ -345,6 +346,18 @@ impl RefreshCoordinator {
             state.preserve_page(page.get_current_page());
         }
 
+        // Branch on view mode
+        if let super::state_manager::ViewMode::Standings { live_mode } = state.current_view() {
+            return self
+                .perform_standings_refresh(state, config, live_mode)
+                .await;
+        }
+
+        // Restore preserved games page when switching back from standings
+        if let Some(preserved) = state.navigation.preserved_games_page.take() {
+            state.navigation.preserved_page_for_restoration = Some(preserved);
+        }
+
         // Handle data fetching using the helper function
         let result = self
             .handle_data_fetching(DataFetchParams {
@@ -364,6 +377,69 @@ impl RefreshCoordinator {
         }
 
         Ok(result)
+    }
+
+    /// Perform standings-specific refresh cycle
+    async fn perform_standings_refresh(
+        &self,
+        _state: &mut InteractiveState,
+        config: &RefreshCycleConfig,
+        live_mode: bool,
+    ) -> Result<RefreshResult, AppError> {
+        tracing::info!("Fetching standings data (live_mode: {live_mode})");
+
+        let timeout_duration = Duration::from_secs(15);
+        let fetch_future = fetch_standings(live_mode);
+
+        let (standings, playoffs_lines, had_error) =
+            match tokio::time::timeout(timeout_duration, fetch_future).await {
+                Ok(Ok((standings, playoffs_lines))) => {
+                    tracing::info!("Standings fetched: {} teams", standings.len());
+                    (standings, playoffs_lines, false)
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("Failed to fetch standings: {e}");
+                    (vec![], vec![], true)
+                }
+                Err(_) => {
+                    tracing::warn!("Standings fetch timed out");
+                    (vec![], vec![], true)
+                }
+            };
+
+        let new_page = if !had_error {
+            Some(self.nav_manager.create_standings_page(
+                &standings,
+                &playoffs_lines,
+                live_mode,
+                config.disable_links,
+                config.compact_mode,
+                config.wide_mode,
+            ))
+        } else {
+            let mut error_page = TeletextPage::new(
+                230,
+                "JÄÄKIEKKO".to_string(),
+                "SARJATAULUKKO".to_string(),
+                config.disable_links,
+                true,
+                false,
+                config.compact_mode,
+                config.wide_mode,
+            );
+            error_page.add_error_message("Sarjataulukon lataus epäonnistui.");
+            error_page.add_error_message("Paina 's' palataksesi otteluihin.");
+            Some(error_page)
+        };
+
+        Ok(RefreshResult {
+            games: vec![],
+            had_error,
+            fetched_date: String::new(),
+            should_retry: had_error,
+            new_page,
+            needs_render: true,
+        })
     }
 
     /// Process refresh results and update state
