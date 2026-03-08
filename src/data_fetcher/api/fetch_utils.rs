@@ -42,8 +42,8 @@ pub(super) async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Re
 
     // Handle reqwest errors with retries/backoff for transient failures
     let mut attempt = 0u32;
-    let max_retries = 3u32;
-    let mut backoff = Duration::from_millis(250);
+    let max_retries = crate::constants::retry::MAX_ATTEMPTS;
+    let mut backoff = Duration::from_millis(crate::constants::retry::INITIAL_BACKOFF_MS);
     let response = loop {
         match client.get(url).send().await {
             Ok(resp) => {

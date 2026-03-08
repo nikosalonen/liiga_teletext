@@ -243,52 +243,5 @@ impl TeletextPage {
     }
 }
 
-/// Gets a 3-letter abbreviation for a team name.
-/// Uses a predefined mapping for known Finnish Liiga teams,
-/// with fallback logic for unknown teams.
-///
-/// # Arguments
-/// * `team_name` - The full team name
-///
-/// # Returns
-/// * `String` - 3-letter team abbreviation
-pub fn get_team_abbreviation(team_name: &str) -> String {
-    // Known team mappings for Finnish Liiga
-    match team_name {
-        "Tappara" | "Tampereen Tappara" => "TAP".to_string(),
-        "HIFK" | "HIFK Helsinki" => "IFK".to_string(),
-        "TPS" | "TPS Turku" => "TPS".to_string(),
-        "JYP" | "Jyväskylän JYP" => "JYP".to_string(),
-        "Ilves" | "Tampereen Ilves" => "ILV".to_string(),
-        "KalPa" => "KAL".to_string(),
-        "Kuopion KalPa" => "KUO".to_string(),
-        "Kärpät" | "Oulun Kärpät" => "KÄR".to_string(),
-        "Lukko" | "Rauman Lukko" => "LUK".to_string(),
-        "Pelicans" | "Lahden Pelicans" => "PEL".to_string(),
-        "SaiPa" | "Lappeenrannan SaiPa" => "SAI".to_string(),
-        "Sport" | "Vaasan Sport" => "SPO".to_string(),
-        "HPK" | "Hämeenlinnan HPK" => "HPK".to_string(),
-        "Jukurit" | "Mikkelin Jukurit" => "JUK".to_string(),
-        "Ässät" | "Porin Ässät" => "ÄSS".to_string(),
-        "KooKoo" | "Kouvolan KooKoo" => "KOO".to_string(),
-        "K-Espoo" => "KES".to_string(),
-        _ => {
-            // Fallback: extract only letters, convert to uppercase, take first 3
-            let letters_only: String = team_name
-                .chars()
-                .filter(|c| c.is_alphabetic())
-                .collect::<String>()
-                .to_uppercase();
-
-            if letters_only.len() >= 3 {
-                letters_only.chars().take(3).collect()
-            } else if letters_only.is_empty() {
-                // If no letters found, return original string
-                team_name.to_string()
-            } else {
-                // Less than 3 letters, return what we have
-                letters_only
-            }
-        }
-    }
-}
+// Re-export the canonical team abbreviation function from the single source of truth
+pub use crate::ui::components::abbreviations::get_team_abbreviation;

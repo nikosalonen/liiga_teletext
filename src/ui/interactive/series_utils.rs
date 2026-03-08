@@ -102,28 +102,41 @@ mod tests {
         assert!(SeriesType::Practice < SeriesType::RegularSeason);
     }
 
-    // TODO: Re-enable when testing_utils import issue is resolved
-    // #[test]
-    // fn test_get_subheader_with_series_types() {
-    //     use super::super::super::testing_utils::create_basic_game;
-    //
-    //     // Test with playoff games
-    //     let playoff_games = vec![create_basic_game(1, "TPS", "HIFK", "3-2", "playoffs")];
-    //     assert_eq!(get_subheader(&playoff_games), "PLAYOFFS");
-    //
-    //     // Test with mixed series types - should return highest priority (Playoffs)
-    //     let mixed_games = vec![
-    //         create_basic_game(1, "TPS", "HIFK", "3-2", "runkosarja"),
-    //         create_basic_game(2, "Kärpät", "Tappara", "2-1", "playoffs"),
-    //     ];
-    //     assert_eq!(get_subheader(&mixed_games), "PLAYOFFS");
-    //
-    //     // Test with regular season only
-    //     let regular_games = vec![create_basic_game(1, "TPS", "HIFK", "3-2", "runkosarja")];
-    //     assert_eq!(get_subheader(&regular_games), "RUNKOSARJA");
-    //
-    //     // Test with empty games list
-    //     let empty_games: Vec<GameData> = vec![];
-    //     assert_eq!(get_subheader(&empty_games), "SM-LIIGA");
-    // }
+    fn make_game(home: &str, away: &str, result: &str, serie: &str) -> GameData {
+        GameData {
+            home_team: home.to_string(),
+            away_team: away.to_string(),
+            time: "18:30".to_string(),
+            result: result.to_string(),
+            score_type: crate::teletext_ui::ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: serie.to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2024-01-15T18:30:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_get_subheader_with_series_types() {
+        // Test with playoff games
+        let playoff_games = vec![make_game("TPS", "HIFK", "3-2", "playoffs")];
+        assert_eq!(get_subheader(&playoff_games), "PLAYOFFS");
+
+        // Test with mixed series types - should return highest priority (Playoffs)
+        let mixed_games = vec![
+            make_game("TPS", "HIFK", "3-2", "runkosarja"),
+            make_game("Kärpät", "Tappara", "2-1", "playoffs"),
+        ];
+        assert_eq!(get_subheader(&mixed_games), "PLAYOFFS");
+
+        // Test with regular season only
+        let regular_games = vec![make_game("TPS", "HIFK", "3-2", "runkosarja")];
+        assert_eq!(get_subheader(&regular_games), "RUNKOSARJA");
+
+        // Test with empty games list
+        let empty_games: Vec<GameData> = vec![];
+        assert_eq!(get_subheader(&empty_games), "SM-LIIGA");
+    }
 }
