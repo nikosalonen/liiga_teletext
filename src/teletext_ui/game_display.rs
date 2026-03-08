@@ -3,16 +3,14 @@
 use super::core::{TeletextPage, TeletextRow};
 use super::layout::{ColumnLayoutManager, LayoutConfig};
 use super::utils::get_ansi_code;
-use crate::data_fetcher::models::{GameData, PlayoffSeriesScore};
+use crate::data_fetcher::models::GameData;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
 
-fn format_series_indicator(score: &PlayoffSeriesScore) -> String {
-    let home_filled = "■".repeat(score.home_team_wins as usize);
-    let home_empty = "□".repeat(score.req_wins.saturating_sub(score.home_team_wins) as usize);
-    let away_filled = "■".repeat(score.away_team_wins as usize);
-    let away_empty = "□".repeat(score.req_wins.saturating_sub(score.away_team_wins) as usize);
-    format!("{home_filled}{home_empty}-{away_filled}{away_empty}")
+fn format_team_series_indicator(wins: u8, req_wins: u8) -> String {
+    let filled = "●".repeat(wins as usize);
+    let empty = "○".repeat(req_wins.saturating_sub(wins) as usize);
+    format!("{filled}{empty}")
 }
 
 impl TeletextPage {
@@ -313,21 +311,33 @@ impl TeletextPage {
             buffer.push_str(&formatted_line);
         }
 
-        *current_line += 1;
-
-        // Render series indicator on a separate line below the score
+        // Render series win indicators after each team name
         if let Some(score) = series_score
             && score.req_wins > 1
         {
-            let indicator = format_series_indicator(score);
             let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
-            let indicator_pos = layout_config.score_column;
-            let pos_code = layout_manager.get_position_code(*current_line, indicator_pos);
+            let home_pos = CONTENT_MARGIN + 1;
+
+            // Home team indicator: after home team name
+            let home_indicator = format_team_series_indicator(score.home_team_wins, score.req_wins);
+            let home_indicator_pos = home_pos + home_team.len() + 1;
+            let home_code = layout_manager.get_position_code(*current_line, home_indicator_pos);
             buffer.push_str(&format!(
-                "{pos_code}\x1b[38;5;{goal_type_fg_code}m{indicator}\x1b[0m"
+                "{home_code}\x1b[38;5;{goal_type_fg_code}m{home_indicator}\x1b[0m"
             ));
-            *current_line += 1;
+
+            // Away team indicator: after away team name
+            let away_indicator = format_team_series_indicator(score.away_team_wins, score.req_wins);
+            let separator_pos = home_pos + layout_config.home_team_width;
+            let away_pos = separator_pos + layout_config.separator_width;
+            let away_indicator_pos = away_pos + away_team.len() + 1;
+            let away_code = layout_manager.get_position_code(*current_line, away_indicator_pos);
+            buffer.push_str(&format!(
+                "{away_code}\x1b[38;5;{goal_type_fg_code}m{away_indicator}\x1b[0m"
+            ));
         }
+
+        *current_line += 1;
 
         // Add goal events for finished/ongoing games
         if matches!(score_type, ScoreType::Ongoing | ScoreType::Final) && !goal_events.is_empty() {
