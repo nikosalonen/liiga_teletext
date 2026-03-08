@@ -18,51 +18,6 @@ use crossterm::{
 };
 use std::io::{Stdout, Write};
 
-/// Renders footer with navigation controls, loading indicator, and error warning
-///
-/// # Arguments
-/// * `stdout` - The stdout to write to
-/// * `buffer` - The buffer to write to
-/// * `footer_y` - The vertical position of the footer
-/// * `width` - The width of the terminal
-/// * `total_pages` - The total number of pages
-/// * `loading_indicator` - Optional loading indicator
-/// * `auto_refresh_indicator` - Optional auto-refresh indicator
-/// * `auto_refresh_disabled` - Whether auto-refresh is disabled
-/// * `error_warning_active` - Whether to show an error warning
-/// * `season_countdown` - Optional season countdown text
-///
-/// # Returns
-/// * `Result<(), AppError>` - Result indicating success or failure
-#[allow(clippy::too_many_arguments)]
-#[allow(dead_code)]
-pub fn render_footer(
-    _stdout: &mut Stdout,
-    buffer: &mut String,
-    footer_y: usize,
-    width: usize,
-    total_pages: usize,
-    loading_indicator: &Option<LoadingIndicator>,
-    auto_refresh_indicator: &Option<LoadingIndicator>,
-    auto_refresh_disabled: bool,
-    error_warning_active: bool,
-    season_countdown: &Option<String>,
-) -> Result<(), AppError> {
-    render_footer_with_view(
-        _stdout,
-        buffer,
-        footer_y,
-        width,
-        total_pages,
-        loading_indicator,
-        auto_refresh_indicator,
-        auto_refresh_disabled,
-        error_warning_active,
-        season_countdown,
-        None,
-    )
-}
-
 /// Renders footer with view-mode-aware controls
 #[allow(clippy::too_many_arguments)]
 pub fn render_footer_with_view(
@@ -82,7 +37,17 @@ pub fn render_footer_with_view(
     let controls = match view_mode {
         Some(crate::ui::interactive::state_manager::ViewMode::Standings { live_mode }) => {
             if *live_mode {
-                "q=Lopeta s=Ottelut l=Live ✓"
+                if auto_refresh_disabled {
+                    "q=Lopeta s=Ottelut l=Live ✓ (Ei päivity)"
+                } else {
+                    "q=Lopeta s=Ottelut l=Live ✓"
+                }
+            } else if auto_refresh_disabled {
+                if total_pages > 1 {
+                    "q=Lopeta ←→=Sivut s=Ottelut l=Live (Ei päivity)"
+                } else {
+                    "q=Lopeta s=Ottelut l=Live (Ei päivity)"
+                }
             } else if total_pages > 1 {
                 "q=Lopeta ←→=Sivut s=Ottelut l=Live"
             } else {
@@ -90,21 +55,16 @@ pub fn render_footer_with_view(
             }
         }
         _ => {
-            // Games view (default)
-            let base = if total_pages > 1 {
-                "q=Lopeta ←→=Sivut s=Taulukko"
-            } else {
-                "q=Lopeta s=Taulukko"
-            };
-
             if auto_refresh_disabled {
                 if total_pages > 1 {
                     "q=Lopeta ←→=Sivut s=Taulukko (Ei päivity)"
                 } else {
                     "q=Lopeta s=Taulukko (Ei päivity)"
                 }
+            } else if total_pages > 1 {
+                "q=Lopeta ←→=Sivut s=Taulukko"
             } else {
-                base
+                "q=Lopeta s=Taulukko"
             }
         }
     };
