@@ -606,7 +606,16 @@ impl TeletextPage {
         };
 
         // Pad player name to available space, but not more than max_player_name_width
-        let padding_width = available_space_for_name.min(layout_config.max_player_name_width);
+        // Reserve 1 character for play icon (▶) when video link is available
+        let has_video = !self.disable_video_links
+            && event
+                .video_clip_url
+                .as_ref()
+                .is_some_and(|url| !url.trim().is_empty());
+        let play_icon_width = if has_video { 1 } else { 0 };
+        let padding_width = available_space_for_name
+            .min(layout_config.max_player_name_width)
+            .saturating_sub(play_icon_width);
         let padded_player_name = format!("{:<width$}", player_name_display, width = padding_width);
 
         // Render player name (make it clickable if there's a video link)
@@ -645,14 +654,16 @@ impl TeletextPage {
 
         buffer.push_str(&player_name_with_link);
 
+        // Show play icon when goal has a video clip link
+        if has_video {
+            buffer.push_str("\x1b[38;5;51m▶\x1b[0m");
+        }
+
         // Get goal type display with safe fallback for missing data (requirement 4.1)
         let goal_type = event.get_goal_type_display();
 
         // Add single space before goal type (player name is already padded to fixed width)
         buffer.push(' ');
-
-        // Video link functionality is now handled by making player names clickable above
-        // This eliminates the need for separate play icons and creates a cleaner layout
 
         // Add goal type indicators with overflow prevention and validation (requirements 3.1, 3.2, 3.4)
         if !goal_type.is_empty() {
