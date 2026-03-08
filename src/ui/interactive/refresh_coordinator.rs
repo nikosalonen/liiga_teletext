@@ -349,7 +349,7 @@ impl RefreshCoordinator {
         // Branch on view mode
         if let super::state_manager::ViewMode::Standings { live_mode } = state.current_view() {
             return self
-                .perform_standings_refresh(state, config, live_mode)
+                .perform_standings_refresh(config, live_mode)
                 .await;
         }
 
@@ -382,14 +382,14 @@ impl RefreshCoordinator {
     /// Perform standings-specific refresh cycle
     async fn perform_standings_refresh(
         &self,
-        _state: &mut InteractiveState,
         config: &RefreshCycleConfig,
         live_mode: bool,
     ) -> Result<RefreshResult, AppError> {
         tracing::info!("Fetching standings data (live_mode: {live_mode})");
 
+        let app_config = crate::config::Config::load().await?;
         let timeout_duration = Duration::from_secs(15);
-        let fetch_future = fetch_standings(live_mode);
+        let fetch_future = fetch_standings(&app_config, live_mode);
 
         let (standings, playoffs_lines, had_error) =
             match tokio::time::timeout(timeout_duration, fetch_future).await {
