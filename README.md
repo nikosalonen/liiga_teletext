@@ -10,7 +10,9 @@ A Rust terminal application that displays Finnish Liiga hockey results in authen
 - **Real-time updates** - Automatic refresh (every minute for live games, hourly for completed)
 - **Tournament support** - Regular season, playoffs, playout, qualifications, practice games
 - **Interactive navigation** - Arrow keys for page navigation, automatic date navigation
-- **Detailed game info** - Scores, goal scorers with timestamps, video links
+- **Detailed game info** - Scores, goal scorers with timestamps, video links with play icons
+- **Standings view** - Toggle league standings with 's' key, live mode support
+- **Playoff series info** - Series scores, phase headers, and win indicators during playoffs
 - **Multiple display modes** - Compact (multi-column), wide (side-by-side), standard
 - **Configuration system** - Platform-specific storage, customizable settings
 - **Performance optimized** - Caching, request deduplication, intelligent refresh intervals
@@ -73,6 +75,7 @@ cargo run --release
 - Use **Shift+Left/Right** to navigate between dates with games
   - **Note**: Date navigation is limited to the current season for performance and UX reasons
   - To view games from previous seasons, use the `-d` flag with a specific date
+- Press `s` to toggle standings view (press again to toggle live mode, once more to return)
 - Press `r` to manually refresh data
 - Data refreshes automatically:
   - Every minute for live games

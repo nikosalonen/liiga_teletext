@@ -65,12 +65,14 @@ Rendering:
 - **`commands.rs`** — Command handlers for non-interactive modes
 - **`app.rs`** — Terminal setup (raw mode, alternate screen) with RAII cleanup
 - **`data_fetcher/api/`** — HTTP client, API orchestration, URL building, date/season logic
-- **`data_fetcher/models/`** — API response types (`GameData`, `ScheduleResponse`, `DetailedGameResponse`)
+- **`data_fetcher/models/`** — API response types (`GameData`, `ScheduleResponse`, `DetailedGameResponse`, `StandingsResponse`)
+- **`data_fetcher/game_utils.rs`** — Game state utilities and helper functions
 - **`data_fetcher/processors/`** — Game status determination, goal processing, player name fetching
 - **`data_fetcher/cache/`** — Multi-level TTL caching (HTTP responses, tournaments, games, goals, players)
 - **`data_fetcher/player_names/`** — Name formatting and disambiguation (e.g., "Saarela #7")
-- **`teletext_ui/`** — Teletext page structure, rendering pipeline, pagination, display modes
-- **`ui/interactive/`** — Interactive event loop: state, navigation, refresh coordination, input handling
+- **`teletext_ui/`** — Teletext page structure, rendering pipeline, pagination, display modes, standings display, season utils
+- **`ui/interactive/`** — Interactive event loop: state management, navigation, refresh coordination, input handling, change detection, standings/series display
+- **`schemas/`** — JSON schemas for API responses (game schedule, game details)
 - **`ui/components/`** — Team abbreviations
 - **`ui/teletext/`** — Colors, game result display, loading indicators, page config
 - **`config/`** — TOML config with platform-specific paths, validation, user prompts
@@ -86,7 +88,7 @@ loop {
   1. Check if auto-refresh needed (RefreshCoordinator)
   2. Fetch data if refresh requested → update state
   3. Render page if state changed (buffered output)
-  4. Process keyboard events (←/→ pages, Shift+←/→ dates, 'r' refresh, 'q' quit)
+  4. Process keyboard events (←/→ pages, Shift+←/→ dates, 's' standings, 'r' refresh, 'q' quit)
   5. Sleep 50ms
 }
 ```
