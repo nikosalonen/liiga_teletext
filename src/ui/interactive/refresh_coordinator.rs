@@ -255,8 +255,9 @@ impl RefreshCoordinator {
             },
         );
 
-        // Fetch data with timeout
-        let timeout_duration = Duration::from_secs(15);
+        // Fetch data with timeout (safety margin above HTTP client timeout)
+        let timeout_duration =
+            Duration::from_secs(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5);
         let (games, had_error, fetched_date, should_retry) = self
             .fetch_data_with_timeout(params.current_date.clone(), timeout_duration)
             .await;
@@ -406,7 +407,9 @@ impl RefreshCoordinator {
         }
 
         let app_config = crate::config::Config::load().await?;
-        let timeout_duration = Duration::from_secs(15);
+        let http_timeout = app_config.http_timeout_seconds;
+        // Safety margin above the HTTP client timeout so reqwest reports the actual error
+        let timeout_duration = Duration::from_secs(http_timeout + 5);
         let fetch_future = fetch_standings(&app_config, live_mode);
 
         let (standings, playoffs_lines, had_error) =
@@ -420,7 +423,10 @@ impl RefreshCoordinator {
                     (vec![], vec![], true)
                 }
                 Err(_) => {
-                    tracing::warn!("Standings fetch timed out");
+                    tracing::error!(
+                        "Standings fetch timed out after {}s (safety timeout, HTTP client should have timed out at {http_timeout}s)",
+                        http_timeout + 5
+                    );
                     (vec![], vec![], true)
                 }
             };

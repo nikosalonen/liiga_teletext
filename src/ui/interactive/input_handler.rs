@@ -164,7 +164,8 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
 
             // Add timeout to the fetch operation (allow enough time for detailed game data including goal scorers)
             let fetch_future = fetch_liiga_data(Some(date_string.clone()));
-            let timeout_duration = Duration::from_secs(15);
+            let timeout_duration =
+                Duration::from_secs(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5);
 
             match tokio::time::timeout(timeout_duration, fetch_future).await {
                 Ok(Ok((games, fetched_date))) if !games.is_empty() => {
@@ -244,7 +245,8 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
 
             // Add timeout to the fetch operation (allow enough time for detailed game data including goal scorers)
             let fetch_future = fetch_liiga_data(Some(date_string.clone()));
-            let timeout_duration = Duration::from_secs(15);
+            let timeout_duration =
+                Duration::from_secs(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5);
 
             match tokio::time::timeout(timeout_duration, fetch_future).await {
                 Ok(Ok((games, fetched_date))) if !games.is_empty() => {

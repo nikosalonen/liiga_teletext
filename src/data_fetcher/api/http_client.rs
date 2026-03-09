@@ -17,6 +17,9 @@ use std::time::Duration;
 /// * Automatic retry logic for transient failures (implemented in fetch function)
 pub fn create_http_client_with_timeout(timeout_seconds: u64) -> Result<Client, reqwest::Error> {
     Client::builder()
+        .connect_timeout(Duration::from_secs(
+            crate::constants::DEFAULT_HTTP_CONNECT_TIMEOUT_SECONDS,
+        ))
         .timeout(Duration::from_secs(timeout_seconds))
         .pool_max_idle_per_host(crate::constants::HTTP_POOL_MAX_IDLE_PER_HOST)
         .build()

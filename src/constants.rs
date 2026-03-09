@@ -4,7 +4,11 @@
 //! to improve maintainability and make the codebase more configurable.
 
 /// Default timeout for HTTP requests in seconds
-pub const DEFAULT_HTTP_TIMEOUT_SECONDS: u64 = 30;
+pub const DEFAULT_HTTP_TIMEOUT_SECONDS: u64 = 10;
+
+/// Default connect timeout for HTTP requests in seconds.
+/// Shorter than the overall request timeout to quickly detect unreachable hosts.
+pub const DEFAULT_HTTP_CONNECT_TIMEOUT_SECONDS: u64 = 5;
 
 /// Maximum number of connections per host in the HTTP client pool
 pub const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 100;
