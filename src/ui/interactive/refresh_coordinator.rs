@@ -412,24 +412,28 @@ impl RefreshCoordinator {
         let timeout_duration = Duration::from_secs(http_timeout + 5);
         let fetch_future = fetch_standings(&app_config, live_mode);
 
-        let (standings, playoffs_lines, had_error) =
-            match tokio::time::timeout(timeout_duration, fetch_future).await {
-                Ok(Ok((standings, playoffs_lines))) => {
-                    tracing::info!("Standings fetched: {} teams", standings.len());
-                    (standings, playoffs_lines, false)
-                }
-                Ok(Err(e)) => {
-                    tracing::error!("Failed to fetch standings: {e}");
-                    (vec![], vec![], true)
-                }
-                Err(_) => {
-                    tracing::error!(
-                        "Standings fetch timed out after {}s (safety timeout, HTTP client should have timed out at {http_timeout}s)",
-                        http_timeout + 5
-                    );
-                    (vec![], vec![], true)
-                }
-            };
+        let (standings, playoffs_lines, had_error) = match tokio::time::timeout(
+            timeout_duration,
+            fetch_future,
+        )
+        .await
+        {
+            Ok(Ok((standings, playoffs_lines))) => {
+                tracing::info!("Standings fetched: {} teams", standings.len());
+                (standings, playoffs_lines, false)
+            }
+            Ok(Err(e)) => {
+                tracing::error!("Failed to fetch standings: {e}");
+                (vec![], vec![], true)
+            }
+            Err(_) => {
+                tracing::error!(
+                    "Standings fetch timed out after {}s (safety timeout, HTTP client should have timed out at {http_timeout}s)",
+                    http_timeout + 5
+                );
+                (vec![], vec![], true)
+            }
+        };
 
         let new_page = if !had_error {
             let mut page = self.nav_manager.create_standings_page(
