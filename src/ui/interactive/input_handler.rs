@@ -28,6 +28,7 @@ pub(super) struct KeyEventParams<'a> {
     pub last_date_navigation: &'a mut Instant,
     pub current_view: &'a mut ViewMode,
     pub preserved_games_page: &'a mut Option<usize>,
+    pub preserved_live_mode: &'a mut bool,
 }
 
 /// Checks if the given key event matches the date navigation shortcut.
@@ -455,9 +456,12 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                         if let Some(page) = params.current_page.as_ref() {
                             *params.preserved_games_page = Some(page.get_current_page());
                         }
-                        *params.current_view = ViewMode::Standings { live_mode: false };
+                        *params.current_view = ViewMode::Standings {
+                            live_mode: *params.preserved_live_mode,
+                        };
                     }
-                    ViewMode::Standings { .. } => {
+                    ViewMode::Standings { live_mode } => {
+                        *params.preserved_live_mode = live_mode;
                         *params.current_view = ViewMode::Games;
                     }
                 }

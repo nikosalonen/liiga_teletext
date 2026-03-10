@@ -158,8 +158,11 @@ impl TeletextPage {
                     goals_for,
                     goals_against,
                     points,
+                    live_goals_for,
+                    live_goals_against,
                     live_points_delta,
                     live_position_change,
+                    live_game_active,
                 } => {
                     self.render_standings_row(
                         buffer,
@@ -173,8 +176,11 @@ impl TeletextPage {
                         *goals_for,
                         *goals_against,
                         *points,
+                        *live_goals_for,
+                        *live_goals_against,
                         live_points_delta,
                         live_position_change,
+                        *live_game_active,
                         current_line,
                     );
                 }

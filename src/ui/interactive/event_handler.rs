@@ -129,6 +129,7 @@ impl EventHandler {
         let mut current_date = state.current_date().clone();
         let mut current_view = state.current_view();
         let mut preserved_games_page = state.navigation.preserved_games_page;
+        let mut preserved_live_mode = state.navigation.preserved_live_mode;
 
         // Use existing input handler with extracted state
         let should_exit = handle_key_event(KeyEventParams {
@@ -142,6 +143,7 @@ impl EventHandler {
             last_date_navigation: &mut state.timers.last_date_navigation,
             current_view: &mut current_view,
             preserved_games_page: &mut preserved_games_page,
+            preserved_live_mode: &mut preserved_live_mode,
         })
         .await?;
 
@@ -149,6 +151,7 @@ impl EventHandler {
         self.sync_state_after_input(state, needs_render, needs_refresh, current_date);
         state.navigation.current_view = current_view;
         state.navigation.preserved_games_page = preserved_games_page;
+        state.navigation.preserved_live_mode = preserved_live_mode;
 
         if should_exit {
             Ok(EventResult::Exit)

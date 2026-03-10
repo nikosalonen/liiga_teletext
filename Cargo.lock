@@ -1032,7 +1032,7 @@ dependencies = [
 
 [[package]]
 name = "liiga_teletext"
-version = "0.20.4"
+version = "0.20.5"
 dependencies = [
  "chrono",
  "clap",

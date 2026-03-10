@@ -56,6 +56,9 @@ pub async fn fetch_standings(
         for entry in &mut entries {
             entry.live_points_delta = None;
             entry.live_position_change = None;
+            entry.live_game_active = false;
+            entry.live_goals_for = entry.goals_for;
+            entry.live_goals_against = entry.goals_against;
         }
     }
 

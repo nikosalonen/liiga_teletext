@@ -204,6 +204,8 @@ pub struct NavigationState {
     pub current_view: ViewMode,
     /// Preserved game page number when switching to standings
     pub preserved_games_page: Option<usize>,
+    /// Preserved live mode state when switching away from standings
+    pub preserved_live_mode: bool,
 }
 
 impl NavigationState {
@@ -214,6 +216,7 @@ impl NavigationState {
             preserved_page_for_restoration: None,
             current_view: ViewMode::Games,
             preserved_games_page: None,
+            preserved_live_mode: false,
         }
     }
 

@@ -26,9 +26,7 @@ pub struct ApiStandingsTeam {
     pub live_points: u16,
     pub goals: u16,
     pub goals_against: u16,
-    #[allow(dead_code)]
     pub live_goals: u16,
-    #[allow(dead_code)]
     pub live_goals_against: u16,
 }
 
@@ -45,8 +43,12 @@ pub struct StandingsEntry {
     pub goals_for: u16,
     pub goals_against: u16,
     pub points: u16,
+    pub live_goals_for: u16,
+    pub live_goals_against: u16,
     pub live_points_delta: Option<i16>,
     pub live_position_change: Option<i16>,
+    /// Whether this team is currently in a live game (goals changed)
+    pub live_game_active: bool,
 }
 
 impl StandingsEntry {
@@ -58,7 +60,11 @@ impl StandingsEntry {
 
 impl From<&ApiStandingsTeam> for StandingsEntry {
     fn from(api: &ApiStandingsTeam) -> Self {
-        let live_points_delta = if api.live_points != api.points {
+        let live_game_active =
+            api.live_goals != api.goals || api.live_goals_against != api.goals_against;
+
+        // Set delta when points changed OR when in a live game (losing team has delta 0)
+        let live_points_delta = if api.live_points != api.points || live_game_active {
             Some(api.live_points as i16 - api.points as i16)
         } else {
             None
@@ -82,8 +88,11 @@ impl From<&ApiStandingsTeam> for StandingsEntry {
             goals_for: api.goals,
             goals_against: api.goals_against,
             points: api.points,
+            live_goals_for: api.live_goals,
+            live_goals_against: api.live_goals_against,
             live_points_delta,
             live_position_change,
+            live_game_active,
         }
     }
 }
@@ -133,6 +142,7 @@ mod tests {
         assert_eq!(entry.goals_against, 80);
         assert_eq!(entry.live_points_delta, None);
         assert_eq!(entry.live_position_change, None);
+        assert!(!entry.live_game_active);
     }
 
     #[test]
@@ -142,6 +152,18 @@ mod tests {
 
         assert_eq!(entry.live_points_delta, Some(3));
         assert_eq!(entry.live_position_change, None);
+    }
+
+    #[test]
+    fn test_from_api_live_game_active_losing_team() {
+        // Team is in a live game but losing (0 points delta),
+        // detected by live_goals_against being different
+        let mut api = make_api_team(60, 60, 3, 3);
+        api.live_goals_against = 82; // conceded 2 goals in live game
+        let entry = StandingsEntry::from(&api);
+
+        assert_eq!(entry.live_points_delta, Some(0)); // 0 points (losing)
+        assert!(entry.live_game_active); // but still in a live game
     }
 
     #[test]

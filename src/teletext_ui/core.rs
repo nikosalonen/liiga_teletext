@@ -79,8 +79,11 @@ pub enum TeletextRow {
         goals_for: u16,
         goals_against: u16,
         points: u16,
+        live_goals_for: u16,
+        live_goals_against: u16,
         live_points_delta: Option<i16>,
         live_position_change: Option<i16>,
+        live_game_active: bool,
     },
 }
 

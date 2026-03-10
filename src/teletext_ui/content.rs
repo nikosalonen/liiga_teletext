@@ -130,8 +130,11 @@ impl TeletextPage {
             goals_for: entry.goals_for,
             goals_against: entry.goals_against,
             points: entry.points,
+            live_goals_for: entry.live_goals_for,
+            live_goals_against: entry.live_goals_against,
             live_points_delta: entry.live_points_delta,
             live_position_change: entry.live_position_change,
+            live_game_active: entry.live_game_active,
         });
     }
 }

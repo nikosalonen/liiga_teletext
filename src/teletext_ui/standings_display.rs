@@ -67,8 +67,11 @@ impl TeletextPage {
         goals_for: u16,
         goals_against: u16,
         points: u16,
+        live_goals_for: u16,
+        live_goals_against: u16,
         live_points_delta: &Option<i16>,
         live_position_change: &Option<i16>,
+        live_game_active: bool,
         current_line: &mut usize,
     ) {
         // Draw playoff separator lines (API provides playoffsLines as positions after which to draw)
@@ -90,8 +93,8 @@ impl TeletextPage {
             _ => " ".to_string(),
         };
 
-        // Team name color: cyan if live game active
-        let team_color = if live_points_delta.is_some() {
+        // Team name color: cyan if team is in a live game
+        let team_color = if live_game_active {
             cyan_code
         } else {
             white_code
@@ -99,6 +102,30 @@ impl TeletextPage {
 
         // Truncate team name to 14 chars
         let display_name: String = team_name.chars().take(14).collect();
+
+        // Compute projected stats: "if game ends like this"
+        let (display_gp, display_w, display_ow, display_ol, display_l) = if live_game_active {
+            let delta = live_points_delta.unwrap_or(0);
+            match delta {
+                3 => (games_played + 1, wins + 1, ot_wins, ot_losses, losses),
+                2 => (games_played + 1, wins, ot_wins + 1, ot_losses, losses),
+                1 => (games_played + 1, wins, ot_wins, ot_losses + 1, losses),
+                _ => (games_played + 1, wins, ot_wins, ot_losses, losses + 1),
+            }
+        } else {
+            (games_played, wins, ot_wins, ot_losses, losses)
+        };
+
+        let display_goals_for = if live_game_active {
+            live_goals_for
+        } else {
+            goals_for
+        };
+        let display_goals_against = if live_game_active {
+            live_goals_against
+        } else {
+            goals_against
+        };
 
         // Show potential points (base + delta) when live game is active
         let display_points = match live_points_delta {
@@ -123,17 +150,23 @@ impl TeletextPage {
                 _ => String::new(),
             };
 
+            let stats_color = if live_game_active {
+                cyan_code
+            } else {
+                white_code
+            };
+
             format!(
-                "{pos_indicator}\x1b[38;5;{yellow_code}m{:>2}\x1b[0m  \x1b[38;5;{team_color}m{:<14}\x1b[0m \x1b[38;5;{white_code}m{:>2} {:>2} {:>2} {:>2} {:>2} {:>3} {:>3}\x1b[0m \x1b[38;5;{green_code}m{:>4}\x1b[0m{live_suffix}",
+                "{pos_indicator}\x1b[38;5;{yellow_code}m{:>2}\x1b[0m  \x1b[38;5;{team_color}m{:<14}\x1b[0m \x1b[38;5;{stats_color}m{:>2} {:>2} {:>2} {:>2} {:>2} {:>3} {:>3}\x1b[0m \x1b[38;5;{green_code}m{:>4}\x1b[0m{live_suffix}",
                 position,
                 display_name,
-                games_played,
-                wins,
-                ot_wins,
-                ot_losses,
-                losses,
-                goals_for,
-                goals_against,
+                display_gp,
+                display_w,
+                display_ow,
+                display_ol,
+                display_l,
+                display_goals_for,
+                display_goals_against,
                 display_points,
             )
         };
