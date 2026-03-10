@@ -100,6 +100,12 @@ impl TeletextPage {
         // Truncate team name to 14 chars
         let display_name: String = team_name.chars().take(14).collect();
 
+        // Show potential points (base + delta) when live game is active
+        let display_points = match live_points_delta {
+            Some(d) if *d != 0 => (points as i16 + d) as u16,
+            _ => points,
+        };
+
         let row = if self.compact_mode {
             let live_suffix = match live_points_delta {
                 Some(d) if *d > 0 => format!(" \x1b[38;5;{magenta_code}m+{d}\x1b[0m"),
@@ -108,7 +114,7 @@ impl TeletextPage {
 
             format!(
                 "{pos_indicator}\x1b[38;5;{yellow_code}m{:>2}\x1b[0m  \x1b[38;5;{team_color}m{:<14}\x1b[0m \x1b[38;5;{green_code}m{:>4}\x1b[0m{live_suffix}",
-                position, display_name, points,
+                position, display_name, display_points,
             )
         } else {
             let live_suffix = match live_points_delta {
@@ -128,7 +134,7 @@ impl TeletextPage {
                 losses,
                 goals_for,
                 goals_against,
-                points,
+                display_points,
             )
         };
 
