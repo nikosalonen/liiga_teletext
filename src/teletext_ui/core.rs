@@ -592,6 +592,7 @@ impl TeletextPage {
                 self.error_warning_active,
                 &self.season_countdown,
                 view_mode.as_ref(),
+                show_today_shortcut,
             )?;
         }
 

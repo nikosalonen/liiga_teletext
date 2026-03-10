@@ -32,6 +32,7 @@ pub fn render_footer_with_view(
     error_warning_active: bool,
     season_countdown: &Option<String>,
     view_mode: Option<&crate::ui::interactive::state_manager::ViewMode>,
+    show_today_shortcut: bool,
 ) -> Result<(), AppError> {
     // Determine navigation controls based on view mode and page count
     let controls = match view_mode {
