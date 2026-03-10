@@ -3,7 +3,9 @@
 use crate::config::Config;
 use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::models::PlayoffSeriesScore;
+use crate::data_fetcher::processors::should_show_todays_games;
 use crate::error::AppError;
+use chrono::Local;
 use crossterm::{execute, style::Print};
 use std::io::{Stdout, Write};
 use tracing::debug;
@@ -580,6 +582,20 @@ impl TeletextPage {
             } else {
                 Some(crate::ui::interactive::state_manager::ViewMode::Games)
             };
+            let show_today_shortcut = self.fetched_date.as_ref().is_some_and(|date| {
+                let default_date = if should_show_todays_games() {
+                    Local::now().format("%Y-%m-%d").to_string()
+                } else {
+                    Local::now()
+                        .date_naive()
+                        .pred_opt()
+                        .expect("Date underflow cannot happen")
+                        .format("%Y-%m-%d")
+                        .to_string()
+                };
+                date != &default_date
+            });
+
             super::footer::render_footer_with_view(
                 stdout,
                 &mut buffer,

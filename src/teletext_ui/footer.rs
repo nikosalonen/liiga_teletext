@@ -61,19 +61,16 @@ pub fn render_footer_with_view(
                 "q=Lopeta s=Ottelut l=Live"
             }
         }
-        _ => {
-            if auto_refresh_disabled {
-                if total_pages > 1 {
-                    "q=Lopeta ←→=Sivut s=Taulukko (Ei päivity)"
-                } else {
-                    "q=Lopeta s=Taulukko (Ei päivity)"
-                }
-            } else if total_pages > 1 {
-                "q=Lopeta ←→=Sivut s=Taulukko"
-            } else {
-                "q=Lopeta s=Taulukko"
-            }
-        }
+        _ => match (auto_refresh_disabled, show_today_shortcut, total_pages > 1) {
+            (true, true, true) => "q=Lopeta ←→=Sivut s=Taulukko t=Tänään (Ei päivity)",
+            (true, true, false) => "q=Lopeta s=Taulukko t=Tänään (Ei päivity)",
+            (true, false, true) => "q=Lopeta ←→=Sivut s=Taulukko (Ei päivity)",
+            (true, false, false) => "q=Lopeta s=Taulukko (Ei päivity)",
+            (false, true, true) => "q=Lopeta ←→=Sivut s=Taulukko t=Tänään",
+            (false, true, false) => "q=Lopeta s=Taulukko t=Tänään",
+            (false, false, true) => "q=Lopeta ←→=Sivut s=Taulukko",
+            (false, false, false) => "q=Lopeta s=Taulukko",
+        },
     };
 
     // Add season countdown above the footer if available
