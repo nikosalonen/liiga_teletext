@@ -580,7 +580,7 @@ impl NavigationManager {
 
         // Force normal mode for standings - compact/wide renderers don't support standings rows
         let mut page = TeletextPage::new(
-            230,
+            223,
             "JÄÄKIEKKO".to_string(),
             subheader,
             disable_links,

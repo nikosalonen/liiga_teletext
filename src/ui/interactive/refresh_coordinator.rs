@@ -392,7 +392,7 @@ impl RefreshCoordinator {
         // Show loading indicator immediately so the UI feels responsive
         {
             let mut loading_page = TeletextPage::new(
-                230,
+                223,
                 "JÄÄKIEKKO".to_string(),
                 "SARJATAULUKKO".to_string(),
                 config.disable_links,
@@ -450,7 +450,7 @@ impl RefreshCoordinator {
             Some(page)
         } else {
             let mut error_page = TeletextPage::new(
-                230,
+                223,
                 "JÄÄKIEKKO".to_string(),
                 "SARJATAULUKKO".to_string(),
                 config.disable_links,
