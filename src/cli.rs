@@ -38,6 +38,7 @@ pub fn is_noninteractive_mode(args: &Args) -> bool {
 /// In interactive mode (default):
 /// - Use arrow keys (←/→) to navigate between pages
 /// - Use Shift+←/→ to navigate between dates with games
+/// - Press 't' to jump back to today's view
 /// - Press 'r' to refresh data (10s cooldown between refreshes)
 /// - Press 'q' to quit
 ///
