@@ -476,6 +476,11 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                     *params.needs_refresh = true;
                 }
             }
+            KeyCode::Char('t') => {
+                tracing::info!("Today's view requested");
+                *params.current_date = None;
+                *params.needs_refresh = true;
+            }
             _ => {}
         }
     }
