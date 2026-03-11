@@ -350,7 +350,12 @@ impl RefreshCoordinator {
         // Branch on view mode
         if let super::state_manager::ViewMode::Standings { live_mode } = state.current_view() {
             return self
-                .perform_standings_refresh(config, live_mode, state.preserved_page())
+                .perform_standings_refresh(
+                    config,
+                    live_mode,
+                    state.preserved_page(),
+                    state.change_detection.last_games(),
+                )
                 .await;
         }
 
@@ -386,6 +391,7 @@ impl RefreshCoordinator {
         config: &RefreshCycleConfig,
         live_mode: bool,
         preserved_page: Option<usize>,
+        last_games: &[GameData],
     ) -> Result<RefreshResult, AppError> {
         tracing::info!("Fetching standings data (live_mode: {live_mode})");
 
@@ -412,7 +418,7 @@ impl RefreshCoordinator {
         let timeout_duration = Duration::from_secs(http_timeout + 5);
         let fetch_future = fetch_standings(&app_config, live_mode);
 
-        let (standings, playoffs_lines, had_error) = match tokio::time::timeout(
+        let (mut standings, playoffs_lines, had_error) = match tokio::time::timeout(
             timeout_duration,
             fetch_future,
         )
@@ -434,6 +440,32 @@ impl RefreshCoordinator {
                 (vec![], vec![], true)
             }
         };
+
+        // Cross-reference with game data to detect live teams that the standings
+        // API alone can't identify (e.g., teams in a 0-0 game where goals haven't changed)
+        if live_mode && !had_error {
+            let live_team_names: std::collections::HashSet<&str> = last_games
+                .iter()
+                .filter(|g| g.score_type == ScoreType::Ongoing)
+                .flat_map(|g| [g.home_team.as_str(), g.away_team.as_str()])
+                .collect();
+
+            if !live_team_names.is_empty() {
+                for entry in &mut standings {
+                    if !entry.live_game_active && live_team_names.contains(entry.team_name.as_str())
+                    {
+                        tracing::info!(
+                            "Marking team '{}' as live from game data (0-0 game detection)",
+                            entry.team_name
+                        );
+                        entry.live_game_active = true;
+                        if entry.live_points_delta.is_none() {
+                            entry.live_points_delta = Some(0);
+                        }
+                    }
+                }
+            }
+        }
 
         let new_page = if !had_error {
             let mut page = self.nav_manager.create_standings_page(

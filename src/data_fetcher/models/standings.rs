@@ -60,8 +60,9 @@ impl StandingsEntry {
 
 impl From<&ApiStandingsTeam> for StandingsEntry {
     fn from(api: &ApiStandingsTeam) -> Self {
-        let live_game_active =
-            api.live_goals != api.goals || api.live_goals_against != api.goals_against;
+        let live_game_active = api.live_goals != api.goals
+            || api.live_goals_against != api.goals_against
+            || api.live_points != api.points;
 
         // Set delta when points changed OR when in a live game (losing team has delta 0)
         let live_points_delta = if api.live_points != api.points || live_game_active {
@@ -152,6 +153,7 @@ mod tests {
 
         assert_eq!(entry.live_points_delta, Some(3));
         assert_eq!(entry.live_position_change, None);
+        assert!(entry.live_game_active); // points changed → must be in a live game
     }
 
     #[test]
@@ -164,6 +166,17 @@ mod tests {
 
         assert_eq!(entry.live_points_delta, Some(0)); // 0 points (losing)
         assert!(entry.live_game_active); // but still in a live game
+    }
+
+    #[test]
+    fn test_from_api_live_game_active_tied_game() {
+        // Team is in a 0-0 live game: goals unchanged but live_points differs
+        // (API projects both teams get at least 1 point for overtime)
+        let api = make_api_team(60, 61, 3, 3);
+        let entry = StandingsEntry::from(&api);
+
+        assert_eq!(entry.live_points_delta, Some(1));
+        assert!(entry.live_game_active); // detected via live_points != points
     }
 
     #[test]
