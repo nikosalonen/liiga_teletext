@@ -395,9 +395,45 @@ impl RefreshCoordinator {
                 .await;
         }
 
-        // Restore preserved games page when switching back from standings
+        // Restore preserved games page when switching back from standings.
+        // If we have cached game data, rebuild the page immediately instead
+        // of doing a full network fetch. The next auto-refresh cycle will
+        // update the data if needed.
         if let Some(preserved) = state.navigation.preserved_games_page.take() {
             state.navigation.preserved_page_for_restoration = Some(preserved);
+
+            let last_games = state.change_detection.last_games();
+            if !last_games.is_empty() {
+                let fetched_date = state.current_date().clone().unwrap_or_default();
+                let games = last_games.to_vec();
+                let new_page = self
+                    .nav_manager
+                    .create_or_restore_page(PageCreationConfig {
+                        games: &games,
+                        disable_links: config.disable_links,
+                        compact_mode: config.compact_mode,
+                        wide_mode: config.wide_mode,
+                        fetched_date: &fetched_date,
+                        preserved_page_for_restoration: state.preserved_page(),
+                        current_date: state.current_date(),
+                        updated_current_date: state.current_date(),
+                    })
+                    .await;
+
+                tracing::info!(
+                    "Restored games page from cached data ({} games)",
+                    games.len()
+                );
+                return Ok(RefreshResult {
+                    games,
+                    had_error: false,
+                    fetched_date,
+                    should_retry: false,
+                    new_page,
+                    needs_render: true,
+                    date_mismatch_discarded: false,
+                });
+            }
         }
 
         // Show auto-refresh spinner on the current page before fetching
