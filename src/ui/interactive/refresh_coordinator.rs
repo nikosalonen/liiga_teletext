@@ -79,7 +79,7 @@ impl Default for CacheMonitoringConfig {
 fn should_discard_for_date_mismatch(current_date: &Option<String>, fetched_date: &str) -> bool {
     current_date
         .as_deref()
-        .is_some_and(|d| !d.is_empty() && d != fetched_date)
+        .is_some_and(|d| !d.trim().is_empty() && d != fetched_date)
 }
 
 /// Coordinates all refresh operations for the interactive UI
@@ -114,18 +114,16 @@ impl RefreshCoordinator {
     ) -> bool {
         if !state.needs_refresh() {
             // Calculate refresh intervals
-            let auto_refresh_interval = if matches!(
+            let is_standings_live = matches!(
                 state.current_view(),
                 ViewMode::Standings { live_mode: true }
-            ) {
+            );
+            let auto_refresh_interval = if is_standings_live {
                 Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS)
             } else {
                 calculate_auto_refresh_interval(state.change_detection.last_games())
             };
-            let game_count_for_min_interval = if matches!(
-                state.current_view(),
-                ViewMode::Standings { live_mode: true }
-            ) {
+            let game_count_for_min_interval = if is_standings_live {
                 0
             } else {
                 state.change_detection.last_games().len()
@@ -373,7 +371,8 @@ impl RefreshCoordinator {
             state.preserve_page(page.get_current_page());
         }
 
-        // Branch on view mode
+        // Branch on view mode. Standings are league-wide (not date-scoped),
+        // so the date-mismatch discard in perform_refresh_cycle does not apply here.
         if let ViewMode::Standings { live_mode } = state.current_view() {
             return self
                 .perform_standings_refresh(
@@ -898,6 +897,13 @@ mod tests {
     fn test_should_discard_for_date_mismatch_empty_current_date() {
         // Some("") should be treated as unset, not as a date to compare against
         let current = Some("".to_string());
+        assert!(!should_discard_for_date_mismatch(&current, "2025-03-20"));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_whitespace_current_date() {
+        // Some("  ") should be treated as unset, like Some("")
+        let current = Some("  ".to_string());
         assert!(!should_discard_for_date_mismatch(&current, "2025-03-20"));
     }
 
