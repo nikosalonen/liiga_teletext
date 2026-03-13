@@ -23,7 +23,7 @@ use super::refresh_manager::{
     AutoRefreshParams, calculate_auto_refresh_interval, calculate_min_refresh_interval,
     should_trigger_auto_refresh,
 };
-use super::state_manager::InteractiveState;
+use super::state_manager::{InteractiveState, ViewMode};
 
 /// Result of a refresh operation
 #[derive(Debug)]
@@ -35,6 +35,9 @@ pub struct RefreshResult {
     pub new_page: Option<TeletextPage>,
     #[allow(dead_code)]
     pub needs_render: bool,
+    /// True when results were discarded due to a date mismatch during auto-refresh.
+    /// When set, callers should skip change detection to avoid clearing existing state.
+    pub date_mismatch_discarded: bool,
 }
 
 /// Parameters for data fetching operations
@@ -71,6 +74,123 @@ impl Default for CacheMonitoringConfig {
     }
 }
 
+/// Check if fetched data should be discarded due to a date mismatch.
+/// Returns true when a date is already set and the fetched date differs.
+fn should_discard_for_date_mismatch(current_date: &Option<String>, fetched_date: &str) -> bool {
+    current_date
+        .as_deref()
+        .is_some_and(|d| !d.trim().is_empty() && d != fetched_date)
+}
+
+/// Perform the network fetch for game data with timeout.
+/// This is a free function so it can be spawned as a background task,
+/// allowing the UI to animate the loading indicator while waiting.
+async fn fetch_games_with_timeout(
+    current_date: Option<String>,
+    timeout_seconds: u64,
+) -> (Vec<GameData>, bool, String, bool) {
+    let timeout_duration = Duration::from_secs(timeout_seconds);
+    let fetch_future = fetch_liiga_data(current_date.clone());
+
+    match tokio::time::timeout(timeout_duration, fetch_future).await {
+        Ok(Ok((games, fetched_date))) => {
+            tracing::debug!("Auto-refresh successful: fetched {} games", games.len());
+            (games, false, fetched_date, false)
+        }
+        Ok(Err(e)) => {
+            log_fetch_error(&e, &current_date);
+            (Vec::new(), true, String::new(), true)
+        }
+        Err(_) => {
+            tracing::warn!(
+                "Auto-refresh timeout after {timeout_seconds}s, continuing with existing data"
+            );
+            (Vec::new(), true, String::new(), true)
+        }
+    }
+}
+
+/// Log fetch error details for debugging
+fn log_fetch_error(e: &AppError, current_date: &Option<String>) {
+    tracing::error!("Auto-refresh failed: {e}");
+    tracing::error!(
+        "Error details - Type: {}, Current date: {current_date:?}",
+        std::any::type_name_of_val(e),
+    );
+
+    match e {
+        AppError::NetworkTimeout { url } => {
+            tracing::warn!("Auto-refresh timeout for URL: {url}, will retry on next cycle");
+        }
+        AppError::NetworkConnection { url, message } => {
+            tracing::warn!(
+                "Auto-refresh connection error for URL: {url}, details: {message}, will retry on next cycle"
+            );
+        }
+        AppError::ApiServerError {
+            status,
+            message,
+            url,
+        } => {
+            tracing::warn!(
+                "Auto-refresh server error: HTTP {status} - {message} (URL: {url}), will retry on next cycle"
+            );
+        }
+        AppError::ApiServiceUnavailable {
+            status,
+            message,
+            url,
+        } => {
+            tracing::warn!(
+                "Auto-refresh service unavailable: HTTP {status} - {message} (URL: {url}), will retry on next cycle"
+            );
+        }
+        AppError::ApiRateLimit { message, url } => {
+            tracing::warn!(
+                "Auto-refresh rate limited: {message} (URL: {url}), will retry on next cycle"
+            );
+        }
+        _ => {
+            tracing::warn!("Auto-refresh error: {e}, will retry on next cycle");
+        }
+    }
+
+    tracing::info!("Continuing with existing data due to auto-refresh failure");
+}
+
+/// Animate the loading spinner on the current page while waiting for a background fetch task.
+/// Uses `tokio::select!` to alternate between checking the task and advancing the animation.
+type FetchResult = (Vec<GameData>, bool, String, bool);
+
+async fn animate_during_fetch(
+    state: &mut InteractiveState,
+    mut handle: tokio::task::JoinHandle<FetchResult>,
+) -> FetchResult {
+    let mut stdout = std::io::stdout();
+
+    loop {
+        tokio::select! {
+            result = &mut handle => {
+                match result {
+                    Ok(value) => return value,
+                    Err(join_error) => {
+                        tracing::error!("Background fetch task failed: {join_error}");
+                        return (Vec::new(), true, String::new(), true);
+                    }
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                if let Some(page) = state.current_page_mut()
+                    && page.is_auto_refresh_indicator_active()
+                {
+                    page.update_auto_refresh_animation();
+                    let _ = page.render_buffered(&mut stdout);
+                }
+            }
+        }
+    }
+}
+
 /// Coordinates all refresh operations for the interactive UI
 pub struct RefreshCoordinator {
     nav_manager: NavigationManager,
@@ -103,10 +223,23 @@ impl RefreshCoordinator {
     ) -> bool {
         if !state.needs_refresh() {
             // Calculate refresh intervals
-            let auto_refresh_interval =
-                calculate_auto_refresh_interval(state.change_detection.last_games());
+            let is_standings_live = matches!(
+                state.current_view(),
+                ViewMode::Standings { live_mode: true }
+            );
+            let (auto_refresh_interval, game_count_for_min_interval) = if is_standings_live {
+                (
+                    Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS),
+                    0,
+                )
+            } else {
+                (
+                    calculate_auto_refresh_interval(state.change_detection.last_games()),
+                    state.change_detection.last_games().len(),
+                )
+            };
             let min_interval_between_refreshes = calculate_min_refresh_interval(
-                state.change_detection.last_games().len(),
+                game_count_for_min_interval,
                 config.min_refresh_interval,
             );
 
@@ -142,103 +275,18 @@ impl RefreshCoordinator {
         }
     }
 
-    /// Handle data fetching with error handling and timeout
-    async fn fetch_data_with_timeout(
-        &self,
-        current_date: Option<String>,
-        timeout_duration: Duration,
-    ) -> (Vec<GameData>, bool, String, bool) {
-        let fetch_future = fetch_liiga_data(current_date.clone());
-
-        match tokio::time::timeout(timeout_duration, fetch_future).await {
-            Ok(fetch_result) => match fetch_result {
-                Ok((games, fetched_date)) => {
-                    tracing::debug!("Auto-refresh successful: fetched {} games", games.len());
-                    (games, false, fetched_date, false)
-                }
-                Err(e) => {
-                    tracing::error!("Auto-refresh failed: {e}");
-                    tracing::error!(
-                        "Error details - Type: {}, Current date: {:?}",
-                        std::any::type_name_of_val(&e),
-                        current_date
-                    );
-
-                    // Log specific error context for debugging
-                    match &e {
-                        AppError::NetworkTimeout { url } => {
-                            tracing::warn!(
-                                "Auto-refresh timeout for URL: {}, will retry on next cycle",
-                                url
-                            );
-                        }
-                        AppError::NetworkConnection { url, message } => {
-                            tracing::warn!(
-                                "Auto-refresh connection error for URL: {}, details: {}, will retry on next cycle",
-                                url,
-                                message
-                            );
-                        }
-                        AppError::ApiServerError {
-                            status,
-                            message,
-                            url,
-                        } => {
-                            tracing::warn!(
-                                "Auto-refresh server error: HTTP {} - {} (URL: {}), will retry on next cycle",
-                                status,
-                                message,
-                                url
-                            );
-                        }
-                        AppError::ApiServiceUnavailable {
-                            status,
-                            message,
-                            url,
-                        } => {
-                            tracing::warn!(
-                                "Auto-refresh service unavailable: HTTP {} - {} (URL: {}), will retry on next cycle",
-                                status,
-                                message,
-                                url
-                            );
-                        }
-                        AppError::ApiRateLimit { message, url } => {
-                            tracing::warn!(
-                                "Auto-refresh rate limited: {} (URL: {}), will retry on next cycle",
-                                message,
-                                url
-                            );
-                        }
-                        _ => {
-                            tracing::warn!("Auto-refresh error: {e}, will retry on next cycle");
-                        }
-                    }
-
-                    // Graceful degradation: continue with existing data instead of showing error page
-                    tracing::info!("Continuing with existing data due to auto-refresh failure");
-
-                    (Vec::new(), true, String::new(), true)
-                }
-            },
-            Err(_) => {
-                // Timeout occurred during auto-refresh
-                tracing::warn!(
-                    "Auto-refresh timeout after {:?}, continuing with existing data",
-                    timeout_duration
-                );
-                (Vec::new(), true, String::new(), true)
-            }
-        }
-    }
-
-    /// Handle data fetching and page creation coordination
-    async fn handle_data_fetching(
+    /// Process fetched game data: change detection, page creation, and indicator cleanup.
+    /// The actual network fetch is performed separately so it can run as a background task.
+    async fn process_fetched_data(
         &self,
         params: DataFetchParams<'_>,
+        games: Vec<GameData>,
+        had_error: bool,
+        fetched_date: String,
+        should_retry: bool,
     ) -> Result<RefreshResult, AppError> {
         // Determine indicator states
-        let (should_show_loading, should_show_indicator) =
+        let (should_show_loading, _) =
             determine_indicator_states(params.current_date, params.last_games);
 
         // Initialize page state
@@ -247,7 +295,6 @@ impl RefreshCoordinator {
             &mut current_page,
             LoadingIndicatorConfig {
                 should_show_loading,
-                should_show_indicator,
                 current_date: params.current_date,
                 disable_links: params.disable_links,
                 compact_mode: params.compact_mode,
@@ -255,14 +302,7 @@ impl RefreshCoordinator {
             },
         );
 
-        // Fetch data with timeout (safety margin above HTTP client timeout)
-        let timeout_duration =
-            Duration::from_secs(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5);
-        let (games, had_error, fetched_date, should_retry) = self
-            .fetch_data_with_timeout(params.current_date.clone(), timeout_duration)
-            .await;
-
-        // Update current_date to track the actual date being displayed
+        // Prepare the effective date for page creation (may differ from requested date on first fetch)
         let mut updated_current_date = params.current_date.clone();
         if !had_error && !fetched_date.is_empty() {
             updated_current_date = Some(fetched_date.clone());
@@ -318,12 +358,6 @@ impl RefreshCoordinator {
             .await;
         needs_render = needs_render || restoration_render;
 
-        // Hide auto-refresh indicator after data is fetched
-        if let Some(page) = &mut current_page {
-            page.hide_auto_refresh_indicator();
-            needs_render = true;
-        }
-
         Ok(RefreshResult {
             games,
             had_error,
@@ -331,6 +365,7 @@ impl RefreshCoordinator {
             should_retry,
             new_page: current_page,
             needs_render,
+            date_mismatch_discarded: false,
         })
     }
 
@@ -347,8 +382,9 @@ impl RefreshCoordinator {
             state.preserve_page(page.get_current_page());
         }
 
-        // Branch on view mode
-        if let super::state_manager::ViewMode::Standings { live_mode } = state.current_view() {
+        // Branch on view mode. Standings are league-wide (not date-scoped),
+        // so the date-mismatch discard in perform_refresh_cycle does not apply here.
+        if let ViewMode::Standings { live_mode } = state.current_view() {
             return self
                 .perform_standings_refresh(
                     config,
@@ -364,20 +400,87 @@ impl RefreshCoordinator {
             state.navigation.preserved_page_for_restoration = Some(preserved);
         }
 
-        // Handle data fetching using the helper function
+        // Show auto-refresh spinner on the current page before fetching
+        let should_show_indicator = {
+            let (_, show) = determine_indicator_states(
+                state.current_date(),
+                state.change_detection.last_games(),
+            );
+            show
+        };
+        if should_show_indicator && let Some(page) = state.current_page_mut() {
+            page.show_auto_refresh_indicator();
+            state.request_render();
+        }
+
+        // Render immediately so spinner is visible during fetch
+        if state.needs_render() {
+            if let Some(page) = state.current_page() {
+                let mut stdout = std::io::stdout();
+                let _ = page.render_buffered(&mut stdout);
+            }
+            state.clear_render_flag();
+        }
+
+        // Spawn the network fetch as a background task so the spinner can animate
+        let current_date_for_fetch = state.current_date().clone();
+        let timeout_seconds = crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5;
+        let fetch_handle = tokio::spawn(fetch_games_with_timeout(
+            current_date_for_fetch,
+            timeout_seconds,
+        ));
+
+        // Animate the spinner while waiting for the fetch to complete
+        let (games, had_error, fetched_date, should_retry) =
+            animate_during_fetch(state, fetch_handle).await;
+
+        // Process the fetched data (change detection, page creation, etc.)
         let result = self
-            .handle_data_fetching(DataFetchParams {
-                current_date: state.current_date(),
-                last_games: state.change_detection.last_games(),
-                disable_links: config.disable_links,
-                compact_mode: config.compact_mode,
-                wide_mode: config.wide_mode,
-                preserved_page_for_restoration: state.preserved_page(),
-            })
+            .process_fetched_data(
+                DataFetchParams {
+                    current_date: state.current_date(),
+                    last_games: state.change_detection.last_games(),
+                    disable_links: config.disable_links,
+                    compact_mode: config.compact_mode,
+                    wide_mode: config.wide_mode,
+                    preserved_page_for_restoration: state.preserved_page(),
+                },
+                games,
+                had_error,
+                fetched_date,
+                should_retry,
+            )
             .await?;
 
-        // Update current_date to track the actual date being displayed
+        // Guard against silent date jumps during auto-refresh. The orchestrator's
+        // fallback logic may return games from a completely different date (e.g.
+        // jumping from today to a future date when no games exist for the requested
+        // date). When a date is already set and the fetched date differs, discard
+        // the results so the UI stays on the user's current date. When the fetched
+        // date matches (or no date was previously set), update current_date to track
+        // the actual date being displayed.
         if !result.had_error && !result.fetched_date.is_empty() {
+            if should_discard_for_date_mismatch(state.current_date(), &result.fetched_date) {
+                tracing::warn!(
+                    "Auto-refresh returned date {} but current date is {:?}, discarding to prevent date jump",
+                    result.fetched_date,
+                    state.current_date()
+                );
+                // Hide the auto-refresh spinner that was shown before the fetch
+                if let Some(page) = state.current_page_mut() {
+                    page.hide_auto_refresh_indicator();
+                    state.request_render();
+                }
+                return Ok(RefreshResult {
+                    games: vec![],
+                    had_error: false,
+                    fetched_date: state.current_date().clone().unwrap_or_default(),
+                    should_retry: false,
+                    new_page: None,
+                    needs_render: false,
+                    date_mismatch_discarded: true,
+                });
+            }
             state.set_current_date(Some(result.fetched_date.clone()));
             tracing::debug!("Updated current_date to: {:?}", state.current_date());
         }
@@ -503,6 +606,7 @@ impl RefreshCoordinator {
             should_retry: had_error,
             new_page,
             needs_render: true,
+            date_mismatch_discarded: false,
         })
     }
 
@@ -513,6 +617,13 @@ impl RefreshCoordinator {
         result: &RefreshResult,
     ) -> bool {
         let mut needs_state_render = false;
+
+        // Skip change detection entirely for date-mismatch-discarded results
+        // to prevent update_and_check_changes from clearing last_games state
+        if result.date_mismatch_discarded {
+            tracing::debug!("Skipping change detection for date-mismatch-discarded result");
+            return needs_state_render;
+        }
 
         // Change detection using a simple hash of game data
         let games_hash = calculate_games_hash(&result.games);
@@ -567,6 +678,15 @@ impl RefreshCoordinator {
             tracing::debug!(
                 "Preserving last_games due to fetch error; will retry without clearing state"
             );
+        }
+
+        // Hide auto-refresh spinner after fetch completes
+        if let Some(page) = state.current_page_mut()
+            && page.is_auto_refresh_indicator_active()
+        {
+            page.hide_auto_refresh_indicator();
+            state.request_render();
+            needs_state_render = true;
         }
 
         needs_state_render
@@ -811,5 +931,194 @@ mod tests {
         assert!(config.disable_links);
         assert!(!config.compact_mode);
         assert!(config.wide_mode);
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_different_dates() {
+        let current = Some("2025-03-13".to_string());
+        assert!(should_discard_for_date_mismatch(&current, "2025-03-20"));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_same_date() {
+        let current = Some("2025-03-13".to_string());
+        assert!(!should_discard_for_date_mismatch(&current, "2025-03-13"));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_no_current_date() {
+        assert!(!should_discard_for_date_mismatch(&None, "2025-03-20"));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_empty_fetched() {
+        let current = Some("2025-03-13".to_string());
+        // Empty fetched date is guarded by the caller with `!result.fetched_date.is_empty()`,
+        // but the function itself treats it as a mismatch (defense-in-depth)
+        assert!(should_discard_for_date_mismatch(&current, ""));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_empty_current_date() {
+        // Some("") should be treated as unset, not as a date to compare against
+        let current = Some("".to_string());
+        assert!(!should_discard_for_date_mismatch(&current, "2025-03-20"));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_whitespace_current_date() {
+        // Some("  ") should be treated as unset, like Some("")
+        let current = Some("  ".to_string());
+        assert!(!should_discard_for_date_mismatch(&current, "2025-03-20"));
+    }
+
+    #[test]
+    fn test_standings_live_mode_uses_live_refresh_interval() {
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+        // Clear the initial refresh flag so the interval logic is exercised
+        state.clear_refresh_flag();
+        state.toggle_view(); // Games -> Standings { live_mode: false }
+        state.toggle_live_mode(); // Standings { live_mode: true }
+
+        let config = RefreshCycleConfig {
+            min_refresh_interval: None,
+            disable_links: false,
+            compact_mode: false,
+            wide_mode: false,
+        };
+
+        let coordinator = RefreshCoordinator::new();
+
+        // With last_auto_refresh just now, should NOT trigger (interval not elapsed)
+        state.timers.last_auto_refresh = std::time::Instant::now();
+        assert!(!coordinator.should_trigger_refresh(&state, &config));
+
+        // With last_auto_refresh 16s ago, SHOULD trigger (15s interval elapsed)
+        // Use a non-historical date so is_historical_date doesn't block auto-refresh
+        state.set_current_date(Some("2099-03-13".to_string()));
+        state.timers.last_auto_refresh = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(16))
+            .unwrap();
+        assert!(coordinator.should_trigger_refresh(&state, &config));
+    }
+
+    #[test]
+    fn test_standings_live_mode_not_clamped_by_game_count() {
+        // When last_games has 6+ entries the game-count-based min interval would be 30s,
+        // which must NOT clamp the 15s live-standings interval.
+        let mut state = InteractiveState::new(Some("2099-03-13".to_string()));
+        state.clear_refresh_flag();
+
+        // Seed 6 games so calculate_min_refresh_interval would return 30s for games view
+        let teams = [
+            ("TPS", "HIFK"),
+            ("Ilves", "Lukko"),
+            ("Tappara", "KalPa"),
+            ("Pelicans", "JYP"),
+            ("KooKoo", "SaiPa"),
+            ("Ässät", "Sport"),
+        ];
+        let games: Vec<_> = teams
+            .iter()
+            .map(|(h, a)| crate::testing_utils::TestDataBuilder::create_basic_game(h, a))
+            .collect();
+        let hash = calculate_games_hash(&games);
+        state.change_detection.update_state(games, hash);
+        assert_eq!(state.change_detection.last_games().len(), 6);
+
+        state.toggle_view(); // Games -> Standings { live_mode: false }
+        state.toggle_live_mode(); // Standings { live_mode: true }
+        state.clear_refresh_flag();
+
+        let config = RefreshCycleConfig {
+            min_refresh_interval: None,
+            disable_links: false,
+            compact_mode: false,
+            wide_mode: false,
+        };
+        let coordinator = RefreshCoordinator::new();
+
+        // 16s ago should trigger (15s live interval, min_interval must not clamp to 30s)
+        state.timers.last_auto_refresh = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(16))
+            .unwrap();
+        assert!(coordinator.should_trigger_refresh(&state, &config));
+    }
+
+    #[test]
+    fn test_standings_non_live_mode_uses_default_refresh_interval() {
+        // Use a non-historical date so is_historical_date doesn't block auto-refresh
+        let mut state = InteractiveState::new(Some("2099-03-13".to_string()));
+        state.clear_refresh_flag();
+        state.toggle_view(); // Games -> Standings { live_mode: false }
+
+        let config = RefreshCycleConfig {
+            min_refresh_interval: None,
+            disable_links: false,
+            compact_mode: false,
+            wide_mode: false,
+        };
+
+        let coordinator = RefreshCoordinator::new();
+
+        // With last_auto_refresh 16s ago, should NOT trigger for non-live standings
+        // (falls through to calculate_auto_refresh_interval which returns 60s with no games)
+        state.timers.last_auto_refresh = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(16))
+            .unwrap();
+        assert!(!coordinator.should_trigger_refresh(&state, &config));
+    }
+
+    #[test]
+    fn test_process_refresh_results_skips_discarded() {
+        let coordinator = RefreshCoordinator::new();
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+
+        // Seed state with some games
+        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        game.result = "3-2".to_string();
+        let games_hash = calculate_games_hash(std::slice::from_ref(&game));
+        state
+            .change_detection
+            .update_state(vec![game.clone()], games_hash);
+
+        // Process a date-mismatch-discarded result
+        let discarded_result = RefreshResult {
+            games: vec![],
+            had_error: false,
+            fetched_date: "2025-03-13".to_string(),
+            should_retry: false,
+            new_page: None,
+            needs_render: false,
+            date_mismatch_discarded: true,
+        };
+        coordinator.process_refresh_results(&mut state, &discarded_result);
+
+        // last_games should be preserved, not cleared
+        assert_eq!(state.change_detection.last_games().len(), 1);
+        assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
+    }
+
+    #[test]
+    fn test_process_refresh_results_updates_state_on_success() {
+        let coordinator = RefreshCoordinator::new();
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+
+        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        game.result = "3-2".to_string();
+
+        let result = RefreshResult {
+            games: vec![game.clone()],
+            had_error: false,
+            fetched_date: "2025-03-13".to_string(),
+            should_retry: false,
+            new_page: None,
+            needs_render: false,
+            date_mismatch_discarded: false,
+        };
+        coordinator.process_refresh_results(&mut state, &result);
+
+        assert_eq!(state.change_detection.last_games().len(), 1);
+        assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
     }
 }

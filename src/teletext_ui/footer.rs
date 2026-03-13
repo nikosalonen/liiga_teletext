@@ -26,7 +26,6 @@ pub fn render_footer_with_view(
     footer_y: usize,
     width: usize,
     total_pages: usize,
-    loading_indicator: &Option<LoadingIndicator>,
     auto_refresh_indicator: &Option<LoadingIndicator>,
     auto_refresh_disabled: bool,
     error_warning_active: bool,
@@ -89,34 +88,35 @@ pub fn render_footer_with_view(
         buffer.push_str(&countdown_code);
     }
 
-    // Add loading indicator or auto-refresh indicator if active
-    let mut footer_text = if let Some(loading) = loading_indicator {
-        let loading_frame = loading.current_frame();
-        format!("{controls} {} {}", loading_frame, loading.message())
-    } else if let Some(indicator) = auto_refresh_indicator {
-        let indicator_frame = indicator.current_frame();
-        format!("{controls} {indicator_frame}")
-    } else {
-        controls.to_string()
-    };
+    // Footer text is just the controls - indicators moved to right padding
+    let footer_text = controls.to_string();
 
-    // Append error warning if active
-    if error_warning_active {
-        footer_text.push_str("  ⚠️");
-    }
-
-    // Batch footer ANSI code generation for better performance (requirement 4.3)
+    // Build right padding with activity indicator
     let footer_width = width.saturating_sub(6);
     let header_bg_code = get_ansi_code(header_bg(), 21);
 
+    // Determine right padding content and color
+    let (right_padding, right_color_code) = if let Some(indicator) = auto_refresh_indicator {
+        let frame = indicator.current_frame();
+        (
+            format!(" {frame} "),
+            get_ansi_code(Color::AnsiValue(231), 231),
+        ) // white
+    } else if error_warning_active {
+        (" ! ".to_string(), get_ansi_code(Color::AnsiValue(226), 226)) // yellow
+    } else {
+        ("   ".to_string(), get_ansi_code(Color::AnsiValue(21), 21)) // invisible
+    };
+
     // Convert 0-based footer_y to 1-based for ANSI cursor positioning
     let footer_code = format!(
-        "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;21m{}\x1b[0m",
+        "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;{}m{}\x1b[0m",
         footer_y + 1,
         header_bg_code,
         "   ",
         footer_text,
-        "   ",
+        right_color_code,
+        right_padding,
         width = footer_width
     );
     buffer.push_str(&footer_code);

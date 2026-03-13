@@ -602,7 +602,6 @@ impl TeletextPage {
                 footer_y,
                 width as usize,
                 total_pages,
-                &self.loading_indicator,
                 &self.auto_refresh_indicator,
                 self.auto_refresh_disabled,
                 self.error_warning_active,
@@ -721,18 +720,71 @@ mod tests {
 
         if let Some(ref indicator) = page.loading_indicator {
             assert_eq!(indicator.message(), "Etsitään otteluita...");
-            assert_eq!(indicator.current_frame(), "|"); // First frame
+            assert_eq!(indicator.current_frame(), "⠋"); // First frame
         }
 
         // Test updating animation
         page.update_loading_animation();
         if let Some(ref indicator) = page.loading_indicator {
-            assert_eq!(indicator.current_frame(), "/"); // Second frame
+            assert_eq!(indicator.current_frame(), "⠙"); // Second frame
         }
 
         // Test hiding loading indicator
         page.hide_loading();
         assert!(page.loading_indicator.is_none());
+    }
+
+    #[test]
+    fn test_auto_refresh_indicator_lifecycle() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            false,
+            false,
+        );
+
+        // Initially no indicator
+        assert!(!page.is_auto_refresh_indicator_active());
+
+        // Show indicator
+        page.show_auto_refresh_indicator();
+        assert!(page.is_auto_refresh_indicator_active());
+
+        // Advance animation
+        page.update_auto_refresh_animation();
+        if let Some(ref indicator) = page.auto_refresh_indicator {
+            assert_eq!(indicator.current_frame(), "⠙"); // second frame
+        }
+
+        // Hide indicator
+        page.hide_auto_refresh_indicator();
+        assert!(!page.is_auto_refresh_indicator_active());
+    }
+
+    #[test]
+    fn test_error_warning_lifecycle() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            false,
+            false,
+        );
+
+        assert!(!page.is_error_warning_active());
+
+        page.show_error_warning();
+        assert!(page.is_error_warning_active());
+
+        page.hide_error_warning();
+        assert!(!page.is_error_warning_active());
     }
 
     #[test]
