@@ -382,8 +382,31 @@ impl RefreshCoordinator {
             })
             .await?;
 
-        // Update current_date to track the actual date being displayed
+        // Update current_date to track the actual date being displayed.
+        // Guard against silent date jumps: during auto-refresh the orchestrator's
+        // fallback logic may return games from a completely different date (e.g.
+        // jumping from today's regular season to next week's playoffs). When a date
+        // is already set and the fetched date differs, discard the results so the UI
+        // stays on the user's current date.
         if !result.had_error && !result.fetched_date.is_empty() {
+            let requested_date = state.current_date();
+            if requested_date.is_some()
+                && requested_date.as_deref() != Some(result.fetched_date.as_str())
+            {
+                tracing::warn!(
+                    "Auto-refresh returned date {} but current date is {:?}, discarding to prevent date jump",
+                    result.fetched_date,
+                    requested_date
+                );
+                return Ok(RefreshResult {
+                    games: vec![],
+                    had_error: false,
+                    fetched_date: requested_date.clone().unwrap_or_default(),
+                    should_retry: false,
+                    new_page: None,
+                    needs_render: false,
+                });
+            }
             state.set_current_date(Some(result.fetched_date.clone()));
             tracing::debug!("Updated current_date to: {:?}", state.current_date());
         }
