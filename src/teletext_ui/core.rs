@@ -602,7 +602,6 @@ impl TeletextPage {
                 footer_y,
                 width as usize,
                 total_pages,
-                &self.loading_indicator,
                 &self.auto_refresh_indicator,
                 self.auto_refresh_disabled,
                 self.error_warning_active,

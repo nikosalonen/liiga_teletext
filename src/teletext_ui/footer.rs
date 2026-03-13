@@ -26,7 +26,6 @@ pub fn render_footer_with_view(
     footer_y: usize,
     width: usize,
     total_pages: usize,
-    _loading_indicator: &Option<LoadingIndicator>,
     auto_refresh_indicator: &Option<LoadingIndicator>,
     auto_refresh_disabled: bool,
     error_warning_active: bool,

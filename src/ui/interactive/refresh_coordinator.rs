@@ -160,17 +160,24 @@ fn log_fetch_error(e: &AppError, current_date: &Option<String>) {
 
 /// Animate the loading spinner on the current page while waiting for a background fetch task.
 /// Uses `tokio::select!` to alternate between checking the task and advancing the animation.
-async fn animate_during_fetch<T: Send + 'static>(
+type FetchResult = (Vec<GameData>, bool, String, bool);
+
+async fn animate_during_fetch(
     state: &mut InteractiveState,
-    handle: tokio::task::JoinHandle<T>,
-) -> T {
-    let mut handle = handle;
+    mut handle: tokio::task::JoinHandle<FetchResult>,
+) -> FetchResult {
     let mut stdout = std::io::stdout();
 
     loop {
         tokio::select! {
             result = &mut handle => {
-                return result.expect("background fetch task panicked");
+                match result {
+                    Ok(value) => return value,
+                    Err(join_error) => {
+                        tracing::error!("Background fetch task failed: {join_error}");
+                        return (Vec::new(), true, String::new(), true);
+                    }
+                }
             }
             _ = tokio::time::sleep(Duration::from_millis(100)) => {
                 if let Some(page) = state.current_page_mut()
@@ -220,15 +227,16 @@ impl RefreshCoordinator {
                 state.current_view(),
                 ViewMode::Standings { live_mode: true }
             );
-            let auto_refresh_interval = if is_standings_live {
-                Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS)
+            let (auto_refresh_interval, game_count_for_min_interval) = if is_standings_live {
+                (
+                    Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS),
+                    0,
+                )
             } else {
-                calculate_auto_refresh_interval(state.change_detection.last_games())
-            };
-            let game_count_for_min_interval = if is_standings_live {
-                0
-            } else {
-                state.change_detection.last_games().len()
+                (
+                    calculate_auto_refresh_interval(state.change_detection.last_games()),
+                    state.change_detection.last_games().len(),
+                )
             };
             let min_interval_between_refreshes = calculate_min_refresh_interval(
                 game_count_for_min_interval,
@@ -350,12 +358,6 @@ impl RefreshCoordinator {
             .await;
         needs_render = needs_render || restoration_render;
 
-        // Hide auto-refresh indicator after data is fetched
-        if let Some(page) = &mut current_page {
-            page.hide_auto_refresh_indicator();
-            needs_render = true;
-        }
-
         Ok(RefreshResult {
             games,
             had_error,
@@ -464,6 +466,11 @@ impl RefreshCoordinator {
                     result.fetched_date,
                     state.current_date()
                 );
+                // Hide the auto-refresh spinner that was shown before the fetch
+                if let Some(page) = state.current_page_mut() {
+                    page.hide_auto_refresh_indicator();
+                    state.request_render();
+                }
                 return Ok(RefreshResult {
                     games: vec![],
                     had_error: false,
