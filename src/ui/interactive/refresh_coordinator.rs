@@ -389,6 +389,28 @@ impl RefreshCoordinator {
             state.navigation.preserved_page_for_restoration = Some(preserved);
         }
 
+        // Show auto-refresh spinner on the current page before fetching
+        let should_show_indicator = {
+            let (_, show) = determine_indicator_states(
+                state.current_date(),
+                state.change_detection.last_games(),
+            );
+            show
+        };
+        if should_show_indicator && let Some(page) = state.current_page_mut() {
+            page.show_auto_refresh_indicator();
+            state.request_render();
+        }
+
+        // Render immediately so spinner is visible during fetch
+        if state.needs_render() {
+            if let Some(page) = state.current_page() {
+                let mut stdout = std::io::stdout();
+                let _ = page.render_buffered(&mut stdout);
+            }
+            state.clear_render_flag();
+        }
+
         // Handle data fetching using the helper function
         let result = self
             .handle_data_fetching(DataFetchParams {
@@ -622,6 +644,15 @@ impl RefreshCoordinator {
             tracing::debug!(
                 "Preserving last_games due to fetch error; will retry without clearing state"
             );
+        }
+
+        // Hide auto-refresh spinner after fetch completes
+        if let Some(page) = state.current_page_mut()
+            && page.is_auto_refresh_indicator_active()
+        {
+            page.hide_auto_refresh_indicator();
+            state.request_render();
+            needs_state_render = true;
         }
 
         needs_state_render
