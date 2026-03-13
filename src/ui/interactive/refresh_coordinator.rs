@@ -261,7 +261,7 @@ impl RefreshCoordinator {
         params: DataFetchParams<'_>,
     ) -> Result<RefreshResult, AppError> {
         // Determine indicator states
-        let (should_show_loading, should_show_indicator) =
+        let (should_show_loading, _) =
             determine_indicator_states(params.current_date, params.last_games);
 
         // Initialize page state
@@ -270,7 +270,6 @@ impl RefreshCoordinator {
             &mut current_page,
             LoadingIndicatorConfig {
                 should_show_loading,
-                should_show_indicator,
                 current_date: params.current_date,
                 disable_links: params.disable_links,
                 compact_mode: params.compact_mode,

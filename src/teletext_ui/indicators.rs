@@ -55,7 +55,6 @@ impl TeletextPage {
     }
 
     /// Returns whether the error warning indicator is active
-    #[allow(dead_code)] // Reserved for future use/tests
     pub fn is_error_warning_active(&self) -> bool {
         self.error_warning_active
     }

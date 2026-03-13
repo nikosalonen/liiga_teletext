@@ -45,7 +45,6 @@ pub struct PageRestorationParams<'a> {
 #[derive(Debug)]
 pub struct LoadingIndicatorConfig<'a> {
     pub should_show_loading: bool,
-    pub should_show_indicator: bool,
     pub current_date: &'a Option<String>,
     pub disable_links: bool,
     pub compact_mode: bool,
@@ -218,15 +217,6 @@ impl NavigationManager {
         current_page: &mut Option<TeletextPage>,
         config: LoadingIndicatorConfig<'_>,
     ) -> bool {
-        let mut needs_render = false;
-
-        if config.should_show_indicator
-            && let Some(page) = current_page
-        {
-            page.show_auto_refresh_indicator();
-            needs_render = true;
-        }
-
         if config.should_show_loading {
             *current_page = Some(self.create_loading_page(
                 config.current_date,
@@ -234,12 +224,11 @@ impl NavigationManager {
                 config.compact_mode,
                 config.wide_mode,
             ));
-            needs_render = true;
+            true
         } else {
             tracing::debug!("Skipping loading screen due to ongoing games");
+            false
         }
-
-        needs_render
     }
 
     /// Creates a base TeletextPage with common initialization logic
@@ -696,7 +685,6 @@ mod tests {
     fn test_loading_indicator_config() {
         let config = LoadingIndicatorConfig {
             should_show_loading: true,
-            should_show_indicator: false,
             current_date: &Some("2024-01-15".to_string()),
             disable_links: false,
             compact_mode: false,
@@ -704,7 +692,6 @@ mod tests {
         };
 
         assert!(config.should_show_loading);
-        assert!(!config.should_show_indicator);
         assert_eq!(config.current_date, &Some("2024-01-15".to_string()));
     }
 }
