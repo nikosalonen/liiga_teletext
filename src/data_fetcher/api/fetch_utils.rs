@@ -144,6 +144,8 @@ pub(super) async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Re
         300 // 5 minutes for game data
     } else if url.contains("/schedule") {
         1800 // 30 minutes for schedule data
+    } else if url.contains("/standings/") {
+        crate::constants::cache_ttl::LIVE_GAMES_SECONDS // Short TTL so live standings refresh promptly
     } else {
         600 // 10 minutes for other data
     };
