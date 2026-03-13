@@ -1135,10 +1135,7 @@ mod tests {
         let current = Some("2025-03-13".to_string());
         assert!(!should_discard_for_date_mismatch(&current, "2025-03-13 "));
         assert!(!should_discard_for_date_mismatch(&current, " 2025-03-13"));
-        assert!(!should_discard_for_date_mismatch(
-            &current,
-            " 2025-03-13 "
-        ));
+        assert!(!should_discard_for_date_mismatch(&current, " 2025-03-13 "));
     }
 
     #[test]
