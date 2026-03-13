@@ -103,8 +103,14 @@ impl RefreshCoordinator {
     ) -> bool {
         if !state.needs_refresh() {
             // Calculate refresh intervals
-            let auto_refresh_interval =
-                calculate_auto_refresh_interval(state.change_detection.last_games());
+            let auto_refresh_interval = if matches!(
+                state.current_view(),
+                super::state_manager::ViewMode::Standings { live_mode: true }
+            ) {
+                Duration::from_secs(15)
+            } else {
+                calculate_auto_refresh_interval(state.change_detection.last_games())
+            };
             let min_interval_between_refreshes = calculate_min_refresh_interval(
                 state.change_detection.last_games().len(),
                 config.min_refresh_interval,
@@ -560,9 +566,11 @@ impl RefreshCoordinator {
                 state.request_render();
                 needs_state_render = true;
             }
-            state
-                .change_detection
-                .update_state(result.games.clone(), games_hash);
+            if !result.games.is_empty() {
+                state
+                    .change_detection
+                    .update_state(result.games.clone(), games_hash);
+            }
         } else {
             tracing::debug!(
                 "Preserving last_games due to fetch error; will retry without clearing state"
