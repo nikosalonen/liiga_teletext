@@ -79,7 +79,7 @@ impl Default for CacheMonitoringConfig {
 fn should_discard_for_date_mismatch(current_date: &Option<String>, fetched_date: &str) -> bool {
     current_date
         .as_deref()
-        .is_some_and(|d| !d.trim().is_empty() && d != fetched_date)
+        .is_some_and(|d| !d.trim().is_empty() && d.trim() != fetched_date.trim())
 }
 
 /// Perform the network fetch for game data with timeout.
@@ -431,8 +431,11 @@ impl RefreshCoordinator {
         ));
 
         // Animate the spinner while waiting for the fetch to complete
-        let (games, had_error, fetched_date, should_retry) =
+        let (games, had_error, raw_fetched_date, should_retry) =
             animate_during_fetch(state, fetch_handle).await;
+        // Normalize the fetched date at the boundary to prevent whitespace
+        // from poisoning current_date or causing spurious date-mismatch discards.
+        let fetched_date = raw_fetched_date.trim().to_string();
 
         // Process the fetched data (change detection, page creation, etc.)
         let result = self
@@ -606,7 +609,10 @@ impl RefreshCoordinator {
             should_retry: had_error,
             new_page,
             needs_render: true,
-            date_mismatch_discarded: false,
+            // Standings refreshes carry no game data, so mark as discarded to
+            // prevent process_refresh_results from overwriting last_games with
+            // an empty vector.
+            date_mismatch_discarded: true,
         })
     }
 
@@ -1118,6 +1124,55 @@ mod tests {
         };
         coordinator.process_refresh_results(&mut state, &result);
 
+        assert_eq!(state.change_detection.last_games().len(), 1);
+        assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_whitespace_in_fetched_date() {
+        // Trailing/leading whitespace in the fetched date should be treated
+        // as equal to the trimmed variant, not cause a spurious discard.
+        let current = Some("2025-03-13".to_string());
+        assert!(!should_discard_for_date_mismatch(&current, "2025-03-13 "));
+        assert!(!should_discard_for_date_mismatch(&current, " 2025-03-13"));
+        assert!(!should_discard_for_date_mismatch(
+            &current,
+            " 2025-03-13 "
+        ));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_whitespace_in_current_date() {
+        // Whitespace in current_date should also be normalized for comparison
+        let current = Some("2025-03-13 ".to_string());
+        assert!(!should_discard_for_date_mismatch(&current, "2025-03-13"));
+    }
+
+    #[test]
+    fn test_standings_refresh_result_preserves_last_games() {
+        let coordinator = RefreshCoordinator::new();
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+
+        // Seed state with some games
+        let game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        let games_hash = calculate_games_hash(std::slice::from_ref(&game));
+        state
+            .change_detection
+            .update_state(vec![game.clone()], games_hash);
+
+        // Simulate a standings refresh result (games: vec![], date_mismatch_discarded: true)
+        let standings_result = RefreshResult {
+            games: vec![],
+            had_error: false,
+            fetched_date: String::new(),
+            should_retry: false,
+            new_page: None,
+            needs_render: true,
+            date_mismatch_discarded: true,
+        };
+        coordinator.process_refresh_results(&mut state, &standings_result);
+
+        // last_games must be preserved, not overwritten with empty vec
         assert_eq!(state.change_detection.last_games().len(), 1);
         assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
     }
