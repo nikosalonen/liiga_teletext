@@ -23,7 +23,7 @@ use super::refresh_manager::{
     AutoRefreshParams, calculate_auto_refresh_interval, calculate_min_refresh_interval,
     should_trigger_auto_refresh,
 };
-use super::state_manager::InteractiveState;
+use super::state_manager::{InteractiveState, ViewMode};
 
 /// Result of a refresh operation
 #[derive(Debug)]
@@ -77,7 +77,9 @@ impl Default for CacheMonitoringConfig {
 /// Check if fetched data should be discarded due to a date mismatch.
 /// Returns true when a date is already set and the fetched date differs.
 fn should_discard_for_date_mismatch(current_date: &Option<String>, fetched_date: &str) -> bool {
-    current_date.as_deref().is_some_and(|d| d != fetched_date)
+    current_date
+        .as_deref()
+        .is_some_and(|d| !d.is_empty() && d != fetched_date)
 }
 
 /// Coordinates all refresh operations for the interactive UI
@@ -114,7 +116,7 @@ impl RefreshCoordinator {
             // Calculate refresh intervals
             let auto_refresh_interval = if matches!(
                 state.current_view(),
-                super::state_manager::ViewMode::Standings { live_mode: true }
+                ViewMode::Standings { live_mode: true }
             ) {
                 Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS)
             } else {
@@ -364,7 +366,7 @@ impl RefreshCoordinator {
         }
 
         // Branch on view mode
-        if let super::state_manager::ViewMode::Standings { live_mode } = state.current_view() {
+        if let ViewMode::Standings { live_mode } = state.current_view() {
             return self
                 .perform_standings_refresh(
                     config,
@@ -410,9 +412,9 @@ impl RefreshCoordinator {
                     games: vec![],
                     had_error: false,
                     fetched_date: state.current_date().clone().unwrap_or_default(),
-                    should_retry: true,
+                    should_retry: false,
                     new_page: None,
-                    needs_render: true,
+                    needs_render: false,
                     date_mismatch_discarded: true,
                 });
             }
@@ -879,9 +881,16 @@ mod tests {
     #[test]
     fn test_should_discard_for_date_mismatch_empty_fetched() {
         let current = Some("2025-03-13".to_string());
-        // Empty fetched date means a different string, but the caller guards
-        // with `!result.fetched_date.is_empty()` before calling this function
+        // Empty fetched date is guarded by the caller with `!result.fetched_date.is_empty()`,
+        // but the function itself treats it as a mismatch (defense-in-depth)
         assert!(should_discard_for_date_mismatch(&current, ""));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_empty_current_date() {
+        // Some("") should be treated as unset, not as a date to compare against
+        let current = Some("".to_string());
+        assert!(!should_discard_for_date_mismatch(&current, "2025-03-20"));
     }
 
     #[test]
@@ -904,6 +913,38 @@ mod tests {
         // With last_auto_refresh just now, should NOT trigger (interval not elapsed)
         state.timers.last_auto_refresh = std::time::Instant::now();
         assert!(!coordinator.should_trigger_refresh(&state, &config));
+
+        // With last_auto_refresh 16s ago, SHOULD trigger (15s interval elapsed)
+        // Use a non-historical date so is_historical_date doesn't block auto-refresh
+        state.set_current_date(Some("2099-03-13".to_string()));
+        state.timers.last_auto_refresh = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(16))
+            .unwrap();
+        assert!(coordinator.should_trigger_refresh(&state, &config));
+    }
+
+    #[test]
+    fn test_standings_non_live_mode_uses_default_refresh_interval() {
+        // Use a non-historical date so is_historical_date doesn't block auto-refresh
+        let mut state = InteractiveState::new(Some("2099-03-13".to_string()));
+        state.clear_refresh_flag();
+        state.toggle_view(); // Games -> Standings { live_mode: false }
+
+        let config = RefreshCycleConfig {
+            min_refresh_interval: None,
+            disable_links: false,
+            compact_mode: false,
+            wide_mode: false,
+        };
+
+        let coordinator = RefreshCoordinator::new();
+
+        // With last_auto_refresh 16s ago, should NOT trigger for non-live standings
+        // (falls through to calculate_auto_refresh_interval which returns 60s with no games)
+        state.timers.last_auto_refresh = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(16))
+            .unwrap();
+        assert!(!coordinator.should_trigger_refresh(&state, &config));
     }
 
     #[test]
@@ -912,23 +953,8 @@ mod tests {
         let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
 
         // Seed state with some games
-        let game = crate::data_fetcher::GameData {
-            home_team: "TPS".to_string(),
-            away_team: "HIFK".to_string(),
-            time: "18:30".to_string(),
-            result: "3-2".to_string(),
-            score_type: crate::teletext_ui::ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: "2025-03-13T18:30:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-        };
+        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        game.result = "3-2".to_string();
         let games_hash = calculate_games_hash(std::slice::from_ref(&game));
         state
             .change_detection
@@ -939,9 +965,9 @@ mod tests {
             games: vec![],
             had_error: false,
             fetched_date: "2025-03-13".to_string(),
-            should_retry: true,
+            should_retry: false,
             new_page: None,
-            needs_render: true,
+            needs_render: false,
             date_mismatch_discarded: true,
         };
         coordinator.process_refresh_results(&mut state, &discarded_result);
@@ -956,23 +982,8 @@ mod tests {
         let coordinator = RefreshCoordinator::new();
         let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
 
-        let game = crate::data_fetcher::GameData {
-            home_team: "TPS".to_string(),
-            away_team: "HIFK".to_string(),
-            time: "18:30".to_string(),
-            result: "3-2".to_string(),
-            score_type: crate::teletext_ui::ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: "2025-03-13T18:30:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-        };
+        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        game.result = "3-2".to_string();
 
         let result = RefreshResult {
             games: vec![game.clone()],

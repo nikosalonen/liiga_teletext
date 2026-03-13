@@ -11,6 +11,10 @@ mod teletext_ui;
 mod ui;
 mod version;
 
+#[cfg(test)]
+#[allow(dead_code)]
+mod testing_utils;
+
 use clap::Parser;
 use cli::Args;
 use config::Config;
