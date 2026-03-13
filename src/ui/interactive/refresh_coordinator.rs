@@ -122,8 +122,14 @@ impl RefreshCoordinator {
             } else {
                 calculate_auto_refresh_interval(state.change_detection.last_games())
             };
+            let game_count_for_min_interval =
+                if matches!(state.current_view(), ViewMode::Standings { live_mode: true }) {
+                    0
+                } else {
+                    state.change_detection.last_games().len()
+                };
             let min_interval_between_refreshes = calculate_min_refresh_interval(
-                state.change_detection.last_games().len(),
+                game_count_for_min_interval,
                 config.min_refresh_interval,
             );
 
@@ -917,6 +923,49 @@ mod tests {
         // With last_auto_refresh 16s ago, SHOULD trigger (15s interval elapsed)
         // Use a non-historical date so is_historical_date doesn't block auto-refresh
         state.set_current_date(Some("2099-03-13".to_string()));
+        state.timers.last_auto_refresh = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(16))
+            .unwrap();
+        assert!(coordinator.should_trigger_refresh(&state, &config));
+    }
+
+    #[test]
+    fn test_standings_live_mode_not_clamped_by_game_count() {
+        // When last_games has 6+ entries the game-count-based min interval would be 30s,
+        // which must NOT clamp the 15s live-standings interval.
+        let mut state = InteractiveState::new(Some("2099-03-13".to_string()));
+        state.clear_refresh_flag();
+
+        // Seed 6 games so calculate_min_refresh_interval would return 30s for games view
+        let teams = [
+            ("TPS", "HIFK"),
+            ("Ilves", "Lukko"),
+            ("Tappara", "KalPa"),
+            ("Pelicans", "JYP"),
+            ("KooKoo", "SaiPa"),
+            ("Ässät", "Sport"),
+        ];
+        let games: Vec<_> = teams
+            .iter()
+            .map(|(h, a)| crate::testing_utils::TestDataBuilder::create_basic_game(h, a))
+            .collect();
+        let hash = calculate_games_hash(&games);
+        state.change_detection.update_state(games, hash);
+        assert_eq!(state.change_detection.last_games().len(), 6);
+
+        state.toggle_view(); // Games -> Standings { live_mode: false }
+        state.toggle_live_mode(); // Standings { live_mode: true }
+        state.clear_refresh_flag();
+
+        let config = RefreshCycleConfig {
+            min_refresh_interval: None,
+            disable_links: false,
+            compact_mode: false,
+            wide_mode: false,
+        };
+        let coordinator = RefreshCoordinator::new();
+
+        // 16s ago should trigger (15s live interval, min_interval must not clamp to 30s)
         state.timers.last_auto_refresh = std::time::Instant::now()
             .checked_sub(Duration::from_secs(16))
             .unwrap();
