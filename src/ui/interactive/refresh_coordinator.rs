@@ -385,8 +385,21 @@ impl RefreshCoordinator {
         }
 
         // Restore preserved games page when switching back from standings
+        let switching_from_standings = state.navigation.preserved_games_page.is_some();
         if let Some(preserved) = state.navigation.preserved_games_page.take() {
             state.navigation.preserved_page_for_restoration = Some(preserved);
+        }
+
+        // Show loading indicator immediately when switching from standings to games
+        if switching_from_standings {
+            let loading_page = self.nav_manager.create_loading_page(
+                state.current_date(),
+                config.disable_links,
+                config.compact_mode,
+                config.wide_mode,
+            );
+            let mut stdout = std::io::stdout();
+            let _ = loading_page.render_buffered(&mut stdout);
         }
 
         // Handle data fetching using the helper function
