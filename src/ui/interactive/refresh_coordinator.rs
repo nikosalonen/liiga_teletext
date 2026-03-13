@@ -122,12 +122,14 @@ impl RefreshCoordinator {
             } else {
                 calculate_auto_refresh_interval(state.change_detection.last_games())
             };
-            let game_count_for_min_interval =
-                if matches!(state.current_view(), ViewMode::Standings { live_mode: true }) {
-                    0
-                } else {
-                    state.change_detection.last_games().len()
-                };
+            let game_count_for_min_interval = if matches!(
+                state.current_view(),
+                ViewMode::Standings { live_mode: true }
+            ) {
+                0
+            } else {
+                state.change_detection.last_games().len()
+            };
             let min_interval_between_refreshes = calculate_min_refresh_interval(
                 game_count_for_min_interval,
                 config.min_refresh_interval,
