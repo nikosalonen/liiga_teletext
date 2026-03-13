@@ -36,6 +36,12 @@ pub mod cache_ttl {
     pub const HTTP_RESPONSE_SECONDS: u64 = 300;
 }
 
+/// Auto-refresh interval constants in seconds
+pub mod refresh {
+    /// Auto-refresh interval for live games
+    pub const LIVE_GAMES_INTERVAL_SECONDS: u64 = 15;
+}
+
 /// UI polling intervals in milliseconds
 #[allow(dead_code)]
 pub mod polling {

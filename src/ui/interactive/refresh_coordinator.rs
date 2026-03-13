@@ -35,6 +35,9 @@ pub struct RefreshResult {
     pub new_page: Option<TeletextPage>,
     #[allow(dead_code)]
     pub needs_render: bool,
+    /// True when results were discarded due to a date mismatch during auto-refresh.
+    /// When set, callers should skip change detection to avoid clearing existing state.
+    pub date_mismatch_discarded: bool,
 }
 
 /// Parameters for data fetching operations
@@ -69,6 +72,12 @@ impl Default for CacheMonitoringConfig {
             cache_monitor_interval: Duration::from_secs(300), // 5 minutes
         }
     }
+}
+
+/// Check if fetched data should be discarded due to a date mismatch.
+/// Returns true when a date is already set and the fetched date differs.
+fn should_discard_for_date_mismatch(current_date: &Option<String>, fetched_date: &str) -> bool {
+    current_date.as_deref().is_some_and(|d| d != fetched_date)
 }
 
 /// Coordinates all refresh operations for the interactive UI
@@ -107,7 +116,7 @@ impl RefreshCoordinator {
                 state.current_view(),
                 super::state_manager::ViewMode::Standings { live_mode: true }
             ) {
-                Duration::from_secs(15)
+                Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS)
             } else {
                 calculate_auto_refresh_interval(state.change_detection.last_games())
             };
@@ -268,7 +277,7 @@ impl RefreshCoordinator {
             .fetch_data_with_timeout(params.current_date.clone(), timeout_duration)
             .await;
 
-        // Update current_date to track the actual date being displayed
+        // Prepare the effective date for page creation (may differ from requested date on first fetch)
         let mut updated_current_date = params.current_date.clone();
         if !had_error && !fetched_date.is_empty() {
             updated_current_date = Some(fetched_date.clone());
@@ -337,6 +346,7 @@ impl RefreshCoordinator {
             should_retry,
             new_page: current_page,
             needs_render,
+            date_mismatch_discarded: false,
         })
     }
 
@@ -382,29 +392,28 @@ impl RefreshCoordinator {
             })
             .await?;
 
-        // Update current_date to track the actual date being displayed.
-        // Guard against silent date jumps: during auto-refresh the orchestrator's
+        // Guard against silent date jumps during auto-refresh. The orchestrator's
         // fallback logic may return games from a completely different date (e.g.
-        // jumping from today's regular season to next week's playoffs). When a date
-        // is already set and the fetched date differs, discard the results so the UI
-        // stays on the user's current date.
+        // jumping from today to a future date when no games exist for the requested
+        // date). When a date is already set and the fetched date differs, discard
+        // the results so the UI stays on the user's current date. When the fetched
+        // date matches (or no date was previously set), update current_date to track
+        // the actual date being displayed.
         if !result.had_error && !result.fetched_date.is_empty() {
-            let requested_date = state.current_date();
-            if requested_date.is_some()
-                && requested_date.as_deref() != Some(result.fetched_date.as_str())
-            {
+            if should_discard_for_date_mismatch(state.current_date(), &result.fetched_date) {
                 tracing::warn!(
                     "Auto-refresh returned date {} but current date is {:?}, discarding to prevent date jump",
                     result.fetched_date,
-                    requested_date
+                    state.current_date()
                 );
                 return Ok(RefreshResult {
                     games: vec![],
                     had_error: false,
-                    fetched_date: requested_date.clone().unwrap_or_default(),
-                    should_retry: false,
+                    fetched_date: state.current_date().clone().unwrap_or_default(),
+                    should_retry: true,
                     new_page: None,
-                    needs_render: false,
+                    needs_render: true,
+                    date_mismatch_discarded: true,
                 });
             }
             state.set_current_date(Some(result.fetched_date.clone()));
@@ -532,6 +541,7 @@ impl RefreshCoordinator {
             should_retry: had_error,
             new_page,
             needs_render: true,
+            date_mismatch_discarded: false,
         })
     }
 
@@ -542,6 +552,13 @@ impl RefreshCoordinator {
         result: &RefreshResult,
     ) -> bool {
         let mut needs_state_render = false;
+
+        // Skip change detection entirely for date-mismatch-discarded results
+        // to prevent update_and_check_changes from clearing last_games state
+        if result.date_mismatch_discarded {
+            tracing::debug!("Skipping change detection for date-mismatch-discarded result");
+            return needs_state_render;
+        }
 
         // Change detection using a simple hash of game data
         let games_hash = calculate_games_hash(&result.games);
@@ -589,11 +606,9 @@ impl RefreshCoordinator {
                 state.request_render();
                 needs_state_render = true;
             }
-            if !result.games.is_empty() {
-                state
-                    .change_detection
-                    .update_state(result.games.clone(), games_hash);
-            }
+            state
+                .change_detection
+                .update_state(result.games.clone(), games_hash);
         } else {
             tracing::debug!(
                 "Preserving last_games due to fetch error; will retry without clearing state"
@@ -842,5 +857,135 @@ mod tests {
         assert!(config.disable_links);
         assert!(!config.compact_mode);
         assert!(config.wide_mode);
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_different_dates() {
+        let current = Some("2025-03-13".to_string());
+        assert!(should_discard_for_date_mismatch(&current, "2025-03-20"));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_same_date() {
+        let current = Some("2025-03-13".to_string());
+        assert!(!should_discard_for_date_mismatch(&current, "2025-03-13"));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_no_current_date() {
+        assert!(!should_discard_for_date_mismatch(&None, "2025-03-20"));
+    }
+
+    #[test]
+    fn test_should_discard_for_date_mismatch_empty_fetched() {
+        let current = Some("2025-03-13".to_string());
+        // Empty fetched date means a different string, but the caller guards
+        // with `!result.fetched_date.is_empty()` before calling this function
+        assert!(should_discard_for_date_mismatch(&current, ""));
+    }
+
+    #[test]
+    fn test_standings_live_mode_uses_live_refresh_interval() {
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+        // Clear the initial refresh flag so the interval logic is exercised
+        state.clear_refresh_flag();
+        state.toggle_view(); // Games -> Standings { live_mode: false }
+        state.toggle_live_mode(); // Standings { live_mode: true }
+
+        let config = RefreshCycleConfig {
+            min_refresh_interval: None,
+            disable_links: false,
+            compact_mode: false,
+            wide_mode: false,
+        };
+
+        let coordinator = RefreshCoordinator::new();
+
+        // With last_auto_refresh just now, should NOT trigger (interval not elapsed)
+        state.timers.last_auto_refresh = std::time::Instant::now();
+        assert!(!coordinator.should_trigger_refresh(&state, &config));
+    }
+
+    #[test]
+    fn test_process_refresh_results_skips_discarded() {
+        let coordinator = RefreshCoordinator::new();
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+
+        // Seed state with some games
+        let game = crate::data_fetcher::GameData {
+            home_team: "TPS".to_string(),
+            away_team: "HIFK".to_string(),
+            time: "18:30".to_string(),
+            result: "3-2".to_string(),
+            score_type: crate::teletext_ui::ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2025-03-13T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
+        };
+        let games_hash = calculate_games_hash(std::slice::from_ref(&game));
+        state
+            .change_detection
+            .update_state(vec![game.clone()], games_hash);
+
+        // Process a date-mismatch-discarded result
+        let discarded_result = RefreshResult {
+            games: vec![],
+            had_error: false,
+            fetched_date: "2025-03-13".to_string(),
+            should_retry: true,
+            new_page: None,
+            needs_render: true,
+            date_mismatch_discarded: true,
+        };
+        coordinator.process_refresh_results(&mut state, &discarded_result);
+
+        // last_games should be preserved, not cleared
+        assert_eq!(state.change_detection.last_games().len(), 1);
+        assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
+    }
+
+    #[test]
+    fn test_process_refresh_results_updates_state_on_success() {
+        let coordinator = RefreshCoordinator::new();
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+
+        let game = crate::data_fetcher::GameData {
+            home_team: "TPS".to_string(),
+            away_team: "HIFK".to_string(),
+            time: "18:30".to_string(),
+            result: "3-2".to_string(),
+            score_type: crate::teletext_ui::ScoreType::Final,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "runkosarja".to_string(),
+            goal_events: vec![],
+            played_time: 3600,
+            start: "2025-03-13T18:30:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
+        };
+
+        let result = RefreshResult {
+            games: vec![game.clone()],
+            had_error: false,
+            fetched_date: "2025-03-13".to_string(),
+            should_retry: false,
+            new_page: None,
+            needs_render: false,
+            date_mismatch_discarded: false,
+        };
+        coordinator.process_refresh_results(&mut state, &result);
+
+        assert_eq!(state.change_detection.last_games().len(), 1);
+        assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
     }
 }

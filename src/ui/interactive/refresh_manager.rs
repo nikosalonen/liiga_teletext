@@ -65,7 +65,7 @@ pub(super) fn calculate_poll_interval(time_since_activity: Duration) -> Duration
 /// Calculate auto-refresh interval based on game states
 pub(super) fn calculate_auto_refresh_interval(games: &[GameData]) -> Duration {
     if has_live_games_from_game_data(games) {
-        Duration::from_secs(15) // Increased from 8 to 15 seconds for live games
+        Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS)
     } else if games.iter().any(is_game_near_start_time) {
         Duration::from_secs(30) // Increased from 10 to 30 seconds for games near start time
     } else {
