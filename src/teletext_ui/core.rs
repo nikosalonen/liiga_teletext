@@ -721,13 +721,13 @@ mod tests {
 
         if let Some(ref indicator) = page.loading_indicator {
             assert_eq!(indicator.message(), "Etsitään otteluita...");
-            assert_eq!(indicator.current_frame(), "|"); // First frame
+            assert_eq!(indicator.current_frame(), "⠋"); // First frame
         }
 
         // Test updating animation
         page.update_loading_animation();
         if let Some(ref indicator) = page.loading_indicator {
-            assert_eq!(indicator.current_frame(), "/"); // Second frame
+            assert_eq!(indicator.current_frame(), "⠙"); // Second frame
         }
 
         // Test hiding loading indicator
@@ -758,7 +758,7 @@ mod tests {
         // Advance animation
         page.update_auto_refresh_animation();
         if let Some(ref indicator) = page.auto_refresh_indicator {
-            assert_eq!(indicator.current_frame(), "/"); // second frame
+            assert_eq!(indicator.current_frame(), "⠙"); // second frame
         }
 
         // Hide indicator

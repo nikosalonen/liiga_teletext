@@ -14,7 +14,7 @@ impl LoadingIndicator {
         Self {
             message,
             frame: 0,
-            frames: vec!["|", "/", "-", "\\"],
+            frames: vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
         }
     }
 

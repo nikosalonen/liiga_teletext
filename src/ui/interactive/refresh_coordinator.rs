@@ -82,6 +82,108 @@ fn should_discard_for_date_mismatch(current_date: &Option<String>, fetched_date:
         .is_some_and(|d| !d.trim().is_empty() && d != fetched_date)
 }
 
+/// Perform the network fetch for game data with timeout.
+/// This is a free function so it can be spawned as a background task,
+/// allowing the UI to animate the loading indicator while waiting.
+async fn fetch_games_with_timeout(
+    current_date: Option<String>,
+    timeout_seconds: u64,
+) -> (Vec<GameData>, bool, String, bool) {
+    let timeout_duration = Duration::from_secs(timeout_seconds);
+    let fetch_future = fetch_liiga_data(current_date.clone());
+
+    match tokio::time::timeout(timeout_duration, fetch_future).await {
+        Ok(Ok((games, fetched_date))) => {
+            tracing::debug!("Auto-refresh successful: fetched {} games", games.len());
+            (games, false, fetched_date, false)
+        }
+        Ok(Err(e)) => {
+            log_fetch_error(&e, &current_date);
+            (Vec::new(), true, String::new(), true)
+        }
+        Err(_) => {
+            tracing::warn!(
+                "Auto-refresh timeout after {timeout_seconds}s, continuing with existing data"
+            );
+            (Vec::new(), true, String::new(), true)
+        }
+    }
+}
+
+/// Log fetch error details for debugging
+fn log_fetch_error(e: &AppError, current_date: &Option<String>) {
+    tracing::error!("Auto-refresh failed: {e}");
+    tracing::error!(
+        "Error details - Type: {}, Current date: {current_date:?}",
+        std::any::type_name_of_val(e),
+    );
+
+    match e {
+        AppError::NetworkTimeout { url } => {
+            tracing::warn!("Auto-refresh timeout for URL: {url}, will retry on next cycle");
+        }
+        AppError::NetworkConnection { url, message } => {
+            tracing::warn!(
+                "Auto-refresh connection error for URL: {url}, details: {message}, will retry on next cycle"
+            );
+        }
+        AppError::ApiServerError {
+            status,
+            message,
+            url,
+        } => {
+            tracing::warn!(
+                "Auto-refresh server error: HTTP {status} - {message} (URL: {url}), will retry on next cycle"
+            );
+        }
+        AppError::ApiServiceUnavailable {
+            status,
+            message,
+            url,
+        } => {
+            tracing::warn!(
+                "Auto-refresh service unavailable: HTTP {status} - {message} (URL: {url}), will retry on next cycle"
+            );
+        }
+        AppError::ApiRateLimit { message, url } => {
+            tracing::warn!(
+                "Auto-refresh rate limited: {message} (URL: {url}), will retry on next cycle"
+            );
+        }
+        _ => {
+            tracing::warn!("Auto-refresh error: {e}, will retry on next cycle");
+        }
+    }
+
+    tracing::info!("Continuing with existing data due to auto-refresh failure");
+}
+
+/// Animate the loading spinner on the current page while waiting for a background fetch task.
+/// Uses `tokio::select!` to alternate between checking the task and advancing the animation.
+async fn animate_during_fetch<T: Send + 'static>(
+    state: &mut InteractiveState,
+    handle: tokio::task::JoinHandle<T>,
+) -> T {
+    let mut handle = handle;
+    let mut stdout = std::io::stdout();
+
+    loop {
+        tokio::select! {
+            result = &mut handle => {
+                return result.expect("background fetch task panicked");
+            }
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                if let Some(page) = state.current_page_mut()
+                    && page.is_auto_refresh_indicator_active()
+                {
+                    page.update_auto_refresh_animation();
+                    let _ = page.render_buffered(&mut stdout);
+                }
+            }
+        }
+    }
+}
+
 /// Coordinates all refresh operations for the interactive UI
 pub struct RefreshCoordinator {
     nav_manager: NavigationManager,
@@ -165,100 +267,15 @@ impl RefreshCoordinator {
         }
     }
 
-    /// Handle data fetching with error handling and timeout
-    async fn fetch_data_with_timeout(
-        &self,
-        current_date: Option<String>,
-        timeout_duration: Duration,
-    ) -> (Vec<GameData>, bool, String, bool) {
-        let fetch_future = fetch_liiga_data(current_date.clone());
-
-        match tokio::time::timeout(timeout_duration, fetch_future).await {
-            Ok(fetch_result) => match fetch_result {
-                Ok((games, fetched_date)) => {
-                    tracing::debug!("Auto-refresh successful: fetched {} games", games.len());
-                    (games, false, fetched_date, false)
-                }
-                Err(e) => {
-                    tracing::error!("Auto-refresh failed: {e}");
-                    tracing::error!(
-                        "Error details - Type: {}, Current date: {:?}",
-                        std::any::type_name_of_val(&e),
-                        current_date
-                    );
-
-                    // Log specific error context for debugging
-                    match &e {
-                        AppError::NetworkTimeout { url } => {
-                            tracing::warn!(
-                                "Auto-refresh timeout for URL: {}, will retry on next cycle",
-                                url
-                            );
-                        }
-                        AppError::NetworkConnection { url, message } => {
-                            tracing::warn!(
-                                "Auto-refresh connection error for URL: {}, details: {}, will retry on next cycle",
-                                url,
-                                message
-                            );
-                        }
-                        AppError::ApiServerError {
-                            status,
-                            message,
-                            url,
-                        } => {
-                            tracing::warn!(
-                                "Auto-refresh server error: HTTP {} - {} (URL: {}), will retry on next cycle",
-                                status,
-                                message,
-                                url
-                            );
-                        }
-                        AppError::ApiServiceUnavailable {
-                            status,
-                            message,
-                            url,
-                        } => {
-                            tracing::warn!(
-                                "Auto-refresh service unavailable: HTTP {} - {} (URL: {}), will retry on next cycle",
-                                status,
-                                message,
-                                url
-                            );
-                        }
-                        AppError::ApiRateLimit { message, url } => {
-                            tracing::warn!(
-                                "Auto-refresh rate limited: {} (URL: {}), will retry on next cycle",
-                                message,
-                                url
-                            );
-                        }
-                        _ => {
-                            tracing::warn!("Auto-refresh error: {e}, will retry on next cycle");
-                        }
-                    }
-
-                    // Graceful degradation: continue with existing data instead of showing error page
-                    tracing::info!("Continuing with existing data due to auto-refresh failure");
-
-                    (Vec::new(), true, String::new(), true)
-                }
-            },
-            Err(_) => {
-                // Timeout occurred during auto-refresh
-                tracing::warn!(
-                    "Auto-refresh timeout after {:?}, continuing with existing data",
-                    timeout_duration
-                );
-                (Vec::new(), true, String::new(), true)
-            }
-        }
-    }
-
-    /// Handle data fetching and page creation coordination
-    async fn handle_data_fetching(
+    /// Process fetched game data: change detection, page creation, and indicator cleanup.
+    /// The actual network fetch is performed separately so it can run as a background task.
+    async fn process_fetched_data(
         &self,
         params: DataFetchParams<'_>,
+        games: Vec<GameData>,
+        had_error: bool,
+        fetched_date: String,
+        should_retry: bool,
     ) -> Result<RefreshResult, AppError> {
         // Determine indicator states
         let (should_show_loading, _) =
@@ -276,13 +293,6 @@ impl RefreshCoordinator {
                 wide_mode: params.wide_mode,
             },
         );
-
-        // Fetch data with timeout (safety margin above HTTP client timeout)
-        let timeout_duration =
-            Duration::from_secs(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5);
-        let (games, had_error, fetched_date, should_retry) = self
-            .fetch_data_with_timeout(params.current_date.clone(), timeout_duration)
-            .await;
 
         // Prepare the effective date for page creation (may differ from requested date on first fetch)
         let mut updated_current_date = params.current_date.clone();
@@ -410,16 +420,34 @@ impl RefreshCoordinator {
             state.clear_render_flag();
         }
 
-        // Handle data fetching using the helper function
+        // Spawn the network fetch as a background task so the spinner can animate
+        let current_date_for_fetch = state.current_date().clone();
+        let timeout_seconds = crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5;
+        let fetch_handle = tokio::spawn(fetch_games_with_timeout(
+            current_date_for_fetch,
+            timeout_seconds,
+        ));
+
+        // Animate the spinner while waiting for the fetch to complete
+        let (games, had_error, fetched_date, should_retry) =
+            animate_during_fetch(state, fetch_handle).await;
+
+        // Process the fetched data (change detection, page creation, etc.)
         let result = self
-            .handle_data_fetching(DataFetchParams {
-                current_date: state.current_date(),
-                last_games: state.change_detection.last_games(),
-                disable_links: config.disable_links,
-                compact_mode: config.compact_mode,
-                wide_mode: config.wide_mode,
-                preserved_page_for_restoration: state.preserved_page(),
-            })
+            .process_fetched_data(
+                DataFetchParams {
+                    current_date: state.current_date(),
+                    last_games: state.change_detection.last_games(),
+                    disable_links: config.disable_links,
+                    compact_mode: config.compact_mode,
+                    wide_mode: config.wide_mode,
+                    preserved_page_for_restoration: state.preserved_page(),
+                },
+                games,
+                had_error,
+                fetched_date,
+                should_retry,
+            )
             .await?;
 
         // Guard against silent date jumps during auto-refresh. The orchestrator's
