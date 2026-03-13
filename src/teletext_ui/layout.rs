@@ -906,13 +906,15 @@ impl ColumnLayoutManager {
             .to_string();
 
         // Batch all ANSI code generation into a single string operation
+        let home_width = layout_config.home_team_width;
+        let away_width = layout_config.away_team_width;
         format!(
-            "{}{:<20}{}{}{:<20}{}{}\x1b[0m",
+            "{}{:<home_width$}{}{}{:<away_width$}{}{}\x1b[0m",
             home_code,
-            home_team.chars().take(20).collect::<String>(),
+            home_team.chars().take(home_width).collect::<String>(),
             separator_code,
             away_code,
-            away_team.chars().take(20).collect::<String>(),
+            away_team.chars().take(away_width).collect::<String>(),
             time_code,
             time_score
         )
@@ -1613,15 +1615,15 @@ impl ColumnLayoutManager {
         let play_icon_area_width = config.max_player_name_width + config.max_goal_types_width + 2;
         let play_icon_area_end = config.play_icon_column + play_icon_area_width;
 
-        // Reserve minimum space for time (5 chars) and score (4 chars) = 9 chars total
-        let min_time_score_space = 9;
+        // Reserve minimum space for time (5 chars) + space (1 char) + score (4 chars) = 10 chars total
+        let min_time_score_space = 10;
         let available_width_after_play_area =
             self.terminal_width.saturating_sub(play_icon_area_end);
 
         if available_width_after_play_area >= min_time_score_space {
             // Enough space after play area
             config.time_column = play_icon_area_end + 1;
-            config.score_column = config.time_column + 5;
+            config.score_column = config.time_column + 6;
         } else {
             // Not enough space - use intelligent truncation strategy
             let critical_content_width = teams_width + min_time_score_space;
@@ -1632,12 +1634,12 @@ impl ColumnLayoutManager {
                 TruncationStrategy::NoTruncation | TruncationStrategy::ReduceSpacing => {
                     // Try positioning time and score at the very end
                     config.score_column = self.terminal_width.saturating_sub(4);
-                    config.time_column = config.score_column.saturating_sub(5);
+                    config.time_column = config.score_column.saturating_sub(6);
                 }
                 TruncationStrategy::MinimalSpacing => {
                     // Use minimal spacing throughout
                     config.score_column = self.terminal_width.saturating_sub(4);
-                    config.time_column = config.score_column.saturating_sub(5);
+                    config.time_column = config.score_column.saturating_sub(6);
 
                     // Recalculate play icon area end with current settings
                     let current_play_icon_area_end = config.play_icon_column
@@ -1705,8 +1707,8 @@ impl ColumnLayoutManager {
                     );
 
                     // Position time and score at absolute minimum positions
-                    config.score_column = self.terminal_width.saturating_sub(3);
-                    config.time_column = config.score_column.saturating_sub(4);
+                    config.score_column = self.terminal_width.saturating_sub(4);
+                    config.time_column = config.score_column.saturating_sub(6);
 
                     // Calculate maximum available space for play area
                     let max_play_area = config.time_column.saturating_sub(config.play_icon_column);

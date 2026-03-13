@@ -268,7 +268,7 @@ impl TeletextPage {
                 home_pos,
                 text_fg_code,
                 home_team,
-                20,
+                layout_config.home_team_width,
             ));
             game_line.push_str(&layout_manager.format_separator(
                 *current_line,
@@ -280,7 +280,7 @@ impl TeletextPage {
                 away_pos,
                 text_fg_code,
                 away_team,
-                20,
+                layout_config.away_team_width,
             ));
             game_line.push_str(&layout_manager.format_time_score(
                 *current_line,
@@ -594,7 +594,7 @@ impl TeletextPage {
             away_team_start
                 .saturating_sub(name_start)
                 .saturating_sub(space_needed_for_goal_types)
-                .saturating_sub(2) // -2 for margin
+                .saturating_sub(1) // -1 for margin
         } else {
             // For away team: calculate space until time column
             let name_start = column_offset + 3;
@@ -608,7 +608,7 @@ impl TeletextPage {
                 .time_column
                 .saturating_sub(name_start)
                 .saturating_sub(space_needed_for_goal_types)
-                .saturating_sub(2)
+                .saturating_sub(1)
         };
 
         // Pad player name to available space, but not more than max_player_name_width
@@ -620,8 +620,8 @@ impl TeletextPage {
                 .is_some_and(|url| !url.trim().is_empty());
         let play_icon_width = if has_video { 1 } else { 0 };
         let padding_width = available_space_for_name
-            .min(layout_config.max_player_name_width)
-            .saturating_sub(play_icon_width);
+            .saturating_sub(play_icon_width)
+            .min(layout_config.max_player_name_width);
         // Truncate player name to fit within padding_width so the play icon doesn't overflow
         let truncated_player_name: String =
             player_name_display.chars().take(padding_width).collect();
