@@ -622,6 +622,9 @@ impl ColumnLayoutManager {
     /// Recommended minimum terminal width for optimal display
     /// This allows for: margin(2) + home(20) + sep(3) + away(20) + play_icon + goal_types + time + score = 70 chars
     const RECOMMENDED_MINIMUM_WIDTH: usize = 70;
+
+    /// Minimum columns reserved for the time/score area: time (5) + space (1) + score (4) = 10
+    const MIN_TIME_SCORE_SPACE: usize = 10;
 }
 
 impl ColumnLayoutManager {
@@ -1615,18 +1618,16 @@ impl ColumnLayoutManager {
         let play_icon_area_width = config.max_player_name_width + config.max_goal_types_width + 2;
         let play_icon_area_end = config.play_icon_column + play_icon_area_width;
 
-        // Reserve minimum space for time (5 chars) + space (1 char) + score (4 chars) = 10 chars total
-        let min_time_score_space = 10;
         let available_width_after_play_area =
             self.terminal_width.saturating_sub(play_icon_area_end);
 
-        if available_width_after_play_area >= min_time_score_space {
+        if available_width_after_play_area >= Self::MIN_TIME_SCORE_SPACE {
             // Enough space after play area
             config.time_column = play_icon_area_end + 1;
             config.score_column = config.time_column + 6;
         } else {
             // Not enough space - use intelligent truncation strategy
-            let critical_content_width = teams_width + min_time_score_space;
+            let critical_content_width = teams_width + Self::MIN_TIME_SCORE_SPACE;
             let strategy = truncator
                 .determine_truncation_strategy(self.terminal_width, critical_content_width);
 
@@ -1847,7 +1848,7 @@ impl ColumnLayoutManager {
         }
 
         // Determine truncation strategy based on terminal width
-        let critical_content_width = self.content_margin + 30 + 9; // Basic teams + time/score
+        let critical_content_width = self.content_margin + 30 + Self::MIN_TIME_SCORE_SPACE; // Basic teams + time/score
         let strategy =
             truncator.determine_truncation_strategy(self.terminal_width, critical_content_width);
 
