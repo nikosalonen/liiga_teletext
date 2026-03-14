@@ -7,6 +7,7 @@ use crate::data_fetcher::processors::should_show_todays_games;
 use crate::error::AppError;
 use chrono::Local;
 use crossterm::{execute, style::Print};
+use std::cell::Cell;
 use std::io::{Stdout, Write};
 use tracing::debug;
 
@@ -50,6 +51,7 @@ pub struct TeletextPage {
     pub(super) is_standings_page: bool,             // Whether this is a standings page
     pub(super) standings_live_mode: bool,           // Whether live mode is active in standings
     pub(super) playoffs_lines: Vec<u16>, // Positions after which to draw playoff separator lines
+    pub(super) skip_screen_clear: Cell<bool>, // Skip screen clear on next render to avoid flicker
 }
 
 #[derive(Debug)]
@@ -167,6 +169,7 @@ impl TeletextPage {
             is_standings_page: false,
             standings_live_mode: false,
             playoffs_lines: Vec::new(),
+            skip_screen_clear: Cell::new(false),
         }
     }
 
@@ -472,7 +475,9 @@ impl TeletextPage {
         // Only clear the screen in interactive mode using more efficient method
         if !self.ignore_height_limit {
             buffer.push_str("\x1b[H"); // Move to home position
-            buffer.push_str("\x1b[0J"); // Clear from cursor down
+            if !self.skip_screen_clear.replace(false) {
+                buffer.push_str("\x1b[0J"); // Clear from cursor down
+            }
         }
 
         // Format the header text with date if available

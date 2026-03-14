@@ -31,7 +31,7 @@ pub struct ApiStandingsTeam {
 }
 
 /// Internal standings entry used for rendering
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct StandingsEntry {
     pub team_name: String,
     pub team_id: String,

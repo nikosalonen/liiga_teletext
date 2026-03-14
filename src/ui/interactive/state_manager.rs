@@ -258,6 +258,7 @@ impl Default for NavigationState {
 pub struct ChangeDetectionState {
     pub last_games_hash: u64,
     pub last_games: Vec<GameData>,
+    pub last_standings_hash: u64,
 }
 
 impl ChangeDetectionState {
@@ -266,6 +267,7 @@ impl ChangeDetectionState {
         Self {
             last_games_hash: 0,
             last_games: Vec::new(),
+            last_standings_hash: 0,
         }
     }
 

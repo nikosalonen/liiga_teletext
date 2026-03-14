@@ -14,7 +14,9 @@ use crate::teletext_ui::{ScoreType, TeletextPage};
 use std::time::Duration;
 use tracing;
 
-use super::change_detection::{calculate_games_hash, detect_and_log_changes};
+use super::change_detection::{
+    calculate_games_hash, calculate_standings_hash, detect_and_log_changes,
+};
 use super::indicators::determine_indicator_states;
 use super::navigation_manager::{
     LoadingIndicatorConfig, NavigationManager, PageCreationConfig, PageRestorationParams,
@@ -385,14 +387,20 @@ impl RefreshCoordinator {
         // Branch on view mode. Standings are league-wide (not date-scoped),
         // so the date-mismatch discard in perform_refresh_cycle does not apply here.
         if let ViewMode::Standings { live_mode } = state.current_view() {
-            return self
+            let last_hash = state.change_detection.last_standings_hash;
+            let preserved_page = state.preserved_page();
+            let last_games = state.change_detection.last_games().to_vec();
+            let result = self
                 .perform_standings_refresh(
+                    state,
                     config,
                     live_mode,
-                    state.preserved_page(),
-                    state.change_detection.last_games(),
+                    preserved_page,
+                    &last_games,
+                    last_hash,
                 )
-                .await;
+                .await?;
+            return Ok(result);
         }
 
         // Restore preserved games page when switching back from standings.
@@ -530,15 +538,31 @@ impl RefreshCoordinator {
     /// Perform standings-specific refresh cycle
     async fn perform_standings_refresh(
         &self,
+        state: &mut InteractiveState,
         config: &RefreshCycleConfig,
         live_mode: bool,
         preserved_page: Option<usize>,
         last_games: &[GameData],
+        last_standings_hash: u64,
     ) -> Result<RefreshResult, AppError> {
         tracing::info!("Fetching standings data (live_mode: {live_mode})");
 
-        // Show loading indicator immediately so the UI feels responsive
-        {
+        let is_auto_refresh = state.current_page().is_some() && last_standings_hash != 0;
+
+        if is_auto_refresh {
+            // Show subtle spinner on existing page instead of full loading screen
+            if let Some(page) = state.current_page_mut() {
+                page.show_auto_refresh_indicator();
+                state.request_render();
+            }
+            // Render spinner immediately
+            if let Some(page) = state.current_page() {
+                let mut stdout = std::io::stdout();
+                let _ = page.render_buffered(&mut stdout);
+            }
+            state.clear_render_flag();
+        } else {
+            // Show loading indicator immediately so the UI feels responsive
             let mut loading_page = TeletextPage::new(
                 223,
                 "JÄÄKIEKKO".to_string(),
@@ -607,6 +631,41 @@ impl RefreshCoordinator {
                     }
                 }
             }
+        }
+
+        // Check if standings data has changed
+        let new_hash = if !had_error {
+            calculate_standings_hash(&standings, &playoffs_lines, live_mode)
+        } else {
+            0
+        };
+        let data_changed = had_error || new_hash != last_standings_hash;
+
+        // Update the standings hash
+        if !had_error {
+            state.change_detection.last_standings_hash = new_hash;
+        }
+
+        // Hide auto-refresh spinner for auto-refresh case
+        if is_auto_refresh && let Some(page) = state.current_page_mut() {
+            page.hide_auto_refresh_indicator();
+            if !data_changed {
+                page.set_skip_screen_clear(true);
+            }
+            state.request_render();
+        }
+
+        if !data_changed {
+            tracing::debug!("Standings data unchanged, skipping UI update");
+            return Ok(RefreshResult {
+                games: vec![],
+                had_error: false,
+                fetched_date: String::new(),
+                should_retry: false,
+                new_page: None,
+                needs_render: true,
+                date_mismatch_discarded: true,
+            });
         }
 
         let new_page = if !had_error {
@@ -727,6 +786,9 @@ impl RefreshCoordinator {
             && page.is_auto_refresh_indicator_active()
         {
             page.hide_auto_refresh_indicator();
+            if !data_changed {
+                page.set_skip_screen_clear(true);
+            }
             state.request_render();
             needs_state_render = true;
         }

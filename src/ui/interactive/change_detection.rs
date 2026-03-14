@@ -3,6 +3,7 @@
 //! This module provides efficient change detection to avoid unnecessary UI updates
 //! by computing hashes of game data and comparing them across refreshes.
 
+use crate::data_fetcher::models::standings::StandingsEntry;
 use crate::data_fetcher::{GameData, has_live_games_from_game_data};
 use crate::teletext_ui::ScoreType;
 use std::collections::hash_map::DefaultHasher;
@@ -44,6 +45,23 @@ pub(super) fn calculate_games_hash(games: &[GameData]) -> u64 {
         }
     }
 
+    hasher.finish()
+}
+
+/// Calculates a hash of standings data for change detection.
+/// Includes `live_mode` so toggling it always triggers a page rebuild
+/// (subheader and footer change even when the underlying data is identical).
+pub(super) fn calculate_standings_hash(
+    standings: &[StandingsEntry],
+    playoffs_lines: &[u16],
+    live_mode: bool,
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    live_mode.hash(&mut hasher);
+    for entry in standings {
+        entry.hash(&mut hasher);
+    }
+    playoffs_lines.hash(&mut hasher);
     hasher.finish()
 }
 
