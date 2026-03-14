@@ -58,9 +58,7 @@ pub(super) fn calculate_standings_hash(
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
     live_mode.hash(&mut hasher);
-    for entry in standings {
-        entry.hash(&mut hasher);
-    }
+    standings.hash(&mut hasher);
     playoffs_lines.hash(&mut hasher);
     hasher.finish()
 }

@@ -391,7 +391,7 @@ impl RefreshCoordinator {
             let last_hash = state.change_detection.last_standings_hash();
             let preserved_page = state.preserved_page();
             let last_games = state.change_detection.last_games().to_vec();
-            let result = self
+            return self
                 .perform_standings_refresh(
                     state,
                     config,
@@ -400,8 +400,7 @@ impl RefreshCoordinator {
                     &last_games,
                     last_hash,
                 )
-                .await?;
-            return Ok(result);
+                .await;
         }
 
         // Restore preserved games page when switching back from standings.
@@ -583,7 +582,9 @@ impl RefreshCoordinator {
             );
             loading_page.add_error_message("Haetaan sarjataulukkoa...");
             let mut stdout = std::io::stdout();
-            let _ = loading_page.render_buffered(&mut stdout);
+            if let Err(e) = loading_page.render_buffered(&mut stdout) {
+                tracing::warn!("Failed to render standings loading page: {e}");
+            }
         }
 
         let app_config = match crate::config::Config::load().await {
@@ -661,7 +662,7 @@ impl RefreshCoordinator {
         if is_auto_refresh && let Some(page) = state.current_page_mut() {
             page.hide_auto_refresh_indicator();
             if !data_changed {
-                page.set_skip_screen_clear(true);
+                page.skip_next_screen_clear();
             }
             state.request_render();
         }
@@ -798,7 +799,7 @@ impl RefreshCoordinator {
         {
             page.hide_auto_refresh_indicator();
             if !data_changed {
-                page.set_skip_screen_clear(true);
+                page.skip_next_screen_clear();
             }
             state.request_render();
             needs_state_render = true;

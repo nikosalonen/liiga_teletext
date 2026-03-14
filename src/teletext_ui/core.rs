@@ -475,10 +475,10 @@ impl TeletextPage {
         // Only clear the screen in interactive mode using more efficient method
         if !self.ignore_height_limit {
             buffer.push_str("\x1b[H"); // Move to home position
-            if !self.skip_screen_clear.replace(false) {
-                buffer.push_str("\x1b[0J"); // Clear from cursor down
-            } else {
+            if self.skip_screen_clear.replace(false) {
                 tracing::trace!("Skipped screen clear to avoid flicker");
+            } else {
+                buffer.push_str("\x1b[0J"); // Clear from cursor down
             }
         }
 
