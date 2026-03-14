@@ -388,18 +388,10 @@ impl RefreshCoordinator {
         // Branch on view mode. Standings are league-wide (not date-scoped),
         // so the date-mismatch discard in perform_refresh_cycle does not apply here.
         if let ViewMode::Standings { live_mode } = state.current_view() {
-            let last_hash = state.change_detection.last_standings_hash();
             let preserved_page = state.preserved_page();
             let last_games = state.change_detection.last_games().to_vec();
             return self
-                .perform_standings_refresh(
-                    state,
-                    config,
-                    live_mode,
-                    preserved_page,
-                    &last_games,
-                    last_hash,
-                )
+                .perform_standings_refresh(state, config, live_mode, preserved_page, &last_games)
                 .await;
         }
 
@@ -547,10 +539,10 @@ impl RefreshCoordinator {
         live_mode: bool,
         preserved_page: Option<usize>,
         last_games: &[GameData],
-        last_standings_hash: Option<u64>,
     ) -> Result<RefreshResult, AppError> {
         tracing::info!("Fetching standings data (live_mode: {live_mode})");
 
+        let last_standings_hash = state.change_detection.last_standings_hash();
         let is_auto_refresh = state.current_page().is_some_and(|p| p.is_standings_page())
             && last_standings_hash.is_some();
 
