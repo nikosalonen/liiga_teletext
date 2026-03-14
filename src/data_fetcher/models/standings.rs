@@ -30,8 +30,8 @@ pub struct ApiStandingsTeam {
     pub live_goals_against: u16,
 }
 
-/// Internal standings entry used for rendering
-#[derive(Debug, Clone, Hash)]
+/// Internal standings entry used for rendering and change detection
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StandingsEntry {
     pub team_name: String,
     pub team_id: String,

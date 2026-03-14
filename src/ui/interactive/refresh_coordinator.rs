@@ -37,9 +37,10 @@ pub struct RefreshResult {
     pub new_page: Option<TeletextPage>,
     #[allow(dead_code)]
     pub needs_render: bool,
-    /// True when results were discarded due to a date mismatch during auto-refresh.
-    /// When set, callers should skip change detection to avoid clearing existing state.
-    pub date_mismatch_discarded: bool,
+    /// True when `process_refresh_results` should skip change detection.
+    /// Set for date-mismatch discards (to avoid clearing game state) and for
+    /// standings results (which carry no game data).
+    pub skip_change_detection: bool,
 }
 
 /// Parameters for data fetching operations
@@ -367,7 +368,7 @@ impl RefreshCoordinator {
             should_retry,
             new_page: current_page,
             needs_render,
-            date_mismatch_discarded: false,
+            skip_change_detection: false,
         })
     }
 
@@ -387,7 +388,7 @@ impl RefreshCoordinator {
         // Branch on view mode. Standings are league-wide (not date-scoped),
         // so the date-mismatch discard in perform_refresh_cycle does not apply here.
         if let ViewMode::Standings { live_mode } = state.current_view() {
-            let last_hash = state.change_detection.last_standings_hash;
+            let last_hash = state.change_detection.last_standings_hash();
             let preserved_page = state.preserved_page();
             let last_games = state.change_detection.last_games().to_vec();
             let result = self
@@ -439,7 +440,7 @@ impl RefreshCoordinator {
                     should_retry: false,
                     new_page,
                     needs_render: true,
-                    date_mismatch_discarded: false,
+                    skip_change_detection: false,
                 });
             }
         }
@@ -525,7 +526,7 @@ impl RefreshCoordinator {
                     should_retry: false,
                     new_page: None,
                     needs_render: false,
-                    date_mismatch_discarded: true,
+                    skip_change_detection: true,
                 });
             }
             state.set_current_date(Some(result.fetched_date.clone()));
@@ -535,7 +536,11 @@ impl RefreshCoordinator {
         Ok(result)
     }
 
-    /// Perform standings-specific refresh cycle
+    /// Perform standings-specific refresh cycle.
+    ///
+    /// Shows a subtle spinner for auto-refreshes (when the current page is already
+    /// a standings page) vs a full loading screen for initial loads. Detects unchanged
+    /// data via hashing and skips UI rebuild when standings have not changed.
     async fn perform_standings_refresh(
         &self,
         state: &mut InteractiveState,
@@ -543,11 +548,12 @@ impl RefreshCoordinator {
         live_mode: bool,
         preserved_page: Option<usize>,
         last_games: &[GameData],
-        last_standings_hash: u64,
+        last_standings_hash: Option<u64>,
     ) -> Result<RefreshResult, AppError> {
         tracing::info!("Fetching standings data (live_mode: {live_mode})");
 
-        let is_auto_refresh = state.current_page().is_some() && last_standings_hash != 0;
+        let is_auto_refresh = state.current_page().is_some_and(|p| p.is_standings_page())
+            && last_standings_hash.is_some();
 
         if is_auto_refresh {
             // Show subtle spinner on existing page instead of full loading screen
@@ -558,7 +564,9 @@ impl RefreshCoordinator {
             // Render spinner immediately
             if let Some(page) = state.current_page() {
                 let mut stdout = std::io::stdout();
-                let _ = page.render_buffered(&mut stdout);
+                if let Err(e) = page.render_buffered(&mut stdout) {
+                    tracing::warn!("Failed to render auto-refresh spinner for standings: {e}");
+                }
             }
             state.clear_render_flag();
         } else {
@@ -578,7 +586,16 @@ impl RefreshCoordinator {
             let _ = loading_page.render_buffered(&mut stdout);
         }
 
-        let app_config = crate::config::Config::load().await?;
+        let app_config = match crate::config::Config::load().await {
+            Ok(config) => config,
+            Err(e) => {
+                if is_auto_refresh && let Some(page) = state.current_page_mut() {
+                    page.hide_auto_refresh_indicator();
+                    state.request_render();
+                }
+                return Err(e);
+            }
+        };
         let http_timeout = app_config.http_timeout_seconds;
         // Safety margin above the HTTP client timeout so reqwest reports the actual error
         let timeout_duration = Duration::from_secs(http_timeout + 5);
@@ -633,18 +650,12 @@ impl RefreshCoordinator {
             }
         }
 
-        // Check if standings data has changed
-        let new_hash = if !had_error {
-            calculate_standings_hash(&standings, &playoffs_lines, live_mode)
+        let data_changed = if !had_error {
+            let new_hash = calculate_standings_hash(&standings, &playoffs_lines, live_mode);
+            state.change_detection.update_standings_hash(new_hash)
         } else {
-            0
+            true // errors always count as "changed" to show the error page
         };
-        let data_changed = had_error || new_hash != last_standings_hash;
-
-        // Update the standings hash
-        if !had_error {
-            state.change_detection.last_standings_hash = new_hash;
-        }
 
         // Hide auto-refresh spinner for auto-refresh case
         if is_auto_refresh && let Some(page) = state.current_page_mut() {
@@ -664,7 +675,7 @@ impl RefreshCoordinator {
                 should_retry: false,
                 new_page: None,
                 needs_render: true,
-                date_mismatch_discarded: true,
+                skip_change_detection: true,
             });
         }
 
@@ -707,7 +718,7 @@ impl RefreshCoordinator {
             // Standings refreshes carry no game data, so mark as discarded to
             // prevent process_refresh_results from overwriting last_games with
             // an empty vector.
-            date_mismatch_discarded: true,
+            skip_change_detection: true,
         })
     }
 
@@ -719,10 +730,10 @@ impl RefreshCoordinator {
     ) -> bool {
         let mut needs_state_render = false;
 
-        // Skip change detection entirely for date-mismatch-discarded results
-        // to prevent update_and_check_changes from clearing last_games state
-        if result.date_mismatch_discarded {
-            tracing::debug!("Skipping change detection for date-mismatch-discarded result");
+        // Skip change detection for results that carry no meaningful game data
+        // (date-mismatch discards or standings refreshes) to avoid clearing last_games state
+        if result.skip_change_detection {
+            tracing::debug!("Skipping change detection (standings or date-mismatch result)");
             return needs_state_render;
         }
 
@@ -1194,7 +1205,7 @@ mod tests {
             should_retry: false,
             new_page: None,
             needs_render: false,
-            date_mismatch_discarded: true,
+            skip_change_detection: true,
         };
         coordinator.process_refresh_results(&mut state, &discarded_result);
 
@@ -1218,7 +1229,7 @@ mod tests {
             should_retry: false,
             new_page: None,
             needs_render: false,
-            date_mismatch_discarded: false,
+            skip_change_detection: false,
         };
         coordinator.process_refresh_results(&mut state, &result);
 
@@ -1255,7 +1266,8 @@ mod tests {
             .change_detection
             .update_state(vec![game.clone()], games_hash);
 
-        // Simulate a standings refresh result (games: vec![], date_mismatch_discarded: true)
+        // Simulate a standings refresh result with skip_change_detection set to
+        // prevent process_refresh_results from overwriting last_games with an empty vec
         let standings_result = RefreshResult {
             games: vec![],
             had_error: false,
@@ -1263,7 +1275,7 @@ mod tests {
             should_retry: false,
             new_page: None,
             needs_render: true,
-            date_mismatch_discarded: true,
+            skip_change_detection: true,
         };
         coordinator.process_refresh_results(&mut state, &standings_result);
 

@@ -78,8 +78,14 @@ impl TeletextPage {
 
     /// Sets whether the next render should skip the screen clear.
     /// Used to avoid flicker when hiding the auto-refresh spinner with unchanged data.
+    /// The flag is automatically consumed (reset to false) by the next call to `render_buffered`.
     pub fn set_skip_screen_clear(&mut self, skip: bool) {
         self.skip_screen_clear.set(skip);
+    }
+
+    /// Returns whether this page is a standings page.
+    pub fn is_standings_page(&self) -> bool {
+        self.is_standings_page
     }
 
     /// Gets whether auto-refresh is disabled for this page.

@@ -258,7 +258,7 @@ impl Default for NavigationState {
 pub struct ChangeDetectionState {
     pub last_games_hash: u64,
     pub last_games: Vec<GameData>,
-    pub last_standings_hash: u64,
+    last_standings_hash: Option<u64>,
 }
 
 impl ChangeDetectionState {
@@ -267,7 +267,7 @@ impl ChangeDetectionState {
         Self {
             last_games_hash: 0,
             last_games: Vec::new(),
-            last_standings_hash: 0,
+            last_standings_hash: None,
         }
     }
 
@@ -296,6 +296,24 @@ impl ChangeDetectionState {
     #[allow(dead_code)]
     pub fn last_games_hash(&self) -> u64 {
         self.last_games_hash
+    }
+
+    /// Get last standings hash (None means never fetched)
+    pub fn last_standings_hash(&self) -> Option<u64> {
+        self.last_standings_hash
+    }
+
+    /// Update standings hash after a successful fetch.
+    /// Returns true if the data changed.
+    pub fn update_standings_hash(&mut self, new_hash: u64) -> bool {
+        let changed = self.last_standings_hash != Some(new_hash);
+        self.last_standings_hash = Some(new_hash);
+        changed
+    }
+
+    /// Reset standings hash (e.g., when switching away from standings view)
+    pub fn reset_standings_hash(&mut self) {
+        self.last_standings_hash = None;
     }
 }
 

@@ -149,6 +149,19 @@ impl EventHandler {
 
         // Update state manager with any changes from input handler
         self.sync_state_after_input(state, needs_render, needs_refresh, current_date);
+
+        // Reset standings hash when switching away from standings view so that
+        // re-entering standings always shows a full loading screen, not a spinner
+        // on the games page.
+        let previous_view = state.navigation.current_view;
+        if matches!(
+            previous_view,
+            super::state_manager::ViewMode::Standings { .. }
+        ) && matches!(current_view, super::state_manager::ViewMode::Games)
+        {
+            state.change_detection.reset_standings_hash();
+        }
+
         state.navigation.current_view = current_view;
         state.navigation.preserved_games_page = preserved_games_page;
         state.navigation.preserved_live_mode = preserved_live_mode;

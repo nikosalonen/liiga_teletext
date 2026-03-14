@@ -51,7 +51,7 @@ pub struct TeletextPage {
     pub(super) is_standings_page: bool,             // Whether this is a standings page
     pub(super) standings_live_mode: bool,           // Whether live mode is active in standings
     pub(super) playoffs_lines: Vec<u16>, // Positions after which to draw playoff separator lines
-    pub(super) skip_screen_clear: Cell<bool>, // Skip screen clear on next render to avoid flicker
+    pub(super) skip_screen_clear: Cell<bool>, // Interior mutability needed because render_buffered takes &self. When true, skips screen clear to avoid flicker.
 }
 
 #[derive(Debug)]
@@ -477,6 +477,8 @@ impl TeletextPage {
             buffer.push_str("\x1b[H"); // Move to home position
             if !self.skip_screen_clear.replace(false) {
                 buffer.push_str("\x1b[0J"); // Clear from cursor down
+            } else {
+                tracing::trace!("Skipped screen clear to avoid flicker");
             }
         }
 
