@@ -1261,24 +1261,10 @@ async fn test_wide_mode_with_goal_scorers() {
 
 // Helper function to create test game data (already exists but ensuring it's available)
 fn create_test_game_data() -> GameData {
-    GameData {
-        home_team: "HIFK".to_string(),
-        away_team: "Tappara".to_string(),
-        time: "18:30".to_string(),
-        result: "2-1".to_string(),
-        score_type: ScoreType::Final,
-        is_overtime: false,
-        is_shootout: false,
-        serie: "runkosarja".to_string(),
-        goal_events: vec![],
-        played_time: 3600,
-        start: "2024-01-15T18:30:00Z".to_string(),
-        play_off_phase: None,
-        play_off_pair: None,
-        play_off_req_wins: None,
-        series_score: None,
-        is_placeholder: false,
-    }
+    let mut game =
+        liiga_teletext::testing_utils::TestDataBuilder::create_basic_game("HIFK", "Tappara");
+    game.result = "2-1".to_string();
+    game
 }
 
 /// Test wide mode performance with edge cases like many goal scorers and long team names

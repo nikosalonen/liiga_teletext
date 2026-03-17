@@ -101,7 +101,6 @@ pub fn calculate_series_scores(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::teletext_ui::ScoreType;
 
     struct ScheduleApiGameBuilder {
         serie: i32,
@@ -164,24 +163,13 @@ mod tests {
         pair: i32,
         req_wins: i32,
     ) -> GameData {
-        GameData {
-            home_team: home.to_string(),
-            away_team: away.to_string(),
-            time: "18:30".to_string(),
-            result: result.to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: serie.to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: start.to_string(),
-            play_off_phase: Some(phase),
-            play_off_pair: Some(pair),
-            play_off_req_wins: Some(req_wins),
-            series_score: None,
-            is_placeholder: false,
-        }
+        let mut game =
+            crate::testing_utils::TestDataBuilder::create_custom_game(0, home, away, result, serie);
+        game.start = start.to_string();
+        game.play_off_phase = Some(phase);
+        game.play_off_pair = Some(pair);
+        game.play_off_req_wins = Some(req_wins);
+        game
     }
 
     #[test]
@@ -368,24 +356,13 @@ mod tests {
     #[test]
     fn test_no_playoff_fields_skipped() {
         let schedule = vec![];
-        let mut games = vec![GameData {
-            home_team: "TPS".to_string(),
-            away_team: "HIFK".to_string(),
-            time: "18:30".to_string(),
-            result: "3-1".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: "2024-01-15T18:30:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
-        }];
+        let mut games = vec![crate::testing_utils::TestDataBuilder::create_custom_game(
+            0,
+            "TPS",
+            "HIFK",
+            "3-1",
+            "runkosarja",
+        )];
 
         calculate_series_scores(&schedule, &mut games, "2024-12-31");
         assert!(games[0].series_score.is_none());

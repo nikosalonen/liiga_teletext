@@ -640,45 +640,25 @@ mod tests {
         let manager = NavigationManager::new();
 
         // Create a future game (different date)
-        let future_game = crate::data_fetcher::GameData {
-            home_team: "Team A".to_string(),
-            away_team: "Team B".to_string(),
-            time: "18:30".to_string(),
-            result: "".to_string(),
-            score_type: ScoreType::Scheduled,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 0,
-            start: "2030-01-15T18:30:00Z".to_string(), // Future date
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
+        let future_game = {
+            let mut game =
+                crate::testing_utils::TestDataBuilder::create_basic_game("Team A", "Team B");
+            game.result = "".to_string();
+            game.score_type = ScoreType::Scheduled;
+            game.played_time = 0;
+            game.start = "2030-01-15T18:30:00Z".to_string(); // Future date
+            game
         };
 
         assert!(manager.is_future_game(&future_game));
 
         // Create a past game
-        let past_game = crate::data_fetcher::GameData {
-            home_team: "Team A".to_string(),
-            away_team: "Team B".to_string(),
-            time: "18:30".to_string(),
-            result: "2-1".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: "2020-01-15T18:30:00Z".to_string(), // Past date
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
+        let past_game = {
+            let mut game =
+                crate::testing_utils::TestDataBuilder::create_basic_game("Team A", "Team B");
+            game.result = "2-1".to_string();
+            game.start = "2020-01-15T18:30:00Z".to_string(); // Past date
+            game
         };
 
         assert!(!manager.is_future_game(&past_game));

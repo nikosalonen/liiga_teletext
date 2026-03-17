@@ -42,7 +42,9 @@ pub(super) fn get_team_name(team: &ScheduleTeam) -> &str {
 
 /// Returns true if the game has real team names for both sides.
 /// Games where either team only has a placeholder (e.g. "RS5", "RS12") are
-/// not yet finalized and should be filtered out of display.
+/// not yet finalized. These games are retained but tagged with
+/// `is_placeholder = true` in `GameData` so the UI can render them
+/// as placeholder entries rather than filtering them out entirely.
 fn has_real_teams(game: &ScheduleGame) -> bool {
     fn is_real_name(name: &Option<String>) -> bool {
         name.as_ref()

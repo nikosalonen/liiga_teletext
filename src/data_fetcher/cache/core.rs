@@ -586,45 +586,23 @@ mod tests {
     #[serial]
     async fn test_has_live_games_from_game_data() {
         // Test with live games
-        let live_games = vec![GameData {
-            home_team: "HIFK".to_string(),
-            away_team: "Tappara".to_string(),
-            time: "".to_string(),
-            result: "2-1".to_string(),
-            score_type: ScoreType::Ongoing,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 1800,
-            start: "2024-01-15T18:30:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
+        let live_games = vec![{
+            let mut game =
+                crate::testing_utils::TestDataBuilder::create_live_game("HIFK", "Tappara", "2-1");
+            game.time = "".to_string();
+            game.played_time = 1800;
+            game
         }];
 
         assert!(has_live_games_from_game_data(&live_games));
 
         // Test with completed games
-        let completed_games = vec![GameData {
-            home_team: "HIFK".to_string(),
-            away_team: "Tappara".to_string(),
-            time: "".to_string(),
-            result: "2-1".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: "2024-01-15T18:30:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
+        let completed_games = vec![{
+            let mut game =
+                crate::testing_utils::TestDataBuilder::create_basic_game("HIFK", "Tappara");
+            game.time = "".to_string();
+            game.result = "2-1".to_string();
+            game
         }];
 
         assert!(!has_live_games_from_game_data(&completed_games));

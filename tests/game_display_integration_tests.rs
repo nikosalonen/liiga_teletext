@@ -14,6 +14,7 @@ use liiga_teletext::data_fetcher::models::GameData;
 use liiga_teletext::teletext_ui::CONTENT_MARGIN;
 use liiga_teletext::teletext_ui::layout::{AlignmentCalculator, ColumnLayoutManager};
 use liiga_teletext::teletext_ui::{GameResultData, ScoreType, TeletextPage};
+use liiga_teletext::testing_utils::TestDataBuilder;
 #[allow(unused_imports)]
 use std::time::Instant;
 
@@ -24,24 +25,11 @@ fn create_test_game_data(
     goal_events: Vec<GoalEventData>,
     score_type: ScoreType,
 ) -> GameData {
-    GameData {
-        home_team: home_team.to_string(),
-        away_team: away_team.to_string(),
-        time: "18:30".to_string(),
-        result: "2-1".to_string(),
-        score_type,
-        is_overtime: false,
-        is_shootout: false,
-        serie: "RUNKOSARJA".to_string(),
-        goal_events,
-        played_time: 3600,
-        start: "2024-01-15T18:30:00Z".to_string(),
-        play_off_phase: None,
-        play_off_pair: None,
-        play_off_req_wins: None,
-        series_score: None,
-        is_placeholder: false,
-    }
+    let mut game =
+        TestDataBuilder::create_custom_game(0, home_team, away_team, "2-1", "RUNKOSARJA");
+    game.score_type = score_type;
+    game.goal_events = goal_events;
+    game
 }
 
 /// Creates test goal event with specified parameters
@@ -51,17 +39,11 @@ fn create_test_goal_event(
     is_home_team: bool,
     video_url: Option<String>,
 ) -> GoalEventData {
-    GoalEventData {
-        scorer_player_id: 123,
-        scorer_name: scorer_name.to_string(),
-        minute: 10,
-        home_team_score: 1,
-        away_team_score: 0,
-        is_winning_goal: false,
-        goal_types,
-        is_home_team,
-        video_clip_url: video_url,
-    }
+    let mut goal = TestDataBuilder::create_goal_event(scorer_name, 10, 1, 0, is_home_team);
+    goal.scorer_player_id = 123;
+    goal.goal_types = goal_types;
+    goal.video_clip_url = video_url;
+    goal
 }
 
 /// Test complete game display scenario with layout calculation

@@ -11,32 +11,23 @@ use liiga_teletext::data_fetcher::models::{GameData, PlayoffSeriesScore};
 use liiga_teletext::teletext_ui::CONTENT_MARGIN;
 use liiga_teletext::teletext_ui::layout::{AlignmentCalculator, ColumnLayoutManager};
 use liiga_teletext::teletext_ui::{GameResultData, ScoreType, TeletextPage};
+use liiga_teletext::testing_utils::TestDataBuilder;
 use liiga_teletext::ui::teletext::CompactModeValidation;
 
 /// Creates comprehensive test game data covering all scenarios
 fn create_comprehensive_test_games() -> Vec<GameData> {
     vec![
         // Scenario 1: Finished game with multiple goal events and video links
-        GameData {
-            home_team: "HIFK".to_string(),
-            away_team: "Tappara".to_string(),
-            time: "18:30".to_string(),
-            result: "3-2".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: true,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![
-                GoalEventData {
-                    scorer_player_id: 1,
-                    scorer_name: "Teemu Hartikainen".to_string(), // Long name
-                    minute: 15,
-                    home_team_score: 1,
-                    away_team_score: 0,
-                    is_winning_goal: false,
-                    goal_types: vec!["YV".to_string()], // Power play
-                    is_home_team: true,
-                    video_clip_url: Some("https://example.com/video1.mp4".to_string()),
+        {
+            let mut game = TestDataBuilder::create_overtime_game("HIFK", "Tappara");
+            game.result = "3-2".to_string();
+            game.goal_events = vec![
+                {
+                    let mut goal =
+                        TestDataBuilder::create_powerplay_goal("Teemu Hartikainen", 15, 1, 0, true);
+                    goal.scorer_player_id = 1;
+                    goal.video_clip_url = Some("https://example.com/video1.mp4".to_string());
+                    goal
                 },
                 GoalEventData {
                     scorer_player_id: 2,
@@ -45,152 +36,101 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
                     home_team_score: 1,
                     away_team_score: 1,
                     is_winning_goal: false,
-                    goal_types: vec!["IM".to_string(), "TM".to_string()], // Multiple types
+                    goal_types: vec!["IM".to_string(), "TM".to_string()],
                     is_home_team: false,
                     video_clip_url: None,
                 },
-                GoalEventData {
-                    scorer_player_id: 3,
-                    scorer_name: "Saku Koivu".to_string(),
-                    minute: 65,
-                    home_team_score: 3,
-                    away_team_score: 2,
-                    is_winning_goal: true,
-                    goal_types: vec!["YV".to_string(), "IM".to_string()], // Winning goal
-                    is_home_team: true,
-                    video_clip_url: Some("https://example.com/video2.mp4".to_string()),
+                {
+                    let mut goal =
+                        TestDataBuilder::create_winning_goal("Saku Koivu", 65, 3, 2, true);
+                    goal.scorer_player_id = 3;
+                    goal.goal_types = vec!["YV".to_string(), "IM".to_string()];
+                    goal.video_clip_url = Some("https://example.com/video2.mp4".to_string());
+                    goal
                 },
-            ],
-            played_time: 3900, // Overtime
-            start: "2024-01-15T18:30:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
+            ];
+            game
         },
         // Scenario 2: Ongoing game with current score
-        GameData {
-            home_team: "Kärpät".to_string(),
-            away_team: "Lukko".to_string(),
-            time: "19:00".to_string(),
-            result: "1-0".to_string(),
-            score_type: ScoreType::Ongoing,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![GoalEventData {
-                scorer_player_id: 4,
-                scorer_name: "Patrik Laine".to_string(),
-                minute: 12,
-                home_team_score: 1,
-                away_team_score: 0,
-                is_winning_goal: false,
-                goal_types: vec!["AV".to_string()], // Short-handed
-                is_home_team: true,
-                video_clip_url: Some("https://example.com/video3.mp4".to_string()),
-            }],
-            played_time: 2400, // 40 minutes played
-            start: "2024-01-15T19:00:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
+        {
+            let mut game = TestDataBuilder::create_live_game("Kärpät", "Lukko", "1-0");
+            game.time = "19:00".to_string();
+            game.goal_events = vec![{
+                let mut goal = TestDataBuilder::create_goal_event("Patrik Laine", 12, 1, 0, true);
+                goal.scorer_player_id = 4;
+                goal.goal_types = vec!["AV".to_string()];
+                goal.video_clip_url = Some("https://example.com/video3.mp4".to_string());
+                goal
+            }];
+            game.start = "2024-01-15T19:00:00Z".to_string();
+            game
         },
         // Scenario 3: Scheduled game (no goals yet)
-        GameData {
-            home_team: "JYP".to_string(),
-            away_team: "Ilves".to_string(),
-            time: "19:30".to_string(),
-            result: "".to_string(),
-            score_type: ScoreType::Scheduled,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 0,
-            start: "2024-01-15T19:30:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
+        {
+            let mut game = TestDataBuilder::create_basic_game("JYP", "Ilves");
+            game.time = "19:30".to_string();
+            game.result = "".to_string();
+            game.score_type = ScoreType::Scheduled;
+            game.played_time = 0;
+            game.start = "2024-01-15T19:30:00Z".to_string();
+            game
         },
         // Scenario 4: Shootout game
-        GameData {
-            home_team: "Pelicans".to_string(),
-            away_team: "SaiPa".to_string(),
-            time: "20:00".to_string(),
-            result: "2-1".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: true,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![
+        {
+            let mut game = TestDataBuilder::create_shootout_game("Pelicans", "SaiPa");
+            game.time = "20:00".to_string();
+            game.result = "2-1".to_string();
+            game.goal_events = vec![
                 GoalEventData {
                     scorer_player_id: 5,
-                    scorer_name: "X".to_string(), // Very short name
+                    scorer_name: "X".to_string(),
                     minute: 5,
                     home_team_score: 1,
                     away_team_score: 0,
                     is_winning_goal: false,
-                    goal_types: vec!["VT".to_string()], // Empty net
+                    goal_types: vec!["VT".to_string()],
                     is_home_team: true,
                     video_clip_url: None,
                 },
                 GoalEventData {
                     scorer_player_id: 6,
-                    scorer_name: "Very Long Player Name Here".to_string(), // Very long name
+                    scorer_name: "Very Long Player Name Here".to_string(),
                     minute: 45,
                     home_team_score: 1,
                     away_team_score: 1,
                     is_winning_goal: false,
-                    goal_types: vec!["YV".to_string(), "IM".to_string(), "TM".to_string()], // Max goal types
+                    goal_types: vec!["YV".to_string(), "IM".to_string(), "TM".to_string()],
                     is_home_team: false,
                     video_clip_url: Some("https://example.com/video4.mp4".to_string()),
                 },
-            ],
-            played_time: 3900, // Full game + shootout
-            start: "2024-01-15T20:00:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
+            ];
+            game.start = "2024-01-15T20:00:00Z".to_string();
+            game
         },
         // Scenario 5: Playoffs game
-        GameData {
-            home_team: "TPS".to_string(),
-            away_team: "Sport".to_string(),
-            time: "18:00".to_string(),
-            result: "4-3".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: true,
-            is_shootout: false,
-            serie: "playoffs".to_string(),
-            goal_events: vec![GoalEventData {
-                scorer_player_id: 7,
-                scorer_name: "Medium Name".to_string(),
-                minute: 62,
-                home_team_score: 4,
-                away_team_score: 3,
-                is_winning_goal: true,
-                goal_types: vec!["YV".to_string()],
-                is_home_team: true,
-                video_clip_url: Some("https://example.com/video5.mp4".to_string()),
-            }],
-            played_time: 3720, // Overtime
-            start: "2024-03-15T18:00:00Z".to_string(),
-            play_off_phase: Some(1),
-            play_off_pair: Some(1),
-            play_off_req_wins: Some(4),
-            series_score: Some(PlayoffSeriesScore {
+        {
+            let mut game = TestDataBuilder::create_overtime_game("TPS", "Sport");
+            game.time = "18:00".to_string();
+            game.result = "4-3".to_string();
+            game.serie = "playoffs".to_string();
+            game.goal_events = vec![{
+                let mut goal = TestDataBuilder::create_winning_goal("Medium Name", 62, 4, 3, true);
+                goal.scorer_player_id = 7;
+                goal.goal_types = vec!["YV".to_string()];
+                goal.video_clip_url = Some("https://example.com/video5.mp4".to_string());
+                goal
+            }];
+            game.played_time = 3720;
+            game.start = "2024-03-15T18:00:00Z".to_string();
+            game.play_off_phase = Some(1);
+            game.play_off_pair = Some(1);
+            game.play_off_req_wins = Some(4);
+            game.series_score = Some(PlayoffSeriesScore {
                 home_team_wins: 2,
                 away_team_wins: 1,
                 req_wins: 4,
-            }),
-            is_placeholder: false,
+            });
+            game
         },
     ]
 }

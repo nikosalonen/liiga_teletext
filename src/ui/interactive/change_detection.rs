@@ -141,24 +141,7 @@ mod tests {
     use super::*;
 
     fn make_game(home: &str, away: &str, result: &str, serie: &str) -> GameData {
-        GameData {
-            home_team: home.to_string(),
-            away_team: away.to_string(),
-            time: "18:30".to_string(),
-            result: result.to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: serie.to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: "2024-01-15T18:30:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-            is_placeholder: false,
-        }
+        crate::testing_utils::TestDataBuilder::create_custom_game(0, home, away, result, serie)
     }
 
     fn make_standings_entry(team: &str, points: u16) -> StandingsEntry {
