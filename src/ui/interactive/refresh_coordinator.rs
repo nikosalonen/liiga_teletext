@@ -317,8 +317,17 @@ impl RefreshCoordinator {
 
         // Handle page creation/restoration based on data changes and errors
         // Always create a page if we have no games (to show the error message with navigation hints)
-        // or if data changed and there was no error
-        if (data_changed || games.is_empty()) && !had_error {
+        // or if data changed and there was no error.
+        // However, if the API transiently returns empty games but we previously had games,
+        // treat it as a transient failure and preserve the existing display.
+        let is_transient_empty = games.is_empty() && !params.last_games.is_empty();
+        if is_transient_empty {
+            tracing::warn!(
+                "API returned empty games but we previously had {} games, preserving existing display",
+                params.last_games.len()
+            );
+        }
+        if (data_changed || games.is_empty()) && !had_error && !is_transient_empty {
             if let Some(page) = self
                 .nav_manager
                 .create_or_restore_page(PageCreationConfig {
@@ -768,7 +777,10 @@ impl RefreshCoordinator {
         }
 
         // Update change detection variables only on successful fetch
-        if !result.had_error {
+        // Don't update state with empty games if we previously had games (transient API issue)
+        let is_transient_empty =
+            result.games.is_empty() && !state.change_detection.last_games().is_empty();
+        if !result.had_error && !is_transient_empty {
             if let Some(page) = state.current_page_mut()
                 && page.is_error_warning_active()
             {

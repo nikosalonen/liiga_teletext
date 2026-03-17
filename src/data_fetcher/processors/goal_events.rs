@@ -1,5 +1,7 @@
 use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, Player, ScheduleGame};
-use crate::data_fetcher::player_names::{DisambiguationContext, create_fallback_name};
+use crate::data_fetcher::player_names::{
+    DisambiguationContext, create_fallback_name, format_for_display,
+};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
@@ -165,6 +167,11 @@ pub fn process_team_goals_with_disambiguation(
             scorer_name: disambiguation_context
                 .get_disambiguated_name(goal.scorer_player_id)
                 .cloned()
+                .or_else(|| {
+                    goal.scorer_player
+                        .as_ref()
+                        .map(|p| format_for_display(&format!("{} {}", p.first_name, p.last_name)))
+                })
                 .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id)),
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
@@ -226,6 +233,11 @@ pub fn process_team_goals(
             scorer_name: player_names
                 .get(&goal.scorer_player_id)
                 .cloned()
+                .or_else(|| {
+                    goal.scorer_player
+                        .as_ref()
+                        .map(|p| format_for_display(&format!("{} {}", p.first_name, p.last_name)))
+                })
                 .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id)),
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
