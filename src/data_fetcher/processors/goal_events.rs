@@ -13,7 +13,7 @@ use tracing::{debug, info, warn};
 fn scorer_name_from_embedded(player: Option<&EmbeddedPlayer>, scorer_id: i64) -> Option<String> {
     player.map(|p| {
         let name = format_for_display_with_first_initial(&p.first_name, &p.last_name);
-        info!(
+        warn!(
             "Using embedded scorer data for player {scorer_id} (resolved: {name}), primary lookup missed"
         );
         name
@@ -420,4 +420,108 @@ pub async fn create_basic_goal_events(
     }
 
     events
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_fetcher::models::goals::{EmbeddedPlayer, GoalEvent};
+    use crate::data_fetcher::models::schedule::ScheduleTeam;
+
+    fn make_embedded_player(id: i64, first: &str, last: &str) -> EmbeddedPlayer {
+        EmbeddedPlayer {
+            player_id: id,
+            first_name: first.to_string(),
+            last_name: last.to_string(),
+        }
+    }
+
+    fn make_goal_event(scorer_id: i64, scorer_player: Option<EmbeddedPlayer>) -> GoalEvent {
+        GoalEvent {
+            scorer_player_id: scorer_id,
+            log_time: "00:15:00".to_string(),
+            game_time: 900,
+            period: 1,
+            event_id: 1,
+            home_team_score: 1,
+            away_team_score: 0,
+            winning_goal: false,
+            goal_types: vec!["EV".to_string()],
+            assistant_player_ids: vec![],
+            video_clip_url: None,
+            scorer_player,
+        }
+    }
+
+    fn make_team_with_goals(goals: Vec<GoalEvent>) -> ScheduleTeam {
+        ScheduleTeam {
+            team_id: Some("TPS".to_string()),
+            team_placeholder: None,
+            team_name: Some("TPS Turku".to_string()),
+            goals: goals.len() as i32,
+            time_out: None,
+            powerplay_instances: 0,
+            powerplay_goals: 0,
+            short_handed_instances: 0,
+            short_handed_goals: 0,
+            ranking: None,
+            game_start_date_time: None,
+            goal_events: goals,
+        }
+    }
+
+    #[test]
+    fn test_scorer_name_from_embedded_with_player() {
+        let player = make_embedded_player(999, "Mikko", "Koivu");
+        let result = scorer_name_from_embedded(Some(&player), 999);
+        assert_eq!(result, Some("Koivu M.".to_string()));
+    }
+
+    #[test]
+    fn test_scorer_name_from_embedded_none() {
+        let result = scorer_name_from_embedded(None, 999);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_process_team_goals_uses_embedded_fallback() {
+        let player_names: HashMap<i64, String> = HashMap::new();
+        let embedded = make_embedded_player(999, "Mikko", "Koivu");
+        let goal = make_goal_event(999, Some(embedded));
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals(&team, &player_names, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Koivu M.");
+    }
+
+    #[test]
+    fn test_process_team_goals_uses_numeric_fallback_when_no_embedded() {
+        let player_names: HashMap<i64, String> = HashMap::new();
+        let goal = make_goal_event(999, None);
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals(&team, &player_names, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Pelaaja 999");
+    }
+
+    #[test]
+    fn test_process_team_goals_prefers_player_map_over_embedded() {
+        let mut player_names: HashMap<i64, String> = HashMap::new();
+        player_names.insert(999, "Koivu".to_string());
+        let embedded = make_embedded_player(999, "Mikko", "Koivu");
+        let goal = make_goal_event(999, Some(embedded));
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals(&team, &player_names, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Koivu");
+    }
 }

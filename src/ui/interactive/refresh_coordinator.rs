@@ -225,6 +225,19 @@ impl RefreshCoordinator {
         }
     }
 
+    /// Reset the transient empty counter.
+    /// Should be called when the user navigates to a different date so that
+    /// the counter doesn't carry over stale state from the previous date.
+    pub fn reset_transient_empty_counter(&mut self) {
+        if self.consecutive_transient_empty > 0 {
+            tracing::debug!(
+                "Resetting transient empty counter (was {})",
+                self.consecutive_transient_empty
+            );
+            self.consecutive_transient_empty = 0;
+        }
+    }
+
     /// Check if auto-refresh should be triggered
     pub fn should_trigger_refresh(
         &self,
@@ -334,7 +347,7 @@ impl RefreshCoordinator {
                     MAX_TRANSIENT_EMPTY,
                 );
                 return Ok(RefreshResult {
-                    games: vec![],
+                    games: params.last_games.to_vec(),
                     had_error: false,
                     fetched_date,
                     should_retry: true,
@@ -769,6 +782,15 @@ impl RefreshCoordinator {
         // (date-mismatch discards or standings refreshes) to avoid clearing last_games state
         if result.skip_change_detection {
             tracing::debug!("Skipping change detection (standings or date-mismatch result)");
+            // Still hide the auto-refresh spinner so it doesn't stay stuck
+            if let Some(page) = state.current_page_mut()
+                && page.is_auto_refresh_indicator_active()
+            {
+                page.hide_auto_refresh_indicator();
+                page.skip_next_screen_clear();
+                state.request_render();
+                needs_state_render = true;
+            }
             return needs_state_render;
         }
 
@@ -1317,5 +1339,22 @@ mod tests {
         // last_games must be preserved, not overwritten with empty vec
         assert_eq!(state.change_detection.last_games().len(), 1);
         assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
+    }
+
+    #[test]
+    fn test_reset_transient_empty_counter() {
+        let mut coordinator = RefreshCoordinator::new();
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
+
+        coordinator.consecutive_transient_empty = 2;
+        coordinator.reset_transient_empty_counter();
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
+    }
+
+    #[test]
+    fn test_reset_transient_empty_counter_noop_when_zero() {
+        let mut coordinator = RefreshCoordinator::new();
+        coordinator.reset_transient_empty_counter();
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
     }
 }

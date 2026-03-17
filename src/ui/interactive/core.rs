@@ -50,6 +50,9 @@ pub async fn run_interactive_ui(
         wide_mode,
     };
 
+    // Track date to detect date navigation and reset transient empty counter
+    let mut last_refresh_date: Option<String> = None;
+
     loop {
         // Process pending resize events after debounce period
         if state.ui.pending_resize
@@ -67,6 +70,12 @@ pub async fn run_interactive_ui(
 
         // Data fetching with change detection using RefreshCoordinator
         if state.needs_refresh() {
+            // Reset transient empty counter when date changes (e.g. date navigation)
+            if state.current_date() != &last_refresh_date {
+                refresh_coordinator.reset_transient_empty_counter();
+                last_refresh_date = state.current_date().clone();
+            }
+
             // Perform comprehensive refresh cycle
             let mut refresh_result = refresh_coordinator
                 .perform_refresh_cycle(&mut state, &refresh_config)
