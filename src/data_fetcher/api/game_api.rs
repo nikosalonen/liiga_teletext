@@ -40,6 +40,13 @@ pub(super) fn get_team_name(team: &ScheduleTeam) -> &str {
         .unwrap_or("Unknown")
 }
 
+/// Returns true if the game has real team names for both sides.
+/// Games where either team only has a placeholder (e.g. "RS5", "RS12") are
+/// not yet finalized and should be filtered out of display.
+fn has_real_teams(game: &ScheduleGame) -> bool {
+    game.home_team.team_name.is_some() && game.away_team.team_name.is_some()
+}
+
 /// Determines if a game has actual goals (excluding RL0 goal types).
 #[allow(dead_code)]
 pub(super) fn has_actual_goals(game: &ScheduleGame) -> bool {
@@ -233,9 +240,25 @@ pub(super) async fn process_response_games(
 
     let semaphore = Arc::new(Semaphore::new(3)); // Max 3 concurrent requests
 
-    let game_futures: Vec<_> = response
+    let real_games: Vec<_> = response
         .games
         .clone()
+        .into_iter()
+        .filter(|game| {
+            if has_real_teams(game) {
+                true
+            } else {
+                info!(
+                    "Skipping placeholder game: {} vs {} (teams not yet determined)",
+                    get_team_name(&game.home_team),
+                    get_team_name(&game.away_team)
+                );
+                false
+            }
+        })
+        .collect();
+
+    let game_futures: Vec<_> = real_games
         .into_iter()
         .enumerate()
         .map(|(game_idx, game)| {
