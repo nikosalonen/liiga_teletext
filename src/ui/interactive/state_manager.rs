@@ -258,6 +258,7 @@ impl Default for NavigationState {
 pub struct ChangeDetectionState {
     pub last_games_hash: u64,
     pub last_games: Vec<GameData>,
+    last_standings_hash: Option<u64>,
 }
 
 impl ChangeDetectionState {
@@ -266,6 +267,7 @@ impl ChangeDetectionState {
         Self {
             last_games_hash: 0,
             last_games: Vec::new(),
+            last_standings_hash: None,
         }
     }
 
@@ -294,6 +296,25 @@ impl ChangeDetectionState {
     #[allow(dead_code)]
     pub fn last_games_hash(&self) -> u64 {
         self.last_games_hash
+    }
+
+    /// Get last standings hash (None means never fetched)
+    pub fn last_standings_hash(&self) -> Option<u64> {
+        self.last_standings_hash
+    }
+
+    /// Update standings hash after a successful fetch.
+    /// Returns true if the hash differs from the previously stored value,
+    /// or if no previous hash exists (first fetch).
+    pub fn update_standings_hash(&mut self, new_hash: u64) -> bool {
+        let changed = self.last_standings_hash != Some(new_hash);
+        self.last_standings_hash = Some(new_hash);
+        changed
+    }
+
+    /// Reset standings hash (e.g., when switching away from standings view)
+    pub fn reset_standings_hash(&mut self) {
+        self.last_standings_hash = None;
     }
 }
 
@@ -616,6 +637,47 @@ mod tests {
         assert_eq!(
             state.current_view(),
             ViewMode::Standings { live_mode: true }
+        );
+    }
+
+    #[test]
+    fn test_update_standings_hash_first_call_returns_true() {
+        let mut cd = ChangeDetectionState::new();
+        assert!(
+            cd.update_standings_hash(42),
+            "First call should return true (no previous hash)"
+        );
+    }
+
+    #[test]
+    fn test_update_standings_hash_same_hash_returns_false() {
+        let mut cd = ChangeDetectionState::new();
+        cd.update_standings_hash(42);
+        assert!(
+            !cd.update_standings_hash(42),
+            "Same hash should return false"
+        );
+    }
+
+    #[test]
+    fn test_update_standings_hash_different_hash_returns_true() {
+        let mut cd = ChangeDetectionState::new();
+        cd.update_standings_hash(42);
+        assert!(
+            cd.update_standings_hash(99),
+            "Different hash should return true"
+        );
+    }
+
+    #[test]
+    fn test_reset_standings_hash_clears_state() {
+        let mut cd = ChangeDetectionState::new();
+        cd.update_standings_hash(42);
+        cd.reset_standings_hash();
+        assert_eq!(cd.last_standings_hash(), None, "Reset should clear hash");
+        assert!(
+            cd.update_standings_hash(42),
+            "After reset, same hash should return true again"
         );
     }
 

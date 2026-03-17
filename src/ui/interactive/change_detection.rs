@@ -1,8 +1,9 @@
-//! Change detection utilities for game data updates.
+//! Change detection utilities for game and standings data updates.
 //!
 //! This module provides efficient change detection to avoid unnecessary UI updates
-//! by computing hashes of game data and comparing them across refreshes.
+//! by computing hashes of game and standings data and comparing them across refreshes.
 
+use crate::data_fetcher::models::standings::StandingsEntry;
 use crate::data_fetcher::{GameData, has_live_games_from_game_data};
 use crate::teletext_ui::ScoreType;
 use std::collections::hash_map::DefaultHasher;
@@ -44,6 +45,21 @@ pub(super) fn calculate_games_hash(games: &[GameData]) -> u64 {
         }
     }
 
+    hasher.finish()
+}
+
+/// Calculates a hash of standings data for change detection.
+/// Includes `live_mode` so toggling it always triggers a page rebuild
+/// (subheader and footer change even when the underlying data is identical).
+pub(super) fn calculate_standings_hash(
+    standings: &[StandingsEntry],
+    playoffs_lines: &[u16],
+    live_mode: bool,
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    live_mode.hash(&mut hasher);
+    standings.hash(&mut hasher);
+    playoffs_lines.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -142,6 +158,98 @@ mod tests {
             play_off_req_wins: None,
             series_score: None,
         }
+    }
+
+    fn make_standings_entry(team: &str, points: u16) -> StandingsEntry {
+        StandingsEntry {
+            team_name: team.to_string(),
+            team_id: team.to_string(),
+            games_played: 40,
+            wins: 20,
+            ot_wins: 5,
+            ot_losses: 5,
+            losses: 10,
+            goals_for: 100,
+            goals_against: 80,
+            points,
+            live_goals_for: 100,
+            live_goals_against: 80,
+            live_points_delta: None,
+            live_position_change: None,
+            live_game_active: false,
+        }
+    }
+
+    #[test]
+    fn test_calculate_standings_hash_empty() {
+        let hash = calculate_standings_hash(&[], &[], false);
+        let hash2 = calculate_standings_hash(&[], &[], false);
+        assert_eq!(
+            hash, hash2,
+            "Empty standings should produce deterministic hash"
+        );
+    }
+
+    #[test]
+    fn test_calculate_standings_hash_deterministic() {
+        let standings = vec![make_standings_entry("TPS", 60)];
+        let playoffs = vec![6u16, 10];
+
+        let hash1 = calculate_standings_hash(&standings, &playoffs, false);
+        let hash2 = calculate_standings_hash(&standings, &playoffs, false);
+        assert_eq!(hash1, hash2, "Same data should produce same hash");
+    }
+
+    #[test]
+    fn test_calculate_standings_hash_sensitive_to_data_changes() {
+        let standings1 = vec![make_standings_entry("TPS", 60)];
+        let standings2 = vec![make_standings_entry("TPS", 63)];
+
+        let hash1 = calculate_standings_hash(&standings1, &[], false);
+        let hash2 = calculate_standings_hash(&standings2, &[], false);
+        assert_ne!(
+            hash1, hash2,
+            "Different points should produce different hash"
+        );
+    }
+
+    #[test]
+    fn test_calculate_standings_hash_live_mode_toggle() {
+        let standings = vec![make_standings_entry("TPS", 60)];
+
+        let hash_off = calculate_standings_hash(&standings, &[], false);
+        let hash_on = calculate_standings_hash(&standings, &[], true);
+        assert_ne!(
+            hash_off, hash_on,
+            "Toggling live_mode must produce different hash"
+        );
+    }
+
+    #[test]
+    fn test_calculate_standings_hash_sensitive_to_playoffs_lines() {
+        let standings = vec![make_standings_entry("TPS", 60)];
+
+        let hash1 = calculate_standings_hash(&standings, &[6, 10], false);
+        let hash2 = calculate_standings_hash(&standings, &[6, 12], false);
+        assert_ne!(
+            hash1, hash2,
+            "Different playoffs_lines should produce different hash"
+        );
+    }
+
+    #[test]
+    fn test_calculate_standings_hash_sensitive_to_live_game_active() {
+        let entry1 = make_standings_entry("TPS", 60);
+        let mut entry2 = make_standings_entry("TPS", 60);
+        entry2.live_game_active = true;
+        entry2.live_points_delta = Some(0);
+
+        let hash1 = calculate_standings_hash(&[entry1], &[], true);
+        let hash2 = calculate_standings_hash(&[entry2], &[], true);
+        assert_ne!(
+            hash1, hash2,
+            "live_game_active change should produce different hash"
+        );
     }
 
     #[test]

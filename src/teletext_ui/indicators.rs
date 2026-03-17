@@ -76,6 +76,19 @@ impl TeletextPage {
         self.playoffs_lines = lines.to_vec();
     }
 
+    /// Requests that the next render skip the screen clear.
+    /// Used to avoid flicker when hiding the auto-refresh spinner with unchanged data.
+    /// The flag is automatically consumed (reset to false) by the next call to
+    /// `render_buffered` in interactive mode.
+    pub fn skip_next_screen_clear(&mut self) {
+        self.skip_screen_clear.set(true);
+    }
+
+    /// Returns whether this page is a standings page.
+    pub fn is_standings_page(&self) -> bool {
+        self.is_standings_page
+    }
+
     /// Gets whether auto-refresh is disabled for this page.
     /// Returns true if automatic updates are disabled.
     pub fn is_auto_refresh_disabled(&self) -> bool {

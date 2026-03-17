@@ -6,7 +6,7 @@
 
 use super::input_handler::{KeyEventParams, handle_key_event};
 use super::refresh_manager::calculate_poll_interval;
-use super::state_manager::InteractiveState;
+use super::state_manager::{InteractiveState, ViewMode};
 use crate::error::AppError;
 use crossterm::event::{self, Event};
 use std::time::Duration;
@@ -127,7 +127,8 @@ impl EventHandler {
         let mut needs_render = state.needs_render();
         let mut needs_refresh = state.needs_refresh();
         let mut current_date = state.current_date().clone();
-        let mut current_view = state.current_view();
+        let previous_view = state.current_view();
+        let mut current_view = previous_view;
         let mut preserved_games_page = state.navigation.preserved_games_page;
         let mut preserved_live_mode = state.navigation.preserved_live_mode;
 
@@ -149,6 +150,14 @@ impl EventHandler {
 
         // Update state manager with any changes from input handler
         self.sync_state_after_input(state, needs_render, needs_refresh, current_date);
+
+        // Reset standings hash when switching away from standings view so that
+        // re-entering standings always shows a full loading screen, not a spinner
+        // on the games page.
+        if matches!(previous_view, ViewMode::Standings { .. }) && current_view == ViewMode::Games {
+            state.change_detection.reset_standings_hash();
+        }
+
         state.navigation.current_view = current_view;
         state.navigation.preserved_games_page = preserved_games_page;
         state.navigation.preserved_live_mode = preserved_live_mode;
