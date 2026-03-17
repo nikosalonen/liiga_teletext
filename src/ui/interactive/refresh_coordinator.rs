@@ -326,8 +326,17 @@ impl RefreshCoordinator {
                 "API returned empty games but we previously had {} games, preserving existing display",
                 params.last_games.len()
             );
+            return Ok(RefreshResult {
+                games: vec![],
+                had_error: false,
+                fetched_date,
+                should_retry: false,
+                new_page: None,
+                needs_render: false,
+                skip_change_detection: true,
+            });
         }
-        if (data_changed || games.is_empty()) && !had_error && !is_transient_empty {
+        if (data_changed || games.is_empty()) && !had_error {
             if let Some(page) = self
                 .nav_manager
                 .create_or_restore_page(PageCreationConfig {
@@ -777,10 +786,7 @@ impl RefreshCoordinator {
         }
 
         // Update change detection variables only on successful fetch
-        // Don't update state with empty games if we previously had games (transient API issue)
-        let is_transient_empty =
-            result.games.is_empty() && !state.change_detection.last_games().is_empty();
-        if !result.had_error && !is_transient_empty {
+        if !result.had_error {
             if let Some(page) = state.current_page_mut()
                 && page.is_error_warning_active()
             {
