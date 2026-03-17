@@ -258,6 +258,15 @@ pub(super) async fn process_response_games(
         })
         .collect();
 
+    if real_games.len() < response.games.len() {
+        info!(
+            "Filtered {} placeholder games from response #{} ({} remaining)",
+            response.games.len() - real_games.len(),
+            response_idx + 1,
+            real_games.len()
+        );
+    }
+
     let game_futures: Vec<_> = real_games
         .into_iter()
         .enumerate()

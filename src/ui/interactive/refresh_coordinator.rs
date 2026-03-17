@@ -38,8 +38,9 @@ pub struct RefreshResult {
     #[allow(dead_code)]
     pub needs_render: bool,
     /// True when `process_refresh_results` should skip change detection.
-    /// Set for date-mismatch discards (to avoid clearing game state) and for
-    /// standings results (which carry no game data).
+    /// Set for date-mismatch discards (to avoid clearing game state),
+    /// standings results (which carry no game data), and transient empty
+    /// API responses (to preserve the existing display).
     pub skip_change_detection: bool,
 }
 
