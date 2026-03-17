@@ -44,7 +44,15 @@ pub(super) fn get_team_name(team: &ScheduleTeam) -> &str {
 /// Games where either team only has a placeholder (e.g. "RS5", "RS12") are
 /// not yet finalized and should be filtered out of display.
 fn has_real_teams(game: &ScheduleGame) -> bool {
-    game.home_team.team_name.is_some() && game.away_team.team_name.is_some()
+    game.home_team
+        .team_name
+        .as_ref()
+        .is_some_and(|n| !n.is_empty())
+        && game
+            .away_team
+            .team_name
+            .as_ref()
+            .is_some_and(|n| !n.is_empty())
 }
 
 /// Determines if a game has actual goals (excluding RL0 goal types).
@@ -249,7 +257,8 @@ pub(super) async fn process_response_games(
                 true
             } else {
                 info!(
-                    "Skipping placeholder game: {} vs {} (teams not yet determined)",
+                    "Skipping placeholder game {}: {} vs {} (teams not yet determined)",
+                    game.id,
                     get_team_name(&game.home_team),
                     get_team_name(&game.away_team)
                 );

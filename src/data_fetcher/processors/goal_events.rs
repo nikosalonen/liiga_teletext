@@ -1,17 +1,19 @@
 use crate::data_fetcher::models::goals::EmbeddedPlayer;
 use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, Player, ScheduleGame};
 use crate::data_fetcher::player_names::{
-    DisambiguationContext, create_fallback_name, format_for_display,
+    DisambiguationContext, create_fallback_name, format_for_display_with_first_initial,
 };
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
 /// Extracts a display name from the embedded scorer player data.
 /// Used as a fallback when the primary player name lookup (disambiguation or player map) fails.
+/// Uses first-initial format (e.g. "Koivu M.") to reduce ambiguity when disambiguation
+/// context is unavailable.
 fn scorer_name_from_embedded(player: Option<&EmbeddedPlayer>, scorer_id: i64) -> Option<String> {
     player.map(|p| {
-        let name = format_for_display(&format!("{} {}", p.first_name, p.last_name));
-        debug!(
+        let name = format_for_display_with_first_initial(&p.first_name, &p.last_name);
+        info!(
             "Using embedded scorer data for player {scorer_id} (resolved: {name}), primary lookup missed"
         );
         name
@@ -183,7 +185,13 @@ pub fn process_team_goals_with_disambiguation(
                 .or_else(|| {
                     scorer_name_from_embedded(goal.scorer_player.as_ref(), goal.scorer_player_id)
                 })
-                .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id)),
+                .unwrap_or_else(|| {
+                    warn!(
+                        "All player name lookups exhausted for player {}, using fallback",
+                        goal.scorer_player_id
+                    );
+                    create_fallback_name(goal.scorer_player_id)
+                }),
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
             away_team_score: goal.away_team_score,
@@ -247,7 +255,13 @@ pub fn process_team_goals(
                 .or_else(|| {
                     scorer_name_from_embedded(goal.scorer_player.as_ref(), goal.scorer_player_id)
                 })
-                .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id)),
+                .unwrap_or_else(|| {
+                    warn!(
+                        "All player name lookups exhausted for player {}, using fallback",
+                        goal.scorer_player_id
+                    );
+                    create_fallback_name(goal.scorer_player_id)
+                }),
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
             away_team_score: goal.away_team_score,

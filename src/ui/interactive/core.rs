@@ -40,7 +40,7 @@ pub async fn run_interactive_ui(
     };
 
     // Create refresh coordinator
-    let refresh_coordinator = RefreshCoordinator::new();
+    let mut refresh_coordinator = RefreshCoordinator::new();
 
     // Create refresh cycle configuration
     let refresh_config = RefreshCycleConfig {

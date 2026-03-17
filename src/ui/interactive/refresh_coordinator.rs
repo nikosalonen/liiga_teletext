@@ -199,6 +199,10 @@ async fn animate_during_fetch(
 pub struct RefreshCoordinator {
     nav_manager: NavigationManager,
     cache_config: CacheMonitoringConfig,
+    /// Tracks how many consecutive refresh cycles returned empty games while
+    /// previous games existed.  After a threshold we stop treating the empty
+    /// response as transient so stale data is not shown indefinitely.
+    consecutive_transient_empty: u32,
 }
 
 impl RefreshCoordinator {
@@ -207,6 +211,7 @@ impl RefreshCoordinator {
         Self {
             nav_manager: NavigationManager::new(),
             cache_config: CacheMonitoringConfig::default(),
+            consecutive_transient_empty: 0,
         }
     }
 
@@ -216,6 +221,7 @@ impl RefreshCoordinator {
         Self {
             nav_manager: NavigationManager::new(),
             cache_config,
+            consecutive_transient_empty: 0,
         }
     }
 
@@ -282,7 +288,7 @@ impl RefreshCoordinator {
     /// Process fetched game data: change detection, page creation, and indicator cleanup.
     /// The actual network fetch is performed separately so it can run as a background task.
     async fn process_fetched_data(
-        &self,
+        &mut self,
         params: DataFetchParams<'_>,
         games: Vec<GameData>,
         had_error: bool,
@@ -313,30 +319,47 @@ impl RefreshCoordinator {
             tracing::debug!("Updated current_date to: {:?}", updated_current_date);
         }
 
+        // Short-circuit transient empty responses before change detection to avoid
+        // unnecessary work.  If the API returns empty games but we previously had
+        // games, preserve the existing display — unless this has happened too many
+        // times in a row, which indicates the empty state is permanent.
+        const MAX_TRANSIENT_EMPTY: u32 = 3;
+        if games.is_empty() && !params.last_games.is_empty() {
+            self.consecutive_transient_empty += 1;
+            if self.consecutive_transient_empty <= MAX_TRANSIENT_EMPTY {
+                tracing::warn!(
+                    "API returned empty games but we previously had {} games, preserving existing display ({}/{})",
+                    params.last_games.len(),
+                    self.consecutive_transient_empty,
+                    MAX_TRANSIENT_EMPTY,
+                );
+                return Ok(RefreshResult {
+                    games: vec![],
+                    had_error: false,
+                    fetched_date,
+                    should_retry: true,
+                    new_page: None,
+                    needs_render: false,
+                    skip_change_detection: true,
+                });
+            }
+            tracing::warn!(
+                "Empty games response persisted for {} consecutive refreshes, accepting as legitimate",
+                self.consecutive_transient_empty,
+            );
+            // Fall through to normal processing — the empty state will be shown to the user.
+        }
+        // Reset counter on any non-empty response.
+        if !games.is_empty() {
+            self.consecutive_transient_empty = 0;
+        }
+
         // Perform change detection and logging
         let data_changed = detect_and_log_changes(&games, params.last_games);
 
         // Handle page creation/restoration based on data changes and errors
         // Always create a page if we have no games (to show the error message with navigation hints)
         // or if data changed and there was no error.
-        // However, if the API transiently returns empty games but we previously had games,
-        // treat it as a transient failure and preserve the existing display.
-        let is_transient_empty = games.is_empty() && !params.last_games.is_empty();
-        if is_transient_empty {
-            tracing::warn!(
-                "API returned empty games but we previously had {} games, preserving existing display",
-                params.last_games.len()
-            );
-            return Ok(RefreshResult {
-                games: vec![],
-                had_error: false,
-                fetched_date,
-                should_retry: false,
-                new_page: None,
-                needs_render: false,
-                skip_change_detection: true,
-            });
-        }
         if (data_changed || games.is_empty()) && !had_error {
             if let Some(page) = self
                 .nav_manager
@@ -393,7 +416,7 @@ impl RefreshCoordinator {
 
     /// Perform comprehensive data fetching and refresh cycle
     pub async fn perform_refresh_cycle(
-        &self,
+        &mut self,
         state: &mut InteractiveState,
         config: &RefreshCycleConfig,
     ) -> Result<RefreshResult, AppError> {
