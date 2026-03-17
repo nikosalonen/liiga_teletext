@@ -180,6 +180,7 @@ mod tests {
             play_off_pair: Some(pair),
             play_off_req_wins: Some(req_wins),
             series_score: None,
+            is_placeholder: false,
         }
     }
 
@@ -383,6 +384,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }];
 
         calculate_series_scores(&schedule, &mut games, "2024-12-31");

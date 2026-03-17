@@ -67,6 +67,7 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         // Scenario 2: Ongoing game with current score
         GameData {
@@ -95,6 +96,7 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         // Scenario 3: Scheduled game (no goals yet)
         GameData {
@@ -113,6 +115,7 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         // Scenario 4: Shootout game
         GameData {
@@ -154,6 +157,7 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         // Scenario 5: Playoffs game
         GameData {
@@ -186,6 +190,7 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
                 away_team_wins: 1,
                 req_wins: 4,
             }),
+            is_placeholder: false,
         },
     ]
 }
@@ -613,6 +618,7 @@ async fn test_error_handling_comprehensive_scenarios() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     }];
 
     // Test layout system with malformed data

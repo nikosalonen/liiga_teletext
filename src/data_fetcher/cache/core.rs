@@ -602,6 +602,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }];
 
         assert!(has_live_games_from_game_data(&live_games));
@@ -623,6 +624,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }];
 
         assert!(!has_live_games_from_game_data(&completed_games));
@@ -1061,6 +1063,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1078,6 +1081,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1095,6 +1099,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
         ];
 
@@ -1123,6 +1128,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1140,6 +1146,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1157,6 +1164,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
         ];
 
@@ -1185,6 +1193,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1202,6 +1211,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
         ];
 
@@ -1230,6 +1240,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1247,6 +1258,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1264,6 +1276,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
         ];
 
@@ -1295,6 +1308,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1312,6 +1326,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1329,6 +1344,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
         ];
 
@@ -1366,6 +1382,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }];
 
         let result = has_live_games_from_game_data(&single_ongoing);
@@ -1392,6 +1409,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }];
 
         let result = has_live_games_from_game_data(&single_completed);
@@ -1418,6 +1436,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }];
 
         let result = has_live_games_from_game_data(&single_scheduled);
@@ -1445,6 +1464,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1462,6 +1482,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "JYP".to_string(),
@@ -1479,6 +1500,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "TPS".to_string(),
@@ -1496,6 +1518,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
         ];
 
@@ -1524,6 +1547,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             GameData {
                 home_team: "Kärpät".to_string(),
@@ -1541,6 +1565,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
         ];
 
@@ -1570,6 +1595,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             // Ongoing regular season game
             GameData {
@@ -1588,6 +1614,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             // Scheduled playoff game
             GameData {
@@ -1606,6 +1633,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             // Completed playoff game with shootout
             GameData {
@@ -1624,6 +1652,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
             // Another ongoing game
             GameData {
@@ -1642,6 +1671,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             },
         ];
 

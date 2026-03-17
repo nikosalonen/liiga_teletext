@@ -447,7 +447,7 @@ impl RefreshCoordinator {
             let last_games = state.change_detection.last_games();
             if !last_games.is_empty() {
                 let fetched_date = state.current_date().clone().unwrap_or_default();
-                let games = last_games.to_vec();
+                let games: Vec<_> = last_games.to_vec();
                 let new_page = self
                     .nav_manager
                     .create_or_restore_page(PageCreationConfig {

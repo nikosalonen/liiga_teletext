@@ -82,6 +82,7 @@ pub(super) async fn process_single_game(
     game: ScheduleGame,
     game_idx: usize,
     response_idx: usize,
+    is_placeholder: bool,
 ) -> Result<GameData, AppError> {
     let home_team_name = get_team_name(&game.home_team);
     let away_team_name = get_team_name(&game.away_team);
@@ -217,6 +218,7 @@ pub(super) async fn process_single_game(
         play_off_pair: game.play_off_pair,
         play_off_req_wins: game.play_off_req_wins,
         series_score: None,
+        is_placeholder,
     })
 }
 
@@ -248,38 +250,31 @@ pub(super) async fn process_response_games(
 
     let semaphore = Arc::new(Semaphore::new(3)); // Max 3 concurrent requests
 
-    let real_games: Vec<_> = response
+    // Mark placeholder games (teams not yet determined) but keep them in the
+    // result so that date navigation sees a non-empty response for scheduled
+    // playoff dates. Filtering happens at the render boundary instead.
+    let games_with_placeholder: Vec<_> = response
         .games
         .clone()
         .into_iter()
-        .filter(|game| {
-            if has_real_teams(game) {
-                true
-            } else {
+        .map(|game| {
+            let placeholder = !has_real_teams(&game);
+            if placeholder {
                 info!(
-                    "Skipping placeholder game {}: {} vs {} (teams not yet determined)",
+                    "Marking placeholder game {}: {} vs {} (teams not yet determined)",
                     game.id,
                     get_team_name(&game.home_team),
                     get_team_name(&game.away_team)
                 );
-                false
             }
+            (game, placeholder)
         })
         .collect();
 
-    if real_games.len() < response.games.len() {
-        info!(
-            "Filtered {} placeholder games from response #{} ({} remaining)",
-            response.games.len() - real_games.len(),
-            response_idx + 1,
-            real_games.len()
-        );
-    }
-
-    let game_futures: Vec<_> = real_games
+    let game_futures: Vec<_> = games_with_placeholder
         .into_iter()
         .enumerate()
-        .map(|(game_idx, game)| {
+        .map(|(game_idx, (game, is_placeholder))| {
             let client = client.clone();
             let config = config.clone();
             let sem = Arc::clone(&semaphore);
@@ -296,7 +291,15 @@ pub(super) async fn process_response_games(
                 );
 
                 // Permit is automatically released when _permit is dropped
-                process_single_game(&client, &config, game, game_idx, response_idx).await
+                process_single_game(
+                    &client,
+                    &config,
+                    game,
+                    game_idx,
+                    response_idx,
+                    is_placeholder,
+                )
+                .await
             }
         })
         .collect();

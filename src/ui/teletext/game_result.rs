@@ -54,6 +54,7 @@ impl GameResultData {
     ///     play_off_pair: None,
     ///     play_off_req_wins: None,
     ///     series_score: None,
+    ///     is_placeholder: false,
     /// };
     /// let result = GameResultData::new(&game_data);
     /// ```

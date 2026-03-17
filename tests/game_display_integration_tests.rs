@@ -40,6 +40,7 @@ fn create_test_game_data(
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     }
 }
 
@@ -1720,6 +1721,7 @@ async fn test_game_display_error_handling() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         // Game with very long team names
         GameData {
@@ -1757,6 +1759,7 @@ async fn test_game_display_error_handling() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
     ];
 

@@ -94,6 +94,7 @@ fn create_test_game_data(
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     }
 }
 

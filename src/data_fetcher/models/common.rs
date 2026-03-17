@@ -27,6 +27,7 @@ pub struct GameData {
     pub play_off_pair: Option<i32>,
     pub play_off_req_wins: Option<i32>,
     pub series_score: Option<PlayoffSeriesScore>,
+    pub is_placeholder: bool,
 }
 
 pub trait HasTeams {
@@ -215,6 +216,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         };
 
         assert_eq!(game_data.home_team, "HIFK");
