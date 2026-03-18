@@ -13,7 +13,7 @@ use tracing::{debug, info, warn};
 fn scorer_name_from_embedded(player: Option<&EmbeddedPlayer>, scorer_id: i64) -> Option<String> {
     player.map(|p| {
         let name = format_for_display_with_first_initial(&p.first_name, &p.last_name);
-        warn!(
+        info!(
             "Using embedded scorer data for player {scorer_id} (resolved: {name}), primary lookup missed"
         );
         name
@@ -522,6 +522,51 @@ mod tests {
         process_team_goals(&team, &player_names, true, &mut events);
 
         assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Koivu");
+    }
+
+    // --- process_team_goals_with_disambiguation fallback tests ---
+
+    #[test]
+    fn test_disambiguation_uses_embedded_fallback_when_context_empty() {
+        let context = DisambiguationContext::new(vec![]);
+        let embedded = make_embedded_player(999, "Mikko", "Koivu");
+        let goal = make_goal_event(999, Some(embedded));
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals_with_disambiguation(&team, &context, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Koivu M.");
+    }
+
+    #[test]
+    fn test_disambiguation_uses_numeric_fallback_when_no_embedded() {
+        let context = DisambiguationContext::new(vec![]);
+        let goal = make_goal_event(999, None);
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals_with_disambiguation(&team, &context, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Pelaaja 999");
+    }
+
+    #[test]
+    fn test_disambiguation_prefers_context_over_embedded() {
+        let context =
+            DisambiguationContext::new(vec![(999, "Mikko".to_string(), "Koivu".to_string())]);
+        let embedded = make_embedded_player(999, "Mikko", "Koivu");
+        let goal = make_goal_event(999, Some(embedded));
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals_with_disambiguation(&team, &context, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        // DisambiguationContext with a single player uses last name only (no disambiguation needed)
         assert_eq!(events[0].scorer_name, "Koivu");
     }
 }
