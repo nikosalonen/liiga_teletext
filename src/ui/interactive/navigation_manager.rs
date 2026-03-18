@@ -270,8 +270,9 @@ impl NavigationManager {
 
         // Sort games by serie then play_off_phase for grouping, then add phase headers.
         // Playoffs come before playout/qualifications so they display first.
-        // Filter out placeholder games (teams not yet determined) at the render boundary.
-        let mut sorted_games: Vec<&GameData> = games.iter().filter(|g| !g.is_placeholder).collect();
+        // Placeholder games (teams not yet determined) are preserved for rendering
+        // so tentative matchups and placeholder-only days are still shown.
+        let mut sorted_games: Vec<&GameData> = games.iter().collect();
         sorted_games.sort_by_key(|g| {
             let serie_order = match g.serie.as_str() {
                 "playoffs" => 0,
@@ -646,7 +647,9 @@ mod tests {
             game.result = "".to_string();
             game.score_type = ScoreType::Scheduled;
             game.played_time = 0;
-            game.start = "2030-01-15T18:30:00Z".to_string(); // Future date
+            game.start = (chrono::Utc::now() + chrono::Duration::days(30))
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string();
             game
         };
 

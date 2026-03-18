@@ -29,16 +29,12 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
                     goal.video_clip_url = Some("https://example.com/video1.mp4".to_string());
                     goal
                 },
-                GoalEventData {
-                    scorer_player_id: 2,
-                    scorer_name: "Mikko Rantanen".to_string(),
-                    minute: 28,
-                    home_team_score: 1,
-                    away_team_score: 1,
-                    is_winning_goal: false,
-                    goal_types: vec!["IM".to_string(), "TM".to_string()],
-                    is_home_team: false,
-                    video_clip_url: None,
+                {
+                    let mut goal =
+                        TestDataBuilder::create_goal_event("Mikko Rantanen", 28, 1, 1, false);
+                    goal.scorer_player_id = 2;
+                    goal.goal_types = vec!["IM".to_string(), "TM".to_string()];
+                    goal
                 },
                 {
                     let mut goal =
@@ -81,27 +77,24 @@ fn create_comprehensive_test_games() -> Vec<GameData> {
             game.time = "20:00".to_string();
             game.result = "2-1".to_string();
             game.goal_events = vec![
-                GoalEventData {
-                    scorer_player_id: 5,
-                    scorer_name: "X".to_string(),
-                    minute: 5,
-                    home_team_score: 1,
-                    away_team_score: 0,
-                    is_winning_goal: false,
-                    goal_types: vec!["VT".to_string()],
-                    is_home_team: true,
-                    video_clip_url: None,
+                {
+                    let mut goal = TestDataBuilder::create_goal_event("X", 5, 1, 0, true);
+                    goal.scorer_player_id = 5;
+                    goal.goal_types = vec!["VT".to_string()];
+                    goal
                 },
-                GoalEventData {
-                    scorer_player_id: 6,
-                    scorer_name: "Very Long Player Name Here".to_string(),
-                    minute: 45,
-                    home_team_score: 1,
-                    away_team_score: 1,
-                    is_winning_goal: false,
-                    goal_types: vec!["YV".to_string(), "IM".to_string(), "TM".to_string()],
-                    is_home_team: false,
-                    video_clip_url: Some("https://example.com/video4.mp4".to_string()),
+                {
+                    let mut goal = TestDataBuilder::create_goal_event(
+                        "Very Long Player Name Here",
+                        45,
+                        1,
+                        1,
+                        false,
+                    );
+                    goal.scorer_player_id = 6;
+                    goal.goal_types = vec!["YV".to_string(), "IM".to_string(), "TM".to_string()];
+                    goal.video_clip_url = Some("https://example.com/video4.mp4".to_string());
+                    goal
                 },
             ];
             game.start = "2024-01-15T20:00:00Z".to_string();

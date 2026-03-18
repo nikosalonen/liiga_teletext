@@ -341,7 +341,7 @@ impl RefreshCoordinator {
         // unnecessary work.  If the API returns empty games but we previously had
         // games, preserve the existing display — unless this has happened too many
         // times in a row, which indicates the empty state is permanent.
-        if games.is_empty() && !params.last_games.is_empty() {
+        if !had_error && games.is_empty() && !params.last_games.is_empty() {
             self.consecutive_transient_empty += 1;
             if self.consecutive_transient_empty <= MAX_TRANSIENT_EMPTY {
                 tracing::warn!(
@@ -1411,15 +1411,18 @@ mod tests {
             preserved_page_for_restoration: None,
         };
 
-        // Empty response with error — should preserve games AND propagate had_error
+        // Empty response with error — should NOT enter transient-empty branch;
+        // errors follow the normal processing path so stale games are not silently preserved.
         let result = coordinator
             .process_fetched_data(params, vec![], true, "2025-03-13".to_string(), false)
             .await
             .unwrap();
 
-        assert_eq!(result.games.len(), 1);
+        assert_eq!(result.games.len(), 0);
         assert!(result.had_error);
-        assert!(result.skip_change_detection);
+        assert!(!result.skip_change_detection);
+        // Transient empty counter should NOT have been incremented for error responses
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
     }
 
     #[tokio::test]
