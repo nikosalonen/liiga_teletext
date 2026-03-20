@@ -6,14 +6,29 @@ use crate::data_fetcher::player_names::{
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
+/// Resolves a scorer name through the three-tier fallback chain:
+/// primary lookup -> embedded scorer data -> numeric fallback ("Pelaaja <id>").
+fn resolve_scorer_name(
+    primary: Option<String>,
+    embedded_player: Option<&EmbeddedPlayer>,
+    scorer_id: i64,
+) -> String {
+    primary
+        .or_else(|| scorer_name_from_embedded(embedded_player, scorer_id))
+        .unwrap_or_else(|| {
+            warn!("All player name lookups exhausted for player {scorer_id}, using fallback");
+            create_fallback_name(scorer_id)
+        })
+}
+
 /// Extracts a display name from the embedded scorer player data.
-/// Used as a fallback when the primary player name lookup (disambiguation or player map) fails.
-/// Uses first-initial format (e.g. "Koivu M.") to reduce ambiguity when disambiguation
-/// context is unavailable.
+/// Used as a fallback when the primary player name lookup (disambiguation context
+/// or player map) does not contain the scorer's player ID.
+/// Uses first-initial format (e.g. "Koivu M.") to reduce ambiguity.
 fn scorer_name_from_embedded(player: Option<&EmbeddedPlayer>, scorer_id: i64) -> Option<String> {
     player.map(|p| {
         let name = format_for_display_with_first_initial(&p.first_name, &p.last_name);
-        info!(
+        debug!(
             "Using embedded scorer data for player {scorer_id} (resolved: {name}), primary lookup missed"
         );
         name
@@ -31,7 +46,7 @@ fn scorer_name_from_embedded(player: Option<&EmbeddedPlayer>, scorer_id: i64) ->
 /// * `away_players` - A slice of tuples containing (player_id, first_name, last_name) for away team
 ///
 /// # Returns
-/// * `Vec<GoalEventData>` - A vector of processed goal events in chronological order with disambiguated names
+/// * `Vec<GoalEventData>` - A vector of processed goal events with home team goals followed by away team goals
 ///
 /// # Features
 /// - Applies team-scoped disambiguation (players on different teams don't affect each other)
@@ -78,14 +93,15 @@ where
 /// * `player_names` - HashMap mapping player IDs to their formatted names (e.g., "Koivu" instead of "Mikko Koivu")
 ///
 /// # Returns
-/// * `Vec<GoalEventData>` - A vector of processed goal events in chronological order
+/// * `Vec<GoalEventData>` - A vector of processed goal events with home team goals followed by away team goals
 ///
 /// # Features
 /// - Formats player names consistently (e.g., "Koivu" instead of "Mikko Koivu")
+/// - Falls back through embedded scorer data (first-initial format) and then numeric
+///   identifier ("Pelaaja <id>") when the primary player name lookup misses
 /// - Includes goal timing and score information
 /// - Marks special goal types (powerplay, empty net, etc.)
 /// - Preserves video clip links when available
-/// - Maintains chronological order of goals from both teams
 ///
 /// # Example
 /// ```rust
@@ -147,7 +163,8 @@ where
 /// # Features
 /// - Filters out cancelled and removed goals (RL0, VT0)
 /// - Uses team-scoped disambiguation for player names
-/// - Handles missing player names gracefully with fallback
+/// - Falls back through embedded scorer data (first-initial format) and then numeric
+///   identifier ("Pelaaja <id>") when the primary lookup misses
 /// - Preserves goal metadata like timing and special types
 ///
 /// # Example
@@ -177,21 +194,16 @@ pub fn process_team_goals_with_disambiguation(
     for goal in team.goal_events().iter().filter(|g| {
         !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
     }) {
+        let scorer_name = resolve_scorer_name(
+            disambiguation_context
+                .get_disambiguated_name(goal.scorer_player_id)
+                .cloned(),
+            goal.scorer_player.as_ref(),
+            goal.scorer_player_id,
+        );
         events.push(GoalEventData {
             scorer_player_id: goal.scorer_player_id,
-            scorer_name: disambiguation_context
-                .get_disambiguated_name(goal.scorer_player_id)
-                .cloned()
-                .or_else(|| {
-                    scorer_name_from_embedded(goal.scorer_player.as_ref(), goal.scorer_player_id)
-                })
-                .unwrap_or_else(|| {
-                    warn!(
-                        "All player name lookups exhausted for player {}, using fallback",
-                        goal.scorer_player_id
-                    );
-                    create_fallback_name(goal.scorer_player_id)
-                }),
+            scorer_name,
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
             away_team_score: goal.away_team_score,
@@ -208,7 +220,8 @@ pub fn process_team_goals_with_disambiguation(
 /// This function handles:
 /// - Filtering out cancelled and removed goals
 /// - Using pre-formatted player names (cached formatted names)
-/// - Handling missing player names gracefully
+/// - Falling back through embedded scorer data (first-initial format) and then numeric
+///   identifier ("Pelaaja <id>") when the primary lookup misses
 /// - Preserving goal metadata like timing and special types
 ///
 /// # Arguments
@@ -247,21 +260,14 @@ pub fn process_team_goals(
     for goal in team.goal_events().iter().filter(|g| {
         !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
     }) {
+        let scorer_name = resolve_scorer_name(
+            player_names.get(&goal.scorer_player_id).cloned(),
+            goal.scorer_player.as_ref(),
+            goal.scorer_player_id,
+        );
         events.push(GoalEventData {
             scorer_player_id: goal.scorer_player_id,
-            scorer_name: player_names
-                .get(&goal.scorer_player_id)
-                .cloned()
-                .or_else(|| {
-                    scorer_name_from_embedded(goal.scorer_player.as_ref(), goal.scorer_player_id)
-                })
-                .unwrap_or_else(|| {
-                    warn!(
-                        "All player name lookups exhausted for player {}, using fallback",
-                        goal.scorer_player_id
-                    );
-                    create_fallback_name(goal.scorer_player_id)
-                }),
+            scorer_name,
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
             away_team_score: goal.away_team_score,

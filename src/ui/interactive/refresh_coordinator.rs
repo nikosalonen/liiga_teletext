@@ -359,7 +359,7 @@ impl RefreshCoordinator {
                     games: params.last_games.to_vec(),
                     had_error,
                     fetched_date,
-                    should_retry: true,
+                    should_retry: false,
                     new_page: None,
                     needs_render: false,
                     skip_change_detection: true,
@@ -1402,7 +1402,10 @@ mod tests {
         assert_eq!(result.games.len(), 1);
         assert_eq!(result.games[0].home_team, "TPS");
         assert!(result.skip_change_detection);
-        assert!(result.should_retry);
+        assert!(
+            !result.should_retry,
+            "transient-empty preservation is a deliberate decision, not a failure"
+        );
         assert!(!result.had_error);
         assert_eq!(coordinator.consecutive_transient_empty, 1);
     }

@@ -70,8 +70,9 @@ pub async fn run_interactive_ui(
 
         // Data fetching with change detection using RefreshCoordinator
         if state.needs_refresh() {
-            // Detect date changes (e.g. date navigation) so that transient-empty
-            // preservation is skipped — last_games belong to the old date.
+            // Detect date changes (e.g. date navigation, or initial date assignment
+            // on first refresh) so that transient-empty preservation is skipped —
+            // last_games belong to the old date.
             let is_date_change = state.current_date() != &last_refresh_date;
             if is_date_change {
                 refresh_coordinator.reset_transient_empty_counter();

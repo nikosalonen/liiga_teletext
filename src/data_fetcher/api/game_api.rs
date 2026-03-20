@@ -42,9 +42,10 @@ pub(super) fn get_team_name(team: &ScheduleTeam) -> &str {
 
 /// Returns true if the game has real team names for both sides.
 /// Games where either team only has a placeholder (e.g. "RS5", "RS12") are
-/// not yet finalized. These games are retained but tagged with
-/// `is_placeholder = true` in `GameData` so the UI can render them
-/// as placeholder entries rather than filtering them out entirely.
+/// not yet finalized. These games are retained in the data (tagged with
+/// `is_placeholder = true` in `GameData`) so that transient-empty detection
+/// sees a non-empty response, but they are filtered out at the render
+/// boundary to avoid displaying cryptic API codes to users.
 fn has_real_teams(game: &ScheduleGame) -> bool {
     fn is_real_name(name: &Option<String>) -> bool {
         name.as_ref()
@@ -127,7 +128,14 @@ pub(super) async fn process_single_game(
         return Ok(GameData {
             home_team: home_team_name.to_string(),
             away_team: away_team_name.to_string(),
-            time: format_time(&game.start).unwrap_or_default(),
+            time: format_time(&game.start).unwrap_or_else(|e| {
+                warn!(
+                    "Failed to format time for placeholder game #{} in response #{}: {e}",
+                    game_idx + 1,
+                    response_idx + 1
+                );
+                String::new()
+            }),
             result: format!("{}-{}", game.home_team.goals, game.away_team.goals),
             score_type: ScoreType::Scheduled,
             is_overtime: false,
@@ -300,8 +308,8 @@ pub(super) async fn process_response_games(
     let semaphore = Arc::new(Semaphore::new(3)); // Max 3 concurrent requests
 
     // Mark placeholder games (teams not yet determined) but keep them in the
-    // result so that date navigation sees a non-empty response for scheduled
-    // playoff dates. Filtering happens at the render boundary instead.
+    // result so that transient-empty detection sees a non-empty response for
+    // scheduled playoff dates. They are filtered out at the render boundary.
     let games_with_placeholder: Vec<_> = response
         .games
         .clone()

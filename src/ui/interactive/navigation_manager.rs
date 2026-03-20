@@ -270,9 +270,11 @@ impl NavigationManager {
 
         // Sort games by serie then play_off_phase for grouping, then add phase headers.
         // Playoffs come before playout/qualifications so they display first.
-        // Placeholder games (teams not yet determined) are preserved for rendering
-        // so tentative matchups and placeholder-only days are still shown.
-        let mut sorted_games: Vec<&GameData> = games.iter().collect();
+        // Placeholder games (teams not yet determined) are kept in the data to
+        // prevent transient-empty detection from triggering, but are filtered
+        // out of the display since their cryptic API names (e.g. "RS5", "QF2")
+        // would confuse users.
+        let mut sorted_games: Vec<&GameData> = games.iter().filter(|g| !g.is_placeholder).collect();
         sorted_games.sort_by_key(|g| {
             let serie_order = match g.serie.as_str() {
                 "playoffs" => 0,

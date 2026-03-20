@@ -121,6 +121,28 @@ impl TestDataBuilder {
         }
     }
 
+    /// Creates a placeholder game (teams not yet determined, e.g. unresolved playoff matchups)
+    pub fn create_placeholder_game(home_placeholder: &str, away_placeholder: &str) -> GameData {
+        GameData {
+            home_team: home_placeholder.to_string(),
+            away_team: away_placeholder.to_string(),
+            time: "18:30".to_string(),
+            result: "0-0".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            serie: "playoffs".to_string(),
+            goal_events: vec![],
+            played_time: 0,
+            start: "2024-04-15T18:30:00Z".to_string(),
+            play_off_phase: Some(1),
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
+            is_placeholder: true,
+        }
+    }
+
     /// Creates a goal event for testing
     pub fn create_goal_event(
         scorer_name: &str,
