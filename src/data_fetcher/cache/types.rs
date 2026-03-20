@@ -51,14 +51,6 @@ impl CachedTournamentData {
             Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
         }
     }
-
-    /// Gets the remaining time until expiration
-    #[allow(dead_code)]
-    pub fn time_until_expiry(&self) -> Duration {
-        let ttl = self.get_ttl();
-        let elapsed = self.cached_at.elapsed();
-        ttl.saturating_sub(elapsed)
-    }
 }
 
 /// Cached detailed game data with TTL support
@@ -108,10 +100,6 @@ pub struct CachedGoalEventsData {
     pub game_id: i32,
     pub season: i32,
     pub is_live_game: bool,
-    #[allow(dead_code)]
-    pub last_known_score: Option<String>, // Store the last known score when cache was cleared
-    #[allow(dead_code)]
-    pub was_cleared: bool, // Flag to indicate if cache was intentionally cleared
 }
 
 impl CachedGoalEventsData {
@@ -123,26 +111,6 @@ impl CachedGoalEventsData {
             game_id,
             season,
             is_live_game,
-            last_known_score: None,
-            was_cleared: false,
-        }
-    }
-
-    pub fn new_cleared(
-        game_id: i32,
-        season: i32,
-        last_known_score: String,
-        is_live_game: bool,
-    ) -> Self {
-        Self {
-            data: Vec::new(),
-            cached_at: Instant::now(),
-            game_id,
-            season,
-
-            is_live_game,
-            last_known_score: Some(last_known_score),
-            was_cleared: true,
         }
     }
 
@@ -166,7 +134,6 @@ impl CachedGoalEventsData {
     }
 
     /// Gets the TTL duration for this cache entry
-    #[allow(dead_code)]
     pub fn get_ttl(&self) -> Duration {
         if self.is_live_game {
             Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS)
