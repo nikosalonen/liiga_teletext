@@ -1,13 +1,11 @@
-// Import cache types from sibling module
 // Import tournament cache items from sibling module
 use super::tournament_cache::{TOURNAMENT_CACHE, clear_tournament_cache};
 // Import player cache items from sibling module
 use super::player_cache::{PLAYER_CACHE, clear_cache};
-// Import goal events cache items from sibling module
-use super::goal_events_cache::{GOAL_EVENTS_CACHE, clear_goal_events_cache};
 // Import cache items from parent module
 use super::{
-    DETAILED_GAME_CACHE, HTTP_RESPONSE_CACHE, clear_detailed_game_cache, clear_http_response_cache,
+    DETAILED_GAME_CACHE, GOAL_EVENTS_CACHE, HTTP_RESPONSE_CACHE, clear_detailed_game_cache,
+    clear_goal_events_cache, clear_http_response_cache,
 };
 
 // Combined Cache Management Functions
@@ -16,31 +14,34 @@ use super::{
 /// Optimized to minimize RwLock contention by batching read operations
 pub async fn get_all_cache_stats() -> CacheStats {
     // Acquire old-style read locks concurrently
-    let (player_cache, tournament_cache, goal_events_cache) = tokio::join!(
-        PLAYER_CACHE.read(),
-        TOURNAMENT_CACHE.read(),
-        GOAL_EVENTS_CACHE.read(),
-    );
+    let (player_cache, tournament_cache) =
+        tokio::join!(PLAYER_CACHE.read(), TOURNAMENT_CACHE.read(),);
 
     // Extract size and capacity from old-style caches
     let player_size = player_cache.len();
     let player_capacity = player_cache.cap().get();
     let tournament_size = tournament_cache.len();
     let tournament_capacity = tournament_cache.cap().get();
-    let goal_events_size = goal_events_cache.len();
-    let goal_events_capacity = goal_events_cache.cap().get();
 
     // Drop the old-style locks before querying the TtlCaches
     drop(player_cache);
     drop(tournament_cache);
-    drop(goal_events_cache);
 
     // Query TtlCache-backed caches via async API
-    let (http_response_size, http_response_capacity, detailed_game_size, detailed_game_capacity) = tokio::join!(
+    let (
+        http_response_size,
+        http_response_capacity,
+        detailed_game_size,
+        detailed_game_capacity,
+        goal_events_size,
+        goal_events_capacity,
+    ) = tokio::join!(
         HTTP_RESPONSE_CACHE.len(),
         HTTP_RESPONSE_CACHE.capacity(),
         DETAILED_GAME_CACHE.len(),
         DETAILED_GAME_CACHE.capacity(),
+        GOAL_EVENTS_CACHE.len(),
+        GOAL_EVENTS_CACHE.capacity(),
     );
 
     CacheStats {
@@ -120,28 +121,6 @@ pub async fn get_detailed_cache_debug_info() -> String {
         stats.http_response_cache.capacity,
     ));
 
-    // Get detailed goal events cache info using debug methods
-    let goal_events_cache = GOAL_EVENTS_CACHE.read().await;
-    if !goal_events_cache.is_empty() {
-        debug_info.push_str("Goal Events Cache Details:\n");
-        for (key, entry) in goal_events_cache.iter() {
-            // Use individual debug methods for comprehensive information
-            let game_id = entry.get_game_id();
-            let season = entry.get_season();
-            let (returned_game_id, returned_season, event_count, is_expired) =
-                entry.get_cache_info();
-
-            // Verify consistency between individual methods and combined method (debug-only)
-            debug_assert_eq!(game_id, returned_game_id);
-            debug_assert_eq!(season, returned_season);
-
-            debug_info.push_str(&format!(
-                "  Key: {key}, Game ID: {game_id}, Season: {season}, Events: {event_count}, Expired: {is_expired}\n"
-            ));
-        }
-        debug_info.push('\n');
-    }
-
     debug_info
 }
 
@@ -172,7 +151,6 @@ pub async fn reset_all_caches_with_confirmation() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::cache::types::CachedGoalEventsData;
     use crate::data_fetcher::cache::{
         cache_detailed_game_data, cache_goal_events_data, cache_http_response, cache_players,
         cache_players_with_disambiguation, cache_players_with_formatting, cache_tournament_data,
@@ -956,7 +934,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_goal_events_cache_debug_methods() {
+    async fn test_goal_events_cache_multiple_events() {
         let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 96000 + test_id as i32;
@@ -965,7 +943,7 @@ mod tests {
         // Clear cache to ensure clean state
         clear_goal_events_cache().await;
 
-        // Create test data
+        // Create test data with multiple events
         let mock_events = vec![
             GoalEventData {
                 scorer_player_id: 123,
@@ -991,27 +969,16 @@ mod tests {
             },
         ];
 
-        // Create cached entry directly to test debug methods
-        let cached_entry = CachedGoalEventsData::new(mock_events.clone(), game_id, season, false);
-
-        // Test debug methods
-        assert_eq!(cached_entry.get_game_id(), game_id);
-        assert_eq!(cached_entry.get_season(), season);
-
-        let (returned_game_id, returned_season, event_count, is_expired) =
-            cached_entry.get_cache_info();
-        assert_eq!(returned_game_id, game_id);
-        assert_eq!(returned_season, season);
-        assert_eq!(event_count, 2);
-        assert!(!is_expired); // Should not be expired immediately after creation
-
-        // Also test through the cache system
+        // Cache and retrieve through the TtlCache system
         cache_goal_events_data(season, game_id, mock_events, false).await;
 
-        // Verify the cached data can be retrieved
+        // Verify the cached data can be retrieved with correct count
         let retrieved = get_cached_goal_events_data(season, game_id).await;
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().len(), 2);
+        let events = retrieved.unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].scorer_name, "Koivu");
+        assert_eq!(events[1].scorer_name, "Selänne");
 
         // Clear cache after test
         clear_goal_events_cache().await;

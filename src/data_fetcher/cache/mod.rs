@@ -1,5 +1,4 @@
 mod core;
-pub mod goal_events_cache;
 pub mod player_cache;
 pub mod tournament_cache;
 pub mod ttl_cache;
@@ -11,15 +10,13 @@ use std::time::Duration;
 use ttl_cache::TtlCache;
 
 use crate::constants::cache_ttl;
-use crate::data_fetcher::models::DetailedGameResponse;
+use crate::data_fetcher::models::{DetailedGameResponse, GoalEventData};
 
 // Re-export cache types
 // Re-export player cache functions
 pub use player_cache::*;
 // Re-export tournament cache functions
 pub use tournament_cache::*;
-// Re-export goal events cache functions
-pub use goal_events_cache::*;
 // Re-export core cache functions
 pub use core::*;
 
@@ -99,4 +96,45 @@ pub async fn get_detailed_game_cache_size() -> usize {
 #[allow(dead_code)]
 pub async fn clear_detailed_game_cache() {
     DETAILED_GAME_CACHE.clear().await;
+}
+
+// --- Goal events cache (backed by generic TtlCache) ---
+
+pub static GOAL_EVENTS_CACHE: LazyLock<TtlCache<String, Vec<GoalEventData>>> =
+    LazyLock::new(|| TtlCache::new(300));
+
+/// Creates a cache key for goal events data.
+pub fn create_goal_events_key(season: i32, game_id: i32) -> String {
+    format!("goal_events_{season}_{game_id}")
+}
+
+/// Caches processed goal events data with a TTL that depends on game liveness.
+pub async fn cache_goal_events_data(
+    season: i32,
+    game_id: i32,
+    data: Vec<GoalEventData>,
+    is_live_game: bool,
+) {
+    let key = create_goal_events_key(season, game_id);
+    GOAL_EVENTS_CACHE
+        .insert(key, data, game_state_ttl(is_live_game))
+        .await;
+}
+
+/// Retrieves cached goal events data if it has not expired.
+pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Vec<GoalEventData>> {
+    let key = create_goal_events_key(season, game_id);
+    GOAL_EVENTS_CACHE.get(&key).await
+}
+
+/// Gets the current goal events cache size for monitoring purposes.
+#[allow(dead_code)]
+pub async fn get_goal_events_cache_size() -> usize {
+    GOAL_EVENTS_CACHE.len().await
+}
+
+/// Clears all goal events cache entries.
+#[allow(dead_code)]
+pub async fn clear_goal_events_cache() {
+    GOAL_EVENTS_CACHE.clear().await;
 }

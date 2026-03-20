@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tracing::debug;
 
 use crate::constants::cache_ttl;
-use crate::data_fetcher::models::{GoalEventData, ScheduleResponse};
+use crate::data_fetcher::models::ScheduleResponse;
 
 /// Cached tournament data with TTL support
 #[derive(Debug, Clone)]
@@ -50,76 +50,5 @@ impl CachedTournamentData {
         } else {
             Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
         }
-    }
-}
-
-/// Cached goal events data with TTL support
-#[derive(Debug, Clone)]
-pub struct CachedGoalEventsData {
-    pub data: Vec<GoalEventData>,
-    pub cached_at: Instant,
-    pub game_id: i32,
-    pub season: i32,
-    pub is_live_game: bool,
-}
-
-impl CachedGoalEventsData {
-    /// Creates a new cached goal events data entry
-    pub fn new(data: Vec<GoalEventData>, game_id: i32, season: i32, is_live_game: bool) -> Self {
-        Self {
-            data,
-            cached_at: Instant::now(),
-            game_id,
-            season,
-            is_live_game,
-        }
-    }
-
-    /// Checks if the cached data is expired based on game state
-    pub fn is_expired(&self) -> bool {
-        let ttl = if self.is_live_game {
-            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 30 seconds for live games
-        } else {
-            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS) // 1 hour for completed games
-        };
-
-        let age = self.cached_at.elapsed();
-        let is_expired = age > ttl;
-
-        debug!(
-            "Goal events cache expiration check: is_live_game={}, age={:?}, ttl={:?}, is_expired={}",
-            self.is_live_game, age, ttl, is_expired
-        );
-
-        is_expired
-    }
-
-    /// Gets the TTL duration for this cache entry
-    pub fn get_ttl(&self) -> Duration {
-        if self.is_live_game {
-            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS)
-        } else {
-            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
-        }
-    }
-
-    /// Gets the game ID associated with this cached data (useful for debugging and logging)
-    pub fn get_game_id(&self) -> i32 {
-        self.game_id
-    }
-
-    /// Gets the season associated with this cached data (useful for debugging and logging)
-    pub fn get_season(&self) -> i32 {
-        self.season
-    }
-
-    /// Gets cache metadata including game ID and season for monitoring and debugging
-    pub fn get_cache_info(&self) -> (i32, i32, usize, bool) {
-        (
-            self.game_id,
-            self.season,
-            self.data.len(),
-            self.is_expired(),
-        )
     }
 }
