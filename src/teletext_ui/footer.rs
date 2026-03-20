@@ -8,7 +8,7 @@
 //! - Season countdown display
 
 use crate::error::AppError;
-use crate::teletext_ui::utils::get_ansi_code;
+use crate::teletext_ui::core::get_ansi_code;
 use crate::ui::teletext::colors::*;
 use crate::ui::teletext::loading_indicator::LoadingIndicator;
 use crossterm::{

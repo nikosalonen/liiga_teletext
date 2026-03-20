@@ -26,7 +26,6 @@ pub const CONTENT_MARGIN: usize = 2; // Small margin for game content from termi
 
 // Import utilities from modules
 use super::season_utils::calculate_days_until_regular_season;
-use super::utils::get_ansi_code;
 
 #[derive(Debug)]
 pub struct TeletextPage {
@@ -626,6 +625,15 @@ impl TeletextPage {
 
         stdout.flush()?;
         Ok(())
+    }
+}
+
+/// Helper function to extract ANSI color code from crossterm Color enum.
+/// Provides a fallback value for non-ANSI colors.
+pub(super) fn get_ansi_code(color: crossterm::style::Color, fallback: u8) -> u8 {
+    match color {
+        crossterm::style::Color::AnsiValue(val) => val,
+        _ => fallback,
     }
 }
 

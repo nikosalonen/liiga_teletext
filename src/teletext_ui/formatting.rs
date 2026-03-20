@@ -170,7 +170,7 @@ impl TeletextPage {
                 ..
             } => {
                 // Import color utilities
-                use super::utils::get_ansi_code;
+                use super::core::get_ansi_code;
                 use crate::ui::teletext::colors::*;
 
                 let text_fg_code = get_ansi_code(text_fg(), 231);
@@ -233,7 +233,7 @@ impl TeletextPage {
             TeletextRow::FutureGamesHeader(header_text)
             | TeletextRow::PlayoffPhaseHeader(header_text) => {
                 // Import color utilities
-                use super::utils::get_ansi_code;
+                use super::core::get_ansi_code;
                 use crate::ui::teletext::colors::*;
 
                 let subheader_fg_code = get_ansi_code(subheader_fg(), 46);

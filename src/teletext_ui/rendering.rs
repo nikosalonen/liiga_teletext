@@ -1,7 +1,7 @@
 // src/teletext_ui/rendering.rs - Rendering utilities for TeletextPage display operations
 
+use super::core::get_ansi_code;
 use super::core::{TeletextPage, TeletextRow};
-use super::utils::get_ansi_code;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
 
