@@ -162,28 +162,3 @@ impl CachedGoalEventsData {
         )
     }
 }
-
-/// Cached HTTP response with TTL support
-#[derive(Debug, Clone)]
-pub struct CachedHttpResponse {
-    pub data: String,
-    pub cached_at: Instant,
-    pub ttl_seconds: u64,
-}
-
-impl CachedHttpResponse {
-    /// Creates a new cached HTTP response entry
-    pub fn new(data: String, ttl_seconds: u64) -> Self {
-        Self {
-            data,
-            cached_at: Instant::now(),
-            ttl_seconds,
-        }
-    }
-
-    /// Checks if the cached data is expired
-    pub fn is_expired(&self) -> bool {
-        let ttl = Duration::from_secs(self.ttl_seconds);
-        self.cached_at.elapsed() > ttl
-    }
-}
