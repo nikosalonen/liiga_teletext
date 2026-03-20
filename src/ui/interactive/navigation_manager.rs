@@ -158,8 +158,8 @@ pub async fn handle_page_restoration(params: PageRestorationParams<'_>) -> bool 
         && params.preserved_page_for_restoration.is_some()
         && let Some(current) = params.current_page
     {
-        // Check if current page is a loading page by checking if it has error messages
-        if current.has_error_messages()
+        // Check if current page is a loading page using the dedicated marker
+        if current.is_loading_page()
             && let Some(preserved_page_for_restoration) = params.preserved_page_for_restoration
         {
             let games_to_use = if params.games.is_empty() {
@@ -397,6 +397,8 @@ pub fn create_loading_page(
         compact_mode,
         wide_mode,
     );
+
+    loading_page.set_is_loading_page(true);
 
     if let Some(date) = current_date {
         if is_historical_date(date) {

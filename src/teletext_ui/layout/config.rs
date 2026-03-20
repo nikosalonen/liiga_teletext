@@ -458,6 +458,14 @@ impl GameDataValidator {
             return false;
         }
 
+        // Reject extra trailing tokens unless they are known suffixes
+        if parts.len() > 2 {
+            return false;
+        }
+        if parts.len() == 2 && !matches!(parts[1], "ja" | "rl") {
+            return false;
+        }
+
         let score_part = parts[0];
         if let Some(dash_pos) = score_part.find('-') {
             let home_score = &score_part[..dash_pos];

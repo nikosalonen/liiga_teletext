@@ -51,6 +51,7 @@ pub struct TeletextPage {
     pub(super) standings_live_mode: bool,           // Whether live mode is active in standings
     pub(super) playoffs_lines: Vec<u16>, // Positions after which to draw playoff separator lines
     pub(super) skip_screen_clear: Cell<bool>, // Interior mutability needed because render_buffered takes &self. When true, skips screen clear to avoid flicker.
+    pub(super) is_loading_page: bool,         // Whether this is a loading/fetching page
 }
 
 #[derive(Debug)]
@@ -169,6 +170,7 @@ impl TeletextPage {
             standings_live_mode: false,
             playoffs_lines: Vec::new(),
             skip_screen_clear: Cell::new(false),
+            is_loading_page: false,
         }
     }
 
@@ -691,10 +693,24 @@ impl TeletextPage {
     }
 
     /// Checks if this page contains any error messages.
+    /// Used in integration tests to verify error/loading pages.
+    #[allow(dead_code)]
     pub fn has_error_messages(&self) -> bool {
         self.content_rows
             .iter()
             .any(|row| matches!(row, TeletextRow::ErrorMessage(_)))
+    }
+
+    /// Checks if this page is a loading page (created by `create_loading_page`).
+    /// Unlike `has_error_messages()`, this distinguishes loading pages from real
+    /// error/no-data pages, preventing stale game resurrection during restoration.
+    pub fn is_loading_page(&self) -> bool {
+        self.is_loading_page
+    }
+
+    /// Marks this page as a loading page.
+    pub fn set_is_loading_page(&mut self, is_loading: bool) {
+        self.is_loading_page = is_loading;
     }
 
     /// Test-friendly accessor to check if the page contains an error message with specific text.

@@ -338,6 +338,12 @@ impl RefreshCoordinator {
             tracing::debug!("Updated current_date to: {:?}", updated_current_date);
         }
 
+        // Reset the transient-empty streak on fetch errors so intermittent failures
+        // don't count toward the consecutive empty counter.
+        if had_error {
+            self.consecutive_transient_empty = 0;
+        }
+
         // Short-circuit transient empty responses before change detection to avoid
         // unnecessary work.  If the API returns empty games but we previously had
         // games, preserve the existing display — unless this has happened too many

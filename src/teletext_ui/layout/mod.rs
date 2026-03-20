@@ -2780,6 +2780,8 @@ mod tests {
         assert!(!validator.is_valid_score_format("a-b"));
         assert!(!validator.is_valid_score_format("2:1"));
         assert!(!validator.is_valid_score_format("invalid"));
+        assert!(!validator.is_valid_score_format("2-1 garbage")); // Trailing unknown suffix
+        assert!(!validator.is_valid_score_format("2-1 ja extra")); // Too many tokens
     }
 
     #[test]

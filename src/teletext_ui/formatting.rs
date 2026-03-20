@@ -335,10 +335,36 @@ pub fn format_game_time(time: &str) -> String {
         return "TBD".to_string();
     }
 
-    if let Some(colon_pos) = time.rfind(':')
-        && time.len() > colon_pos + 3
-    {
-        return time[..colon_pos].to_string();
+    // Extract only the HH:MM portion to avoid capturing date prefixes or seconds.
+    // Scan backwards through the string looking for a D{1,2}:DD pattern.
+    let bytes = time.as_bytes();
+    for i in (0..bytes.len().saturating_sub(2)).rev() {
+        if bytes[i + 1] == b':'
+            && bytes[i].is_ascii_digit()
+            && i + 3 < bytes.len()
+            && bytes[i + 2].is_ascii_digit()
+            && bytes[i + 3].is_ascii_digit()
+        {
+            // Check for a second hour digit before position i
+            let start = if i > 0 && bytes[i - 1].is_ascii_digit() {
+                // Ensure we don't grab a third digit (e.g. from "123:45")
+                if i >= 2 && bytes[i - 2].is_ascii_digit() {
+                    continue;
+                }
+                i - 1
+            } else {
+                i
+            };
+            // Skip if preceded by ':' — this is likely `:MM:SS`, not `HH:MM`
+            if start > 0 && bytes[start - 1] == b':' {
+                continue;
+            }
+            // Ensure the minute part is exactly 2 digits (no trailing digit)
+            if i + 4 < bytes.len() && bytes[i + 4].is_ascii_digit() {
+                continue;
+            }
+            return time[start..i + 4].to_string();
+        }
     }
 
     time.to_string()
@@ -424,8 +450,11 @@ mod tests {
     #[test]
     fn test_format_game_time() {
         assert_eq!(format_game_time("18:30"), "18:30");
-        assert_eq!(format_game_time("18:30:00"), "18:30:00");
+        assert_eq!(format_game_time("18:30:00"), "18:30"); // Strips seconds
         assert_eq!(format_game_time(""), "TBD");
+        // Handles date prefixes by extracting only HH:MM
+        assert_eq!(format_game_time("2024-01-15T18:30:00Z"), "18:30");
+        assert_eq!(format_game_time("9:05"), "9:05");
     }
 
     #[test]

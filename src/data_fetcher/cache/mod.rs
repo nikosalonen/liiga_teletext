@@ -297,9 +297,9 @@ pub async fn get_cached_tournament_data_with_start_check(
     key: &str,
     current_games: &[GameData],
 ) -> Option<ScheduleResponse> {
-    let has_starting = current_games
-        .iter()
-        .any(|game| game.score_type == ScoreType::Scheduled && !game.start.is_empty());
+    // Use the proper start-time window check (±5/10 minutes) instead of
+    // treating any scheduled game with a start time as "starting"
+    let has_starting = should_bypass_cache_for_starting_games(current_games);
 
     if has_starting {
         let aggressive_ttl = Duration::from_secs(cache_ttl::STARTING_GAMES_SECONDS);

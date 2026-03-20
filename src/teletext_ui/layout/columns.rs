@@ -295,8 +295,10 @@ impl AlignmentCalculator {
 
             max_goal_types_length = max_goal_types_length.max(goal_types.len());
 
-            // Calculate position ensuring no overflow past column 43 (away team start - 1)
-            let max_allowed_column = 43_usize.saturating_sub(goal_types.len());
+            // Calculate position ensuring no overflow past the away team area boundary
+            let away_area_end =
+                layout.home_team_width + layout.separator_width + layout.away_team_width - 2;
+            let max_allowed_column = away_area_end.saturating_sub(goal_types.len());
             let column_position = layout.play_icon_column + layout.max_player_name_width + 1;
             let safe_column_position = column_position.min(max_allowed_column);
 
@@ -371,31 +373,31 @@ impl AlignmentCalculator {
     ///
     /// # Arguments
     /// * `position` - Goal type position to validate
-    /// * `_layout` - Layout configuration (reserved for future use)
+    /// * `layout` - Layout configuration used to derive column boundaries
     ///
     /// # Returns
     /// * `bool` - True if position is safe, false if it would overflow
-    pub fn validate_no_overflow(
-        &self,
-        position: &GoalTypePosition,
-        _layout: &LayoutConfig,
-    ) -> bool {
+    pub fn validate_no_overflow(&self, position: &GoalTypePosition, layout: &LayoutConfig) -> bool {
+        let away_area_end =
+            layout.home_team_width + layout.separator_width + layout.away_team_width - 2;
         let end_position = position.column_position + position.goal_types.len();
-        let is_safe = end_position <= 43; // Away team starts at column 44, so we must not exceed column 43
+        let is_safe = end_position <= away_area_end;
 
         if !is_safe {
             tracing::error!(
-                "Goal type overflow detected: '{}' at column {} would end at column {} (exceeds limit of 43)",
+                "Goal type overflow detected: '{}' at column {} would end at column {} (exceeds limit of {})",
                 position.goal_types,
                 position.column_position,
-                end_position
+                end_position,
+                away_area_end
             );
         } else {
             tracing::debug!(
-                "Goal type position validated: '{}' at column {} ends at column {} (within limit of 43)",
+                "Goal type position validated: '{}' at column {} ends at column {} (within limit of {})",
                 position.goal_types,
                 position.column_position,
-                end_position
+                end_position,
+                away_area_end
             );
         }
 
