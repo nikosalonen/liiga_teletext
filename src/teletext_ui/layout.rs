@@ -1,7 +1,5 @@
 // src/teletext_ui/layout.rs - Layout management infrastructure for dynamic column width calculations
 
-#![allow(dead_code)] // Allow dead code for utility functions and future features
-
 use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::models::GameData;
 use std::collections::HashMap;
@@ -14,33 +12,6 @@ pub struct AnsiCodeCache {
     position_codes: HashMap<(usize, usize), String>,
     /// Cache for color codes with positioning
     color_position_codes: HashMap<(usize, usize, u8), String>,
-    /// Cache for formatted positioning with color and text
-    #[allow(dead_code)]
-    formatted_codes: HashMap<FormattedCodeKey, String>,
-}
-
-/// Key for formatted ANSI code cache
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct FormattedCodeKey {
-    line: usize,
-    column: usize,
-    color: u8,
-    text_type: AnsiTextType,
-}
-
-/// Types of text formatting for ANSI code optimization
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-#[allow(dead_code)]
-enum AnsiTextType {
-    TeamName,
-    Separator,
-    Time,
-    Score,
-    PlayerName,
-    GoalType,
-    PlayIcon,
-    ErrorMessage,
-    Header,
 }
 
 impl AnsiCodeCache {
@@ -49,7 +20,6 @@ impl AnsiCodeCache {
         Self {
             position_codes: HashMap::new(),
             color_position_codes: HashMap::new(),
-            formatted_codes: HashMap::new(),
         }
     }
 
@@ -99,73 +69,11 @@ impl AnsiCodeCache {
             .or_insert_with(|| format!("\x1b[{};{}H\x1b[38;5;{}m", line, column, color))
     }
 
-    /// Gets or generates a complete formatted code for common text types
-    #[allow(private_interfaces)]
-    pub fn get_formatted_code(
-        &mut self,
-        line: usize,
-        column: usize,
-        color: u8,
-        text_type: AnsiTextType,
-        width: Option<usize>,
-    ) -> String {
-        let key = FormattedCodeKey {
-            line,
-            column,
-            color,
-            text_type: text_type.clone(),
-        };
-
-        if let Some(cached_code) = self.formatted_codes.get(&key) {
-            return cached_code.clone();
-        }
-
-        let formatted_code = match text_type {
-            AnsiTextType::TeamName => {
-                if let Some(w) = width {
-                    format!(
-                        "\x1b[{};{}H\x1b[38;5;{}m{{:<{}$}}\x1b[0m",
-                        line, column, color, w
-                    )
-                } else {
-                    format!("\x1b[{};{}H\x1b[38;5;{}m{{}}\x1b[0m", line, column, color)
-                }
-            }
-            AnsiTextType::Separator => {
-                format!("\x1b[{};{}H\x1b[38;5;{}m- \x1b[0m", line, column, color)
-            }
-            AnsiTextType::Time | AnsiTextType::Score => {
-                format!("\x1b[{};{}H\x1b[38;5;{}m{{}}\x1b[0m", line, column, color)
-            }
-            AnsiTextType::PlayerName => {
-                format!(
-                    "\x1b[{};{}H\x1b[38;5;{}m{{:2}} {{}}\x1b[0m",
-                    line, column, color
-                )
-            }
-            AnsiTextType::GoalType => {
-                format!("\x1b[{};{}H\x1b[38;5;{}m{{}}\x1b[0m", line, column, color)
-            }
-            AnsiTextType::PlayIcon => {
-                format!("\x1b[{};{}H\x1b]8;;{{}}\x07▶\x1b]8;;\x07", line, column)
-            }
-            AnsiTextType::ErrorMessage | AnsiTextType::Header => {
-                format!("\x1b[{};{}H\x1b[38;5;{}m{{}}\x1b[0m", line, column, color)
-            }
-        };
-
-        self.formatted_codes.insert(key, formatted_code.clone());
-        formatted_code
-    }
-
     /// Clears the cache to free memory
     pub fn clear(&mut self) {
-        let total_entries = self.position_codes.len()
-            + self.color_position_codes.len()
-            + self.formatted_codes.len();
+        let total_entries = self.position_codes.len() + self.color_position_codes.len();
         self.position_codes.clear();
         self.color_position_codes.clear();
-        self.formatted_codes.clear();
 
         tracing::debug!(
             "Cleared ANSI code cache with {} total entries",
@@ -178,7 +86,6 @@ impl AnsiCodeCache {
         AnsiCacheStats {
             position_codes: self.position_codes.len(),
             color_position_codes: self.color_position_codes.len(),
-            formatted_codes: self.formatted_codes.len(),
         }
     }
 }
@@ -188,7 +95,6 @@ impl AnsiCodeCache {
 pub struct AnsiCacheStats {
     pub position_codes: usize,
     pub color_position_codes: usize,
-    pub formatted_codes: usize,
 }
 
 impl Default for AnsiCodeCache {
@@ -254,6 +160,7 @@ pub struct ColumnLayoutManager {
 #[derive(Debug, Clone)]
 pub struct GameDataValidation {
     /// Whether the game data is valid for layout calculations
+    #[allow(dead_code)] // Read in tests
     pub is_valid: bool,
     /// List of validation issues found
     pub issues: Vec<ValidationIssue>,
@@ -267,6 +174,7 @@ pub struct ValidationIssue {
     /// Type of validation issue
     pub issue_type: ValidationIssueType,
     /// Human-readable description of the issue
+    #[allow(dead_code)] // Read in tests
     pub description: String,
     /// Whether this issue was automatically fixed
     pub auto_fixed: bool,
@@ -681,13 +589,12 @@ impl ColumnLayoutManager {
             layout_cache_size,
             content_cache_size,
             string_cache_size,
-            ansi_cache_stats.position_codes
-                + ansi_cache_stats.color_position_codes
-                + ansi_cache_stats.formatted_codes
+            ansi_cache_stats.position_codes + ansi_cache_stats.color_position_codes
         );
     }
 
     /// Gets cache statistics for monitoring performance
+    #[allow(dead_code)] // Used in tests
     pub fn get_cache_stats(&self) -> CacheStats {
         CacheStats {
             layout_cache_size: self.layout_cache.len(),
@@ -804,30 +711,6 @@ impl ColumnLayoutManager {
         format!("{}{}\x1b[0m", position_code, text)
     }
 
-    /// Generates optimized ANSI codes for player name with minute display
-    /// Pre-formats common goal event patterns (requirement 4.3)
-    ///
-    /// # Arguments
-    /// * `line` - Line number
-    /// * `column` - Column position
-    /// * `color` - Text color
-    /// * `minute` - Goal minute
-    /// * `player_name` - Player name
-    ///
-    /// # Returns
-    /// * `String` - Complete formatted ANSI string
-    pub fn format_player_name(
-        &mut self,
-        line: usize,
-        column: usize,
-        color: u8,
-        minute: i32,
-        player_name: &str,
-    ) -> String {
-        let position_code = self.get_color_position_code(line, column, color);
-        format!("{}{:2} {}\x1b[0m", position_code, minute, player_name)
-    }
-
     /// Generates optimized ANSI codes for goal type display
     /// Uses cached formatting for common goal type combinations (requirement 4.3)
     ///
@@ -848,21 +731,6 @@ impl ColumnLayoutManager {
     ) -> String {
         let position_code = self.get_color_position_code(line, column, color);
         format!("{}{}\x1b[0m", position_code, goal_types)
-    }
-
-    /// Generates optimized ANSI codes for video link play icon
-    /// Pre-formats the complex video link ANSI sequence (requirement 4.3)
-    ///
-    /// # Arguments
-    /// * `line` - Line number
-    /// * `column` - Column position
-    /// * `url` - Video URL
-    ///
-    /// # Returns
-    /// * `String` - Complete formatted ANSI string with video link
-    pub fn format_video_link(&mut self, line: usize, column: usize, url: &str) -> String {
-        let position_code = self.get_position_code(line, column);
-        format!("{}\x1b]8;;{}\x07▶\x1b]8;;\x07", position_code, url)
     }
 
     /// Batch generates multiple ANSI codes for a complete game line
@@ -1477,6 +1345,7 @@ impl ColumnLayoutManager {
     ///
     /// # Returns
     /// * `usize` - Width allocated for home team
+    #[allow(dead_code)] // Used in tests
     pub fn get_home_team_width(&self, layout: &LayoutConfig) -> usize {
         layout.home_team_width
     }
@@ -1488,6 +1357,7 @@ impl ColumnLayoutManager {
     ///
     /// # Returns
     /// * `usize` - Width allocated for away team
+    #[allow(dead_code)] // Used in tests
     pub fn get_away_team_width(&self, layout: &LayoutConfig) -> usize {
         layout.away_team_width
     }
@@ -1499,6 +1369,7 @@ impl ColumnLayoutManager {
     ///
     /// # Returns
     /// * `usize` - Column position for play icons
+    #[allow(dead_code)] // Used in tests
     pub fn get_play_icon_column(&self, layout: &LayoutConfig) -> usize {
         layout.play_icon_column
     }
@@ -1511,6 +1382,7 @@ impl ColumnLayoutManager {
     ///
     /// # Returns
     /// * `usize` - Number of spaces to add after player name
+    #[allow(dead_code)] // Used in tests
     pub fn calculate_dynamic_spacing(
         &self,
         player_name_length: usize,
@@ -1531,6 +1403,7 @@ impl ColumnLayoutManager {
     ///
     /// # Returns
     /// * `bool` - True if goal types fit within allocated space
+    #[allow(dead_code)] // Used in tests
     pub fn validate_goal_types_fit(&self, goal_types: &str, layout: &LayoutConfig) -> bool {
         let fits = goal_types.len() <= layout.max_goal_types_width;
 
@@ -1987,6 +1860,7 @@ struct ContentCacheKey {
 
 /// Cache statistics for monitoring performance
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Used in tests
 pub struct CacheStats {
     /// Number of entries in layout cache
     pub layout_cache_size: usize,
@@ -1998,6 +1872,7 @@ pub struct CacheStats {
 
 /// Cache statistics for alignment calculations
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Used in tests
 pub struct AlignmentCacheStats {
     /// Number of entries in play icon cache
     pub play_icon_cache_size: usize,
@@ -2037,6 +1912,7 @@ fn generate_content_signature(games: &[GameData]) -> u64 {
 }
 
 /// Generates a signature for goal events for caching purposes
+#[allow(dead_code)] // Used in tests via AlignmentCalculator
 fn generate_events_signature(events: &[GoalEventData]) -> u64 {
     use std::collections::hash_map::DefaultHasher;
 
@@ -2054,6 +1930,7 @@ fn generate_events_signature(events: &[GoalEventData]) -> u64 {
 }
 
 /// Generates a signature for layout configuration for caching purposes
+#[allow(dead_code)] // Used in tests via AlignmentCalculator
 fn generate_layout_signature(layout: &LayoutConfig) -> u64 {
     use std::collections::hash_map::DefaultHasher;
 
@@ -2068,6 +1945,7 @@ fn generate_layout_signature(layout: &LayoutConfig) -> u64 {
 
 /// Position tracking for play icons
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Used in tests
 pub struct PlayIconPosition {
     /// Index of the game this position relates to
     pub game_index: usize,
@@ -2081,6 +1959,7 @@ pub struct PlayIconPosition {
 
 /// Position tracking for goal type indicators
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Used in tests
 pub struct GoalTypePosition {
     /// Index of the goal event
     pub event_index: usize,
@@ -2236,6 +2115,7 @@ impl IntelligentTruncator {
     ///
     /// # Returns
     /// * `(usize, bool)` - (optimal_spacing, needs_truncation)
+    #[allow(dead_code)] // Used in tests
     pub fn calculate_spacing_reduction(
         &self,
         content_length: usize,
@@ -2322,6 +2202,7 @@ pub enum TruncationStrategy {
 
 /// Calculates alignment positions for play icons and goal type indicators
 #[derive(Debug, Default)]
+#[allow(dead_code)] // Used in tests
 pub struct AlignmentCalculator {
     /// Cache for play icon position calculations
     play_icon_cache: HashMap<PlayIconCacheKey, Vec<PlayIconPosition>>,
@@ -2331,6 +2212,7 @@ pub struct AlignmentCalculator {
 
 /// Cache key for play icon position calculations
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)] // Used in tests via AlignmentCalculator
 struct PlayIconCacheKey {
     /// Content signature of games
     content_signature: u64,
@@ -2340,6 +2222,7 @@ struct PlayIconCacheKey {
 
 /// Cache key for goal type position calculations
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)] // Used in tests via AlignmentCalculator
 struct GoalTypeCacheKey {
     /// Content signature of events
     events_signature: u64,
@@ -2347,6 +2230,7 @@ struct GoalTypeCacheKey {
     layout_signature: u64,
 }
 
+#[allow(dead_code)] // Used in tests
 impl AlignmentCalculator {
     /// Creates a new AlignmentCalculator
     pub fn new() -> Self {

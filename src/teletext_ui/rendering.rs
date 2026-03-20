@@ -473,29 +473,6 @@ impl TeletextPage {
     }
 }
 
-/// Counts visible characters in text, excluding ANSI escape sequences.
-///
-/// # Arguments
-/// * `text` - String that may contain ANSI escape sequences
-///
-/// # Returns
-/// * `usize` - Number of visible characters (excluding ANSI sequences)
-#[allow(dead_code)]
-pub fn count_visible_chars(text: &str) -> usize {
-    let mut visible_len = 0;
-    let mut in_ansi = false;
-    for c in text.chars() {
-        if c == '\x1b' {
-            in_ansi = true;
-        } else if in_ansi && c == 'm' {
-            in_ansi = false;
-        } else if !in_ansi {
-            visible_len += 1;
-        }
-    }
-    visible_len
-}
-
 /// Truncates team names gracefully, preferring word boundaries when possible.
 ///
 /// # Arguments
