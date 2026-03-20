@@ -364,14 +364,16 @@ fn render_half(
     }
 
     if let Some(sf_m) = half.sf_matchup {
-        let bo_label = series_format(sf_m.req_wins);
-        rows.push(TeletextRow::BracketLine(format!(
-            "{}V\u{00C4}LIER\u{00C4}T{} {}{bo_label}{}",
-            color(CYAN),
-            RESET,
-            color(DIM),
-            RESET
-        )));
+        if show_header {
+            let bo_label = series_format(sf_m.req_wins);
+            rows.push(TeletextRow::BracketLine(format!(
+                "{}V\u{00C4}LIER\u{00C4}T{} {}{bo_label}{}",
+                color(CYAN),
+                RESET,
+                color(DIM),
+                RESET
+            )));
+        }
         render_matchup_tree(sf_m, rows, name_max);
     }
 }
