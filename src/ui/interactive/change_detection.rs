@@ -3,6 +3,7 @@
 //! This module provides efficient change detection to avoid unnecessary UI updates
 //! by computing hashes of game and standings data and comparing them across refreshes.
 
+use crate::data_fetcher::models::bracket::PlayoffBracket;
 use crate::data_fetcher::models::standings::StandingsEntry;
 use crate::data_fetcher::{GameData, has_live_games_from_game_data};
 use crate::teletext_ui::ScoreType;
@@ -61,6 +62,13 @@ pub(super) fn calculate_standings_hash(
     live_mode.hash(&mut hasher);
     standings.hash(&mut hasher);
     playoffs_lines.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Calculates a hash of playoff bracket data for change detection.
+pub(super) fn calculate_bracket_hash(bracket: &PlayoffBracket) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    bracket.hash(&mut hasher);
     hasher.finish()
 }
 

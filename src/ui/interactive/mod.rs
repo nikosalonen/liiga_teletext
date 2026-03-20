@@ -21,7 +21,7 @@ mod input_handler;
 pub mod navigation_manager;
 mod refresh_coordinator;
 mod refresh_manager;
-mod series_utils;
+pub(crate) mod series_utils;
 pub mod state_manager;
 mod terminal_manager;
 

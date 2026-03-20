@@ -131,6 +131,7 @@ impl EventHandler {
         let mut current_view = previous_view;
         let mut preserved_games_page = state.navigation.preserved_games_page;
         let mut preserved_live_mode = state.navigation.preserved_live_mode;
+        let mut preserved_bracket_return_view = state.navigation.preserved_bracket_return_view;
 
         // Use existing input handler with extracted state
         let should_exit = handle_key_event(KeyEventParams {
@@ -145,6 +146,7 @@ impl EventHandler {
             current_view: &mut current_view,
             preserved_games_page: &mut preserved_games_page,
             preserved_live_mode: &mut preserved_live_mode,
+            preserved_bracket_return_view: &mut preserved_bracket_return_view,
         })
         .await?;
 
@@ -154,13 +156,21 @@ impl EventHandler {
         // Reset standings hash when switching away from standings view so that
         // re-entering standings always shows a full loading screen, not a spinner
         // on the games page.
-        if matches!(previous_view, ViewMode::Standings { .. }) && current_view == ViewMode::Games {
+        if matches!(previous_view, ViewMode::Standings { .. })
+            && !matches!(current_view, ViewMode::Standings { .. })
+        {
             state.change_detection.reset_standings_hash();
+        }
+
+        // Reset bracket hash when switching away from bracket view
+        if matches!(previous_view, ViewMode::Bracket) && current_view != ViewMode::Bracket {
+            state.change_detection.reset_bracket_hash();
         }
 
         state.navigation.current_view = current_view;
         state.navigation.preserved_games_page = preserved_games_page;
         state.navigation.preserved_live_mode = preserved_live_mode;
+        state.navigation.preserved_bracket_return_view = preserved_bracket_return_view;
 
         if should_exit {
             Ok(EventResult::Exit)

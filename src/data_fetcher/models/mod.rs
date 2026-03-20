@@ -1,3 +1,4 @@
+pub mod bracket;
 pub mod common;
 pub mod detailed;
 pub mod goals;

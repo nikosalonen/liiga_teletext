@@ -48,6 +48,7 @@ impl TeletextPage {
                     base
                 }
             }
+            TeletextRow::BracketLine(_) => 1u16,
         }
     }
 

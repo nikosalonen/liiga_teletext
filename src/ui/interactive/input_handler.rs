@@ -29,6 +29,7 @@ pub(super) struct KeyEventParams<'a> {
     pub current_view: &'a mut ViewMode,
     pub preserved_games_page: &'a mut Option<usize>,
     pub preserved_live_mode: &'a mut bool,
+    pub preserved_bracket_return_view: &'a mut Option<ViewMode>,
 }
 
 /// Checks if the given key event matches the date navigation shortcut.
@@ -311,11 +312,14 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
         params.key_event.modifiers
     );
 
-    // Disable date navigation in standings view
-    let is_standings = matches!(params.current_view, ViewMode::Standings { .. });
+    // Disable date navigation in standings and bracket views
+    let is_non_game_view = matches!(
+        params.current_view,
+        ViewMode::Standings { .. } | ViewMode::Bracket
+    );
 
     // Check for date navigation first (Shift + Arrow keys)
-    if !is_standings && is_date_navigation_key(params.key_event, true) {
+    if !is_non_game_view && is_date_navigation_key(params.key_event, true) {
         // Shift + Left: Previous date with games
         if params.last_date_navigation.elapsed() >= Duration::from_millis(250) {
             tracing::info!("Previous date navigation requested");
@@ -359,7 +363,7 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
             }
             *params.last_date_navigation = Instant::now();
         }
-    } else if !is_standings && is_date_navigation_key(params.key_event, false) {
+    } else if !is_non_game_view && is_date_navigation_key(params.key_event, false) {
         // Shift + Right: Next date with games
         if params.last_date_navigation.elapsed() >= Duration::from_millis(250) {
             tracing::info!("Next date navigation requested");
@@ -448,6 +452,22 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                     *params.last_page_change = Instant::now();
                 }
             }
+            KeyCode::Char('p') => {
+                tracing::info!("Bracket view toggle requested");
+                match *params.current_view {
+                    ViewMode::Bracket => {
+                        *params.current_view = params
+                            .preserved_bracket_return_view
+                            .take()
+                            .unwrap_or(ViewMode::Games);
+                    }
+                    other => {
+                        *params.preserved_bracket_return_view = Some(other);
+                        *params.current_view = ViewMode::Bracket;
+                    }
+                }
+                *params.needs_refresh = true;
+            }
             KeyCode::Char('s') => {
                 tracing::info!("View toggle requested");
                 match *params.current_view {
@@ -464,6 +484,7 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                         *params.preserved_live_mode = live_mode;
                         *params.current_view = ViewMode::Games;
                     }
+                    ViewMode::Bracket => {} // No-op: press 'p' to leave bracket
                 }
                 *params.needs_refresh = true;
             }

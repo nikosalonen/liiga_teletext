@@ -8,8 +8,10 @@
 //! - Loading indicator coordination
 
 use super::series_utils::{get_subheader, playoff_phase_name};
+use crate::data_fetcher::models::bracket::PlayoffBracket;
 use crate::data_fetcher::{GameData, is_historical_date};
-use crate::teletext_ui::{GameResultData, TeletextPage};
+use crate::teletext_ui::bracket_display::render_bracket;
+use crate::teletext_ui::{GameResultData, TeletextPage, TeletextRow};
 use chrono::NaiveDate;
 
 /// Configuration for creating or restoring a teletext page
@@ -516,6 +518,36 @@ pub fn create_standings_page(
 
     for (i, entry) in standings.iter().enumerate() {
         page.add_standings_row((i + 1) as u16, entry);
+    }
+
+    page
+}
+
+/// Creates a teletext page for the playoff bracket.
+pub fn create_bracket_page(
+    bracket: &PlayoffBracket,
+    disable_links: bool,
+    terminal_width: u16,
+) -> TeletextPage {
+    let subheader = format!("PUDOTUSPELIT {}", bracket.season);
+
+    // Force normal mode (no compact/wide), same as standings
+    let mut page = TeletextPage::new(
+        224,
+        "JÄÄKIEKKO".to_string(),
+        subheader,
+        disable_links,
+        true,
+        false,
+        false,
+        false,
+    );
+
+    let rows = render_bracket(bracket, terminal_width);
+    for row in rows {
+        if let TeletextRow::BracketLine(line) = row {
+            page.add_bracket_line(line);
+        }
     }
 
     page

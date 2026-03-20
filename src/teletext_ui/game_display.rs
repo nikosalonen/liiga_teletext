@@ -185,6 +185,12 @@ impl TeletextPage {
                         current_line,
                     );
                 }
+                TeletextRow::BracketLine(line) => {
+                    let line_code =
+                        format!("\x1b[{};{}H{}", *current_line + 1, CONTENT_MARGIN + 1, line);
+                    buffer.push_str(&line_code);
+                    *current_line += 1;
+                }
             }
         }
     }

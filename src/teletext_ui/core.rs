@@ -89,6 +89,7 @@ pub enum TeletextRow {
         live_position_change: Option<i16>,
         live_game_active: bool,
     },
+    BracketLine(String),
 }
 
 impl TeletextPage {

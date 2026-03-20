@@ -469,6 +469,7 @@ impl TeletextPage {
                 // Standings rows are rendered in normal mode only (not wide column mode)
                 String::new()
             }
+            TeletextRow::BracketLine(line) => line.clone(),
         }
     }
 }
