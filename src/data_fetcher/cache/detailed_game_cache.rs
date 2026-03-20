@@ -91,12 +91,6 @@ pub async fn get_detailed_game_cache_size() -> usize {
     DETAILED_GAME_CACHE.read().await.len()
 }
 
-/// Gets the detailed game cache capacity for monitoring purposes
-#[allow(dead_code)]
-pub async fn get_detailed_game_cache_capacity() -> usize {
-    DETAILED_GAME_CACHE.read().await.cap().get()
-}
-
 /// Clears all detailed game cache entries
 #[allow(dead_code)]
 pub async fn clear_detailed_game_cache() {

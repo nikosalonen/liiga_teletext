@@ -18,7 +18,6 @@ pub static TOURNAMENT_CACHE: LazyLock<RwLock<LruCache<String, CachedTournamentDa
     LazyLock::new(|| RwLock::new(LruCache::new(NonZeroUsize::new(50).unwrap())));
 
 /// Determines if a ScheduleResponse contains live games
-/// Determines if a ScheduleResponse contains live games
 pub fn has_live_games(response: &ScheduleResponse) -> bool {
     response.games.iter().any(|game| {
         // Game is live if it's started but not ended
@@ -111,135 +110,6 @@ pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
     }
 }
 
-/// Retrieves cached tournament data with custom live game state check
-#[allow(dead_code)]
-pub async fn get_cached_tournament_data_with_live_check(
-    key: &str,
-    current_games: &[GameData],
-) -> Option<ScheduleResponse> {
-    use crate::data_fetcher::has_live_games_from_game_data;
-
-    let mut cache = TOURNAMENT_CACHE.write().await;
-
-    if let Some(cached_entry) = cache.get(key) {
-        // Check if we have live games in the current state
-        let has_live = has_live_games_from_game_data(current_games);
-
-        // If the live state has changed, consider the cache expired
-        if cached_entry.has_live_games != has_live {
-            debug!(
-                "Cache invalidated due to live game state change: key={}, cached_has_live={}, current_has_live={}",
-                key, cached_entry.has_live_games, has_live
-            );
-            cache.pop(key);
-            return None;
-        }
-
-        if !cached_entry.is_expired() {
-            return Some(cached_entry.data.clone());
-        } else {
-            // Remove expired entry
-            debug!(
-                "Removing expired cache entry during live game state check: key={}, age={:?}",
-                key,
-                cached_entry.cached_at.elapsed()
-            );
-            cache.pop(key);
-        }
-    }
-
-    None
-}
-
-/// Retrieves cached tournament data specifically for auto-refresh scenarios
-/// This function provides enhanced logging and ensures proper cache bypass for expired entries
-#[allow(dead_code)]
-pub async fn get_cached_tournament_data_for_auto_refresh(key: &str) -> Option<ScheduleResponse> {
-    debug!(
-        "Auto-refresh: Attempting to retrieve tournament data from cache for key: {}",
-        key
-    );
-
-    let mut cache = TOURNAMENT_CACHE.write().await;
-
-    if let Some(cached_entry) = cache.get(key) {
-        let has_live = cached_entry.has_live_games;
-        let age = cached_entry.cached_at.elapsed();
-        let ttl = cached_entry.get_ttl();
-
-        debug!(
-            "Auto-refresh: Found cached tournament data: key={}, has_live={}, age={:?}, ttl={:?}",
-            key, has_live, age, ttl
-        );
-
-        if !cached_entry.is_expired() {
-            let games_count = cached_entry.data.games.len();
-            info!(
-                "Auto-refresh: Using cached data: key={}, games={}, has_live={}, age={:?}",
-                key, games_count, has_live, age
-            );
-            return Some(cached_entry.data.clone());
-        } else {
-            // Enhanced logging for auto-refresh cache bypass
-            if has_live {
-                info!(
-                    "Auto-refresh: Cache bypass for expired live game entry: key={}, age={:?}, ttl={:?} - fetching fresh data",
-                    key, age, ttl
-                );
-            } else {
-                info!(
-                    "Auto-refresh: Cache bypass for expired completed game entry: key={}, age={:?}, ttl={:?}",
-                    key, age, ttl
-                );
-            }
-            cache.pop(key);
-        }
-    } else {
-        debug!("Auto-refresh: Cache miss for tournament data: key={key}");
-    }
-
-    None
-}
-
-/// Invalidates all tournament cache entries for a specific date
-#[allow(dead_code)]
-pub async fn invalidate_tournament_cache_for_date(date: &str) {
-    let mut cache = TOURNAMENT_CACHE.write().await;
-
-    // Remove all entries for this date
-    let keys_to_remove: Vec<String> = cache
-        .iter()
-        .filter(|(key, _)| key.contains(date))
-        .map(|(key, _)| key.clone())
-        .collect();
-
-    for key in keys_to_remove {
-        cache.pop(&key);
-    }
-}
-
-/// Aggressively invalidates cache for games that should be starting soon
-/// This is called when we detect games are near their scheduled start time
-#[allow(dead_code)]
-pub async fn invalidate_cache_for_games_near_start_time(date: &str) {
-    let mut cache = TOURNAMENT_CACHE.write().await;
-
-    // Find and remove cache entries for the given date
-    let keys_to_remove: Vec<String> = cache
-        .iter()
-        .filter(|(key, _)| key.contains(date))
-        .map(|(key, _)| key.clone())
-        .collect();
-
-    for key in keys_to_remove {
-        info!(
-            "Aggressively invalidating cache for games near start time: {}",
-            key
-        );
-        cache.pop(&key);
-    }
-}
-
 /// Completely bypasses cache for games that should be starting soon
 /// This ensures fresh data is always fetched for games near their start time
 pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> bool {
@@ -323,12 +193,6 @@ pub async fn get_cached_tournament_data_with_start_check(
 #[allow(dead_code)]
 pub async fn get_tournament_cache_size() -> usize {
     TOURNAMENT_CACHE.read().await.len()
-}
-
-/// Gets the tournament cache capacity for monitoring purposes
-#[allow(dead_code)]
-pub async fn get_tournament_cache_capacity() -> usize {
-    TOURNAMENT_CACHE.read().await.cap().get()
 }
 
 /// Clears all tournament cache entries

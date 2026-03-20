@@ -70,18 +70,6 @@ pub async fn get_cached_http_response(url: &str) -> Option<String> {
     None
 }
 
-/// Gets the current HTTP response cache size for monitoring purposes
-#[allow(dead_code)]
-pub async fn get_http_response_cache_size() -> usize {
-    HTTP_RESPONSE_CACHE.read().await.len()
-}
-
-/// Gets the HTTP response cache capacity for monitoring purposes
-#[allow(dead_code)]
-pub async fn get_http_response_cache_capacity() -> usize {
-    HTTP_RESPONSE_CACHE.read().await.cap().get()
-}
-
 /// Clears all HTTP response cache entries
 #[allow(dead_code)]
 pub async fn clear_http_response_cache() {
