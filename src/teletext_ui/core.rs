@@ -626,6 +626,85 @@ impl TeletextPage {
         stdout.flush()?;
         Ok(())
     }
+
+    // --- Mode utility methods (moved from mode_utils.rs) ---
+
+    /// Returns whether compact mode is enabled.
+    #[allow(dead_code)]
+    pub fn is_compact_mode(&self) -> bool {
+        self.compact_mode
+    }
+
+    /// Sets the compact mode state.
+    /// Compact mode and wide mode are mutually exclusive.
+    #[allow(dead_code)]
+    pub fn set_compact_mode(&mut self, compact: bool) -> Result<(), &'static str> {
+        if compact && self.wide_mode {
+            self.wide_mode = false;
+        }
+        self.compact_mode = compact;
+        Ok(())
+    }
+
+    /// Returns whether wide mode is enabled.
+    #[allow(dead_code)]
+    pub fn is_wide_mode(&self) -> bool {
+        self.wide_mode
+    }
+
+    /// Sets the wide mode state.
+    /// Compact mode and wide mode are mutually exclusive.
+    #[allow(dead_code)]
+    pub fn set_wide_mode(&mut self, wide: bool) -> Result<(), &'static str> {
+        if wide && self.compact_mode {
+            self.compact_mode = false;
+        }
+        self.wide_mode = wide;
+        Ok(())
+    }
+
+    /// Validates that compact mode and wide mode are not both enabled.
+    #[allow(dead_code)]
+    pub fn validate_mode_exclusivity(&self) -> Result<(), &'static str> {
+        if self.compact_mode && self.wide_mode {
+            Err("compact_mode and wide_mode cannot be enabled simultaneously")
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Checks if the terminal width is sufficient for wide mode display.
+    pub fn can_fit_two_pages(&self) -> bool {
+        if !self.wide_mode {
+            return false;
+        }
+
+        let terminal_width = if self.ignore_height_limit {
+            if self.wide_mode { 136 } else { 80 }
+        } else {
+            crossterm::terminal::size()
+                .map(|(width, _)| width as usize)
+                .unwrap_or(80)
+        };
+
+        terminal_width >= 128
+    }
+
+    /// Checks if this page contains any error messages.
+    pub fn has_error_messages(&self) -> bool {
+        self.content_rows
+            .iter()
+            .any(|row| matches!(row, TeletextRow::ErrorMessage(_)))
+    }
+
+    /// Test-friendly accessor to check if the page contains an error message with specific text.
+    #[allow(dead_code)]
+    pub fn has_error_message(&self, message: &str) -> bool {
+        self.content_rows.iter().any(|row| match row {
+            TeletextRow::ErrorMessage(msg) => msg.contains(message),
+            _ => false,
+        })
+    }
 }
 
 /// Helper function to extract ANSI color code from crossterm Color enum.
