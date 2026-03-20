@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tracing::debug;
 
 use crate::constants::cache_ttl;
-use crate::data_fetcher::models::{DetailedGameResponse, GoalEventData, ScheduleResponse};
+use crate::data_fetcher::models::{GoalEventData, ScheduleResponse};
 
 /// Cached tournament data with TTL support
 #[derive(Debug, Clone)]
@@ -46,45 +46,6 @@ impl CachedTournamentData {
     /// Gets the TTL duration for this cache entry
     pub fn get_ttl(&self) -> Duration {
         if self.has_live_games {
-            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS)
-        } else {
-            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
-        }
-    }
-}
-
-/// Cached detailed game data with TTL support
-#[derive(Debug, Clone)]
-pub struct CachedDetailedGameData {
-    pub data: DetailedGameResponse,
-    pub cached_at: Instant,
-    pub is_live_game: bool,
-}
-
-impl CachedDetailedGameData {
-    /// Creates a new cached detailed game data entry
-    pub fn new(data: DetailedGameResponse, is_live_game: bool) -> Self {
-        Self {
-            data,
-            cached_at: Instant::now(),
-            is_live_game,
-        }
-    }
-
-    /// Checks if the cached data is expired based on game state
-    pub fn is_expired(&self) -> bool {
-        let ttl = if self.is_live_game {
-            Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS) // 30 seconds for live games
-        } else {
-            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS) // 1 hour for completed games
-        };
-
-        self.cached_at.elapsed() > ttl
-    }
-
-    /// Gets the TTL duration for this cache entry
-    pub fn get_ttl(&self) -> Duration {
-        if self.is_live_game {
             Duration::from_secs(cache_ttl::LIVE_GAMES_SECONDS)
         } else {
             Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
