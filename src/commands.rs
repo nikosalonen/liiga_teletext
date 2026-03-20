@@ -4,7 +4,8 @@ use crate::config::user_prompts::{prompt_for_api_domain, test_api_with_animation
 use crate::data_fetcher::{fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::TeletextPage;
-use crate::ui::{NavigationManager, format_date_for_display};
+use crate::ui::format_date_for_display;
+use crate::ui::interactive::navigation_manager;
 use crate::version;
 use chrono::{Local, Utc};
 use crossterm::{execute, style::Color, terminal::SetTitle};
@@ -207,42 +208,37 @@ pub async fn handle_once_command(
         }
         no_games_page
     } else {
-        // Create navigation manager
-        let nav_manager = NavigationManager::new();
-
         // Try to create a future games page, fall back to regular page if not future games
         // Only show future games header if no specific date was requested
         let show_future_header = args.date.is_none();
-        match nav_manager
-            .create_future_games_page(
-                &games,
-                args.disable_links,
-                true,
-                true,
-                args.compact,
-                args.wide,
-                args.once || args.compact, // suppress_countdown when once or compact mode
-                show_future_header,
-                Some(fetched_date.clone()),
-                None,
-            )
-            .await
+        match navigation_manager::create_future_games_page(
+            &games,
+            args.disable_links,
+            true,
+            true,
+            args.compact,
+            args.wide,
+            args.once || args.compact, // suppress_countdown when once or compact mode
+            show_future_header,
+            Some(fetched_date.clone()),
+            None,
+        )
+        .await
         {
             Some(page) => page,
             None => {
-                let mut page = nav_manager
-                    .create_page(
-                        &games,
-                        args.disable_links,
-                        true,
-                        true,
-                        args.compact,
-                        args.wide,
-                        args.once || args.compact, // suppress_countdown when once or compact mode
-                        Some(fetched_date.clone()),
-                        None,
-                    )
-                    .await;
+                let mut page = navigation_manager::create_page(
+                    &games,
+                    args.disable_links,
+                    true,
+                    true,
+                    args.compact,
+                    args.wide,
+                    args.once || args.compact, // suppress_countdown when once or compact mode
+                    Some(fetched_date.clone()),
+                    None,
+                )
+                .await;
 
                 // Disable auto-refresh for historical dates in --once mode too
                 if let Some(ref date) = args.date
