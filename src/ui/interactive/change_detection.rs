@@ -28,6 +28,7 @@ pub(super) fn calculate_games_hash(games: &[GameData]) -> u64 {
         game.play_off_phase.hash(&mut hasher);
         game.play_off_pair.hash(&mut hasher);
         game.play_off_req_wins.hash(&mut hasher);
+        game.is_placeholder.hash(&mut hasher);
         if let Some(ref score) = game.series_score {
             score.home_team_wins.hash(&mut hasher);
             score.away_team_wins.hash(&mut hasher);
@@ -141,23 +142,7 @@ mod tests {
     use super::*;
 
     fn make_game(home: &str, away: &str, result: &str, serie: &str) -> GameData {
-        GameData {
-            home_team: home.to_string(),
-            away_team: away.to_string(),
-            time: "18:30".to_string(),
-            result: result.to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: serie.to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: "2024-01-15T18:30:00Z".to_string(),
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
-        }
+        crate::testing_utils::TestDataBuilder::create_custom_game(0, home, away, result, serie)
     }
 
     fn make_standings_entry(team: &str, points: u16) -> StandingsEntry {
@@ -328,6 +313,23 @@ mod tests {
         assert_ne!(
             hash1, hash2,
             "video_clip_url change should produce different hash"
+        );
+    }
+
+    #[test]
+    fn test_placeholder_to_real_game_change_detected() {
+        let placeholder =
+            crate::testing_utils::TestDataBuilder::create_placeholder_game("QF1", "QF2");
+        let mut resolved = placeholder.clone();
+        resolved.is_placeholder = false;
+        resolved.home_team = "TPS".to_string();
+        resolved.away_team = "HIFK".to_string();
+
+        let hash1 = calculate_games_hash(&[placeholder]);
+        let hash2 = calculate_games_hash(&[resolved]);
+        assert_ne!(
+            hash1, hash2,
+            "placeholder-to-real transition should produce different hash"
         );
     }
 }

@@ -40,6 +40,42 @@ pub(super) fn get_team_name(team: &ScheduleTeam) -> &str {
         .unwrap_or("Unknown")
 }
 
+/// Returns true if the game has real team names for both sides.
+/// Games where either team only has a placeholder (e.g. "RS5", "RS12") are
+/// not yet finalized. These games are retained in the data (tagged with
+/// `is_placeholder = true` in `GameData`) so that transient-empty detection
+/// sees a non-empty response, but they are filtered out at the render
+/// boundary to avoid displaying cryptic API codes to users.
+fn has_real_teams(game: &ScheduleGame) -> bool {
+    fn is_real_name(name: &Option<String>) -> bool {
+        name.as_ref()
+            .is_some_and(|n| !n.is_empty() && !is_placeholder_name(n))
+    }
+    is_real_name(&game.home_team.team_name) && is_real_name(&game.away_team.team_name)
+}
+
+/// Detects placeholder-style team names like "RS5", "QF1", "SF2", etc.
+/// These are short uppercase codes followed by digits that the API uses
+/// for not-yet-determined playoff matchups.
+fn is_placeholder_name(name: &str) -> bool {
+    let trimmed = name.trim();
+    if trimmed.len() > 6 || trimmed.is_empty() {
+        return false;
+    }
+    let mut saw_alpha = false;
+    let mut saw_digit = false;
+    for ch in trimmed.chars() {
+        if ch.is_ascii_uppercase() && !saw_digit {
+            saw_alpha = true;
+        } else if ch.is_ascii_digit() && saw_alpha {
+            saw_digit = true;
+        } else {
+            return false;
+        }
+    }
+    saw_alpha && saw_digit
+}
+
 /// Determines if a game has actual goals (excluding RL0 goal types).
 #[allow(dead_code)]
 pub(super) fn has_actual_goals(game: &ScheduleGame) -> bool {
@@ -67,6 +103,7 @@ pub(super) async fn process_single_game(
     game: ScheduleGame,
     game_idx: usize,
     response_idx: usize,
+    is_placeholder: bool,
 ) -> Result<GameData, AppError> {
     let home_team_name = get_team_name(&game.home_team);
     let away_team_name = get_team_name(&game.away_team);
@@ -79,6 +116,42 @@ pub(super) async fn process_single_game(
         away_team_name
     );
 
+    // Short-circuit placeholder games — skip expensive roster/API fetches
+    if is_placeholder {
+        info!(
+            "Skipping detailed processing for placeholder game #{} in response #{}: {} vs {}",
+            game_idx + 1,
+            response_idx + 1,
+            home_team_name,
+            away_team_name
+        );
+        return Ok(GameData {
+            home_team: home_team_name.to_string(),
+            away_team: away_team_name.to_string(),
+            time: format_time(&game.start).unwrap_or_else(|e| {
+                warn!(
+                    "Failed to format time for placeholder game #{} in response #{}: {e}",
+                    game_idx + 1,
+                    response_idx + 1
+                );
+                String::new()
+            }),
+            result: format!("{}-{}", game.home_team.goals, game.away_team.goals),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            serie: game.serie,
+            goal_events: vec![],
+            played_time: game.game_time,
+            start: game.start.clone(),
+            play_off_phase: game.play_off_phase,
+            play_off_pair: game.play_off_pair,
+            play_off_req_wins: game.play_off_req_wins,
+            series_score: None,
+            is_placeholder: true,
+        });
+    }
+
     // Use enhanced game state detection for time formatting
     let (score_type, is_overtime, is_shootout) = determine_game_status(&game);
     debug!(
@@ -87,7 +160,14 @@ pub(super) async fn process_single_game(
     );
 
     let time = if matches!(score_type, ScoreType::Scheduled) {
-        let formatted_time = format_time(&game.start).unwrap_or_default();
+        let formatted_time = format_time(&game.start).unwrap_or_else(|e| {
+            warn!(
+                "Failed to format time for game #{} in response #{}: {e}",
+                game_idx + 1,
+                response_idx + 1
+            );
+            String::new()
+        });
         debug!("Game scheduled, formatted time: {formatted_time}");
         formatted_time
     } else {
@@ -202,6 +282,7 @@ pub(super) async fn process_single_game(
         play_off_pair: game.play_off_pair,
         play_off_req_wins: game.play_off_req_wins,
         series_score: None,
+        is_placeholder,
     })
 }
 
@@ -233,12 +314,31 @@ pub(super) async fn process_response_games(
 
     let semaphore = Arc::new(Semaphore::new(3)); // Max 3 concurrent requests
 
-    let game_futures: Vec<_> = response
+    // Mark placeholder games (teams not yet determined) but keep them in the
+    // result so that transient-empty detection sees a non-empty response for
+    // scheduled playoff dates. They are filtered out at the render boundary.
+    let games_with_placeholder: Vec<_> = response
         .games
         .clone()
         .into_iter()
+        .map(|game| {
+            let placeholder = !has_real_teams(&game);
+            if placeholder {
+                info!(
+                    "Marking placeholder game {}: {} vs {} (teams not yet determined)",
+                    game.id,
+                    get_team_name(&game.home_team),
+                    get_team_name(&game.away_team)
+                );
+            }
+            (game, placeholder)
+        })
+        .collect();
+
+    let game_futures: Vec<_> = games_with_placeholder
+        .into_iter()
         .enumerate()
-        .map(|(game_idx, game)| {
+        .map(|(game_idx, (game, is_placeholder))| {
             let client = client.clone();
             let config = config.clone();
             let sem = Arc::clone(&semaphore);
@@ -255,7 +355,15 @@ pub(super) async fn process_response_games(
                 );
 
                 // Permit is automatically released when _permit is dropped
-                process_single_game(&client, &config, game, game_idx, response_idx).await
+                process_single_game(
+                    &client,
+                    &config,
+                    game,
+                    game_idx,
+                    response_idx,
+                    is_placeholder,
+                )
+                .await
             }
         })
         .collect();
@@ -971,4 +1079,125 @@ struct DetailedGameData {
     away_goals: i32,
     goal_events: Vec<GoalEventData>,
     detailed_game: DetailedGame,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- is_placeholder_name tests ---
+
+    #[test]
+    fn test_is_placeholder_name_typical_codes() {
+        assert!(is_placeholder_name("RS5"));
+        assert!(is_placeholder_name("RS12"));
+        assert!(is_placeholder_name("QF1"));
+        assert!(is_placeholder_name("SF2"));
+        assert!(is_placeholder_name("F1"));
+    }
+
+    #[test]
+    fn test_is_placeholder_name_real_team_names() {
+        assert!(!is_placeholder_name("HIFK Helsinki"));
+        assert!(!is_placeholder_name("TPS Turku"));
+        assert!(!is_placeholder_name("Kärpät"));
+        assert!(!is_placeholder_name("Ilves"));
+        assert!(!is_placeholder_name("JYP"));
+    }
+
+    #[test]
+    fn test_is_placeholder_name_edge_cases() {
+        assert!(!is_placeholder_name(""));
+        assert!(!is_placeholder_name("   "));
+        assert!(!is_placeholder_name("123")); // digits only
+        assert!(!is_placeholder_name("ABC")); // letters only
+        assert!(!is_placeholder_name("5RS")); // digit before letters
+        assert!(!is_placeholder_name("RS5extra")); // too long / has lowercase
+    }
+
+    // --- has_real_teams tests ---
+
+    fn make_team(team_name: Option<&str>, placeholder: Option<&str>) -> ScheduleTeam {
+        ScheduleTeam {
+            team_id: None,
+            team_placeholder: placeholder.map(|s| s.to_string()),
+            team_name: team_name.map(|s| s.to_string()),
+            goals: 0,
+            time_out: None,
+            powerplay_instances: 0,
+            powerplay_goals: 0,
+            short_handed_instances: 0,
+            short_handed_goals: 0,
+            ranking: None,
+            game_start_date_time: None,
+            goal_events: vec![],
+        }
+    }
+
+    fn make_game(home: ScheduleTeam, away: ScheduleTeam) -> ScheduleGame {
+        ScheduleGame {
+            id: 1,
+            season: 2024,
+            start: "2024-01-15T18:30:00Z".to_string(),
+            end: None,
+            home_team: home,
+            away_team: away,
+            finished_type: None,
+            started: false,
+            ended: false,
+            game_time: 0,
+            serie: "playoffs".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+        }
+    }
+
+    #[test]
+    fn test_has_real_teams_both_valid() {
+        let game = make_game(
+            make_team(Some("HIFK Helsinki"), None),
+            make_team(Some("TPS Turku"), None),
+        );
+        assert!(has_real_teams(&game));
+    }
+
+    #[test]
+    fn test_has_real_teams_home_none() {
+        let game = make_game(
+            make_team(None, Some("RS5")),
+            make_team(Some("TPS Turku"), None),
+        );
+        assert!(!has_real_teams(&game));
+    }
+
+    #[test]
+    fn test_has_real_teams_away_empty() {
+        let game = make_game(
+            make_team(Some("HIFK Helsinki"), None),
+            make_team(Some(""), None),
+        );
+        assert!(!has_real_teams(&game));
+    }
+
+    #[test]
+    fn test_has_real_teams_both_none_with_placeholders() {
+        let game = make_game(make_team(None, Some("RS5")), make_team(None, Some("RS6")));
+        assert!(!has_real_teams(&game));
+    }
+
+    #[test]
+    fn test_has_real_teams_placeholder_string_in_team_name() {
+        let game = make_game(
+            make_team(Some("RS5"), None),
+            make_team(Some("TPS Turku"), None),
+        );
+        assert!(!has_real_teams(&game));
+    }
+
+    #[test]
+    fn test_has_real_teams_both_placeholder_strings_in_team_name() {
+        let game = make_game(make_team(Some("QF1"), None), make_team(Some("QF2"), None));
+        assert!(!has_real_teams(&game));
+    }
 }

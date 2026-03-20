@@ -1,7 +1,39 @@
+use crate::data_fetcher::models::goals::EmbeddedPlayer;
 use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, Player, ScheduleGame};
-use crate::data_fetcher::player_names::{DisambiguationContext, create_fallback_name};
+use crate::data_fetcher::player_names::{
+    DisambiguationContext, create_fallback_name, format_for_display_with_first_initial,
+};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
+
+/// Resolves a scorer name through the three-tier fallback chain:
+/// primary lookup -> embedded scorer data -> numeric fallback ("Pelaaja <id>").
+fn resolve_scorer_name(
+    primary: Option<String>,
+    embedded_player: Option<&EmbeddedPlayer>,
+    scorer_id: i64,
+) -> String {
+    primary
+        .or_else(|| scorer_name_from_embedded(embedded_player, scorer_id))
+        .unwrap_or_else(|| {
+            warn!("All player name lookups exhausted for player {scorer_id}, using fallback");
+            create_fallback_name(scorer_id)
+        })
+}
+
+/// Extracts a display name from the embedded scorer player data.
+/// Used as a fallback when the primary player name lookup (disambiguation context
+/// or player map) does not contain the scorer's player ID.
+/// Uses first-initial format (e.g. "Koivu M.") to reduce ambiguity.
+fn scorer_name_from_embedded(player: Option<&EmbeddedPlayer>, scorer_id: i64) -> Option<String> {
+    player.map(|p| {
+        let name = format_for_display_with_first_initial(&p.first_name, &p.last_name);
+        debug!(
+            "Using embedded scorer data for player {scorer_id} (resolved: {name}), primary lookup missed"
+        );
+        name
+    })
+}
 
 /// Processes goal events for both teams in a game with team-scoped disambiguation.
 /// This enhanced version applies disambiguation separately for home and away teams,
@@ -14,7 +46,7 @@ use tracing::{debug, info, warn};
 /// * `away_players` - A slice of tuples containing (player_id, first_name, last_name) for away team
 ///
 /// # Returns
-/// * `Vec<GoalEventData>` - A vector of processed goal events in chronological order with disambiguated names
+/// * `Vec<GoalEventData>` - A vector of processed goal events with home team goals followed by away team goals
 ///
 /// # Features
 /// - Applies team-scoped disambiguation (players on different teams don't affect each other)
@@ -22,7 +54,6 @@ use tracing::{debug, info, warn};
 /// - Includes goal timing and score information
 /// - Marks special goal types (powerplay, empty net, etc.)
 /// - Preserves video clip links when available
-/// - Maintains chronological order of goals from both teams
 ///
 /// # Example
 /// This function is typically used with game data from the API to create
@@ -61,14 +92,15 @@ where
 /// * `player_names` - HashMap mapping player IDs to their formatted names (e.g., "Koivu" instead of "Mikko Koivu")
 ///
 /// # Returns
-/// * `Vec<GoalEventData>` - A vector of processed goal events in chronological order
+/// * `Vec<GoalEventData>` - A vector of processed goal events with home team goals followed by away team goals
 ///
 /// # Features
 /// - Formats player names consistently (e.g., "Koivu" instead of "Mikko Koivu")
+/// - Falls back through embedded scorer data (first-initial format) and then numeric
+///   identifier ("Pelaaja <id>") when the primary player name lookup misses
 /// - Includes goal timing and score information
 /// - Marks special goal types (powerplay, empty net, etc.)
 /// - Preserves video clip links when available
-/// - Maintains chronological order of goals from both teams
 ///
 /// # Example
 /// ```rust
@@ -130,7 +162,8 @@ where
 /// # Features
 /// - Filters out cancelled and removed goals (RL0, VT0)
 /// - Uses team-scoped disambiguation for player names
-/// - Handles missing player names gracefully with fallback
+/// - Falls back through embedded scorer data (first-initial format) and then numeric
+///   identifier ("Pelaaja <id>") when the primary lookup misses
 /// - Preserves goal metadata like timing and special types
 ///
 /// # Example
@@ -160,12 +193,16 @@ pub fn process_team_goals_with_disambiguation(
     for goal in team.goal_events().iter().filter(|g| {
         !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
     }) {
+        let scorer_name = resolve_scorer_name(
+            disambiguation_context
+                .get_disambiguated_name(goal.scorer_player_id)
+                .cloned(),
+            goal.scorer_player.as_ref(),
+            goal.scorer_player_id,
+        );
         events.push(GoalEventData {
             scorer_player_id: goal.scorer_player_id,
-            scorer_name: disambiguation_context
-                .get_disambiguated_name(goal.scorer_player_id)
-                .cloned()
-                .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id)),
+            scorer_name,
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
             away_team_score: goal.away_team_score,
@@ -182,7 +219,8 @@ pub fn process_team_goals_with_disambiguation(
 /// This function handles:
 /// - Filtering out cancelled and removed goals
 /// - Using pre-formatted player names (cached formatted names)
-/// - Handling missing player names gracefully
+/// - Falling back through embedded scorer data (first-initial format) and then numeric
+///   identifier ("Pelaaja <id>") when the primary lookup misses
 /// - Preserving goal metadata like timing and special types
 ///
 /// # Arguments
@@ -221,12 +259,14 @@ pub fn process_team_goals(
     for goal in team.goal_events().iter().filter(|g| {
         !g.goal_types.contains(&"RL0".to_string()) && !g.goal_types.contains(&"VT0".to_string())
     }) {
+        let scorer_name = resolve_scorer_name(
+            player_names.get(&goal.scorer_player_id).cloned(),
+            goal.scorer_player.as_ref(),
+            goal.scorer_player_id,
+        );
         events.push(GoalEventData {
             scorer_player_id: goal.scorer_player_id,
-            scorer_name: player_names
-                .get(&goal.scorer_player_id)
-                .cloned()
-                .unwrap_or_else(|| create_fallback_name(goal.scorer_player_id)),
+            scorer_name,
             minute: goal.game_time / 60,
             home_team_score: goal.home_team_score,
             away_team_score: goal.away_team_score,
@@ -385,4 +425,153 @@ pub async fn create_basic_goal_events(
     }
 
     events
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_fetcher::models::goals::{EmbeddedPlayer, GoalEvent};
+    use crate::data_fetcher::models::schedule::ScheduleTeam;
+
+    fn make_embedded_player(id: i64, first: &str, last: &str) -> EmbeddedPlayer {
+        EmbeddedPlayer {
+            player_id: id,
+            first_name: first.to_string(),
+            last_name: last.to_string(),
+        }
+    }
+
+    fn make_goal_event(scorer_id: i64, scorer_player: Option<EmbeddedPlayer>) -> GoalEvent {
+        GoalEvent {
+            scorer_player_id: scorer_id,
+            log_time: "00:15:00".to_string(),
+            game_time: 900,
+            period: 1,
+            event_id: 1,
+            home_team_score: 1,
+            away_team_score: 0,
+            winning_goal: false,
+            goal_types: vec!["EV".to_string()],
+            assistant_player_ids: vec![],
+            video_clip_url: None,
+            scorer_player,
+        }
+    }
+
+    fn make_team_with_goals(goals: Vec<GoalEvent>) -> ScheduleTeam {
+        ScheduleTeam {
+            team_id: Some("TPS".to_string()),
+            team_placeholder: None,
+            team_name: Some("TPS Turku".to_string()),
+            goals: goals.len() as i32,
+            time_out: None,
+            powerplay_instances: 0,
+            powerplay_goals: 0,
+            short_handed_instances: 0,
+            short_handed_goals: 0,
+            ranking: None,
+            game_start_date_time: None,
+            goal_events: goals,
+        }
+    }
+
+    #[test]
+    fn test_scorer_name_from_embedded_with_player() {
+        let player = make_embedded_player(999, "Mikko", "Koivu");
+        let result = scorer_name_from_embedded(Some(&player), 999);
+        assert_eq!(result, Some("Koivu M.".to_string()));
+    }
+
+    #[test]
+    fn test_scorer_name_from_embedded_none() {
+        let result = scorer_name_from_embedded(None, 999);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_process_team_goals_uses_embedded_fallback() {
+        let player_names: HashMap<i64, String> = HashMap::new();
+        let embedded = make_embedded_player(999, "Mikko", "Koivu");
+        let goal = make_goal_event(999, Some(embedded));
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals(&team, &player_names, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Koivu M.");
+    }
+
+    #[test]
+    fn test_process_team_goals_uses_numeric_fallback_when_no_embedded() {
+        let player_names: HashMap<i64, String> = HashMap::new();
+        let goal = make_goal_event(999, None);
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals(&team, &player_names, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Pelaaja 999");
+    }
+
+    #[test]
+    fn test_process_team_goals_prefers_player_map_over_embedded() {
+        let mut player_names: HashMap<i64, String> = HashMap::new();
+        player_names.insert(999, "Koivu".to_string());
+        let embedded = make_embedded_player(999, "Mikko", "Koivu");
+        let goal = make_goal_event(999, Some(embedded));
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals(&team, &player_names, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Koivu");
+    }
+
+    // --- process_team_goals_with_disambiguation fallback tests ---
+
+    #[test]
+    fn test_disambiguation_uses_embedded_fallback_when_context_empty() {
+        let context = DisambiguationContext::new(vec![]);
+        let embedded = make_embedded_player(999, "Mikko", "Koivu");
+        let goal = make_goal_event(999, Some(embedded));
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals_with_disambiguation(&team, &context, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Koivu M.");
+    }
+
+    #[test]
+    fn test_disambiguation_uses_numeric_fallback_when_no_embedded() {
+        let context = DisambiguationContext::new(vec![]);
+        let goal = make_goal_event(999, None);
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals_with_disambiguation(&team, &context, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].scorer_name, "Pelaaja 999");
+    }
+
+    #[test]
+    fn test_disambiguation_prefers_context_over_embedded() {
+        let context =
+            DisambiguationContext::new(vec![(999, "Mikko".to_string(), "Koivu".to_string())]);
+        let embedded = make_embedded_player(999, "Mikko", "Koivu");
+        let goal = make_goal_event(999, Some(embedded));
+        let team = make_team_with_goals(vec![goal]);
+
+        let mut events = Vec::new();
+        process_team_goals_with_disambiguation(&team, &context, true, &mut events);
+
+        assert_eq!(events.len(), 1);
+        // DisambiguationContext with a single player uses last name only (no disambiguation needed)
+        assert_eq!(events[0].scorer_name, "Koivu");
+    }
 }

@@ -6,6 +6,7 @@
 use liiga_teletext::data_fetcher::GoalEventData;
 use liiga_teletext::data_fetcher::models::GameData;
 use liiga_teletext::teletext_ui::TeletextPage;
+use liiga_teletext::testing_utils::TestDataBuilder;
 use liiga_teletext::ui::teletext::game_result::{GameResultData, ScoreType};
 
 // Mock InteractiveState for testing since it's not public
@@ -78,60 +79,36 @@ fn create_test_game_data(
     score_type: ScoreType,
     goal_events: Vec<GoalEventData>,
 ) -> GameData {
-    GameData {
-        home_team: home_team.to_string(),
-        away_team: away_team.to_string(),
-        time: "19:30".to_string(),
-        result: score.to_string(),
-        score_type,
-        is_overtime: false,
-        is_shootout: false,
-        goal_events,
-        played_time: 3600,
-        serie: "RUNKOSARJA".to_string(),
-        start: "2025-01-15T19:30:00Z".to_string(),
-        play_off_phase: None,
-        play_off_pair: None,
-        play_off_req_wins: None,
-        series_score: None,
-    }
+    let mut game =
+        TestDataBuilder::create_custom_game(0, home_team, away_team, score, "RUNKOSARJA");
+    game.time = "19:30".to_string();
+    game.score_type = score_type;
+    game.goal_events = goal_events;
+    game.start = "2025-01-15T19:30:00Z".to_string();
+    game
 }
 
 /// Creates test goal events with various goal types to test layout positioning
 fn create_test_goal_events() -> Vec<GoalEventData> {
     vec![
-        GoalEventData {
-            scorer_player_id: 1,
-            scorer_name: "Teemu Selänne".to_string(), // Long name to test spacing
-            minute: 15,
-            home_team_score: 1,
-            away_team_score: 0,
-            is_winning_goal: false,
-            goal_types: vec!["YV".to_string()], // Young player goal
-            is_home_team: true,
-            video_clip_url: Some("https://example.com/video1".to_string()),
+        {
+            let mut goal = TestDataBuilder::create_powerplay_goal("Teemu Selänne", 15, 1, 0, true);
+            goal.scorer_player_id = 1;
+            goal.video_clip_url = Some("https://example.com/video1".to_string());
+            goal
         },
-        GoalEventData {
-            scorer_player_id: 2,
-            scorer_name: "Jari Kurri".to_string(),
-            minute: 28,
-            home_team_score: 1,
-            away_team_score: 1,
-            is_winning_goal: false,
-            goal_types: vec!["IM".to_string(), "TM".to_string()], // Multiple goal types
-            is_home_team: false,
-            video_clip_url: Some("https://example.com/video2".to_string()),
+        {
+            let mut goal = TestDataBuilder::create_goal_event("Jari Kurri", 28, 1, 1, false);
+            goal.scorer_player_id = 2;
+            goal.goal_types = vec!["IM".to_string(), "TM".to_string()];
+            goal.video_clip_url = Some("https://example.com/video2".to_string());
+            goal
         },
-        GoalEventData {
-            scorer_player_id: 3,
-            scorer_name: "Saku Koivu".to_string(),
-            minute: 45,
-            home_team_score: 2,
-            away_team_score: 1,
-            is_winning_goal: true,
-            goal_types: vec!["YV".to_string(), "IM".to_string()], // Winning goal with multiple types
-            is_home_team: true,
-            video_clip_url: None,
+        {
+            let mut goal = TestDataBuilder::create_winning_goal("Saku Koivu", 45, 2, 1, true);
+            goal.scorer_player_id = 3;
+            goal.goal_types = vec!["YV".to_string(), "IM".to_string()];
+            goal
         },
     ]
 }

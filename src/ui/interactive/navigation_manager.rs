@@ -270,7 +270,11 @@ impl NavigationManager {
 
         // Sort games by serie then play_off_phase for grouping, then add phase headers.
         // Playoffs come before playout/qualifications so they display first.
-        let mut sorted_games: Vec<&GameData> = games.iter().collect();
+        // Placeholder games (teams not yet determined) are kept in the data to
+        // prevent transient-empty detection from triggering, but are filtered
+        // out of the display since their cryptic API names (e.g. "RS5", "QF2")
+        // would confuse users.
+        let mut sorted_games: Vec<&GameData> = games.iter().filter(|g| !g.is_placeholder).collect();
         sorted_games.sort_by_key(|g| {
             let serie_order = match g.serie.as_str() {
                 "playoffs" => 0,
@@ -639,43 +643,27 @@ mod tests {
         let manager = NavigationManager::new();
 
         // Create a future game (different date)
-        let future_game = crate::data_fetcher::GameData {
-            home_team: "Team A".to_string(),
-            away_team: "Team B".to_string(),
-            time: "18:30".to_string(),
-            result: "".to_string(),
-            score_type: ScoreType::Scheduled,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 0,
-            start: "2030-01-15T18:30:00Z".to_string(), // Future date
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
+        let future_game = {
+            let mut game =
+                crate::testing_utils::TestDataBuilder::create_basic_game("Team A", "Team B");
+            game.result = "".to_string();
+            game.score_type = ScoreType::Scheduled;
+            game.played_time = 0;
+            game.start = (chrono::Utc::now() + chrono::Duration::days(30))
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string();
+            game
         };
 
         assert!(manager.is_future_game(&future_game));
 
         // Create a past game
-        let past_game = crate::data_fetcher::GameData {
-            home_team: "Team A".to_string(),
-            away_team: "Team B".to_string(),
-            time: "18:30".to_string(),
-            result: "2-1".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            serie: "runkosarja".to_string(),
-            goal_events: vec![],
-            played_time: 3600,
-            start: "2020-01-15T18:30:00Z".to_string(), // Past date
-            play_off_phase: None,
-            play_off_pair: None,
-            play_off_req_wins: None,
-            series_score: None,
+        let past_game = {
+            let mut game =
+                crate::testing_utils::TestDataBuilder::create_basic_game("Team A", "Team B");
+            game.result = "2-1".to_string();
+            game.start = "2020-01-15T18:30:00Z".to_string(); // Past date
+            game
         };
 
         assert!(!manager.is_future_game(&past_game));
@@ -693,5 +681,63 @@ mod tests {
 
         assert!(config.should_show_loading);
         assert_eq!(config.current_date, &Some("2024-01-15".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_placeholder_games_filtered_from_display() {
+        let manager = NavigationManager::new();
+
+        let real_game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        let placeholder =
+            crate::testing_utils::TestDataBuilder::create_placeholder_game("QF1", "QF2");
+        let games = vec![real_game, placeholder];
+
+        let page = manager
+            .create_base_page(
+                &games, true,  // disable_video_links
+                false, // show_footer
+                true,  // ignore_height_limit
+                false, // compact_mode
+                false, // wide_mode
+                true,  // suppress_countdown
+                None,  // future_games_header
+                None,  // fetched_date
+                None,  // current_page
+            )
+            .await;
+
+        // Page should contain only the real game, not the placeholder
+        assert_eq!(page.game_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_only_placeholder_games_produces_empty_display() {
+        let manager = NavigationManager::new();
+
+        let placeholder1 =
+            crate::testing_utils::TestDataBuilder::create_placeholder_game("QF1", "QF2");
+        let placeholder2 =
+            crate::testing_utils::TestDataBuilder::create_placeholder_game("SF1", "SF2");
+        let games = vec![placeholder1, placeholder2];
+
+        // Games vec is non-empty (prevents transient-empty detection)...
+        assert!(!games.is_empty());
+
+        let page = manager
+            .create_base_page(
+                &games, true,  // disable_video_links
+                false, // show_footer
+                true,  // ignore_height_limit
+                false, // compact_mode
+                false, // wide_mode
+                true,  // suppress_countdown
+                None,  // future_games_header
+                None,  // fetched_date
+                None,  // current_page
+            )
+            .await;
+
+        // ...but page renders zero games since all are placeholders
+        assert_eq!(page.game_count(), 0);
     }
 }

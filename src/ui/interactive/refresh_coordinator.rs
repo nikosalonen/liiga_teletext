@@ -27,6 +27,11 @@ use super::refresh_manager::{
 };
 use super::state_manager::{InteractiveState, ViewMode};
 
+/// Maximum consecutive transient empty API responses before accepting the empty
+/// state as legitimate. Prevents showing stale data indefinitely while still
+/// protecting against brief API glitches.
+const MAX_TRANSIENT_EMPTY: u32 = 3;
+
 /// Result of a refresh operation
 #[derive(Debug)]
 pub struct RefreshResult {
@@ -38,8 +43,9 @@ pub struct RefreshResult {
     #[allow(dead_code)]
     pub needs_render: bool,
     /// True when `process_refresh_results` should skip change detection.
-    /// Set for date-mismatch discards (to avoid clearing game state) and for
-    /// standings results (which carry no game data).
+    /// Set for date-mismatch discards (to avoid clearing game state),
+    /// standings results (which carry no game data), and transient empty
+    /// API responses (to preserve the existing display).
     pub skip_change_detection: bool,
 }
 
@@ -52,6 +58,10 @@ pub struct DataFetchParams<'a> {
     pub compact_mode: bool,
     pub wide_mode: bool,
     pub preserved_page_for_restoration: Option<usize>,
+    /// When true, the user navigated to a different date — transient-empty
+    /// preservation should be skipped because `last_games` belongs to the
+    /// previous date and is not relevant.
+    pub is_date_change: bool,
 }
 
 /// Configuration for refresh cycle operations
@@ -198,6 +208,10 @@ async fn animate_during_fetch(
 pub struct RefreshCoordinator {
     nav_manager: NavigationManager,
     cache_config: CacheMonitoringConfig,
+    /// Tracks how many consecutive refresh cycles returned empty games while
+    /// previous games existed.  After a threshold we stop treating the empty
+    /// response as transient so stale data is not shown indefinitely.
+    consecutive_transient_empty: u32,
 }
 
 impl RefreshCoordinator {
@@ -206,6 +220,7 @@ impl RefreshCoordinator {
         Self {
             nav_manager: NavigationManager::new(),
             cache_config: CacheMonitoringConfig::default(),
+            consecutive_transient_empty: 0,
         }
     }
 
@@ -215,6 +230,20 @@ impl RefreshCoordinator {
         Self {
             nav_manager: NavigationManager::new(),
             cache_config,
+            consecutive_transient_empty: 0,
+        }
+    }
+
+    /// Reset the transient empty counter.
+    /// Should be called when the user navigates to a different date so that
+    /// the counter doesn't carry over stale state from the previous date.
+    pub fn reset_transient_empty_counter(&mut self) {
+        if self.consecutive_transient_empty > 0 {
+            tracing::debug!(
+                "Resetting transient empty counter (was {})",
+                self.consecutive_transient_empty
+            );
+            self.consecutive_transient_empty = 0;
         }
     }
 
@@ -281,7 +310,7 @@ impl RefreshCoordinator {
     /// Process fetched game data: change detection, page creation, and indicator cleanup.
     /// The actual network fetch is performed separately so it can run as a background task.
     async fn process_fetched_data(
-        &self,
+        &mut self,
         params: DataFetchParams<'_>,
         games: Vec<GameData>,
         had_error: bool,
@@ -312,12 +341,50 @@ impl RefreshCoordinator {
             tracing::debug!("Updated current_date to: {:?}", updated_current_date);
         }
 
+        // Short-circuit transient empty responses before change detection to avoid
+        // unnecessary work.  If the API returns empty games but we previously had
+        // games, preserve the existing display — unless this has happened too many
+        // times in a row, which indicates the empty state is permanent.
+        if !had_error && games.is_empty() && !params.last_games.is_empty() && !params.is_date_change
+        {
+            self.consecutive_transient_empty += 1;
+            if self.consecutive_transient_empty <= MAX_TRANSIENT_EMPTY {
+                tracing::warn!(
+                    "API returned empty games but we previously had {} games, preserving existing display ({}/{})",
+                    params.last_games.len(),
+                    self.consecutive_transient_empty,
+                    MAX_TRANSIENT_EMPTY,
+                );
+                return Ok(RefreshResult {
+                    games: params.last_games.to_vec(),
+                    had_error,
+                    fetched_date,
+                    should_retry: false,
+                    new_page: None,
+                    needs_render: false,
+                    skip_change_detection: true,
+                });
+            }
+            tracing::warn!(
+                "Empty games response persisted for {} consecutive refreshes, accepting as legitimate",
+                self.consecutive_transient_empty,
+            );
+            // Reset counter after accepting empty as legitimate to avoid unbounded growth
+            // and repeated warn! logs on every subsequent refresh.
+            self.consecutive_transient_empty = 0;
+            // Fall through to normal processing — the empty state will be shown to the user.
+        }
+        // Reset counter on any non-empty response.
+        if !games.is_empty() {
+            self.consecutive_transient_empty = 0;
+        }
+
         // Perform change detection and logging
         let data_changed = detect_and_log_changes(&games, params.last_games);
 
         // Handle page creation/restoration based on data changes and errors
         // Always create a page if we have no games (to show the error message with navigation hints)
-        // or if data changed and there was no error
+        // or if data changed and there was no error.
         if (data_changed || games.is_empty()) && !had_error {
             if let Some(page) = self
                 .nav_manager
@@ -374,9 +441,10 @@ impl RefreshCoordinator {
 
     /// Perform comprehensive data fetching and refresh cycle
     pub async fn perform_refresh_cycle(
-        &self,
+        &mut self,
         state: &mut InteractiveState,
         config: &RefreshCycleConfig,
+        is_date_change: bool,
     ) -> Result<RefreshResult, AppError> {
         tracing::debug!("Fetching new data");
 
@@ -405,7 +473,7 @@ impl RefreshCoordinator {
             let last_games = state.change_detection.last_games();
             if !last_games.is_empty() {
                 let fetched_date = state.current_date().clone().unwrap_or_default();
-                let games = last_games.to_vec();
+                let games: Vec<_> = last_games.to_vec();
                 let new_page = self
                     .nav_manager
                     .create_or_restore_page(PageCreationConfig {
@@ -483,6 +551,7 @@ impl RefreshCoordinator {
                     compact_mode: config.compact_mode,
                     wide_mode: config.wide_mode,
                     preserved_page_for_restoration: state.preserved_page(),
+                    is_date_change,
                 },
                 games,
                 had_error,
@@ -724,9 +793,21 @@ impl RefreshCoordinator {
         let mut needs_state_render = false;
 
         // Skip change detection for results that carry no meaningful game data
-        // (date-mismatch discards or standings refreshes) to avoid clearing last_games state
+        // (date-mismatch discards, standings refreshes, or transient-empty preserves)
+        // to avoid clearing last_games state
         if result.skip_change_detection {
-            tracing::debug!("Skipping change detection (standings or date-mismatch result)");
+            tracing::debug!(
+                "Skipping change detection (standings, date-mismatch, or transient-empty preserve)"
+            );
+            // Still hide the auto-refresh spinner so it doesn't stay stuck
+            if let Some(page) = state.current_page_mut()
+                && page.is_auto_refresh_indicator_active()
+            {
+                page.hide_auto_refresh_indicator();
+                page.skip_next_screen_clear();
+                state.request_render();
+                needs_state_render = true;
+            }
             return needs_state_render;
         }
 
@@ -1017,6 +1098,7 @@ mod tests {
             compact_mode: false,
             wide_mode: false,
             preserved_page_for_restoration: None,
+            is_date_change: false,
         };
 
         assert_eq!(params.current_date, &Some("2024-01-15".to_string()));
@@ -1275,5 +1357,214 @@ mod tests {
         // last_games must be preserved, not overwritten with empty vec
         assert_eq!(state.change_detection.last_games().len(), 1);
         assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
+    }
+
+    #[test]
+    fn test_reset_transient_empty_counter() {
+        let mut coordinator = RefreshCoordinator::new();
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
+
+        coordinator.consecutive_transient_empty = 2;
+        coordinator.reset_transient_empty_counter();
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
+    }
+
+    #[test]
+    fn test_reset_transient_empty_counter_noop_when_zero() {
+        let mut coordinator = RefreshCoordinator::new();
+        coordinator.reset_transient_empty_counter();
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
+    }
+
+    #[tokio::test]
+    async fn test_transient_empty_preserves_existing_games() {
+        let mut coordinator = RefreshCoordinator::new();
+        let current_date = Some("2025-03-13".to_string());
+        let last_games = vec![crate::testing_utils::TestDataBuilder::create_basic_game(
+            "TPS", "HIFK",
+        )];
+        let params = DataFetchParams {
+            current_date: &current_date,
+            last_games: &last_games,
+            disable_links: true,
+            compact_mode: false,
+            wide_mode: false,
+            preserved_page_for_restoration: None,
+            is_date_change: false,
+        };
+
+        // First empty response — should preserve existing games
+        let result = coordinator
+            .process_fetched_data(params, vec![], false, "2025-03-13".to_string(), false)
+            .await
+            .unwrap();
+
+        assert_eq!(result.games.len(), 1);
+        assert_eq!(result.games[0].home_team, "TPS");
+        assert!(result.skip_change_detection);
+        assert!(
+            !result.should_retry,
+            "transient-empty preservation is a deliberate decision, not a failure"
+        );
+        assert!(!result.had_error);
+        assert_eq!(coordinator.consecutive_transient_empty, 1);
+    }
+
+    #[tokio::test]
+    async fn test_transient_empty_propagates_had_error() {
+        let mut coordinator = RefreshCoordinator::new();
+        let current_date = Some("2025-03-13".to_string());
+        let last_games = vec![crate::testing_utils::TestDataBuilder::create_basic_game(
+            "TPS", "HIFK",
+        )];
+        let params = DataFetchParams {
+            current_date: &current_date,
+            last_games: &last_games,
+            disable_links: true,
+            compact_mode: false,
+            wide_mode: false,
+            preserved_page_for_restoration: None,
+            is_date_change: false,
+        };
+
+        // Empty response with error — should NOT enter transient-empty branch;
+        // errors follow the normal processing path so stale games are not silently preserved.
+        let result = coordinator
+            .process_fetched_data(params, vec![], true, "2025-03-13".to_string(), false)
+            .await
+            .unwrap();
+
+        assert_eq!(result.games.len(), 0);
+        assert!(result.had_error);
+        assert!(!result.skip_change_detection);
+        // Transient empty counter should NOT have been incremented for error responses
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
+    }
+
+    #[tokio::test]
+    async fn test_transient_empty_accepts_after_threshold() {
+        let mut coordinator = RefreshCoordinator::new();
+        let current_date = Some("2025-03-13".to_string());
+        let last_games = vec![crate::testing_utils::TestDataBuilder::create_basic_game(
+            "TPS", "HIFK",
+        )];
+
+        // Exhaust transient empty allowance (MAX_TRANSIENT_EMPTY = 3)
+        for i in 0..MAX_TRANSIENT_EMPTY {
+            let params = DataFetchParams {
+                current_date: &current_date,
+                last_games: &last_games,
+                disable_links: true,
+                compact_mode: false,
+                wide_mode: false,
+                preserved_page_for_restoration: None,
+                is_date_change: false,
+            };
+            let result = coordinator
+                .process_fetched_data(params, vec![], false, "2025-03-13".to_string(), false)
+                .await
+                .unwrap();
+            assert_eq!(result.games.len(), 1, "cycle {i} should preserve games");
+            assert!(result.skip_change_detection);
+        }
+
+        // 4th empty response — should accept as legitimate (empty games)
+        let params = DataFetchParams {
+            current_date: &current_date,
+            last_games: &last_games,
+            disable_links: true,
+            compact_mode: false,
+            wide_mode: false,
+            preserved_page_for_restoration: None,
+            is_date_change: false,
+        };
+        let result = coordinator
+            .process_fetched_data(params, vec![], false, "2025-03-13".to_string(), false)
+            .await
+            .unwrap();
+        assert!(
+            result.games.is_empty(),
+            "should accept empty after threshold"
+        );
+        assert!(!result.skip_change_detection);
+        // Counter should be reset after accepting
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
+    }
+
+    #[tokio::test]
+    async fn test_transient_empty_resets_on_nonempty_response() {
+        let mut coordinator = RefreshCoordinator::new();
+        let current_date = Some("2025-03-13".to_string());
+        let existing_games = vec![crate::testing_utils::TestDataBuilder::create_basic_game(
+            "TPS", "HIFK",
+        )];
+
+        // Simulate 2 transient empty responses
+        for _ in 0..2 {
+            let params = DataFetchParams {
+                current_date: &current_date,
+                last_games: &existing_games,
+                disable_links: true,
+                compact_mode: false,
+                wide_mode: false,
+                preserved_page_for_restoration: None,
+                is_date_change: false,
+            };
+            coordinator
+                .process_fetched_data(params, vec![], false, "2025-03-13".to_string(), false)
+                .await
+                .unwrap();
+        }
+        assert_eq!(coordinator.consecutive_transient_empty, 2);
+
+        // Non-empty response should reset counter
+        let new_games = vec![crate::testing_utils::TestDataBuilder::create_basic_game(
+            "Kärpät", "Lukko",
+        )];
+        let params = DataFetchParams {
+            current_date: &current_date,
+            last_games: &existing_games,
+            disable_links: true,
+            compact_mode: false,
+            wide_mode: false,
+            preserved_page_for_restoration: None,
+            is_date_change: false,
+        };
+        coordinator
+            .process_fetched_data(params, new_games, false, "2025-03-13".to_string(), false)
+            .await
+            .unwrap();
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
+    }
+
+    #[tokio::test]
+    async fn test_transient_empty_skipped_on_date_change() {
+        let mut coordinator = RefreshCoordinator::new();
+        let current_date = Some("2025-03-14".to_string());
+        let last_games = vec![crate::testing_utils::TestDataBuilder::create_basic_game(
+            "TPS", "HIFK",
+        )];
+
+        // Empty response on a date change — should NOT preserve old games
+        let params = DataFetchParams {
+            current_date: &current_date,
+            last_games: &last_games,
+            disable_links: true,
+            compact_mode: false,
+            wide_mode: false,
+            preserved_page_for_restoration: None,
+            is_date_change: true,
+        };
+        let result = coordinator
+            .process_fetched_data(params, vec![], false, "2025-03-14".to_string(), false)
+            .await
+            .unwrap();
+
+        assert!(
+            result.games.is_empty(),
+            "date change should not preserve old games"
+        );
+        assert!(!result.skip_change_detection);
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
     }
 }

@@ -27,6 +27,9 @@ pub struct GameData {
     pub play_off_pair: Option<i32>,
     pub play_off_req_wins: Option<i32>,
     pub series_score: Option<PlayoffSeriesScore>,
+    /// True for games with unresolved team names (e.g. "QF1" vs "SF2");
+    /// filtered out in `create_base_page` (navigation_manager) before rendering.
+    pub is_placeholder: bool,
 }
 
 pub trait HasTeams {
@@ -215,6 +218,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         };
 
         assert_eq!(game_data.home_team, "HIFK");

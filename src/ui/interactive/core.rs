@@ -40,7 +40,7 @@ pub async fn run_interactive_ui(
     };
 
     // Create refresh coordinator
-    let refresh_coordinator = RefreshCoordinator::new();
+    let mut refresh_coordinator = RefreshCoordinator::new();
 
     // Create refresh cycle configuration
     let refresh_config = RefreshCycleConfig {
@@ -49,6 +49,9 @@ pub async fn run_interactive_ui(
         compact_mode,
         wide_mode,
     };
+
+    // Track date to detect date navigation and reset transient empty counter
+    let mut last_refresh_date: Option<String> = None;
 
     loop {
         // Process pending resize events after debounce period
@@ -67,9 +70,18 @@ pub async fn run_interactive_ui(
 
         // Data fetching with change detection using RefreshCoordinator
         if state.needs_refresh() {
+            // Detect date changes (e.g. date navigation, or initial date assignment
+            // on first refresh) so that transient-empty preservation is skipped —
+            // last_games belong to the old date.
+            let is_date_change = state.current_date() != &last_refresh_date;
+            if is_date_change {
+                refresh_coordinator.reset_transient_empty_counter();
+                last_refresh_date = state.current_date().clone();
+            }
+
             // Perform comprehensive refresh cycle
             let mut refresh_result = refresh_coordinator
-                .perform_refresh_cycle(&mut state, &refresh_config)
+                .perform_refresh_cycle(&mut state, &refresh_config, is_date_change)
                 .await?;
 
             // Update the current page if we have a new one (must be done before processing results)

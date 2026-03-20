@@ -42,6 +42,7 @@ impl TeletextPage {
     ///     play_off_pair: None,
     ///     play_off_req_wins: None,
     ///     series_score: None,
+    ///     is_placeholder: false,
     /// });
     ///
     /// page.add_game_result(game);
@@ -136,5 +137,16 @@ impl TeletextPage {
             live_position_change: entry.live_position_change,
             live_game_active: entry.live_game_active,
         });
+    }
+}
+
+#[cfg(test)]
+impl TeletextPage {
+    /// Returns the number of game result rows on this page (test-only).
+    pub fn game_count(&self) -> usize {
+        self.content_rows
+            .iter()
+            .filter(|row| matches!(row, TeletextRow::GameResult { .. }))
+            .count()
     }
 }

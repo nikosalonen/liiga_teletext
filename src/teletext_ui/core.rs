@@ -851,6 +851,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             }));
         }
 
@@ -922,6 +923,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             }));
         }
 
@@ -973,6 +975,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }));
 
         // Test game with goals
@@ -1004,6 +1007,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }));
 
         let (content, _) = page.get_page_content();
@@ -1063,6 +1067,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }));
 
         // Test ongoing game with goals
@@ -1107,6 +1112,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }));
 
         // Test finished game with overtime
@@ -1126,6 +1132,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }));
 
         // Test finished game with shootout
@@ -1145,6 +1152,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }));
 
         let (content, _) = page.get_page_content();
@@ -1225,6 +1233,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }));
 
         // Create another page with video links disabled
@@ -1255,6 +1264,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         }));
 
         let (content, _) = page.get_page_content();
@@ -1690,6 +1700,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             };
             let game_data = GameResultData::new(&game);
             many_games_page.add_game_result(game_data);
@@ -2153,6 +2164,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         };
         let test_game_data = GameResultData::new(&test_game);
         page.add_game_result(test_game_data);
@@ -2194,6 +2206,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         };
         let test_game_data = GameResultData::new(&test_game);
         page.add_game_result(test_game_data);
@@ -2236,6 +2249,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             };
             let test_game_data = GameResultData::new(&test_game);
             page.add_game_result(test_game_data);
@@ -2284,6 +2298,7 @@ mod tests {
                 play_off_pair: None,
                 play_off_req_wins: None,
                 series_score: None,
+                is_placeholder: false,
             };
             let test_game_data = GameResultData::new(&test_game);
             page.add_game_result(test_game_data);
@@ -2332,6 +2347,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         };
 
         let test_game2 = GameData {
@@ -2350,6 +2366,7 @@ mod tests {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         };
 
         page.add_game_result(GameResultData::new(&test_game1));
@@ -2658,6 +2675,7 @@ fn test_video_link_functionality_with_dynamic_layout() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     }));
 
     // Test with video links disabled
@@ -2688,6 +2706,7 @@ fn test_video_link_functionality_with_dynamic_layout() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     }));
 
     let (content, _) = page.get_page_content();

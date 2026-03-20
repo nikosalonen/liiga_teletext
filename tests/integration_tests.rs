@@ -94,6 +94,7 @@ async fn test_page_navigation() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         };
         page.add_game_result(GameResultData::new(&game));
     }
@@ -157,6 +158,7 @@ async fn test_game_result_data_creation() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     };
 
     // Create game result data
@@ -192,6 +194,7 @@ async fn test_teletext_ui_generation() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     };
 
     // Create teletext page
@@ -271,6 +274,7 @@ async fn test_end_to_end_multiple_games() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         GameData {
             home_team: "Kärpät".to_string(),
@@ -288,6 +292,7 @@ async fn test_end_to_end_multiple_games() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
     ];
 
@@ -333,6 +338,7 @@ async fn test_different_tournament_types() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     };
 
     // Create teletext page
@@ -375,6 +381,7 @@ async fn test_ongoing_games() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     };
 
     // Verify game data
@@ -403,6 +410,7 @@ async fn test_special_situations() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     };
 
     // Verify game data
@@ -431,6 +439,7 @@ async fn test_compact_mode_non_interactive() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         GameData {
             home_team: "Kärpät".to_string(),
@@ -448,6 +457,7 @@ async fn test_compact_mode_non_interactive() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         GameData {
             home_team: "Ilves".to_string(),
@@ -465,6 +475,7 @@ async fn test_compact_mode_non_interactive() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
     ];
 
@@ -525,6 +536,7 @@ async fn test_compact_mode_with_dates() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     };
 
     let future_game = GameData {
@@ -543,6 +555,7 @@ async fn test_compact_mode_with_dates() {
         play_off_pair: None,
         play_off_req_wins: None,
         series_score: None,
+        is_placeholder: false,
     };
 
     // Test with past game (compact mode should work)
@@ -667,6 +680,7 @@ async fn test_compact_mode_preserves_styling() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         GameData {
             home_team: "Kärpät".to_string(),
@@ -684,6 +698,7 @@ async fn test_compact_mode_preserves_styling() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         GameData {
             home_team: "Ilves".to_string(),
@@ -701,6 +716,7 @@ async fn test_compact_mode_preserves_styling() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
     ];
 
@@ -834,6 +850,7 @@ async fn test_compact_mode_basic_functionality() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
         GameData {
             home_team: "Kärpät".to_string(),
@@ -851,6 +868,7 @@ async fn test_compact_mode_basic_functionality() {
             play_off_pair: None,
             play_off_req_wins: None,
             series_score: None,
+            is_placeholder: false,
         },
     ];
 
@@ -1243,23 +1261,10 @@ async fn test_wide_mode_with_goal_scorers() {
 
 // Helper function to create test game data (already exists but ensuring it's available)
 fn create_test_game_data() -> GameData {
-    GameData {
-        home_team: "HIFK".to_string(),
-        away_team: "Tappara".to_string(),
-        time: "18:30".to_string(),
-        result: "2-1".to_string(),
-        score_type: ScoreType::Final,
-        is_overtime: false,
-        is_shootout: false,
-        serie: "runkosarja".to_string(),
-        goal_events: vec![],
-        played_time: 3600,
-        start: "2024-01-15T18:30:00Z".to_string(),
-        play_off_phase: None,
-        play_off_pair: None,
-        play_off_req_wins: None,
-        series_score: None,
-    }
+    let mut game =
+        liiga_teletext::testing_utils::TestDataBuilder::create_basic_game("HIFK", "Tappara");
+    game.result = "2-1".to_string();
+    game
 }
 
 /// Test wide mode performance with edge cases like many goal scorers and long team names
