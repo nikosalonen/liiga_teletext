@@ -66,7 +66,6 @@ pub(super) fn calculate_standings_hash(
 }
 
 /// Calculates a hash of playoff bracket data for change detection.
-#[allow(dead_code)]
 pub(super) fn calculate_bracket_hash(bracket: &PlayoffBracket) -> u64 {
     let mut hasher = DefaultHasher::new();
     bracket.hash(&mut hasher);

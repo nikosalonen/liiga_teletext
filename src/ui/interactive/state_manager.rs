@@ -279,7 +279,6 @@ impl ChangeDetectionState {
     }
 
     /// Get last bracket hash (None means never fetched)
-    #[allow(dead_code)]
     pub fn last_bracket_hash(&self) -> Option<u64> {
         self.last_bracket_hash
     }
@@ -287,7 +286,6 @@ impl ChangeDetectionState {
     /// Update bracket hash after a successful fetch.
     /// Returns true if the hash differs from the previously stored value,
     /// or if no previous hash exists (first fetch).
-    #[allow(dead_code)]
     pub fn update_bracket_hash(&mut self, new_hash: u64) -> bool {
         let changed = self.last_bracket_hash != Some(new_hash);
         self.last_bracket_hash = Some(new_hash);

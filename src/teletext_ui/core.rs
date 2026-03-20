@@ -89,7 +89,6 @@ pub enum TeletextRow {
         live_position_change: Option<i16>,
         live_game_active: bool,
     },
-    #[allow(dead_code)]
     BracketLine(String),
 }
 

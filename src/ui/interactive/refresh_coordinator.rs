@@ -256,17 +256,19 @@ impl RefreshCoordinator {
                 state.current_view(),
                 ViewMode::Standings { live_mode: true }
             );
-            let (auto_refresh_interval, game_count_for_min_interval) = if is_standings_live {
-                (
-                    Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS),
-                    0,
-                )
-            } else {
-                (
-                    calculate_auto_refresh_interval(state.change_detection.last_games()),
-                    state.change_detection.last_games().len(),
-                )
-            };
+            let is_bracket = matches!(state.current_view(), ViewMode::Bracket);
+            let (auto_refresh_interval, game_count_for_min_interval) =
+                if is_standings_live || is_bracket {
+                    (
+                        Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS),
+                        0,
+                    )
+                } else {
+                    (
+                        calculate_auto_refresh_interval(state.change_detection.last_games()),
+                        state.change_detection.last_games().len(),
+                    )
+                };
             let min_interval_between_refreshes = calculate_min_refresh_interval(
                 game_count_for_min_interval,
                 config.min_refresh_interval,
@@ -453,8 +455,15 @@ impl RefreshCoordinator {
             state.preserve_page(page.get_current_page());
         }
 
-        // Branch on view mode. Standings are league-wide (not date-scoped),
+        // Branch on view mode. Standings and Bracket are league-wide (not date-scoped),
         // so the date-mismatch discard in perform_refresh_cycle does not apply here.
+        if matches!(state.current_view(), ViewMode::Bracket) {
+            let preserved_page = state.preserved_page();
+            return self
+                .perform_bracket_refresh(state, config, preserved_page)
+                .await;
+        }
+
         if let ViewMode::Standings { live_mode } = state.current_view() {
             let preserved_page = state.preserved_page();
             let last_games = state.change_detection.last_games().to_vec();
@@ -778,6 +787,154 @@ impl RefreshCoordinator {
             // Standings refreshes carry no game data, so mark as discarded to
             // prevent process_refresh_results from overwriting last_games with
             // an empty vector.
+            skip_change_detection: true,
+        })
+    }
+
+    /// Perform bracket-specific refresh cycle.
+    ///
+    /// Shows a subtle spinner for auto-refreshes (when the current page is already
+    /// a bracket page) vs a full loading screen for initial loads. Detects unchanged
+    /// data via hashing and skips UI rebuild when bracket data has not changed.
+    async fn perform_bracket_refresh(
+        &self,
+        state: &mut InteractiveState,
+        config: &RefreshCycleConfig,
+        preserved_page: Option<usize>,
+    ) -> Result<RefreshResult, AppError> {
+        tracing::info!("Fetching bracket data");
+
+        let last_bracket_hash = state.change_detection.last_bracket_hash();
+        let is_auto_refresh = state.current_page().is_some() && last_bracket_hash.is_some();
+
+        if is_auto_refresh {
+            if let Some(page) = state.current_page_mut() {
+                page.show_auto_refresh_indicator();
+                state.request_render();
+            }
+            if let Some(page) = state.current_page() {
+                let mut stdout = std::io::stdout();
+                if let Err(e) = page.render_buffered(&mut stdout) {
+                    tracing::warn!("Failed to render auto-refresh spinner for bracket: {e}");
+                }
+            }
+            state.clear_render_flag();
+        } else {
+            let mut loading_page = TeletextPage::new(
+                224,
+                "JÄÄKIEKKO".to_string(),
+                "PUDOTUSPELIT".to_string(),
+                config.disable_links,
+                true,
+                false,
+                false,
+                false,
+            );
+            loading_page.add_error_message("Haetaan pudotuspelejä...");
+            let mut stdout = std::io::stdout();
+            if let Err(e) = loading_page.render_buffered(&mut stdout) {
+                tracing::warn!("Failed to render bracket loading page: {e}");
+            }
+        }
+
+        let app_config = match crate::config::Config::load().await {
+            Ok(config) => config,
+            Err(e) => {
+                if is_auto_refresh && let Some(page) = state.current_page_mut() {
+                    page.hide_auto_refresh_indicator();
+                    state.request_render();
+                }
+                return Err(e);
+            }
+        };
+
+        let http_timeout = app_config.http_timeout_seconds;
+        let timeout_duration = std::time::Duration::from_secs(http_timeout + 5);
+
+        let bracket_result = tokio::time::timeout(
+            timeout_duration,
+            crate::data_fetcher::api::bracket_api::fetch_playoff_bracket(&app_config),
+        )
+        .await;
+
+        let (bracket, had_error) = match bracket_result {
+            Ok(Ok(bracket)) => {
+                tracing::info!("Bracket fetched: has_data={}", bracket.has_data);
+                (Some(bracket), false)
+            }
+            Ok(Err(e)) => {
+                tracing::error!("Failed to fetch bracket: {e}");
+                (None, true)
+            }
+            Err(_) => {
+                tracing::error!("Bracket fetch timed out");
+                (None, true)
+            }
+        };
+
+        let data_changed = if let Some(ref b) = bracket {
+            let new_hash = super::change_detection::calculate_bracket_hash(b);
+            state.change_detection.update_bracket_hash(new_hash)
+        } else {
+            true
+        };
+
+        if is_auto_refresh && let Some(page) = state.current_page_mut() {
+            page.hide_auto_refresh_indicator();
+            if !data_changed {
+                page.skip_next_screen_clear();
+            }
+            state.request_render();
+        }
+
+        if !data_changed {
+            tracing::debug!("Bracket data unchanged, skipping UI update");
+            return Ok(RefreshResult {
+                games: vec![],
+                had_error: false,
+                fetched_date: String::new(),
+                should_retry: false,
+                new_page: None,
+                needs_render: true,
+                skip_change_detection: true,
+            });
+        }
+
+        let terminal_width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80);
+
+        let new_page = if let Some(bracket) = bracket {
+            let mut page = navigation_manager::create_bracket_page(
+                &bracket,
+                config.disable_links,
+                terminal_width,
+            );
+            if let Some(saved_page) = preserved_page {
+                page.set_current_page(saved_page);
+            }
+            Some(page)
+        } else {
+            let mut error_page = TeletextPage::new(
+                224,
+                "JÄÄKIEKKO".to_string(),
+                "PUDOTUSPELIT".to_string(),
+                config.disable_links,
+                true,
+                false,
+                false,
+                false,
+            );
+            error_page.add_error_message("Pudotuspelien lataus epäonnistui.");
+            error_page.add_error_message("Paina 'p' palataksesi.");
+            Some(error_page)
+        };
+
+        Ok(RefreshResult {
+            games: vec![],
+            had_error,
+            fetched_date: String::new(),
+            should_retry: had_error,
+            new_page,
+            needs_render: true,
             skip_change_detection: true,
         })
     }

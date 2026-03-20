@@ -9,7 +9,6 @@ use chrono::Utc;
 use tracing::info;
 
 /// Fetches and constructs the playoff bracket for the current season.
-#[allow(dead_code)]
 pub async fn fetch_playoff_bracket(config: &Config) -> Result<PlayoffBracket, AppError> {
     let client = create_http_client_with_timeout(config.http_timeout_seconds)?;
 

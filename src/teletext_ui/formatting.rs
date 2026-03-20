@@ -52,6 +52,10 @@ impl TeletextPage {
                     // Standings row: ~80 chars + ANSI sequences
                     size += 150;
                 }
+                TeletextRow::BracketLine(line) => {
+                    // Bracket line: pre-formatted ANSI content
+                    size += line.len() + 30;
+                }
             }
         }
 
