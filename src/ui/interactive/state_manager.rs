@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 pub enum ViewMode {
     Games,
     Standings { live_mode: bool },
+    Bracket,
 }
 
 /// Timer state for various interactive UI operations
@@ -173,6 +174,8 @@ pub struct NavigationState {
     pub preserved_games_page: Option<usize>,
     /// Preserved live mode state when switching away from standings
     pub preserved_live_mode: bool,
+    /// Preserved view to return to when leaving bracket view
+    pub preserved_bracket_return_view: Option<ViewMode>,
 }
 
 impl NavigationState {
@@ -184,6 +187,7 @@ impl NavigationState {
             current_view: ViewMode::Games,
             preserved_games_page: None,
             preserved_live_mode: false,
+            preserved_bracket_return_view: None,
         }
     }
 
@@ -220,6 +224,7 @@ pub struct ChangeDetectionState {
     pub last_games_hash: u64,
     pub last_games: Vec<GameData>,
     last_standings_hash: Option<u64>,
+    last_bracket_hash: Option<u64>,
 }
 
 impl ChangeDetectionState {
@@ -229,6 +234,7 @@ impl ChangeDetectionState {
             last_games_hash: 0,
             last_games: Vec::new(),
             last_standings_hash: None,
+            last_bracket_hash: None,
         }
     }
 
@@ -270,6 +276,27 @@ impl ChangeDetectionState {
     /// Reset standings hash (e.g., when switching away from standings view)
     pub fn reset_standings_hash(&mut self) {
         self.last_standings_hash = None;
+    }
+
+    /// Get last bracket hash (None means never fetched)
+    #[allow(dead_code)]
+    pub fn last_bracket_hash(&self) -> Option<u64> {
+        self.last_bracket_hash
+    }
+
+    /// Update bracket hash after a successful fetch.
+    /// Returns true if the hash differs from the previously stored value,
+    /// or if no previous hash exists (first fetch).
+    #[allow(dead_code)]
+    pub fn update_bracket_hash(&mut self, new_hash: u64) -> bool {
+        let changed = self.last_bracket_hash != Some(new_hash);
+        self.last_bracket_hash = Some(new_hash);
+        changed
+    }
+
+    /// Reset bracket hash (e.g., when switching away from bracket view)
+    pub fn reset_bracket_hash(&mut self) {
+        self.last_bracket_hash = None;
     }
 }
 
@@ -472,6 +499,7 @@ impl NavigationState {
         self.current_view = match self.current_view {
             ViewMode::Games => ViewMode::Standings { live_mode: false },
             ViewMode::Standings { .. } => ViewMode::Games,
+            ViewMode::Bracket => ViewMode::Games,
         };
     }
 
