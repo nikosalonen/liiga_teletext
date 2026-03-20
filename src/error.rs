@@ -229,15 +229,14 @@ impl AppError {
     }
 
     /// Get suggested retry delay in seconds based on error type
-    /// Values are defined in src/constants.rs retry module for consistency
     #[allow(dead_code)] // Used in tests
     pub fn retry_delay_seconds(&self) -> Option<u64> {
         match self {
-            AppError::ApiRateLimit { .. } => Some(60), // constants::retry::RATE_LIMIT_DELAY_SECONDS
-            AppError::ApiServerError { .. } => Some(5), // constants::retry::SERVER_ERROR_DELAY_SECONDS
-            AppError::ApiServiceUnavailable { .. } => Some(30), // constants::retry::SERVICE_UNAVAILABLE_DELAY_SECONDS
-            AppError::NetworkTimeout { .. } => Some(2), // constants::retry::NETWORK_TIMEOUT_DELAY_SECONDS
-            AppError::NetworkConnection { .. } => Some(10), // constants::retry::NETWORK_CONNECTION_DELAY_SECONDS
+            AppError::ApiRateLimit { .. } => Some(60),
+            AppError::ApiServerError { .. } => Some(5),
+            AppError::ApiServiceUnavailable { .. } => Some(30),
+            AppError::NetworkTimeout { .. } => Some(2),
+            AppError::NetworkConnection { .. } => Some(10),
             _ => None,
         }
     }
@@ -539,38 +538,22 @@ mod tests {
 
     #[test]
     fn test_retry_delay_seconds_uses_constants() {
-        // Test that retry delays match the constants from the retry module (src/constants.rs)
         let rate_limit_error = AppError::api_rate_limit("rate limit", "https://example.com");
-        assert_eq!(
-            rate_limit_error.retry_delay_seconds(),
-            Some(60) // constants::retry::RATE_LIMIT_DELAY_SECONDS
-        );
+        assert_eq!(rate_limit_error.retry_delay_seconds(), Some(60));
 
         let server_error = AppError::api_server_error(500, "server error", "https://example.com");
-        assert_eq!(
-            server_error.retry_delay_seconds(),
-            Some(5) // constants::retry::SERVER_ERROR_DELAY_SECONDS
-        );
+        assert_eq!(server_error.retry_delay_seconds(), Some(5));
 
         let service_unavailable_error =
             AppError::api_service_unavailable(503, "unavailable", "https://example.com");
-        assert_eq!(
-            service_unavailable_error.retry_delay_seconds(),
-            Some(30) // constants::retry::SERVICE_UNAVAILABLE_DELAY_SECONDS
-        );
+        assert_eq!(service_unavailable_error.retry_delay_seconds(), Some(30));
 
         let timeout_error = AppError::network_timeout("https://example.com");
-        assert_eq!(
-            timeout_error.retry_delay_seconds(),
-            Some(2) // constants::retry::NETWORK_TIMEOUT_DELAY_SECONDS
-        );
+        assert_eq!(timeout_error.retry_delay_seconds(), Some(2));
 
         let connection_error =
             AppError::network_connection("https://example.com", "connection failed");
-        assert_eq!(
-            connection_error.retry_delay_seconds(),
-            Some(10) // constants::retry::NETWORK_CONNECTION_DELAY_SECONDS
-        );
+        assert_eq!(connection_error.retry_delay_seconds(), Some(10));
 
         // Test non-retryable error returns None
         let not_found_error = AppError::api_not_found("https://example.com");
@@ -579,21 +562,19 @@ mod tests {
 
     #[test]
     fn test_retry_delay_seconds_for_retryable_errors() {
-        // Test all retryable error types return appropriate delay values
-        // Values correspond to constants in src/constants.rs retry module
         let retryable_errors = vec![
             (
                 AppError::api_rate_limit("rate limit", "https://example.com"),
                 60,
-            ), // RATE_LIMIT_DELAY_SECONDS
+            ),
             (
                 AppError::api_server_error(500, "internal error", "https://example.com"),
                 5,
-            ), // SERVER_ERROR_DELAY_SECONDS
+            ),
             (
                 AppError::api_server_error(502, "bad gateway", "https://example.com"),
                 5,
-            ), // SERVER_ERROR_DELAY_SECONDS
+            ),
             (
                 AppError::api_service_unavailable(
                     503,
@@ -601,12 +582,12 @@ mod tests {
                     "https://example.com",
                 ),
                 30,
-            ), // SERVICE_UNAVAILABLE_DELAY_SECONDS
-            (AppError::network_timeout("https://example.com"), 2), // NETWORK_TIMEOUT_DELAY_SECONDS
+            ),
+            (AppError::network_timeout("https://example.com"), 2),
             (
                 AppError::network_connection("https://example.com", "connection refused"),
                 10,
-            ), // NETWORK_CONNECTION_DELAY_SECONDS
+            ),
         ];
 
         for (error, expected_delay) in retryable_errors {
@@ -622,7 +603,6 @@ mod tests {
 
     #[test]
     fn test_retry_delay_seconds_for_non_retryable_errors() {
-        // Test all non-retryable error types return None
         let non_retryable_errors = vec![
             AppError::api_not_found("https://example.com"),
             AppError::api_client_error(400, "bad request", "https://example.com"),
@@ -655,17 +635,6 @@ mod tests {
 
     #[test]
     fn test_retry_delay_constants_consistency() {
-        // Verify that the constants used in retry_delay_seconds match expected values
-        // This test ensures consistency between the constants defined in src/constants.rs
-        // and their usage in the retry_delay_seconds method
-
-        // Values should match the constants defined in src/constants.rs retry module:
-        // RATE_LIMIT_DELAY_SECONDS = 60
-        // SERVER_ERROR_DELAY_SECONDS = 5
-        // SERVICE_UNAVAILABLE_DELAY_SECONDS = 30
-        // NETWORK_TIMEOUT_DELAY_SECONDS = 2
-        // NETWORK_CONNECTION_DELAY_SECONDS = 10
-
         let rate_limit_delay = 60u64;
         let server_error_delay = 5u64;
         let service_unavailable_delay = 30u64;
