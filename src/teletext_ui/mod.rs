@@ -11,7 +11,6 @@ pub mod layout;
 pub mod mode_utils;
 pub mod pagination;
 pub mod rendering;
-pub mod score_formatting;
 pub mod season_utils;
 pub mod standings_display;
 pub mod validation;
