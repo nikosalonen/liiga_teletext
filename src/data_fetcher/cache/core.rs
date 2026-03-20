@@ -1,26 +1,19 @@
-// Import tournament cache items from sibling module
-use super::tournament_cache::{TOURNAMENT_CACHE, clear_tournament_cache};
 // Import cache items from parent module
 use super::{
-    DETAILED_GAME_CACHE, GOAL_EVENTS_CACHE, HTTP_RESPONSE_CACHE, PLAYER_CACHE, clear_cache,
-    clear_detailed_game_cache, clear_goal_events_cache, clear_http_response_cache,
+    DETAILED_GAME_CACHE, GOAL_EVENTS_CACHE, HTTP_RESPONSE_CACHE, PLAYER_CACHE, TOURNAMENT_CACHE,
+    clear_cache, clear_detailed_game_cache, clear_goal_events_cache, clear_http_response_cache,
+    clear_tournament_cache,
 };
 
 // Combined Cache Management Functions
 
 /// Gets combined cache statistics for monitoring purposes
-/// Optimized to minimize RwLock contention by batching read operations
 pub async fn get_all_cache_stats() -> CacheStats {
-    // Acquire old-style read lock for tournament cache
-    let tournament_cache = TOURNAMENT_CACHE.read().await;
-    let tournament_size = tournament_cache.len();
-    let tournament_capacity = tournament_cache.cap().get();
-    drop(tournament_cache);
-
-    // Query TtlCache-backed caches via async API
     let (
         player_size,
         player_capacity,
+        tournament_size,
+        tournament_capacity,
         http_response_size,
         http_response_capacity,
         detailed_game_size,
@@ -30,6 +23,8 @@ pub async fn get_all_cache_stats() -> CacheStats {
     ) = tokio::join!(
         PLAYER_CACHE.len(),
         PLAYER_CACHE.capacity(),
+        TOURNAMENT_CACHE.len(),
+        TOURNAMENT_CACHE.capacity(),
         HTTP_RESPONSE_CACHE.len(),
         HTTP_RESPONSE_CACHE.capacity(),
         DETAILED_GAME_CACHE.len(),

@@ -1,7 +1,5 @@
 mod core;
-pub mod tournament_cache;
 pub mod ttl_cache;
-pub mod types;
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -11,11 +9,12 @@ use tracing::{debug, info, instrument};
 use ttl_cache::TtlCache;
 
 use crate::constants::cache_ttl;
-use crate::data_fetcher::models::{DetailedGameResponse, GoalEventData};
+use crate::data_fetcher::models::{
+    DetailedGameResponse, GameData, GoalEventData, ScheduleResponse,
+};
 use crate::data_fetcher::player_names::{format_for_display, format_with_disambiguation};
+use crate::teletext_ui::ScoreType;
 
-// Re-export tournament cache functions
-pub use tournament_cache::*;
 // Re-export core cache functions
 pub use core::*;
 
@@ -255,4 +254,118 @@ pub async fn get_goal_events_cache_size() -> usize {
 #[allow(dead_code)]
 pub async fn clear_goal_events_cache() {
     GOAL_EVENTS_CACHE.clear().await;
+}
+
+// --- Tournament cache (backed by generic TtlCache) ---
+
+pub static TOURNAMENT_CACHE: LazyLock<TtlCache<String, ScheduleResponse>> =
+    LazyLock::new(|| TtlCache::new(50));
+
+/// Determines if a ScheduleResponse contains live games.
+pub fn has_live_games(response: &ScheduleResponse) -> bool {
+    response
+        .games
+        .iter()
+        .any(|game| game.started && !game.ended)
+}
+
+/// Determines whether the cache should be completely bypassed for games near their start time.
+pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> bool {
+    let has_starting_games = current_games.iter().any(|game| {
+        if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
+            return false;
+        }
+
+        match chrono::DateTime::parse_from_rfc3339(&game.start) {
+            Ok(game_start) => {
+                let now = chrono::Utc::now();
+                let time_diff = now.signed_duration_since(game_start);
+
+                // Extended window: game should start within 5 min or started within last 10 min
+                let is_near_start = time_diff >= chrono::Duration::minutes(-5)
+                    && time_diff <= chrono::Duration::minutes(10);
+
+                if is_near_start {
+                    info!(
+                        "Cache bypass triggered for game near start time: {} vs {} - start: {}, time_diff: {time_diff:?}",
+                        game.home_team, game.away_team, game_start
+                    );
+                }
+
+                is_near_start
+            }
+            Err(_) => false,
+        }
+    });
+
+    if has_starting_games {
+        debug!("Cache bypass enabled for games near start time");
+    }
+
+    has_starting_games
+}
+
+/// Caches tournament data with automatic live game detection.
+#[instrument(skip(key, data), fields(cache_key = %key))]
+pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
+    let games_count = data.games.len();
+    let has_live = has_live_games(&data);
+
+    debug!("Caching tournament data: key={key}, games={games_count}, has_live={has_live}");
+
+    TOURNAMENT_CACHE
+        .insert(key.clone(), data, game_state_ttl(has_live))
+        .await;
+
+    if has_live {
+        info!(
+            "Live game cache entry created: key={key}, games={games_count}, ttl={}s",
+            cache_ttl::LIVE_GAMES_SECONDS
+        );
+    } else {
+        info!(
+            "Completed game cache entry created: key={key}, games={games_count}, ttl={}s",
+            cache_ttl::COMPLETED_GAMES_SECONDS
+        );
+    }
+}
+
+/// Retrieves cached tournament data if it has not expired.
+#[instrument(skip(key), fields(cache_key = %key))]
+#[allow(dead_code)]
+pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
+    TOURNAMENT_CACHE.get(&key.to_string()).await
+}
+
+/// Enhanced cache retrieval that applies aggressive TTL when games are about to start.
+pub async fn get_cached_tournament_data_with_start_check(
+    key: &str,
+    current_games: &[GameData],
+) -> Option<ScheduleResponse> {
+    let has_starting = current_games
+        .iter()
+        .any(|game| game.score_type == ScoreType::Scheduled && !game.start.is_empty());
+
+    if has_starting {
+        let aggressive_ttl = Duration::from_secs(cache_ttl::STARTING_GAMES_SECONDS);
+        TOURNAMENT_CACHE
+            .get_if(&key.to_string(), |cached_at| {
+                cached_at.elapsed() <= aggressive_ttl
+            })
+            .await
+    } else {
+        TOURNAMENT_CACHE.get(&key.to_string()).await
+    }
+}
+
+/// Gets the current tournament cache size for monitoring purposes.
+#[allow(dead_code)]
+pub async fn get_tournament_cache_size() -> usize {
+    TOURNAMENT_CACHE.len().await
+}
+
+/// Clears all tournament cache entries.
+#[allow(dead_code)]
+pub async fn clear_tournament_cache() {
+    TOURNAMENT_CACHE.clear().await
 }
