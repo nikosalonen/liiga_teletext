@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-use tracing::{debug, info, instrument};
+use tracing::{debug, info};
 use ttl_cache::TtlCache;
 
 use crate::constants::cache_ttl;
@@ -27,30 +27,17 @@ pub static PLAYER_CACHE: LazyLock<TtlCache<i32, HashMap<i64, String>>> =
     LazyLock::new(|| TtlCache::new(100));
 
 /// Retrieves cached formatted player information for a specific game.
-#[instrument(skip(game_id), fields(game_id = %game_id))]
 pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
-    debug!("Attempting to retrieve cached players for game_id: {game_id}");
-    let result = PLAYER_CACHE.get(&game_id).await;
-    if let Some(ref players) = result {
-        debug!(
-            "Cache hit for players: game_id={game_id}, player_count={}",
-            players.len()
-        );
-    } else {
-        debug!("Cache miss for players: game_id={game_id}");
-    }
-    result
+    PLAYER_CACHE.get(&game_id).await
 }
 
 /// Caches formatted player information for a specific game.
-#[instrument(skip(game_id, players), fields(game_id = %game_id))]
 pub async fn cache_players(game_id: i32, players: HashMap<i64, String>) {
     let player_count = players.len();
-    debug!("Caching players: game_id={game_id}, player_count={player_count}");
     PLAYER_CACHE
         .insert(game_id, players, PLAYER_CACHE_TTL)
         .await;
-    info!("Successfully cached players: game_id={game_id}, player_count={player_count}");
+    debug!("Cached {player_count} players for game_id={game_id}");
 }
 
 /// Caches player information with automatic formatting for a specific game.
@@ -64,18 +51,11 @@ pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i6
 }
 
 /// Caches player information with team-scoped disambiguation for a specific game.
-#[instrument(skip(game_id, home_players, away_players), fields(game_id = %game_id))]
 pub async fn cache_players_with_disambiguation(
     game_id: i32,
     home_players: HashMap<i64, (String, String)>,
     away_players: HashMap<i64, (String, String)>,
 ) {
-    let home_count = home_players.len();
-    let away_count = away_players.len();
-    debug!(
-        "Caching players with disambiguation: game_id={game_id}, home_players={home_count}, away_players={away_count}"
-    );
-
     let home_player_data: Vec<(i64, String, String)> = home_players
         .into_iter()
         .map(|(id, (first_name, last_name))| (id, first_name, last_name))
@@ -93,16 +73,7 @@ pub async fn cache_players_with_disambiguation(
     all_players.extend(home_disambiguated);
     all_players.extend(away_disambiguated);
 
-    let total_players = all_players.len();
-    debug!(
-        "Disambiguation complete: game_id={game_id}, total_disambiguated_players={total_players}"
-    );
-
     cache_players(game_id, all_players).await;
-
-    info!(
-        "Successfully cached players with disambiguation: game_id={game_id}, home_players={home_count}, away_players={away_count}, total_players={total_players}"
-    );
 }
 
 /// Retrieves cached disambiguated player information for a specific game.
@@ -271,7 +242,7 @@ pub fn has_live_games(response: &ScheduleResponse) -> bool {
 
 /// Determines whether the cache should be completely bypassed for games near their start time.
 pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> bool {
-    let has_starting_games = current_games.iter().any(|game| {
+    current_games.iter().any(|game| {
         if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
             return false;
         }
@@ -287,8 +258,8 @@ pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> boo
 
                 if is_near_start {
                     info!(
-                        "Cache bypass triggered for game near start time: {} vs {} - start: {}, time_diff: {time_diff:?}",
-                        game.home_team, game.away_team, game_start
+                        "Cache bypass for game near start: {} vs {} (time_diff: {time_diff:?})",
+                        game.home_team, game.away_team
                     );
                 }
 
@@ -296,22 +267,12 @@ pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> boo
             }
             Err(_) => false,
         }
-    });
-
-    if has_starting_games {
-        debug!("Cache bypass enabled for games near start time");
-    }
-
-    has_starting_games
+    })
 }
 
 /// Caches tournament data with automatic live game detection.
-#[instrument(skip(key, data), fields(cache_key = %key))]
 pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
-    let games_count = data.games.len();
     let has_live = has_live_games(&data);
-
-    debug!("Caching tournament data: key={key}, games={games_count}, has_live={has_live}");
 
     TOURNAMENT_CACHE
         .insert(key.clone(), data, game_state_ttl(has_live))
@@ -319,19 +280,13 @@ pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
 
     if has_live {
         info!(
-            "Live game cache entry created: key={key}, games={games_count}, ttl={}s",
+            "Live game cache entry: key={key}, ttl={}s",
             cache_ttl::LIVE_GAMES_SECONDS
-        );
-    } else {
-        info!(
-            "Completed game cache entry created: key={key}, games={games_count}, ttl={}s",
-            cache_ttl::COMPLETED_GAMES_SECONDS
         );
     }
 }
 
 /// Retrieves cached tournament data if it has not expired.
-#[instrument(skip(key), fields(cache_key = %key))]
 #[allow(dead_code)]
 pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
     TOURNAMENT_CACHE.get(&key.to_string()).await
