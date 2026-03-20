@@ -9,50 +9,34 @@ use super::{
 
 /// Gets combined cache statistics for monitoring purposes
 pub async fn get_all_cache_stats() -> CacheStats {
-    let (
-        player_size,
-        player_capacity,
-        tournament_size,
-        tournament_capacity,
-        http_response_size,
-        http_response_capacity,
-        detailed_game_size,
-        detailed_game_capacity,
-        goal_events_size,
-        goal_events_capacity,
-    ) = tokio::join!(
-        PLAYER_CACHE.len(),
-        PLAYER_CACHE.capacity(),
-        TOURNAMENT_CACHE.len(),
-        TOURNAMENT_CACHE.capacity(),
-        HTTP_RESPONSE_CACHE.len(),
-        HTTP_RESPONSE_CACHE.capacity(),
-        DETAILED_GAME_CACHE.len(),
-        DETAILED_GAME_CACHE.capacity(),
-        GOAL_EVENTS_CACHE.len(),
-        GOAL_EVENTS_CACHE.capacity(),
+    let (player, tournament, http_response, detailed_game, goal_events) = tokio::join!(
+        PLAYER_CACHE.stats(),
+        TOURNAMENT_CACHE.stats(),
+        HTTP_RESPONSE_CACHE.stats(),
+        DETAILED_GAME_CACHE.stats(),
+        GOAL_EVENTS_CACHE.stats(),
     );
 
     CacheStats {
         player_cache: CacheInfo {
-            size: player_size,
-            capacity: player_capacity,
+            size: player.0,
+            capacity: player.1,
         },
         tournament_cache: CacheInfo {
-            size: tournament_size,
-            capacity: tournament_capacity,
+            size: tournament.0,
+            capacity: tournament.1,
         },
         detailed_game_cache: CacheInfo {
-            size: detailed_game_size,
-            capacity: detailed_game_capacity,
+            size: detailed_game.0,
+            capacity: detailed_game.1,
         },
         goal_events_cache: CacheInfo {
-            size: goal_events_size,
-            capacity: goal_events_capacity,
+            size: goal_events.0,
+            capacity: goal_events.1,
         },
         http_response_cache: CacheInfo {
-            size: http_response_size,
-            capacity: http_response_capacity,
+            size: http_response.0,
+            capacity: http_response.1,
         },
     }
 }

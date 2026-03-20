@@ -9,8 +9,8 @@
 
 use super::series_utils::{get_subheader, playoff_phase_name};
 use crate::data_fetcher::{GameData, is_historical_date};
-use crate::teletext_ui::{GameResultData, ScoreType, TeletextPage};
-use chrono::{NaiveDate, Utc};
+use crate::teletext_ui::{GameResultData, TeletextPage};
+use chrono::NaiveDate;
 
 /// Configuration for creating or restoring a teletext page
 #[derive(Debug)]
@@ -49,22 +49,6 @@ pub struct LoadingIndicatorConfig<'a> {
     pub disable_links: bool,
     pub compact_mode: bool,
     pub wide_mode: bool,
-}
-
-/// Result of a navigation operation
-#[allow(dead_code)]
-#[derive(Debug)]
-pub enum NavigationResult {
-    /// Page was created successfully
-    PageCreated(TeletextPage),
-    /// Page was restored successfully
-    PageRestored(TeletextPage),
-    /// No page was created (e.g., for future games that don't qualify)
-    NoPage,
-    /// Loading page was created
-    LoadingPage(TeletextPage),
-    /// Error page was created
-    ErrorPage(TeletextPage),
 }
 
 /// Creates or restores a teletext page based on the current state and data
@@ -499,41 +483,6 @@ pub fn is_future_game(game: &GameData) -> bool {
     }
 }
 
-/// Checks if a game is scheduled to start within the next few minutes or has recently started
-#[allow(dead_code)] // Reserved for future use
-pub fn is_game_near_start_time(game: &GameData) -> bool {
-    if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
-        return false;
-    }
-
-    match chrono::DateTime::parse_from_rfc3339(&game.start) {
-        Ok(game_start) => {
-            let time_diff = Utc::now().signed_duration_since(game_start.with_timezone(&Utc));
-
-            // Extended window: Check if game should start within the next 5 minutes or started within the last 10 minutes
-            // This is more aggressive to catch games that should have started but haven't updated their status yet
-            let is_near_start = time_diff >= chrono::Duration::minutes(-5)
-                && time_diff <= chrono::Duration::minutes(10);
-
-            if is_near_start {
-                tracing::debug!(
-                    "Game near start time: {} vs {} - start: {}, time_diff: {:?}",
-                    game.home_team,
-                    game.away_team,
-                    game_start,
-                    time_diff
-                );
-            }
-
-            is_near_start
-        }
-        Err(e) => {
-            tracing::warn!("Failed to parse game start time '{}': {e}", game.start);
-            false
-        }
-    }
-}
-
 /// Creates a TeletextPage for standings display
 pub fn create_standings_page(
     standings: &[crate::data_fetcher::models::standings::StandingsEntry],
@@ -584,6 +533,7 @@ pub fn format_date_for_display(date_str: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::teletext_ui::ScoreType;
 
     #[test]
     fn test_format_date_for_display() {

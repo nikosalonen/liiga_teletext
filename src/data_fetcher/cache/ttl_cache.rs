@@ -10,17 +10,16 @@ use std::time::{Duration, Instant};
 
 use lru::LruCache;
 use tokio::sync::RwLock;
+use tracing::debug;
 
 /// A single cache entry storing the value alongside its TTL metadata.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 struct CacheEntry<V> {
     data: V,
     cached_at: Instant,
     ttl: Duration,
 }
 
-#[allow(dead_code)]
 impl<V> CacheEntry<V> {
     fn is_expired(&self) -> bool {
         self.cached_at.elapsed() > self.ttl
@@ -32,12 +31,10 @@ impl<V> CacheEntry<V> {
 /// - Expired entries are lazily removed on access (`get`, `get_if`).
 /// - LRU eviction kicks in when the cache exceeds its capacity.
 /// - All public methods are `async` and use `tokio::sync::RwLock` internally.
-#[allow(dead_code)]
 pub struct TtlCache<K: Eq + Hash, V> {
     inner: RwLock<LruCache<K, CacheEntry<V>>>,
 }
 
-#[allow(dead_code)]
 impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
     /// Create a new cache with the given maximum capacity.
     ///
@@ -58,6 +55,11 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
         let mut cache = self.inner.write().await;
         if let Some(entry) = cache.get(key) {
             if entry.is_expired() {
+                debug!(
+                    "TtlCache: evicting expired entry (age={:?}, ttl={:?})",
+                    entry.cached_at.elapsed(),
+                    entry.ttl
+                );
                 cache.pop(key);
                 None
             } else {
@@ -88,6 +90,12 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
         let mut cache = self.inner.write().await;
         if let Some(entry) = cache.get(key) {
             if entry.is_expired() || !predicate(entry.cached_at) {
+                debug!(
+                    "TtlCache: evicting entry (expired={}, age={:?}, ttl={:?})",
+                    entry.is_expired(),
+                    entry.cached_at.elapsed(),
+                    entry.ttl
+                );
                 cache.pop(key);
                 None
             } else {
@@ -98,30 +106,35 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
         }
     }
 
-    /// Remove an entry by key. Returns `true` if the key was present.
-    pub async fn remove(&self, key: &K) -> bool {
-        let mut cache = self.inner.write().await;
-        cache.pop(key).is_some()
-    }
-
     /// Remove all entries from the cache.
     pub async fn clear(&self) {
         let mut cache = self.inner.write().await;
         cache.clear();
     }
 
+    /// Returns `(len, capacity)` under a single lock acquisition.
+    pub async fn stats(&self) -> (usize, usize) {
+        let cache = self.inner.read().await;
+        (cache.len(), cache.cap().into())
+    }
+
     /// Number of entries currently stored (including possibly expired ones).
+    #[cfg(test)]
+    #[allow(clippy::len_without_is_empty)]
     pub async fn len(&self) -> usize {
         let cache = self.inner.read().await;
         cache.len()
     }
 
-    /// Returns `true` if the cache contains no entries.
-    pub async fn is_empty(&self) -> bool {
-        self.len().await == 0
+    /// Remove an entry by key. Returns `true` if the key was present.
+    #[cfg(test)]
+    pub async fn remove(&self, key: &K) -> bool {
+        let mut cache = self.inner.write().await;
+        cache.pop(key).is_some()
     }
 
     /// The maximum number of entries the cache can hold before LRU eviction.
+    #[cfg(test)]
     pub async fn capacity(&self) -> usize {
         let cache = self.inner.read().await;
         cache.cap().into()

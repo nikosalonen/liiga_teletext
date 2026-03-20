@@ -673,29 +673,9 @@ impl IntelligentTruncator {
         };
 
         tracing::debug!(
-            "Determined truncation strategy: {:?} (terminal_width: {}, critical_content_width: {}, available_extra: {})",
-            strategy,
-            terminal_width,
-            critical_content_width,
+            "Truncation strategy: {strategy:?} (terminal_width: {terminal_width}, critical_content_width: {critical_content_width}, available_extra: {})",
             terminal_width.saturating_sub(critical_content_width)
         );
-
-        match strategy {
-            TruncationStrategy::NoTruncation => {
-                tracing::debug!("No truncation needed - sufficient space available");
-            }
-            TruncationStrategy::ReduceSpacing => {
-                tracing::info!("Reducing spacing to fit content within terminal width");
-            }
-            TruncationStrategy::MinimalSpacing => {
-                tracing::warn!("Using minimal spacing - layout will be cramped");
-            }
-            TruncationStrategy::AggressiveTruncation => {
-                tracing::error!(
-                    "Aggressive truncation required - some content may be severely limited"
-                );
-            }
-        }
 
         strategy
     }

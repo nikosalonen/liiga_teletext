@@ -5,14 +5,16 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use ttl_cache::TtlCache;
 
 use crate::constants::cache_ttl;
 use crate::data_fetcher::models::{
     DetailedGameResponse, GameData, GoalEventData, ScheduleResponse,
 };
-use crate::data_fetcher::player_names::{format_for_display, format_with_disambiguation};
+#[cfg(test)]
+use crate::data_fetcher::player_names::format_for_display;
+use crate::data_fetcher::player_names::format_with_disambiguation;
 use crate::teletext_ui::ScoreType;
 
 // Re-export core cache functions
@@ -20,8 +22,8 @@ pub use core::*;
 
 // --- Player cache (backed by generic TtlCache) ---
 
-/// Effectively-infinite TTL for player data (LRU eviction is the primary cleanup mechanism)
-const PLAYER_CACHE_TTL: Duration = Duration::from_secs(86400 * 365);
+/// Player data never expires by TTL — LRU eviction is the sole cleanup mechanism.
+const PLAYER_CACHE_TTL: Duration = Duration::from_secs(u64::MAX / 2);
 
 pub static PLAYER_CACHE: LazyLock<TtlCache<i32, HashMap<i64, String>>> =
     LazyLock::new(|| TtlCache::new(100));
@@ -41,7 +43,7 @@ pub async fn cache_players(game_id: i32, players: HashMap<i64, String>) {
 }
 
 /// Caches player information with automatic formatting for a specific game.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i64, String>) {
     let formatted_players: HashMap<i64, String> = raw_players
         .into_iter()
@@ -77,13 +79,13 @@ pub async fn cache_players_with_disambiguation(
 }
 
 /// Retrieves cached disambiguated player information for a specific game.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_disambiguated_players(game_id: i32) -> Option<HashMap<i64, String>> {
     get_cached_players(game_id).await
 }
 
 /// Retrieves a specific player's disambiguated name from the cache.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_player_name(game_id: i32, player_id: i64) -> Option<String> {
     get_cached_players(game_id)
         .await
@@ -91,13 +93,13 @@ pub async fn get_cached_player_name(game_id: i32, player_id: i64) -> Option<Stri
 }
 
 /// Checks if disambiguated player data exists in cache for a specific game.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn has_cached_disambiguated_players(game_id: i32) -> bool {
     get_cached_players(game_id).await.is_some()
 }
 
 /// Gets the current player cache size for monitoring purposes.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cache_size() -> usize {
     PLAYER_CACHE.len().await
 }
@@ -175,7 +177,7 @@ pub async fn get_cached_detailed_game_data(
 }
 
 /// Gets the current detailed game cache size for monitoring purposes.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_detailed_game_cache_size() -> usize {
     DETAILED_GAME_CACHE.len().await
 }
@@ -216,7 +218,7 @@ pub async fn get_cached_goal_events_data(season: i32, game_id: i32) -> Option<Ve
 }
 
 /// Gets the current goal events cache size for monitoring purposes.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_goal_events_cache_size() -> usize {
     GOAL_EVENTS_CACHE.len().await
 }
@@ -265,7 +267,13 @@ pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> boo
 
                 is_near_start
             }
-            Err(_) => false,
+            Err(e) => {
+                warn!(
+                    "Failed to parse start time '{}' for {} vs {}: {e}",
+                    game.start, game.home_team, game.away_team
+                );
+                false
+            }
         }
     })
 }
@@ -287,7 +295,7 @@ pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
 }
 
 /// Retrieves cached tournament data if it has not expired.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_cached_tournament_data(key: &str) -> Option<ScheduleResponse> {
     TOURNAMENT_CACHE.get(&key.to_string()).await
 }
@@ -314,7 +322,7 @@ pub async fn get_cached_tournament_data_with_start_check(
 }
 
 /// Gets the current tournament cache size for monitoring purposes.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn get_tournament_cache_size() -> usize {
     TOURNAMENT_CACHE.len().await
 }
