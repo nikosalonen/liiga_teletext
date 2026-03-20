@@ -378,7 +378,7 @@ fn render_matchup_tree(m: &BracketMatchup, rows: &mut Vec<TeletextRow>, name_max
     )));
 
     // Line 2:            ├── Winner
-    let spacer = " ".repeat(name_max + 3);
+    let spacer = " ".repeat(name_max + 4);
     rows.push(TeletextRow::BracketLine(format!(
         "{}{}\u{251C}\u{2500}\u{2500} {}{}",
         spacer, box_color, RESET, winner_label,
