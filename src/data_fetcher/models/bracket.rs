@@ -43,7 +43,11 @@ use std::collections::HashMap;
 pub fn build_playoff_bracket(games: &[ScheduleApiGame], season: &str) -> PlayoffBracket {
     let playoff_games: Vec<&ScheduleApiGame> = games
         .iter()
-        .filter(|g| g.play_off_phase.is_some())
+        .filter(|g| {
+            g.play_off_phase.is_some()
+                && !g.home_team_name.is_empty()
+                && !g.away_team_name.is_empty()
+        })
         .collect();
 
     if playoff_games.is_empty() {

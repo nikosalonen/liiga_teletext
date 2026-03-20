@@ -20,6 +20,13 @@ pub async fn fetch_playoff_bracket(config: &Config) -> Result<PlayoffBracket, Ap
 
     let games = fetch_tournament_games(&client, config, &[TournamentType::Playoffs], season).await;
 
+    let playoff_count = games.iter().filter(|g| g.play_off_phase.is_some()).count();
+    info!(
+        "Schedule returned {} total games, {} with play_off_phase set",
+        games.len(),
+        playoff_count
+    );
+
     let season_str = format!("{}-{}", season - 1, season);
     let bracket = build_playoff_bracket(&games, &season_str);
 

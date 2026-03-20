@@ -56,15 +56,26 @@ pub struct ScheduleGame {
     pub play_off_req_wins: Option<i32>,
 }
 
+/// Deserializes a JSON `null` as an empty `String` instead of failing.
+/// The schedule API returns null for team names of unresolved playoff matchups.
+fn null_as_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
+
 /// Model for the schedule API response structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleApiGame {
     pub id: i32,
     pub season: i32,
+    #[serde(deserialize_with = "null_as_empty_string")]
     pub start: String,
-    #[serde(rename = "homeTeamName")]
+    #[serde(rename = "homeTeamName", deserialize_with = "null_as_empty_string")]
     pub home_team_name: String,
-    #[serde(rename = "awayTeamName")]
+    #[serde(rename = "awayTeamName", deserialize_with = "null_as_empty_string")]
     pub away_team_name: String,
     pub serie: i32, // This is an integer in the schedule API
     #[serde(rename = "finishedType")]
