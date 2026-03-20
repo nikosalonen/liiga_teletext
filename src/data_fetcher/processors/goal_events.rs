@@ -54,7 +54,6 @@ fn scorer_name_from_embedded(player: Option<&EmbeddedPlayer>, scorer_id: i64) ->
 /// - Includes goal timing and score information
 /// - Marks special goal types (powerplay, empty net, etc.)
 /// - Preserves video clip links when available
-/// - Maintains chronological order of goals from both teams
 ///
 /// # Example
 /// This function is typically used with game data from the API to create

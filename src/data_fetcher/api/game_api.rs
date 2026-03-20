@@ -160,7 +160,14 @@ pub(super) async fn process_single_game(
     );
 
     let time = if matches!(score_type, ScoreType::Scheduled) {
-        let formatted_time = format_time(&game.start).unwrap_or_default();
+        let formatted_time = format_time(&game.start).unwrap_or_else(|e| {
+            warn!(
+                "Failed to format time for game #{} in response #{}: {e}",
+                game_idx + 1,
+                response_idx + 1
+            );
+            String::new()
+        });
         debug!("Game scheduled, formatted time: {formatted_time}");
         formatted_time
     } else {

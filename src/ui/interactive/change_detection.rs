@@ -28,6 +28,7 @@ pub(super) fn calculate_games_hash(games: &[GameData]) -> u64 {
         game.play_off_phase.hash(&mut hasher);
         game.play_off_pair.hash(&mut hasher);
         game.play_off_req_wins.hash(&mut hasher);
+        game.is_placeholder.hash(&mut hasher);
         if let Some(ref score) = game.series_score {
             score.home_team_wins.hash(&mut hasher);
             score.away_team_wins.hash(&mut hasher);
@@ -312,6 +313,23 @@ mod tests {
         assert_ne!(
             hash1, hash2,
             "video_clip_url change should produce different hash"
+        );
+    }
+
+    #[test]
+    fn test_placeholder_to_real_game_change_detected() {
+        let placeholder =
+            crate::testing_utils::TestDataBuilder::create_placeholder_game("QF1", "QF2");
+        let mut resolved = placeholder.clone();
+        resolved.is_placeholder = false;
+        resolved.home_team = "TPS".to_string();
+        resolved.away_team = "HIFK".to_string();
+
+        let hash1 = calculate_games_hash(&[placeholder]);
+        let hash2 = calculate_games_hash(&[resolved]);
+        assert_ne!(
+            hash1, hash2,
+            "placeholder-to-real transition should produce different hash"
         );
     }
 }

@@ -682,4 +682,62 @@ mod tests {
         assert!(config.should_show_loading);
         assert_eq!(config.current_date, &Some("2024-01-15".to_string()));
     }
+
+    #[tokio::test]
+    async fn test_placeholder_games_filtered_from_display() {
+        let manager = NavigationManager::new();
+
+        let real_game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        let placeholder =
+            crate::testing_utils::TestDataBuilder::create_placeholder_game("QF1", "QF2");
+        let games = vec![real_game, placeholder];
+
+        let page = manager
+            .create_base_page(
+                &games, true,  // disable_video_links
+                false, // show_footer
+                true,  // ignore_height_limit
+                false, // compact_mode
+                false, // wide_mode
+                true,  // suppress_countdown
+                None,  // future_games_header
+                None,  // fetched_date
+                None,  // current_page
+            )
+            .await;
+
+        // Page should contain only the real game, not the placeholder
+        assert_eq!(page.game_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_only_placeholder_games_produces_empty_display() {
+        let manager = NavigationManager::new();
+
+        let placeholder1 =
+            crate::testing_utils::TestDataBuilder::create_placeholder_game("QF1", "QF2");
+        let placeholder2 =
+            crate::testing_utils::TestDataBuilder::create_placeholder_game("SF1", "SF2");
+        let games = vec![placeholder1, placeholder2];
+
+        // Games vec is non-empty (prevents transient-empty detection)...
+        assert!(!games.is_empty());
+
+        let page = manager
+            .create_base_page(
+                &games, true,  // disable_video_links
+                false, // show_footer
+                true,  // ignore_height_limit
+                false, // compact_mode
+                false, // wide_mode
+                true,  // suppress_countdown
+                None,  // future_games_header
+                None,  // fetched_date
+                None,  // current_page
+            )
+            .await;
+
+        // ...but page renders zero games since all are placeholders
+        assert_eq!(page.game_count(), 0);
+    }
 }

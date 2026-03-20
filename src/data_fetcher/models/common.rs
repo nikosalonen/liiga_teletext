@@ -27,6 +27,8 @@ pub struct GameData {
     pub play_off_pair: Option<i32>,
     pub play_off_req_wins: Option<i32>,
     pub series_score: Option<PlayoffSeriesScore>,
+    /// True for games with unresolved team names (e.g. "QF1" vs "SF2");
+    /// filtered out in `create_base_page` (navigation_manager) before rendering.
     pub is_placeholder: bool,
 }
 

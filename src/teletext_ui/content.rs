@@ -139,3 +139,14 @@ impl TeletextPage {
         });
     }
 }
+
+#[cfg(test)]
+impl TeletextPage {
+    /// Returns the number of game result rows on this page (test-only).
+    pub fn game_count(&self) -> usize {
+        self.content_rows
+            .iter()
+            .filter(|row| matches!(row, TeletextRow::GameResult { .. }))
+            .count()
+    }
+}
