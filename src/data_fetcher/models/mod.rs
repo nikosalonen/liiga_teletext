@@ -1,3 +1,4 @@
+pub mod bracket;
 pub mod common;
 pub mod detailed;
 pub mod goals;
@@ -6,6 +7,8 @@ pub mod schedule;
 pub mod standings;
 
 // Re-export all public types for backward compatibility
+#[allow(unused_imports)]
+pub use bracket::{BracketMatchup, BracketPhase, PlayoffBracket};
 pub use common::{GameData, HasGoalEvents, HasTeams, PlayoffSeriesScore};
 pub use detailed::{DetailedGame, DetailedGameResponse, DetailedTeam};
 pub use goals::{GoalEvent, GoalEventData};
