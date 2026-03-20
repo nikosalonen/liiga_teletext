@@ -144,9 +144,14 @@ fn render_tree(bracket: &PlayoffBracket, _terminal_width: u16) -> Vec<TeletextRo
 
     // Final
     if let Some(fp) = final_phase {
+        let bo_label = fp
+            .matchups
+            .first()
+            .map(|m| format!(" {}{}{}", color(DIM), series_format(m.req_wins), RESET))
+            .unwrap_or_default();
         rows.push(TeletextRow::BracketLine(String::new()));
         rows.push(TeletextRow::BracketLine(format!(
-            "{}{}{}",
+            "{}{}{}{bo_label}",
             color(CYAN),
             fp.name,
             RESET
@@ -158,9 +163,14 @@ fn render_tree(bracket: &PlayoffBracket, _terminal_width: u16) -> Vec<TeletextRo
 
     // Bronze
     if let Some(bp) = bronze_phase {
+        let bo_label = bp
+            .matchups
+            .first()
+            .map(|m| format!(" {}{}{}", color(DIM), series_format(m.req_wins), RESET))
+            .unwrap_or_default();
         rows.push(TeletextRow::BracketLine(String::new()));
         rows.push(TeletextRow::BracketLine(format!(
-            "{}{}{}",
+            "{}{}{}{bo_label}",
             color(CYAN),
             bp.name,
             RESET
@@ -314,13 +324,28 @@ fn matchup_feeds_into(early: &BracketMatchup, sf: &BracketMatchup) -> bool {
         .any(|t| *t == &early.team1 || *t == &early.team2)
 }
 
+/// Formats series length from req_wins, e.g., req_wins=3 → "BO5", req_wins=4 → "BO7", req_wins=1 → "BO1"
+fn series_format(req_wins: u8) -> String {
+    let games = req_wins as u16 * 2 - 1;
+    format!("BO{games}")
+}
+
+/// Derives the series format label from the matchups in a phase, if consistent.
+fn phase_series_label(matchups: &[&BracketMatchup]) -> Option<String> {
+    let first = matchups.first()?;
+    Some(series_format(first.req_wins))
+}
+
 /// Renders one bracket half: early-round matchups followed by an optional SF matchup.
 fn render_half(half: &BracketHalf, rows: &mut Vec<TeletextRow>, name_max: usize) {
     // Show early phase header if we have early matchups
     if !half.early_matchups.is_empty() {
         if let Some(ref phase_name) = half.early_phase_name {
+            let bo_label = phase_series_label(&half.early_matchups)
+                .map(|bo| format!(" {}{bo}{}", color(DIM), RESET))
+                .unwrap_or_default();
             rows.push(TeletextRow::BracketLine(format!(
-                "{}{}{}",
+                "{}{}{}{bo_label}",
                 color(CYAN),
                 phase_name,
                 RESET
@@ -328,14 +353,16 @@ fn render_half(half: &BracketHalf, rows: &mut Vec<TeletextRow>, name_max: usize)
         }
         for m in &half.early_matchups {
             render_matchup_tree(m, rows, name_max);
-            // Small gap between matchups in same half
         }
     }
 
     if let Some(sf_m) = half.sf_matchup {
+        let bo_label = series_format(sf_m.req_wins);
         rows.push(TeletextRow::BracketLine(format!(
-            "{}V\u{00C4}LIER\u{00C4}T{}",
+            "{}V\u{00C4}LIER\u{00C4}T{} {}{bo_label}{}",
             color(CYAN),
+            RESET,
+            color(DIM),
             RESET
         )));
         render_matchup_tree(sf_m, rows, name_max);
