@@ -345,21 +345,22 @@ fn render_half(
     show_header: bool,
 ) {
     // Show early phase header only for the first half
-    if show_header && !half.early_matchups.is_empty() {
-        if let Some(ref phase_name) = half.early_phase_name {
-            let bo_label = phase_series_label(&half.early_matchups)
-                .map(|bo| format!(" {}{bo}{}", color(DIM), RESET))
-                .unwrap_or_default();
-            rows.push(TeletextRow::BracketLine(format!(
-                "{}{}{}{bo_label}",
-                color(CYAN),
-                phase_name,
-                RESET
-            )));
-        }
-        for m in &half.early_matchups {
-            render_matchup_tree(m, rows, name_max);
-        }
+    if show_header
+        && !half.early_matchups.is_empty()
+        && let Some(ref phase_name) = half.early_phase_name
+    {
+        let bo_label = phase_series_label(&half.early_matchups)
+            .map(|bo| format!(" {}{bo}{}", color(DIM), RESET))
+            .unwrap_or_default();
+        rows.push(TeletextRow::BracketLine(format!(
+            "{}{}{}{bo_label}",
+            color(CYAN),
+            phase_name,
+            RESET
+        )));
+    }
+    for m in &half.early_matchups {
+        render_matchup_tree(m, rows, name_max);
     }
 
     if let Some(sf_m) = half.sf_matchup {
@@ -729,5 +730,45 @@ mod tests {
         );
         assert!(text.contains("Tappara"), "Expected Tappara in output");
         assert!(text.contains("Lukko"), "Expected Lukko in output");
+    }
+
+    #[test]
+    fn test_four_matchups_single_phase_all_visible() {
+        let phases = vec![BracketPhase {
+            phase_number: 1,
+            name: "1. KIERROS".to_string(),
+            matchups: vec![
+                make_matchup("Lukko", "HPK", 1, 0, 1, 1),
+                make_matchup("JYP", "Pelicans", 0, 1, 1, 2),
+                make_matchup("KalPa", "HIFK", 1, 0, 1, 3),
+                make_matchup("Assat", "K-Espoo", 0, 0, 1, 4),
+            ],
+        }];
+        let bracket = make_bracket(phases);
+        let rows = render_bracket(&bracket, 80);
+        let text = lines_text(&rows);
+
+        // All 4 matchups must appear
+        assert!(text.contains("Lukko"), "Missing Lukko");
+        assert!(text.contains("HPK"), "Missing HPK");
+        assert!(text.contains("JYP"), "Missing JYP");
+        assert!(text.contains("Pelicans"), "Missing Pelicans");
+        assert!(text.contains("KalPa"), "Missing KalPa");
+        assert!(text.contains("HIFK"), "Missing HIFK");
+        assert!(text.contains("Assat"), "Missing Assat");
+        assert!(text.contains("K-Espoo"), "Missing K-Espoo");
+
+        // Count how many matchup blocks (each has ─┐)
+        let matchup_count = rows
+            .iter()
+            .filter(|r| match r {
+                TeletextRow::BracketLine(s) => s.contains('\u{2510}'), // ┐
+                _ => false,
+            })
+            .count();
+        assert_eq!(
+            matchup_count, 4,
+            "Expected 4 matchup blocks, got {matchup_count}"
+        );
     }
 }
