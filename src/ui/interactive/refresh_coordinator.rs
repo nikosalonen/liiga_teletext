@@ -58,6 +58,10 @@ pub struct DataFetchParams<'a> {
     pub compact_mode: bool,
     pub wide_mode: bool,
     pub preserved_page_for_restoration: Option<usize>,
+    /// When true, the user navigated to a different date — transient-empty
+    /// preservation should be skipped because `last_games` belongs to the
+    /// previous date and is not relevant.
+    pub is_date_change: bool,
 }
 
 /// Configuration for refresh cycle operations
@@ -341,7 +345,8 @@ impl RefreshCoordinator {
         // unnecessary work.  If the API returns empty games but we previously had
         // games, preserve the existing display — unless this has happened too many
         // times in a row, which indicates the empty state is permanent.
-        if !had_error && games.is_empty() && !params.last_games.is_empty() {
+        if !had_error && games.is_empty() && !params.last_games.is_empty() && !params.is_date_change
+        {
             self.consecutive_transient_empty += 1;
             if self.consecutive_transient_empty <= MAX_TRANSIENT_EMPTY {
                 tracing::warn!(
@@ -439,6 +444,7 @@ impl RefreshCoordinator {
         &mut self,
         state: &mut InteractiveState,
         config: &RefreshCycleConfig,
+        is_date_change: bool,
     ) -> Result<RefreshResult, AppError> {
         tracing::debug!("Fetching new data");
 
@@ -545,6 +551,7 @@ impl RefreshCoordinator {
                     compact_mode: config.compact_mode,
                     wide_mode: config.wide_mode,
                     preserved_page_for_restoration: state.preserved_page(),
+                    is_date_change,
                 },
                 games,
                 had_error,
@@ -786,9 +793,12 @@ impl RefreshCoordinator {
         let mut needs_state_render = false;
 
         // Skip change detection for results that carry no meaningful game data
-        // (date-mismatch discards or standings refreshes) to avoid clearing last_games state
+        // (date-mismatch discards, standings refreshes, or transient-empty preserves)
+        // to avoid clearing last_games state
         if result.skip_change_detection {
-            tracing::debug!("Skipping change detection (standings or date-mismatch result)");
+            tracing::debug!(
+                "Skipping change detection (standings, date-mismatch, or transient-empty preserve)"
+            );
             // Still hide the auto-refresh spinner so it doesn't stay stuck
             if let Some(page) = state.current_page_mut()
                 && page.is_auto_refresh_indicator_active()
@@ -1088,6 +1098,7 @@ mod tests {
             compact_mode: false,
             wide_mode: false,
             preserved_page_for_restoration: None,
+            is_date_change: false,
         };
 
         assert_eq!(params.current_date, &Some("2024-01-15".to_string()));
@@ -1379,6 +1390,7 @@ mod tests {
             compact_mode: false,
             wide_mode: false,
             preserved_page_for_restoration: None,
+            is_date_change: false,
         };
 
         // First empty response — should preserve existing games
@@ -1409,6 +1421,7 @@ mod tests {
             compact_mode: false,
             wide_mode: false,
             preserved_page_for_restoration: None,
+            is_date_change: false,
         };
 
         // Empty response with error — should NOT enter transient-empty branch;
@@ -1442,6 +1455,7 @@ mod tests {
                 compact_mode: false,
                 wide_mode: false,
                 preserved_page_for_restoration: None,
+                is_date_change: false,
             };
             let result = coordinator
                 .process_fetched_data(params, vec![], false, "2025-03-13".to_string(), false)
@@ -1459,6 +1473,7 @@ mod tests {
             compact_mode: false,
             wide_mode: false,
             preserved_page_for_restoration: None,
+            is_date_change: false,
         };
         let result = coordinator
             .process_fetched_data(params, vec![], false, "2025-03-13".to_string(), false)
@@ -1490,6 +1505,7 @@ mod tests {
                 compact_mode: false,
                 wide_mode: false,
                 preserved_page_for_restoration: None,
+                is_date_change: false,
             };
             coordinator
                 .process_fetched_data(params, vec![], false, "2025-03-13".to_string(), false)
@@ -1509,11 +1525,43 @@ mod tests {
             compact_mode: false,
             wide_mode: false,
             preserved_page_for_restoration: None,
+            is_date_change: false,
         };
         coordinator
             .process_fetched_data(params, new_games, false, "2025-03-13".to_string(), false)
             .await
             .unwrap();
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
+    }
+
+    #[tokio::test]
+    async fn test_transient_empty_skipped_on_date_change() {
+        let mut coordinator = RefreshCoordinator::new();
+        let current_date = Some("2025-03-14".to_string());
+        let last_games = vec![crate::testing_utils::TestDataBuilder::create_basic_game(
+            "TPS", "HIFK",
+        )];
+
+        // Empty response on a date change — should NOT preserve old games
+        let params = DataFetchParams {
+            current_date: &current_date,
+            last_games: &last_games,
+            disable_links: true,
+            compact_mode: false,
+            wide_mode: false,
+            preserved_page_for_restoration: None,
+            is_date_change: true,
+        };
+        let result = coordinator
+            .process_fetched_data(params, vec![], false, "2025-03-14".to_string(), false)
+            .await
+            .unwrap();
+
+        assert!(
+            result.games.is_empty(),
+            "date change should not preserve old games"
+        );
+        assert!(!result.skip_change_detection);
         assert_eq!(coordinator.consecutive_transient_empty, 0);
     }
 }

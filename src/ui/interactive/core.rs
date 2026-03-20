@@ -70,15 +70,17 @@ pub async fn run_interactive_ui(
 
         // Data fetching with change detection using RefreshCoordinator
         if state.needs_refresh() {
-            // Reset transient empty counter when date changes (e.g. date navigation)
-            if state.current_date() != &last_refresh_date {
+            // Detect date changes (e.g. date navigation) so that transient-empty
+            // preservation is skipped — last_games belong to the old date.
+            let is_date_change = state.current_date() != &last_refresh_date;
+            if is_date_change {
                 refresh_coordinator.reset_transient_empty_counter();
                 last_refresh_date = state.current_date().clone();
             }
 
             // Perform comprehensive refresh cycle
             let mut refresh_result = refresh_coordinator
-                .perform_refresh_cycle(&mut state, &refresh_config)
+                .perform_refresh_cycle(&mut state, &refresh_config, is_date_change)
                 .await?;
 
             // Update the current page if we have a new one (must be done before processing results)
