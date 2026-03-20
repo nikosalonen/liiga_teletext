@@ -257,18 +257,19 @@ impl RefreshCoordinator {
                 ViewMode::Standings { live_mode: true }
             );
             let is_bracket = matches!(state.current_view(), ViewMode::Bracket);
-            let (auto_refresh_interval, game_count_for_min_interval) =
-                if is_standings_live || is_bracket {
-                    (
-                        Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS),
-                        0,
-                    )
-                } else {
-                    (
-                        calculate_auto_refresh_interval(state.change_detection.last_games()),
-                        state.change_detection.last_games().len(),
-                    )
-                };
+            let (auto_refresh_interval, game_count_for_min_interval) = if is_standings_live {
+                (
+                    Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS),
+                    0,
+                )
+            } else if is_bracket {
+                (Duration::from_secs(60), 0)
+            } else {
+                (
+                    calculate_auto_refresh_interval(state.change_detection.last_games()),
+                    state.change_detection.last_games().len(),
+                )
+            };
             let min_interval_between_refreshes = calculate_min_refresh_interval(
                 game_count_for_min_interval,
                 config.min_refresh_interval,

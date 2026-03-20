@@ -92,8 +92,8 @@ fn render_stacked(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Teletext
             };
             rows.push(TeletextRow::BracketLine(format!(
                 "{}{:<width$}{}  {}{}{} - {}{}{}\
-                 {}  {}{:<width$}{}{}",
-                team_color(m, true),
+                 {}  {}{:<width$}{}",
+                team_color(m),
                 t1,
                 RESET,
                 w1_color,
@@ -103,10 +103,9 @@ fn render_stacked(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Teletext
                 m.team2_wins,
                 RESET,
                 live_marker,
-                team_color(m, false),
+                team_color(m),
                 t2,
                 RESET,
-                winner_suffix(m),
                 width = max_name,
             )));
         }
@@ -368,7 +367,7 @@ fn render_matchup_tree(m: &BracketMatchup, rows: &mut Vec<TeletextRow>, name_max
     // Line 1: Team1  W1 ─┐
     rows.push(TeletextRow::BracketLine(format!(
         "{}{}{} {}{}{} {}\u{2500}\u{2510}{}",
-        team_color_matchup(m, true),
+        team_color(m),
         t1_padded,
         RESET,
         w1_color,
@@ -388,7 +387,7 @@ fn render_matchup_tree(m: &BracketMatchup, rows: &mut Vec<TeletextRow>, name_max
     // Line 3: Team2  W2 ─┘
     rows.push(TeletextRow::BracketLine(format!(
         "{}{}{} {}{}{} {}\u{2500}\u{2518}{}",
-        team_color_matchup(m, false),
+        team_color(m),
         t2_padded,
         RESET,
         w2_color,
@@ -415,16 +414,7 @@ fn bold_color(code: u8) -> String {
 
 /// Returns color escape for a team in a matchup.
 /// Cyan if the matchup has a live game, otherwise white.
-fn team_color_matchup(m: &BracketMatchup, _is_team1: bool) -> String {
-    if m.has_live_game {
-        color(CYAN)
-    } else {
-        color(WHITE)
-    }
-}
-
-/// Returns color escape for stacked layout team display.
-fn team_color(m: &BracketMatchup, _is_team1: bool) -> String {
+fn team_color(m: &BracketMatchup) -> String {
     if m.has_live_game {
         color(CYAN)
     } else {
@@ -462,15 +452,6 @@ fn append_champion(phases: &[BracketPhase], rows: &mut Vec<TeletextRow>) {
             winner,
             RESET,
         )));
-    }
-}
-
-/// Generates a suffix string indicating the series winner (for stacked layout).
-fn winner_suffix(m: &BracketMatchup) -> String {
-    if let Some(ref _w) = m.winner {
-        String::new() // Winner is implicit from score
-    } else {
-        String::new()
     }
 }
 

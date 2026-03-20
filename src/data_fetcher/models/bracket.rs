@@ -2,7 +2,6 @@ use std::hash::Hash;
 
 /// A single playoff series between two teams
 #[derive(Debug, Clone, Hash)]
-#[allow(dead_code)]
 pub struct BracketMatchup {
     pub phase: i32,
     pub pair: i32,
@@ -19,7 +18,6 @@ pub struct BracketMatchup {
 
 /// All matchups in a single playoff round
 #[derive(Debug, Clone, Hash)]
-#[allow(dead_code)]
 pub struct BracketPhase {
     pub phase_number: i32,
     pub name: String,
@@ -28,7 +26,6 @@ pub struct BracketPhase {
 
 /// The complete playoff bracket for a season
 #[derive(Debug, Clone, Hash)]
-#[allow(dead_code)]
 pub struct PlayoffBracket {
     pub season: String,
     pub phases: Vec<BracketPhase>,
@@ -43,7 +40,6 @@ use std::collections::HashMap;
 ///
 /// Groups games by (serie, phase, pair), counts wins per team,
 /// determines series state, and orders into phases.
-#[allow(dead_code)]
 pub fn build_playoff_bracket(games: &[ScheduleApiGame], season: &str) -> PlayoffBracket {
     let playoff_games: Vec<&ScheduleApiGame> = games
         .iter()

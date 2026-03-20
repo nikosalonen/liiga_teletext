@@ -1,6 +1,5 @@
 // src/teletext_ui/mod.rs - Modular teletext UI system
 
-#[allow(dead_code)]
 pub mod bracket_display;
 pub mod compact_mode_rendering;
 pub mod content;
