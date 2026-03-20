@@ -25,8 +25,8 @@ pub use core::*;
 /// Player data never expires by TTL — LRU eviction is the sole cleanup mechanism.
 const PLAYER_CACHE_TTL: Duration = Duration::from_secs(u64::MAX / 2);
 
-pub static PLAYER_CACHE: LazyLock<TtlCache<i32, HashMap<i64, String>>> =
-    LazyLock::new(|| TtlCache::new(100));
+pub(crate) static PLAYER_CACHE: LazyLock<TtlCache<i32, HashMap<i64, String>>> =
+    LazyLock::new(|| TtlCache::new("player", 100));
 
 /// Retrieves cached formatted player information for a specific game.
 pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
@@ -112,8 +112,8 @@ pub async fn clear_cache() {
 
 // --- HTTP response cache (backed by generic TtlCache) ---
 
-pub static HTTP_RESPONSE_CACHE: LazyLock<TtlCache<String, String>> =
-    LazyLock::new(|| TtlCache::new(100));
+pub(crate) static HTTP_RESPONSE_CACHE: LazyLock<TtlCache<String, String>> =
+    LazyLock::new(|| TtlCache::new("http_response", 100));
 
 /// Cache an HTTP response with a specific TTL.
 pub async fn cache_http_response(url: String, data: String, ttl_seconds: u64) {
@@ -135,8 +135,8 @@ pub async fn clear_http_response_cache() {
 
 // --- Detailed game cache (backed by generic TtlCache) ---
 
-pub static DETAILED_GAME_CACHE: LazyLock<TtlCache<String, DetailedGameResponse>> =
-    LazyLock::new(|| TtlCache::new(200));
+pub(crate) static DETAILED_GAME_CACHE: LazyLock<TtlCache<String, DetailedGameResponse>> =
+    LazyLock::new(|| TtlCache::new("detailed_game", 200));
 
 /// Compute TTL based on whether a game is live or completed.
 ///
@@ -190,8 +190,8 @@ pub async fn clear_detailed_game_cache() {
 
 // --- Goal events cache (backed by generic TtlCache) ---
 
-pub static GOAL_EVENTS_CACHE: LazyLock<TtlCache<String, Vec<GoalEventData>>> =
-    LazyLock::new(|| TtlCache::new(300));
+pub(crate) static GOAL_EVENTS_CACHE: LazyLock<TtlCache<String, Vec<GoalEventData>>> =
+    LazyLock::new(|| TtlCache::new("goal_events", 300));
 
 /// Creates a cache key for goal events data.
 pub fn create_goal_events_key(season: i32, game_id: i32) -> String {
@@ -231,8 +231,8 @@ pub async fn clear_goal_events_cache() {
 
 // --- Tournament cache (backed by generic TtlCache) ---
 
-pub static TOURNAMENT_CACHE: LazyLock<TtlCache<String, ScheduleResponse>> =
-    LazyLock::new(|| TtlCache::new(50));
+pub(crate) static TOURNAMENT_CACHE: LazyLock<TtlCache<String, ScheduleResponse>> =
+    LazyLock::new(|| TtlCache::new("tournament", 50));
 
 /// Determines if a ScheduleResponse contains live games.
 pub fn has_live_games(response: &ScheduleResponse) -> bool {

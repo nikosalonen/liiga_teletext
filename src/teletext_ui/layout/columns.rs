@@ -1,12 +1,16 @@
 // src/teletext_ui/layout/columns.rs - Column width calculations, alignment, and positioning
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
+
+use lru::LruCache;
 
 use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::models::GameData;
 
 use super::config::{AlignmentCacheStats, LayoutConfig};
+
+const ALIGNMENT_CACHE_CAPACITY: usize = 50;
 
 /// Generates a content signature for caching purposes
 /// This creates a hash based on the layout-relevant aspects of game data
@@ -120,22 +124,23 @@ struct GoalTypeCacheKey {
 }
 
 /// Calculates alignment positions for play icons and goal type indicators
-#[derive(Debug, Default)]
+#[derive(Debug)]
 #[allow(dead_code)] // Used in tests
 pub struct AlignmentCalculator {
-    /// Cache for play icon position calculations
-    play_icon_cache: HashMap<PlayIconCacheKey, Vec<PlayIconPosition>>,
-    /// Cache for goal type position calculations
-    goal_type_cache: HashMap<GoalTypeCacheKey, Vec<GoalTypePosition>>,
+    /// LRU cache for play icon position calculations
+    play_icon_cache: LruCache<PlayIconCacheKey, Vec<PlayIconPosition>>,
+    /// LRU cache for goal type position calculations
+    goal_type_cache: LruCache<GoalTypeCacheKey, Vec<GoalTypePosition>>,
 }
 
 #[allow(dead_code)] // Used in tests
 impl AlignmentCalculator {
     /// Creates a new AlignmentCalculator
     pub fn new() -> Self {
+        let cap = NonZeroUsize::new(ALIGNMENT_CACHE_CAPACITY).unwrap();
         Self {
-            play_icon_cache: HashMap::new(),
-            goal_type_cache: HashMap::new(),
+            play_icon_cache: LruCache::new(cap),
+            goal_type_cache: LruCache::new(cap),
         }
     }
 
@@ -233,18 +238,8 @@ impl AlignmentCalculator {
             );
         }
 
-        // Cache the calculated positions for future use (requirement 4.3)
-        self.play_icon_cache.insert(cache_key, positions.clone());
-
-        // Limit cache size to prevent unbounded memory growth
-        if self.play_icon_cache.len() > 50 {
-            tracing::debug!("Play icon cache size exceeded 50 entries, clearing oldest entries");
-            // Keep only the most recent 25 entries (simple LRU approximation)
-            let keys_to_remove: Vec<_> = self.play_icon_cache.keys().take(25).cloned().collect();
-            for key in keys_to_remove {
-                self.play_icon_cache.remove(&key);
-            }
-        }
+        // Cache the calculated positions (LRU eviction handles size bounds)
+        self.play_icon_cache.put(cache_key, positions.clone());
 
         positions
     }
@@ -342,18 +337,8 @@ impl AlignmentCalculator {
             );
         }
 
-        // Cache the calculated positions for future use (requirement 4.3)
-        self.goal_type_cache.insert(cache_key, positions.clone());
-
-        // Limit cache size to prevent unbounded memory growth
-        if self.goal_type_cache.len() > 50 {
-            tracing::debug!("Goal type cache size exceeded 50 entries, clearing oldest entries");
-            // Keep only the most recent 25 entries (simple LRU approximation)
-            let keys_to_remove: Vec<_> = self.goal_type_cache.keys().take(25).cloned().collect();
-            for key in keys_to_remove {
-                self.goal_type_cache.remove(&key);
-            }
-        }
+        // Cache the calculated positions (LRU eviction handles size bounds)
+        self.goal_type_cache.put(cache_key, positions.clone());
 
         positions
     }
@@ -402,5 +387,11 @@ impl AlignmentCalculator {
         }
 
         is_safe
+    }
+}
+
+impl Default for AlignmentCalculator {
+    fn default() -> Self {
+        Self::new()
     }
 }

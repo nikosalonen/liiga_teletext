@@ -101,3 +101,61 @@ impl Default for AnsiCodeCache {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_position_code_generation() {
+        let mut cache = AnsiCodeCache::new();
+        let code = cache.get_position_code(5, 10);
+        assert_eq!(code, "\x1b[5;10H");
+    }
+
+    #[test]
+    fn test_color_position_code_generation() {
+        let mut cache = AnsiCodeCache::new();
+        let code = cache.get_color_position_code(3, 7, 196);
+        assert_eq!(code, "\x1b[3;7H\x1b[38;5;196m");
+    }
+
+    #[test]
+    fn test_position_codes_are_cached() {
+        let mut cache = AnsiCodeCache::new();
+        // First call generates
+        let _ = cache.get_position_code(1, 1);
+        let stats = cache.get_cache_stats();
+        assert_eq!(stats.position_codes, 1);
+
+        // Same position reuses cached value
+        let _ = cache.get_position_code(1, 1);
+        let stats = cache.get_cache_stats();
+        assert_eq!(stats.position_codes, 1);
+
+        // Different position adds a new entry
+        let _ = cache.get_position_code(2, 3);
+        let stats = cache.get_cache_stats();
+        assert_eq!(stats.position_codes, 2);
+    }
+
+    #[test]
+    fn test_pre_calculate_positions() {
+        let mut cache = AnsiCodeCache::new();
+        let config = LayoutConfig::default();
+        cache.pre_calculate_positions(&config, 5);
+        let stats = cache.get_cache_stats();
+        assert!(stats.position_codes > 0);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut cache = AnsiCodeCache::new();
+        let _ = cache.get_position_code(1, 1);
+        let _ = cache.get_color_position_code(1, 1, 15);
+        cache.clear();
+        let stats = cache.get_cache_stats();
+        assert_eq!(stats.position_codes, 0);
+        assert_eq!(stats.color_position_codes, 0);
+    }
+}

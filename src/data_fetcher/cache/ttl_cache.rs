@@ -33,18 +33,20 @@ impl<V> CacheEntry<V> {
 /// - All public methods are `async` and use `tokio::sync::RwLock` internally.
 pub struct TtlCache<K: Eq + Hash, V> {
     inner: RwLock<LruCache<K, CacheEntry<V>>>,
+    name: &'static str,
 }
 
 impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
-    /// Create a new cache with the given maximum capacity.
+    /// Create a new named cache with the given maximum capacity.
     ///
     /// # Panics
     /// Panics if `capacity` is 0.
-    pub fn new(capacity: usize) -> Self {
+    pub fn new(name: &'static str, capacity: usize) -> Self {
         Self {
             inner: RwLock::new(LruCache::new(
                 NonZeroUsize::new(capacity).expect("cache capacity must be > 0"),
             )),
+            name,
         }
     }
 
@@ -56,7 +58,8 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
         if let Some(entry) = cache.get(key) {
             if entry.is_expired() {
                 debug!(
-                    "TtlCache: evicting expired entry (age={:?}, ttl={:?})",
+                    "{}: evicting expired entry (age={:?}, ttl={:?})",
+                    self.name,
                     entry.cached_at.elapsed(),
                     entry.ttl
                 );
@@ -72,6 +75,7 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
 
     /// Insert a value with a specific TTL.
     pub async fn insert(&self, key: K, value: V, ttl: Duration) {
+        debug_assert!(ttl > Duration::ZERO, "TTL must be non-zero");
         let entry = CacheEntry {
             data: value,
             cached_at: Instant::now(),
@@ -91,7 +95,8 @@ impl<K: Eq + Hash + Clone, V: Clone> TtlCache<K, V> {
         if let Some(entry) = cache.get(key) {
             if entry.is_expired() || !predicate(entry.cached_at) {
                 debug!(
-                    "TtlCache: evicting entry (expired={}, age={:?}, ttl={:?})",
+                    "{}: evicting entry (expired={}, age={:?}, ttl={:?})",
+                    self.name,
                     entry.is_expired(),
                     entry.cached_at.elapsed(),
                     entry.ttl
@@ -146,9 +151,13 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    fn test_cache(capacity: usize) -> TtlCache<String, i32> {
+        TtlCache::new("test", capacity)
+    }
+
     #[tokio::test]
     async fn test_insert_and_get() {
-        let cache = TtlCache::new(10);
+        let cache = test_cache(10);
         cache
             .insert("key1".to_string(), 42, Duration::from_secs(60))
             .await;
@@ -158,21 +167,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_expired_entry_returns_none() {
-        let cache = TtlCache::new(10);
+    async fn test_expired_entry_returns_none_and_is_evicted() {
+        let cache = test_cache(10);
         cache
             .insert("key1".to_string(), 42, Duration::from_millis(1))
             .await;
+        assert_eq!(cache.len().await, 1);
 
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         let value = cache.get(&"key1".to_string()).await;
         assert_eq!(value, None);
+        // Entry must be removed from the LRU, not just hidden
+        assert_eq!(cache.len().await, 0);
     }
 
     #[tokio::test]
     async fn test_clear() {
-        let cache = TtlCache::new(10);
+        let cache = test_cache(10);
         cache
             .insert("a".to_string(), 1, Duration::from_secs(60))
             .await;
@@ -189,7 +201,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_if_passes() {
-        let cache = TtlCache::new(10);
+        let cache = test_cache(10);
         cache
             .insert("key1".to_string(), 42, Duration::from_secs(60))
             .await;
@@ -199,24 +211,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_if_fails() {
-        let cache = TtlCache::new(10);
+    async fn test_get_if_fails_and_evicts() {
+        let cache = test_cache(10);
         cache
             .insert("key1".to_string(), 42, Duration::from_secs(60))
             .await;
+        assert_eq!(cache.len().await, 1);
 
         // Predicate rejects -> entry removed
         let value = cache.get_if(&"key1".to_string(), |_cached_at| false).await;
         assert_eq!(value, None);
 
-        // Entry should be gone
-        let value = cache.get(&"key1".to_string()).await;
-        assert_eq!(value, None);
+        // Entry must be fully removed from the LRU
+        assert_eq!(cache.len().await, 0);
+        assert_eq!(cache.get(&"key1".to_string()).await, None);
+    }
+
+    #[tokio::test]
+    async fn test_insert_overwrite_updates_value_and_ttl() {
+        let cache = test_cache(10);
+        cache
+            .insert("key1".to_string(), 1, Duration::from_millis(1))
+            .await;
+
+        // Overwrite with new value and longer TTL
+        cache
+            .insert("key1".to_string(), 2, Duration::from_secs(60))
+            .await;
+
+        // len should not increase
+        assert_eq!(cache.len().await, 1);
+
+        // Should return the updated value
+        assert_eq!(cache.get(&"key1".to_string()).await, Some(2));
+
+        // Wait past the original TTL — entry should still be alive (TTL was reset)
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert_eq!(cache.get(&"key1".to_string()).await, Some(2));
     }
 
     #[tokio::test]
     async fn test_remove() {
-        let cache = TtlCache::new(10);
+        let cache = test_cache(10);
         cache
             .insert("key1".to_string(), 42, Duration::from_secs(60))
             .await;
@@ -234,7 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_lru_eviction() {
-        let cache = TtlCache::new(2);
+        let cache = test_cache(2);
         cache
             .insert("a".to_string(), 1, Duration::from_secs(60))
             .await;
@@ -253,7 +289,58 @@ mod tests {
 
     #[tokio::test]
     async fn test_capacity() {
-        let cache: TtlCache<String, i32> = TtlCache::new(42);
+        let cache: TtlCache<String, i32> = TtlCache::new("test", 42);
         assert_eq!(cache.capacity().await, 42);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_access() {
+        use std::sync::Arc;
+
+        let cache = Arc::new(TtlCache::new("concurrent_test", 100));
+        let mut handles = Vec::new();
+
+        // Spawn writers
+        for i in 0..10 {
+            let cache = Arc::clone(&cache);
+            handles.push(tokio::spawn(async move {
+                for j in 0..20 {
+                    cache
+                        .insert(format!("w{i}-{j}"), i * 100 + j, Duration::from_secs(60))
+                        .await;
+                }
+            }));
+        }
+
+        // Spawn readers (interleaved with writers)
+        for i in 0..10 {
+            let cache = Arc::clone(&cache);
+            handles.push(tokio::spawn(async move {
+                for j in 0..20 {
+                    let _ = cache.get(&format!("w{i}-{j}")).await;
+                }
+            }));
+        }
+
+        // Spawn get_if operations
+        for i in 0..5 {
+            let cache = Arc::clone(&cache);
+            handles.push(tokio::spawn(async move {
+                for j in 0..10 {
+                    let _ = cache.get_if(&format!("w{i}-{j}"), |_| j % 2 == 0).await;
+                }
+            }));
+        }
+
+        // All tasks must complete without panic or deadlock
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // Cache should still be functional
+        cache
+            .insert("final".to_string(), 999, Duration::from_secs(60))
+            .await;
+        assert_eq!(cache.get(&"final".to_string()).await, Some(999));
     }
 }

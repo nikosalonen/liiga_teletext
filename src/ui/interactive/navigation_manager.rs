@@ -612,6 +612,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_loading_page_is_marked_and_restored() {
+        // create_loading_page should mark the page as a loading page
+        let loading = create_loading_page(&Some("2024-01-15".to_string()), false, false, false);
+        assert!(loading.is_loading_page());
+
+        // A regular page should NOT be marked as loading
+        let games = vec![crate::testing_utils::TestDataBuilder::create_basic_game(
+            "HIFK", "Tappara",
+        )];
+        let regular = create_base_page(
+            &games, true, false, true, false, false, true, None, None, None,
+        )
+        .await;
+        assert!(!regular.is_loading_page());
+    }
+
+    #[tokio::test]
     async fn test_only_placeholder_games_produces_empty_display() {
         let placeholder1 =
             crate::testing_utils::TestDataBuilder::create_placeholder_game("QF1", "QF2");

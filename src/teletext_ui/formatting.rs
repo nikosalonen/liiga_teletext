@@ -335,8 +335,25 @@ pub fn format_game_time(time: &str) -> String {
         return "TBD".to_string();
     }
 
-    // Extract only the HH:MM portion to avoid capturing date prefixes or seconds.
-    // Scan backwards through the string looking for a D{1,2}:DD pattern.
+    // For ISO 8601/RFC3339 timestamps (e.g., "2024-01-15T18:30:00+02:00"),
+    // extract the time portion after 'T' to avoid matching timezone offsets.
+    if let Some(t_pos) = time.find('T') {
+        let after_t = &time[t_pos + 1..];
+        if let Some(colon_pos) = after_t.find(':') {
+            let hours = &after_t[..colon_pos];
+            if colon_pos + 3 <= after_t.len()
+                && hours.len() <= 2
+                && !hours.is_empty()
+                && hours.bytes().all(|b| b.is_ascii_digit())
+                && after_t.as_bytes()[colon_pos + 1].is_ascii_digit()
+                && after_t.as_bytes()[colon_pos + 2].is_ascii_digit()
+            {
+                return format!("{}:{}", hours, &after_t[colon_pos + 1..colon_pos + 3]);
+            }
+        }
+    }
+
+    // Fallback: scan backwards looking for a D{1,2}:DD pattern.
     let bytes = time.as_bytes();
     for i in (0..bytes.len().saturating_sub(2)).rev() {
         if bytes[i + 1] == b':'
@@ -455,6 +472,10 @@ mod tests {
         // Handles date prefixes by extracting only HH:MM
         assert_eq!(format_game_time("2024-01-15T18:30:00Z"), "18:30");
         assert_eq!(format_game_time("9:05"), "9:05");
+        // RFC3339 with numeric timezone offsets
+        assert_eq!(format_game_time("2026-03-20T18:30:00+02:00"), "18:30");
+        assert_eq!(format_game_time("2026-03-20T18:30:00-05:00"), "18:30");
+        assert_eq!(format_game_time("2026-03-20T9:05:00+02:00"), "9:05");
     }
 
     #[test]
