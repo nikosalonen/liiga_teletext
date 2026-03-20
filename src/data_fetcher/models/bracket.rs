@@ -47,6 +47,7 @@ pub fn build_playoff_bracket(games: &[ScheduleApiGame], season: &str) -> Playoff
             g.play_off_phase.is_some()
                 && !g.home_team_name.is_empty()
                 && !g.away_team_name.is_empty()
+                && !g.start.is_empty()
         })
         .collect();
 
@@ -99,6 +100,11 @@ pub fn build_playoff_bracket(games: &[ScheduleApiGame], season: &str) -> Playoff
                 has_live_game = true;
             }
             if game.ended {
+                // In playoffs, games cannot end in a tie (OT/SO always decides).
+                // If scores are equal, the API data may be incomplete — skip.
+                if game.home_team_goals == game.away_team_goals {
+                    continue;
+                }
                 let home_won = game.home_team_goals > game.away_team_goals;
                 if (home_won && game.home_team_name == team1)
                     || (!home_won && game.away_team_name == team1)
