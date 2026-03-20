@@ -8,13 +8,10 @@ pub mod formatting;
 pub mod game_display;
 pub mod indicators;
 pub mod layout;
-pub mod mode_utils;
 pub mod pagination;
 pub mod rendering;
-pub mod score_formatting;
 pub mod season_utils;
 pub mod standings_display;
-pub mod utils;
 pub mod validation;
 pub mod wide_mode;
 

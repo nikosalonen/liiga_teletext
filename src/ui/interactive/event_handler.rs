@@ -216,12 +216,6 @@ impl EventHandler {
         // For now, exit is only determined by keyboard events
         false
     }
-
-    /// Get the current event handler configuration
-    #[allow(dead_code)]
-    pub fn config(&self) -> &EventHandlerConfig {
-        &self.config
-    }
 }
 
 impl Default for EventHandler {

@@ -1,5 +1,5 @@
 use super::core::TeletextPage;
-use super::utils::get_ansi_code;
+use super::core::get_ansi_code;
 use crate::teletext_ui::CONTENT_MARGIN;
 use crate::ui::teletext::colors::*;
 

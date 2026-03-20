@@ -26,7 +26,6 @@ pub const CONTENT_MARGIN: usize = 2; // Small margin for game content from termi
 
 // Import utilities from modules
 use super::season_utils::calculate_days_until_regular_season;
-use super::utils::get_ansi_code;
 
 #[derive(Debug)]
 pub struct TeletextPage {
@@ -52,6 +51,7 @@ pub struct TeletextPage {
     pub(super) standings_live_mode: bool,           // Whether live mode is active in standings
     pub(super) playoffs_lines: Vec<u16>, // Positions after which to draw playoff separator lines
     pub(super) skip_screen_clear: Cell<bool>, // Interior mutability needed because render_buffered takes &self. When true, skips screen clear to avoid flicker.
+    pub(super) is_loading_page: bool,         // Whether this is a loading/fetching page
 }
 
 #[derive(Debug)]
@@ -170,6 +170,7 @@ impl TeletextPage {
             standings_live_mode: false,
             playoffs_lines: Vec::new(),
             skip_screen_clear: Cell::new(false),
+            is_loading_page: false,
         }
     }
 
@@ -626,6 +627,108 @@ impl TeletextPage {
 
         stdout.flush()?;
         Ok(())
+    }
+
+    // --- Mode utility methods (moved from mode_utils.rs) ---
+
+    /// Returns whether compact mode is enabled.
+    #[allow(dead_code)]
+    pub fn is_compact_mode(&self) -> bool {
+        self.compact_mode
+    }
+
+    /// Sets the compact mode state.
+    /// Compact mode and wide mode are mutually exclusive.
+    #[allow(dead_code)]
+    pub fn set_compact_mode(&mut self, compact: bool) -> Result<(), &'static str> {
+        if compact && self.wide_mode {
+            self.wide_mode = false;
+        }
+        self.compact_mode = compact;
+        Ok(())
+    }
+
+    /// Returns whether wide mode is enabled.
+    #[allow(dead_code)]
+    pub fn is_wide_mode(&self) -> bool {
+        self.wide_mode
+    }
+
+    /// Sets the wide mode state.
+    /// Compact mode and wide mode are mutually exclusive.
+    #[allow(dead_code)]
+    pub fn set_wide_mode(&mut self, wide: bool) -> Result<(), &'static str> {
+        if wide && self.compact_mode {
+            self.compact_mode = false;
+        }
+        self.wide_mode = wide;
+        Ok(())
+    }
+
+    /// Validates that compact mode and wide mode are not both enabled.
+    #[allow(dead_code)]
+    pub fn validate_mode_exclusivity(&self) -> Result<(), &'static str> {
+        if self.compact_mode && self.wide_mode {
+            Err("compact_mode and wide_mode cannot be enabled simultaneously")
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Checks if the terminal width is sufficient for wide mode display.
+    pub fn can_fit_two_pages(&self) -> bool {
+        if !self.wide_mode {
+            return false;
+        }
+
+        let terminal_width = if self.ignore_height_limit {
+            if self.wide_mode { 136 } else { 80 }
+        } else {
+            crossterm::terminal::size()
+                .map(|(width, _)| width as usize)
+                .unwrap_or(80)
+        };
+
+        terminal_width >= 128
+    }
+
+    /// Checks if this page contains any error messages.
+    /// Used in integration tests to verify error/loading pages.
+    #[allow(dead_code)]
+    pub fn has_error_messages(&self) -> bool {
+        self.content_rows
+            .iter()
+            .any(|row| matches!(row, TeletextRow::ErrorMessage(_)))
+    }
+
+    /// Checks if this page is a loading page (created by `create_loading_page`).
+    /// Unlike `has_error_messages()`, this distinguishes loading pages from real
+    /// error/no-data pages, preventing stale game resurrection during restoration.
+    pub fn is_loading_page(&self) -> bool {
+        self.is_loading_page
+    }
+
+    /// Marks this page as a loading page.
+    pub fn set_is_loading_page(&mut self, is_loading: bool) {
+        self.is_loading_page = is_loading;
+    }
+
+    /// Test-friendly accessor to check if the page contains an error message with specific text.
+    #[allow(dead_code)]
+    pub fn has_error_message(&self, message: &str) -> bool {
+        self.content_rows.iter().any(|row| match row {
+            TeletextRow::ErrorMessage(msg) => msg.contains(message),
+            _ => false,
+        })
+    }
+}
+
+/// Helper function to extract ANSI color code from crossterm Color enum.
+/// Provides a fallback value for non-ANSI colors.
+pub(super) fn get_ansi_code(color: crossterm::style::Color, fallback: u8) -> u8 {
+    match color {
+        crossterm::style::Color::AnsiValue(val) => val,
+        _ => fallback,
     }
 }
 

@@ -21,7 +21,7 @@ use crate::teletext_ui::ScoreType;
 use futures;
 use reqwest::Client;
 use std::collections::HashMap;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, warn};
 
 // Import from sibling modules
 use super::date_logic::parse_date_and_season;
@@ -108,22 +108,11 @@ pub(super) async fn process_single_game(
     let home_team_name = get_team_name(&game.home_team);
     let away_team_name = get_team_name(&game.away_team);
 
-    info!(
-        "Processing game #{} in response #{}: {} vs {}",
-        game_idx + 1,
-        response_idx + 1,
-        home_team_name,
-        away_team_name
-    );
-
     // Short-circuit placeholder games — skip expensive roster/API fetches
     if is_placeholder {
-        info!(
-            "Skipping detailed processing for placeholder game #{} in response #{}: {} vs {}",
-            game_idx + 1,
-            response_idx + 1,
-            home_team_name,
-            away_team_name
+        debug!(
+            "Skipping placeholder game: {} vs {}",
+            home_team_name, away_team_name
         );
         return Ok(GameData {
             home_team: home_team_name.to_string(),
@@ -154,41 +143,27 @@ pub(super) async fn process_single_game(
 
     // Use enhanced game state detection for time formatting
     let (score_type, is_overtime, is_shootout) = determine_game_status(&game);
-    debug!(
-        "Game status: {:?}, overtime: {}, shootout: {}",
-        score_type, is_overtime, is_shootout
-    );
 
     let time = if matches!(score_type, ScoreType::Scheduled) {
-        let formatted_time = format_time(&game.start).unwrap_or_else(|e| {
+        format_time(&game.start).unwrap_or_else(|e| {
             warn!(
                 "Failed to format time for game #{} in response #{}: {e}",
                 game_idx + 1,
                 response_idx + 1
             );
             String::new()
-        });
-        debug!("Game scheduled, formatted time: {formatted_time}");
-        formatted_time
+        })
     } else {
-        debug!("Game ongoing or finished, no time to display");
         String::new()
     };
 
     let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-    debug!("Game result: {result}");
 
     // Try to get full roster for accurate disambiguation
     // First check if we have cached detailed game data
     let goal_events = if let Some(cached_detailed) =
         get_cached_detailed_game_data(game.season, game.id).await
     {
-        info!(
-            "Game ID {}: Using cached roster data for disambiguation ({} home, {} away players)",
-            game.id,
-            cached_detailed.home_team_players.len(),
-            cached_detailed.away_team_players.len()
-        );
         create_goal_events_with_rosters(
             &game,
             &cached_detailed.home_team_players,
@@ -201,11 +176,6 @@ pub(super) async fn process_single_game(
             && (!game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty());
 
         if should_fetch_roster {
-            debug!(
-                "Game ID {}: Attempting to fetch roster data for disambiguation",
-                game.id
-            );
-
             // Add delay before roster fetch to avoid overwhelming the API
             // Only delay for games that will actually make an API call
             use std::sync::atomic::{AtomicUsize, Ordering};
@@ -220,8 +190,8 @@ pub(super) async fn process_single_game(
 
             match fetch::<DetailedGameResponse>(client, &game_url).await {
                 Ok(detailed_response) => {
-                    info!(
-                        "Game ID {}: Fetched roster data ({} home, {} away players)",
+                    debug!(
+                        "Game ID {}: fetched roster ({} home, {} away players)",
                         game.id,
                         detailed_response.home_team_players.len(),
                         detailed_response.away_team_players.len()
@@ -259,13 +229,6 @@ pub(super) async fn process_single_game(
         }
     };
 
-    info!(
-        "Successfully processed game #{} in response #{}",
-        game_idx + 1,
-        response_idx + 1
-    );
-
-    debug!("Game serie from API: '{}'", game.serie);
     Ok(GameData {
         home_team: home_team_name.to_string(),
         away_team: away_team_name.to_string(),
@@ -297,12 +260,11 @@ pub(super) async fn process_response_games(
     response_idx: usize,
 ) -> Result<Vec<GameData>, AppError> {
     if response.games.is_empty() {
-        info!("Response #{} has empty games array", response_idx + 1);
         return Ok(Vec::new());
     }
 
-    info!(
-        "Processing response #{} with {} games (rate-limited: 3 concurrent, 1s delay between roster fetches)",
+    debug!(
+        "Processing response #{} with {} games",
         response_idx + 1,
         response.games.len()
     );
@@ -323,14 +285,6 @@ pub(super) async fn process_response_games(
         .into_iter()
         .map(|game| {
             let placeholder = !has_real_teams(&game);
-            if placeholder {
-                info!(
-                    "Marking placeholder game {}: {} vs {} (teams not yet determined)",
-                    game.id,
-                    get_team_name(&game.home_team),
-                    get_team_name(&game.away_team)
-                );
-            }
             (game, placeholder)
         })
         .collect();
@@ -347,14 +301,6 @@ pub(super) async fn process_response_games(
                 // Acquire semaphore permit before making request
                 let _permit = sem.acquire().await.unwrap();
 
-                debug!(
-                    "Processing game #{} of {} (game_idx={})",
-                    game_idx + 1,
-                    response.games.len(),
-                    game_idx
-                );
-
-                // Permit is automatically released when _permit is dropped
                 process_single_game(
                     &client,
                     &config,
@@ -369,13 +315,6 @@ pub(super) async fn process_response_games(
         .collect();
 
     let games = futures::future::try_join_all(game_futures).await?;
-
-    info!(
-        "Successfully processed all games in response #{}, adding {} games to result",
-        response_idx + 1,
-        games.len()
-    );
-
     Ok(games)
 }
 
@@ -388,28 +327,21 @@ pub(super) async fn process_games(
     let mut all_games = Vec::new();
 
     if response_data.is_empty() {
-        info!("No response data to process");
         return Ok(all_games);
     }
-
-    info!(
-        "Processing {} response(s) with game data",
-        response_data.len()
-    );
 
     for (i, response) in response_data.iter().enumerate() {
         let games = process_response_games(client, config, response, i).await?;
         all_games.extend(games);
     }
 
-    info!("Total games processed: {}", all_games.len());
+    debug!("Total games processed: {}", all_games.len());
     Ok(all_games)
 }
 
 /// Fetches detailed game data including goal events for a specific game.
 /// Uses caching to improve performance and reduce API calls.
 /// This function is disabled in normal operation but preserved for testing.
-#[instrument(skip(client, config))]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(super) async fn fetch_game_data(
     client: &Client,
@@ -417,48 +349,23 @@ pub(super) async fn fetch_game_data(
     season: i32,
     game_id: i32,
 ) -> Result<Vec<GoalEventData>, AppError> {
-    info!(
-        "Fetching game data for game ID: {} (season: {})",
-        game_id, season
-    );
-
     // Check goal events cache first
     if let Some(cached_events) = get_cached_goal_events_data(season, game_id).await {
-        info!(
-            "Using cached goal events for game ID: {} ({} events)",
-            game_id,
-            cached_events.len()
-        );
         return Ok(cached_events);
     }
 
     // Check detailed game cache
     if let Some(cached_response) = get_cached_detailed_game_data(season, game_id).await {
-        info!(
-            "Using cached detailed game response for game ID: {}",
-            game_id
-        );
         let events = process_game_response_with_cache(cached_response, game_id).await;
         return Ok(events);
     }
 
     let url = build_game_url(&config.api_domain, season, game_id);
 
-    // Try to get detailed game response
-    info!("Making API request to: {url}");
     let game_response: DetailedGameResponse = match fetch(client, &url).await {
-        Ok(response) => {
-            info!(
-                "Successfully fetched detailed game response for game ID: {}",
-                game_id
-            );
-            response
-        }
+        Ok(response) => response,
         Err(e) => {
-            error!(
-                "Failed to fetch detailed game response for game ID {}: {}",
-                game_id, e
-            );
+            error!("Failed to fetch game ID {game_id}: {e}");
 
             // Transform API not found errors to game-specific errors
             return match &e {
@@ -487,45 +394,20 @@ pub(super) async fn process_game_response_with_cache(
 ) -> Vec<GoalEventData> {
     // Check player cache first
     if let Some(cached_players) = get_cached_players(game_id).await {
-        info!(
-            "Using cached player data for game ID: {} ({} players)",
-            game_id,
-            cached_players.len()
-        );
-        let events = process_goal_events(&game_response.game, &cached_players);
-        info!(
-            "Processed {} goal events using cached player data",
-            events.len()
-        );
-        return events;
+        return process_goal_events(&game_response.game, &cached_players);
     }
-
-    // Build separate player data for home and away teams with proper error handling
-    debug!("No cached player data found, building player data with disambiguation");
 
     let mut home_players = HashMap::new();
     let mut away_players = HashMap::new();
 
-    info!(
-        "Processing {} home team players for disambiguation",
-        game_response.home_team_players.len()
-    );
-
     // Process home team players with error handling for missing data
     for player in &game_response.home_team_players {
         if player.first_name.trim().is_empty() && player.last_name.trim().is_empty() {
-            warn!(
-                "Player {} has empty first and last name, skipping disambiguation",
-                player.id
-            );
+            warn!("Player {} has empty name, skipping", player.id);
             continue;
         }
 
         let first_name = if player.first_name.trim().is_empty() {
-            debug!(
-                "Player {} has empty first name, using empty string for disambiguation",
-                player.id
-            );
             String::new()
         } else {
             player.first_name.clone()
@@ -541,26 +423,14 @@ pub(super) async fn process_game_response_with_cache(
         home_players.insert(player.id, (first_name, last_name));
     }
 
-    info!(
-        "Processing {} away team players for disambiguation",
-        game_response.away_team_players.len()
-    );
-
     // Process away team players with error handling for missing data
     for player in &game_response.away_team_players {
         if player.first_name.trim().is_empty() && player.last_name.trim().is_empty() {
-            warn!(
-                "Player {} has empty first and last name, skipping disambiguation",
-                player.id
-            );
+            warn!("Player {} has empty name, skipping", player.id);
             continue;
         }
 
         let first_name = if player.first_name.trim().is_empty() {
-            debug!(
-                "Player {} has empty first name, using empty string for disambiguation",
-                player.id
-            );
             String::new()
         } else {
             player.first_name.clone()
@@ -576,17 +446,7 @@ pub(super) async fn process_game_response_with_cache(
         away_players.insert(player.id, (first_name, last_name));
     }
 
-    info!(
-        "Built player data: {} home players, {} away players",
-        home_players.len(),
-        away_players.len()
-    );
-
     // Apply team-scoped disambiguation and cache the results
-    debug!(
-        "Applying team-scoped disambiguation for game ID: {}",
-        game_id
-    );
     cache_players_with_disambiguation(game_id, home_players, away_players).await;
 
     // Get the disambiguated names from cache for processing
@@ -617,13 +477,7 @@ pub(super) async fn process_game_response_with_cache(
         }
     };
 
-    let events = process_goal_events(&game_response.game, &disambiguated_players);
-    info!(
-        "Processed {} goal events with team-scoped disambiguation for game ID: {}",
-        events.len(),
-        game_id
-    );
-    events
+    process_goal_events(&game_response.game, &disambiguated_players)
 }
 
 /// Filters games to match the requested date
@@ -631,35 +485,19 @@ pub(super) fn filter_games_by_date(
     games: Vec<ScheduleApiGame>,
     target_date: &str,
 ) -> Vec<ScheduleApiGame> {
-    info!("Filtering games for target date: {target_date}");
-
     let matching_games: Vec<ScheduleApiGame> = games
         .into_iter()
         .filter(|game| {
-            // Extract date part from the game start time (format: YYYY-MM-DDThh:mm:ssZ)
-            if let Some(date_part) = game.start.split('T').next() {
-                let matches = date_part == target_date;
-                if matches {
-                    let tournament = TournamentType::from_serie(game.serie);
-                    info!(
-                        "Found matching game: {} vs {} on {} (tournament: {})",
-                        game.home_team_name,
-                        game.away_team_name,
-                        date_part,
-                        tournament.as_str()
-                    );
-                }
-                matches
-            } else {
-                false
-            }
+            game.start
+                .split('T')
+                .next()
+                .is_some_and(|date_part| date_part == target_date)
         })
         .collect();
 
-    info!(
-        "Found {} games matching date {}",
-        matching_games.len(),
-        target_date
+    debug!(
+        "Found {} games matching date {target_date}",
+        matching_games.len()
     );
 
     matching_games
@@ -848,7 +686,6 @@ async fn convert_api_game_to_schedule_game(
 
 /// Fetches games for a specific date from a historical season using the schedule endpoint.
 /// This is used when the date-based games endpoint doesn't support historical data.
-#[instrument(skip(client, config))]
 pub(super) async fn fetch_historical_games(
     client: &Client,
     config: &Config,
@@ -866,7 +703,7 @@ pub(super) async fn fetch_historical_games(
     let all_schedule_games = fetch_tournament_games(client, config, &tournaments, season).await;
 
     if all_schedule_games.is_empty() {
-        info!("No games found in any tournament for season {}", season);
+        debug!("No games found in any tournament for season {season}");
         return Ok(Vec::new());
     }
 
@@ -943,11 +780,6 @@ async fn fetch_detailed_game_data_for_historical_game(
 
     match fetch::<DetailedGameResponse>(client, &url).await {
         Ok(response) => {
-            info!(
-                "Successfully fetched detailed game data for game ID: {}",
-                game_id
-            );
-
             // Process goal events to get scorer information with player lookup
             let goal_events = process_goal_events_for_historical_game_with_players(
                 &response.game,

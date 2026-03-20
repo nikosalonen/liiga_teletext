@@ -1,68 +1,42 @@
-// Import cache types from sibling module
-// Import tournament cache items from sibling module
-use super::tournament_cache::{TOURNAMENT_CACHE, clear_tournament_cache};
-// Import player cache items from sibling module
-use super::player_cache::{PLAYER_CACHE, clear_cache};
-// Import detailed game cache items from sibling module
-use super::detailed_game_cache::{DETAILED_GAME_CACHE, clear_detailed_game_cache};
-// Import goal events cache items from sibling module
-use super::goal_events_cache::{GOAL_EVENTS_CACHE, clear_goal_events_cache};
-// Import HTTP response cache items from sibling module
-use super::http_response_cache::{HTTP_RESPONSE_CACHE, clear_http_response_cache};
-// Import game utilities from parent module
+// Import cache items from parent module
+use super::{
+    DETAILED_GAME_CACHE, GOAL_EVENTS_CACHE, HTTP_RESPONSE_CACHE, PLAYER_CACHE, TOURNAMENT_CACHE,
+    clear_cache, clear_detailed_game_cache, clear_goal_events_cache, clear_http_response_cache,
+    clear_tournament_cache,
+};
 
 // Combined Cache Management Functions
 
 /// Gets combined cache statistics for monitoring purposes
-/// Optimized to minimize RwLock contention by batching read operations
 pub async fn get_all_cache_stats() -> CacheStats {
-    // Acquire all read locks concurrently to minimize contention
-    let (
-        player_cache,
-        tournament_cache,
-        detailed_game_cache,
-        goal_events_cache,
-        http_response_cache,
-    ) = tokio::join!(
-        PLAYER_CACHE.read(),
-        TOURNAMENT_CACHE.read(),
-        DETAILED_GAME_CACHE.read(),
-        GOAL_EVENTS_CACHE.read(),
-        HTTP_RESPONSE_CACHE.read(),
+    let (player, tournament, http_response, detailed_game, goal_events) = tokio::join!(
+        PLAYER_CACHE.stats(),
+        TOURNAMENT_CACHE.stats(),
+        HTTP_RESPONSE_CACHE.stats(),
+        DETAILED_GAME_CACHE.stats(),
+        GOAL_EVENTS_CACHE.stats(),
     );
-
-    // Extract size and capacity from each cache in a single lock hold
-    let player_size = player_cache.len();
-    let player_capacity = player_cache.cap().get();
-    let tournament_size = tournament_cache.len();
-    let tournament_capacity = tournament_cache.cap().get();
-    let detailed_game_size = detailed_game_cache.len();
-    let detailed_game_capacity = detailed_game_cache.cap().get();
-    let goal_events_size = goal_events_cache.len();
-    let goal_events_capacity = goal_events_cache.cap().get();
-    let http_response_size = http_response_cache.len();
-    let http_response_capacity = http_response_cache.cap().get();
 
     CacheStats {
         player_cache: CacheInfo {
-            size: player_size,
-            capacity: player_capacity,
+            size: player.0,
+            capacity: player.1,
         },
         tournament_cache: CacheInfo {
-            size: tournament_size,
-            capacity: tournament_capacity,
+            size: tournament.0,
+            capacity: tournament.1,
         },
         detailed_game_cache: CacheInfo {
-            size: detailed_game_size,
-            capacity: detailed_game_capacity,
+            size: detailed_game.0,
+            capacity: detailed_game.1,
         },
         goal_events_cache: CacheInfo {
-            size: goal_events_size,
-            capacity: goal_events_capacity,
+            size: goal_events.0,
+            capacity: goal_events.1,
         },
         http_response_cache: CacheInfo {
-            size: http_response_size,
-            capacity: http_response_capacity,
+            size: http_response.0,
+            capacity: http_response.1,
         },
     }
 }
@@ -120,28 +94,6 @@ pub async fn get_detailed_cache_debug_info() -> String {
         stats.http_response_cache.capacity,
     ));
 
-    // Get detailed goal events cache info using debug methods
-    let goal_events_cache = GOAL_EVENTS_CACHE.read().await;
-    if !goal_events_cache.is_empty() {
-        debug_info.push_str("Goal Events Cache Details:\n");
-        for (key, entry) in goal_events_cache.iter() {
-            // Use individual debug methods for comprehensive information
-            let game_id = entry.get_game_id();
-            let season = entry.get_season();
-            let (returned_game_id, returned_season, event_count, is_expired) =
-                entry.get_cache_info();
-
-            // Verify consistency between individual methods and combined method (debug-only)
-            debug_assert_eq!(game_id, returned_game_id);
-            debug_assert_eq!(season, returned_season);
-
-            debug_info.push_str(&format!(
-                "  Key: {key}, Game ID: {game_id}, Season: {season}, Events: {event_count}, Expired: {is_expired}\n"
-            ));
-        }
-        debug_info.push('\n');
-    }
-
     debug_info
 }
 
@@ -172,7 +124,6 @@ pub async fn reset_all_caches_with_confirmation() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::cache::types::CachedGoalEventsData;
     use crate::data_fetcher::cache::{
         cache_detailed_game_data, cache_goal_events_data, cache_http_response, cache_players,
         cache_players_with_disambiguation, cache_players_with_formatting, cache_tournament_data,
@@ -956,7 +907,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_goal_events_cache_debug_methods() {
+    async fn test_goal_events_cache_multiple_events() {
         let _guard = TEST_MUTEX.lock().await;
         let test_id = get_unique_test_id();
         let game_id = 96000 + test_id as i32;
@@ -965,7 +916,7 @@ mod tests {
         // Clear cache to ensure clean state
         clear_goal_events_cache().await;
 
-        // Create test data
+        // Create test data with multiple events
         let mock_events = vec![
             GoalEventData {
                 scorer_player_id: 123,
@@ -991,27 +942,16 @@ mod tests {
             },
         ];
 
-        // Create cached entry directly to test debug methods
-        let cached_entry = CachedGoalEventsData::new(mock_events.clone(), game_id, season, false);
-
-        // Test debug methods
-        assert_eq!(cached_entry.get_game_id(), game_id);
-        assert_eq!(cached_entry.get_season(), season);
-
-        let (returned_game_id, returned_season, event_count, is_expired) =
-            cached_entry.get_cache_info();
-        assert_eq!(returned_game_id, game_id);
-        assert_eq!(returned_season, season);
-        assert_eq!(event_count, 2);
-        assert!(!is_expired); // Should not be expired immediately after creation
-
-        // Also test through the cache system
+        // Cache and retrieve through the TtlCache system
         cache_goal_events_data(season, game_id, mock_events, false).await;
 
-        // Verify the cached data can be retrieved
+        // Verify the cached data can be retrieved with correct count
         let retrieved = get_cached_goal_events_data(season, game_id).await;
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().len(), 2);
+        let events = retrieved.unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].scorer_name, "Koivu");
+        assert_eq!(events[1].scorer_name, "Selänne");
 
         // Clear cache after test
         clear_goal_events_cache().await;

@@ -19,7 +19,7 @@ use super::change_detection::{
 };
 use super::indicators::determine_indicator_states;
 use super::navigation_manager::{
-    LoadingIndicatorConfig, NavigationManager, PageCreationConfig, PageRestorationParams,
+    self, LoadingIndicatorConfig, PageCreationConfig, PageRestorationParams,
 };
 use super::refresh_manager::{
     AutoRefreshParams, calculate_auto_refresh_interval, calculate_min_refresh_interval,
@@ -206,7 +206,6 @@ async fn animate_during_fetch(
 
 /// Coordinates all refresh operations for the interactive UI
 pub struct RefreshCoordinator {
-    nav_manager: NavigationManager,
     cache_config: CacheMonitoringConfig,
     /// Tracks how many consecutive refresh cycles returned empty games while
     /// previous games existed.  After a threshold we stop treating the empty
@@ -218,7 +217,6 @@ impl RefreshCoordinator {
     /// Create a new refresh coordinator
     pub fn new() -> Self {
         Self {
-            nav_manager: NavigationManager::new(),
             cache_config: CacheMonitoringConfig::default(),
             consecutive_transient_empty: 0,
         }
@@ -228,7 +226,6 @@ impl RefreshCoordinator {
     #[allow(dead_code)]
     pub fn with_cache_config(cache_config: CacheMonitoringConfig) -> Self {
         Self {
-            nav_manager: NavigationManager::new(),
             cache_config,
             consecutive_transient_empty: 0,
         }
@@ -323,7 +320,7 @@ impl RefreshCoordinator {
 
         // Initialize page state
         let mut current_page: Option<TeletextPage> = None;
-        let mut needs_render = self.nav_manager.manage_loading_indicators(
+        let mut needs_render = navigation_manager::manage_loading_indicators(
             &mut current_page,
             LoadingIndicatorConfig {
                 should_show_loading,
@@ -339,6 +336,12 @@ impl RefreshCoordinator {
         if !had_error && !fetched_date.is_empty() {
             updated_current_date = Some(fetched_date.clone());
             tracing::debug!("Updated current_date to: {:?}", updated_current_date);
+        }
+
+        // Reset the transient-empty streak on fetch errors so intermittent failures
+        // don't count toward the consecutive empty counter.
+        if had_error {
+            self.consecutive_transient_empty = 0;
         }
 
         // Short-circuit transient empty responses before change detection to avoid
@@ -386,19 +389,17 @@ impl RefreshCoordinator {
         // Always create a page if we have no games (to show the error message with navigation hints)
         // or if data changed and there was no error.
         if (data_changed || games.is_empty()) && !had_error {
-            if let Some(page) = self
-                .nav_manager
-                .create_or_restore_page(PageCreationConfig {
-                    games: &games,
-                    disable_links: params.disable_links,
-                    compact_mode: params.compact_mode,
-                    wide_mode: params.wide_mode,
-                    fetched_date: &fetched_date,
-                    preserved_page_for_restoration: params.preserved_page_for_restoration,
-                    current_date: params.current_date,
-                    updated_current_date: &updated_current_date,
-                })
-                .await
+            if let Some(page) = navigation_manager::create_or_restore_page(PageCreationConfig {
+                games: &games,
+                disable_links: params.disable_links,
+                compact_mode: params.compact_mode,
+                wide_mode: params.wide_mode,
+                fetched_date: &fetched_date,
+                preserved_page_for_restoration: params.preserved_page_for_restoration,
+                current_date: params.current_date,
+                updated_current_date: &updated_current_date,
+            })
+            .await
             {
                 current_page = Some(page);
                 needs_render = true;
@@ -410,9 +411,8 @@ impl RefreshCoordinator {
         }
 
         // Handle page restoration when loading screen was shown but data didn't change
-        let restoration_render = self
-            .nav_manager
-            .handle_page_restoration(PageRestorationParams {
+        let restoration_render =
+            navigation_manager::handle_page_restoration(PageRestorationParams {
                 current_page: &mut current_page,
                 data_changed,
                 had_error,
@@ -474,19 +474,17 @@ impl RefreshCoordinator {
             if !last_games.is_empty() {
                 let fetched_date = state.current_date().clone().unwrap_or_default();
                 let games: Vec<_> = last_games.to_vec();
-                let new_page = self
-                    .nav_manager
-                    .create_or_restore_page(PageCreationConfig {
-                        games: &games,
-                        disable_links: config.disable_links,
-                        compact_mode: config.compact_mode,
-                        wide_mode: config.wide_mode,
-                        fetched_date: &fetched_date,
-                        preserved_page_for_restoration: state.preserved_page(),
-                        current_date: state.current_date(),
-                        updated_current_date: state.current_date(),
-                    })
-                    .await;
+                let new_page = navigation_manager::create_or_restore_page(PageCreationConfig {
+                    games: &games,
+                    disable_links: config.disable_links,
+                    compact_mode: config.compact_mode,
+                    wide_mode: config.wide_mode,
+                    fetched_date: &fetched_date,
+                    preserved_page_for_restoration: state.preserved_page(),
+                    current_date: state.current_date(),
+                    updated_current_date: state.current_date(),
+                })
+                .await;
 
                 tracing::info!(
                     "Restored games page from cached data ({} games)",
@@ -742,7 +740,7 @@ impl RefreshCoordinator {
         }
 
         let new_page = if !had_error {
-            let mut page = self.nav_manager.create_standings_page(
+            let mut page = navigation_manager::create_standings_page(
                 &standings,
                 &playoffs_lines,
                 live_mode,
@@ -1027,10 +1025,8 @@ impl RefreshCoordinator {
     fn analyze_game_schedule(&self, games: &[GameData]) {
         // Check if all games are scheduled (future games) - only relevant if no ongoing games
         let has_ongoing_games = has_live_games_from_game_data(games);
-        let all_scheduled = !games.is_empty()
-            && games
-                .iter()
-                .all(|game| self.nav_manager.is_future_game(game));
+        let all_scheduled =
+            !games.is_empty() && games.iter().all(navigation_manager::is_future_game);
 
         if all_scheduled && !has_ongoing_games {
             tracing::info!("All games are scheduled - auto-refresh disabled");
@@ -1054,15 +1050,17 @@ mod tests {
     fn test_refresh_coordinator_creation() {
         let coordinator = RefreshCoordinator::new();
         // RefreshCoordinator should be created successfully
-        // This is a basic test to ensure the struct can be instantiated
-        assert_eq!(std::mem::size_of_val(&coordinator.nav_manager), 0); // NavigationManager is zero-sized
+        assert_eq!(
+            coordinator.cache_config.cache_monitor_interval,
+            Duration::from_secs(300)
+        );
+        assert_eq!(coordinator.consecutive_transient_empty, 0);
     }
 
     #[test]
     fn test_refresh_coordinator_default() {
         let coordinator = RefreshCoordinator::default();
         // Should be equivalent to RefreshCoordinator::new()
-        assert_eq!(std::mem::size_of_val(&coordinator.nav_manager), 0);
         assert_eq!(
             coordinator.cache_config.cache_monitor_interval,
             Duration::from_secs(300)

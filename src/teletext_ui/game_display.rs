@@ -1,8 +1,8 @@
 // src/teletext_ui/game_display.rs - Normal mode game rendering logic
 
+use super::core::get_ansi_code;
 use super::core::{TeletextPage, TeletextRow};
 use super::layout::{ColumnLayoutManager, LayoutConfig};
-use super::utils::get_ansi_code;
 use crate::data_fetcher::models::GameData;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
