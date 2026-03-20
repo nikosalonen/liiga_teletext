@@ -4,6 +4,7 @@ pub mod goal_events_cache;
 pub mod http_response_cache;
 pub mod player_cache;
 pub mod tournament_cache;
+pub mod ttl_cache;
 pub mod types;
 
 // Re-export cache types
