@@ -1,24 +1,142 @@
 mod core;
-pub mod player_cache;
 pub mod tournament_cache;
 pub mod ttl_cache;
 pub mod types;
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use tracing::{debug, info, instrument};
 use ttl_cache::TtlCache;
 
 use crate::constants::cache_ttl;
 use crate::data_fetcher::models::{DetailedGameResponse, GoalEventData};
+use crate::data_fetcher::player_names::{format_for_display, format_with_disambiguation};
 
-// Re-export cache types
-// Re-export player cache functions
-pub use player_cache::*;
 // Re-export tournament cache functions
 pub use tournament_cache::*;
 // Re-export core cache functions
 pub use core::*;
+
+// --- Player cache (backed by generic TtlCache) ---
+
+/// Effectively-infinite TTL for player data (LRU eviction is the primary cleanup mechanism)
+const PLAYER_CACHE_TTL: Duration = Duration::from_secs(86400 * 365);
+
+pub static PLAYER_CACHE: LazyLock<TtlCache<i32, HashMap<i64, String>>> =
+    LazyLock::new(|| TtlCache::new(100));
+
+/// Retrieves cached formatted player information for a specific game.
+#[instrument(skip(game_id), fields(game_id = %game_id))]
+pub async fn get_cached_players(game_id: i32) -> Option<HashMap<i64, String>> {
+    debug!("Attempting to retrieve cached players for game_id: {game_id}");
+    let result = PLAYER_CACHE.get(&game_id).await;
+    if let Some(ref players) = result {
+        debug!(
+            "Cache hit for players: game_id={game_id}, player_count={}",
+            players.len()
+        );
+    } else {
+        debug!("Cache miss for players: game_id={game_id}");
+    }
+    result
+}
+
+/// Caches formatted player information for a specific game.
+#[instrument(skip(game_id, players), fields(game_id = %game_id))]
+pub async fn cache_players(game_id: i32, players: HashMap<i64, String>) {
+    let player_count = players.len();
+    debug!("Caching players: game_id={game_id}, player_count={player_count}");
+    PLAYER_CACHE
+        .insert(game_id, players, PLAYER_CACHE_TTL)
+        .await;
+    info!("Successfully cached players: game_id={game_id}, player_count={player_count}");
+}
+
+/// Caches player information with automatic formatting for a specific game.
+#[allow(dead_code)]
+pub async fn cache_players_with_formatting(game_id: i32, raw_players: HashMap<i64, String>) {
+    let formatted_players: HashMap<i64, String> = raw_players
+        .into_iter()
+        .map(|(id, full_name)| (id, format_for_display(&full_name)))
+        .collect();
+    cache_players(game_id, formatted_players).await;
+}
+
+/// Caches player information with team-scoped disambiguation for a specific game.
+#[instrument(skip(game_id, home_players, away_players), fields(game_id = %game_id))]
+pub async fn cache_players_with_disambiguation(
+    game_id: i32,
+    home_players: HashMap<i64, (String, String)>,
+    away_players: HashMap<i64, (String, String)>,
+) {
+    let home_count = home_players.len();
+    let away_count = away_players.len();
+    debug!(
+        "Caching players with disambiguation: game_id={game_id}, home_players={home_count}, away_players={away_count}"
+    );
+
+    let home_player_data: Vec<(i64, String, String)> = home_players
+        .into_iter()
+        .map(|(id, (first_name, last_name))| (id, first_name, last_name))
+        .collect();
+
+    let away_player_data: Vec<(i64, String, String)> = away_players
+        .into_iter()
+        .map(|(id, (first_name, last_name))| (id, first_name, last_name))
+        .collect();
+
+    let home_disambiguated = format_with_disambiguation(&home_player_data);
+    let away_disambiguated = format_with_disambiguation(&away_player_data);
+
+    let mut all_players = HashMap::new();
+    all_players.extend(home_disambiguated);
+    all_players.extend(away_disambiguated);
+
+    let total_players = all_players.len();
+    debug!(
+        "Disambiguation complete: game_id={game_id}, total_disambiguated_players={total_players}"
+    );
+
+    cache_players(game_id, all_players).await;
+
+    info!(
+        "Successfully cached players with disambiguation: game_id={game_id}, home_players={home_count}, away_players={away_count}, total_players={total_players}"
+    );
+}
+
+/// Retrieves cached disambiguated player information for a specific game.
+#[allow(dead_code)]
+pub async fn get_cached_disambiguated_players(game_id: i32) -> Option<HashMap<i64, String>> {
+    get_cached_players(game_id).await
+}
+
+/// Retrieves a specific player's disambiguated name from the cache.
+#[allow(dead_code)]
+pub async fn get_cached_player_name(game_id: i32, player_id: i64) -> Option<String> {
+    get_cached_players(game_id)
+        .await
+        .and_then(|players| players.get(&player_id).cloned())
+}
+
+/// Checks if disambiguated player data exists in cache for a specific game.
+#[allow(dead_code)]
+pub async fn has_cached_disambiguated_players(game_id: i32) -> bool {
+    get_cached_players(game_id).await.is_some()
+}
+
+/// Gets the current player cache size for monitoring purposes.
+#[allow(dead_code)]
+pub async fn get_cache_size() -> usize {
+    PLAYER_CACHE.len().await
+}
+
+/// Clears all entries from the player cache.
+#[allow(dead_code)]
+pub async fn clear_cache() {
+    PLAYER_CACHE.clear().await;
+}
 
 // --- HTTP response cache (backed by generic TtlCache) ---
 

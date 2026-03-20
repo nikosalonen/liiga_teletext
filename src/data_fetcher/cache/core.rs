@@ -1,11 +1,9 @@
 // Import tournament cache items from sibling module
 use super::tournament_cache::{TOURNAMENT_CACHE, clear_tournament_cache};
-// Import player cache items from sibling module
-use super::player_cache::{PLAYER_CACHE, clear_cache};
 // Import cache items from parent module
 use super::{
-    DETAILED_GAME_CACHE, GOAL_EVENTS_CACHE, HTTP_RESPONSE_CACHE, clear_detailed_game_cache,
-    clear_goal_events_cache, clear_http_response_cache,
+    DETAILED_GAME_CACHE, GOAL_EVENTS_CACHE, HTTP_RESPONSE_CACHE, PLAYER_CACHE, clear_cache,
+    clear_detailed_game_cache, clear_goal_events_cache, clear_http_response_cache,
 };
 
 // Combined Cache Management Functions
@@ -13,22 +11,16 @@ use super::{
 /// Gets combined cache statistics for monitoring purposes
 /// Optimized to minimize RwLock contention by batching read operations
 pub async fn get_all_cache_stats() -> CacheStats {
-    // Acquire old-style read locks concurrently
-    let (player_cache, tournament_cache) =
-        tokio::join!(PLAYER_CACHE.read(), TOURNAMENT_CACHE.read(),);
-
-    // Extract size and capacity from old-style caches
-    let player_size = player_cache.len();
-    let player_capacity = player_cache.cap().get();
+    // Acquire old-style read lock for tournament cache
+    let tournament_cache = TOURNAMENT_CACHE.read().await;
     let tournament_size = tournament_cache.len();
     let tournament_capacity = tournament_cache.cap().get();
-
-    // Drop the old-style locks before querying the TtlCaches
-    drop(player_cache);
     drop(tournament_cache);
 
     // Query TtlCache-backed caches via async API
     let (
+        player_size,
+        player_capacity,
         http_response_size,
         http_response_capacity,
         detailed_game_size,
@@ -36,6 +28,8 @@ pub async fn get_all_cache_stats() -> CacheStats {
         goal_events_size,
         goal_events_capacity,
     ) = tokio::join!(
+        PLAYER_CACHE.len(),
+        PLAYER_CACHE.capacity(),
         HTTP_RESPONSE_CACHE.len(),
         HTTP_RESPONSE_CACHE.capacity(),
         DETAILED_GAME_CACHE.len(),
