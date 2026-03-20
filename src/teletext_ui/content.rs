@@ -138,6 +138,12 @@ impl TeletextPage {
             live_game_active: entry.live_game_active,
         });
     }
+
+    /// Adds a pre-formatted bracket line to the page content.
+    #[allow(dead_code)]
+    pub fn add_bracket_line(&mut self, line: String) {
+        self.content_rows.push(TeletextRow::BracketLine(line));
+    }
 }
 
 #[cfg(test)]
