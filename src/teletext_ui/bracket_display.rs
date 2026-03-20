@@ -139,7 +139,8 @@ fn render_tree(bracket: &PlayoffBracket, _terminal_width: u16) -> Vec<TeletextRo
         if half_idx > 0 {
             rows.push(TeletextRow::BracketLine(String::new()));
         }
-        render_half(half, &mut rows, name_max);
+        let show_header = half_idx == 0;
+        render_half(half, &mut rows, name_max, show_header);
     }
 
     // Final
@@ -337,9 +338,14 @@ fn phase_series_label(matchups: &[&BracketMatchup]) -> Option<String> {
 }
 
 /// Renders one bracket half: early-round matchups followed by an optional SF matchup.
-fn render_half(half: &BracketHalf, rows: &mut Vec<TeletextRow>, name_max: usize) {
-    // Show early phase header if we have early matchups
-    if !half.early_matchups.is_empty() {
+fn render_half(
+    half: &BracketHalf,
+    rows: &mut Vec<TeletextRow>,
+    name_max: usize,
+    show_header: bool,
+) {
+    // Show early phase header only for the first half
+    if show_header && !half.early_matchups.is_empty() {
         if let Some(ref phase_name) = half.early_phase_name {
             let bo_label = phase_series_label(&half.early_matchups)
                 .map(|bo| format!(" {}{bo}{}", color(DIM), RESET))
