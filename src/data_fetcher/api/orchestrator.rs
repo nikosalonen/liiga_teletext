@@ -101,6 +101,7 @@ pub async fn fetch_liiga_data(
             date
         );
         let historical_games = fetch_historical_games(&client, &config, &date).await?;
+        PLAYER_NAME_STORE.save_to_disk().await;
         return Ok((historical_games, date));
     }
 
@@ -165,7 +166,7 @@ pub async fn fetch_liiga_data(
     }
 
     // Persist any newly cached player names to disk
-    PLAYER_NAME_STORE.save_to_disk(season).await;
+    PLAYER_NAME_STORE.save_to_disk().await;
 
     Ok((all_games, return_date))
 }

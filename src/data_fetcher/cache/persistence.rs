@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info};
 
 use crate::config::paths::get_cache_dir_path;
 
@@ -25,23 +25,35 @@ pub struct PlayerNameStore {
     data: RwLock<HashMap<i32, CachedGamePlayers>>,
     dirty: AtomicBool,
     loaded_season: RwLock<Option<i32>>,
+    base_path: PathBuf,
 }
+
+pub static PLAYER_NAME_STORE: LazyLock<PlayerNameStore> = LazyLock::new(PlayerNameStore::default);
 
 impl Default for PlayerNameStore {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub static PLAYER_NAME_STORE: LazyLock<PlayerNameStore> = LazyLock::new(PlayerNameStore::new);
-
-impl PlayerNameStore {
-    pub fn new() -> Self {
         Self {
             data: RwLock::new(HashMap::new()),
             dirty: AtomicBool::new(false),
             loaded_season: RwLock::new(None),
+            base_path: get_cache_dir_path(),
         }
+    }
+}
+
+impl PlayerNameStore {
+    #[cfg(test)]
+    pub fn with_base_path(base_path: PathBuf) -> Self {
+        Self {
+            data: RwLock::new(HashMap::new()),
+            dirty: AtomicBool::new(false),
+            loaded_season: RwLock::new(None),
+            base_path,
+        }
+    }
+
+    fn cache_file_path(&self, season: i32) -> PathBuf {
+        self.base_path.join(format!("players_{season}.json"))
     }
 
     /// Returns cached player names for a game if the goal count matches.
@@ -99,8 +111,8 @@ impl PlayerNameStore {
             }
         }
 
-        let path = cache_file_path(season);
-        match tokio::fs::read_to_string(&path).await {
+        let path = self.cache_file_path(season);
+        let should_mark_loaded = match tokio::fs::read_to_string(&path).await {
             Ok(contents) => {
                 match serde_json::from_str::<HashMap<i32, CachedGamePlayers>>(&contents) {
                     Ok(cached_data) => {
@@ -113,7 +125,7 @@ impl PlayerNameStore {
                         );
                     }
                     Err(e) => {
-                        warn!(
+                        error!(
                             "Corrupted player cache at {}, starting fresh: {e}",
                             path.display()
                         );
@@ -121,52 +133,82 @@ impl PlayerNameStore {
                         data.clear();
                     }
                 }
+                true
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 debug!("No player cache file at {}, starting fresh", path.display());
+                true
             }
             Err(e) => {
-                warn!("Failed to read player cache at {}: {e}", path.display());
+                error!(
+                    "Failed to read player cache at {}: {e} — will retry on next fetch cycle",
+                    path.display()
+                );
+                false
             }
-        }
+        };
 
-        let mut loaded = self.loaded_season.write().await;
-        *loaded = Some(season);
-        self.dirty.store(false, Ordering::Release);
+        if should_mark_loaded {
+            let mut loaded = self.loaded_season.write().await;
+            *loaded = Some(season);
+            self.dirty.store(false, Ordering::Release);
+        }
     }
 
     /// Writes cached player names to disk if new data has been added since the last save.
-    pub async fn save_to_disk(&self, season: i32) {
+    ///
+    /// Derives the season from the previously loaded season. No-op if nothing was loaded
+    /// or if no new data has been added since the last save.
+    pub async fn save_to_disk(&self) {
         if !self.dirty.load(Ordering::Acquire) {
             return;
         }
 
-        let path = cache_file_path(season);
+        let season = {
+            let loaded = self.loaded_season.read().await;
+            match *loaded {
+                Some(s) => s,
+                None => return,
+            }
+        };
+
+        let path = self.cache_file_path(season);
 
         if let Some(parent) = path.parent()
             && let Err(e) = tokio::fs::create_dir_all(parent).await
         {
-            warn!("Failed to create cache directory {}: {e}", parent.display());
+            error!("Failed to create cache directory {}: {e}", parent.display());
             return;
         }
 
         let data = self.data.read().await;
         match serde_json::to_string_pretty(&*data) {
-            Ok(json) => match tokio::fs::write(&path, json).await {
-                Ok(()) => {
-                    self.dirty.store(false, Ordering::Release);
-                    info!(
-                        "Saved {} player cache entries to {}",
-                        data.len(),
+            Ok(json) => {
+                let tmp_path = path.with_extension("json.tmp");
+                if let Err(e) = tokio::fs::write(&tmp_path, &json).await {
+                    error!(
+                        "Failed to write player cache to {}: {e}",
+                        tmp_path.display()
+                    );
+                    return;
+                }
+                if let Err(e) = tokio::fs::rename(&tmp_path, &path).await {
+                    error!(
+                        "Failed to rename player cache {} -> {}: {e}",
+                        tmp_path.display(),
                         path.display()
                     );
+                    return;
                 }
-                Err(e) => {
-                    warn!("Failed to write player cache to {}: {e}", path.display());
-                }
-            },
+                self.dirty.store(false, Ordering::Release);
+                info!(
+                    "Saved {} player cache entries to {}",
+                    data.len(),
+                    path.display()
+                );
+            }
             Err(e) => {
-                warn!("Failed to serialize player cache: {e}");
+                error!("Failed to serialize player cache: {e}");
             }
         }
     }
@@ -196,10 +238,6 @@ impl PlayerNameStore {
     }
 }
 
-fn cache_file_path(season: i32) -> PathBuf {
-    get_cache_dir_path().join(format!("players_{season}.json"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,27 +245,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_and_get() {
-        let store = PlayerNameStore::new();
+        let store = PlayerNameStore::default();
         let mut players = HashMap::new();
         players.insert(100, "Koivu".to_string());
         players.insert(200, "Selänne".to_string());
 
-        store.insert(1001, 5, players.clone()).await;
+        store.insert(1001, 5, players).await;
 
         let result = store.get(1001, 5).await;
         assert!(result.is_some());
-        assert_eq!(result.unwrap().len(), 2);
+        let names = result.unwrap();
+        assert_eq!(names.len(), 2);
+        assert_eq!(names.get(&100), Some(&"Koivu".to_string()));
+        assert_eq!(names.get(&200), Some(&"Selänne".to_string()));
     }
 
     #[tokio::test]
     async fn test_get_returns_none_for_missing_game() {
-        let store = PlayerNameStore::new();
+        let store = PlayerNameStore::default();
         assert!(store.get(9999, 3).await.is_none());
     }
 
     #[tokio::test]
     async fn test_staleness_detection() {
-        let store = PlayerNameStore::new();
+        let store = PlayerNameStore::default();
         let mut players = HashMap::new();
         players.insert(100, "Koivu".to_string());
 
@@ -241,12 +282,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_dirty_flag() {
-        let store = PlayerNameStore::new();
+    async fn test_dirty_flag_lifecycle() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
         assert!(!store.is_dirty());
 
+        // Load sets up the season (empty file = fresh start)
+        store.load_from_disk(2026).await;
+        assert!(!store.is_dirty());
+
+        // Insert sets dirty
         store.insert(1001, 3, HashMap::new()).await;
         assert!(store.is_dirty());
+
+        // Save clears dirty
+        store.save_to_disk().await;
+        assert!(!store.is_dirty());
     }
 
     #[tokio::test]
@@ -254,8 +305,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let season = 2026;
 
-        // Create store with data
-        let store = PlayerNameStore::new();
+        // Create store pointing at temp dir, load season, insert data
+        let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
+        store.load_from_disk(season).await;
+
         let mut players = HashMap::new();
         players.insert(100, "Koivu".to_string());
         players.insert(200, "Selänne M.".to_string());
@@ -264,21 +317,16 @@ mod tests {
             .insert(1002, 3, HashMap::from([(300, "Barkov".to_string())]))
             .await;
 
-        // Save to temp dir (we test using the file directly since cache_file_path uses config dir)
-        let path = temp_dir.path().join(format!("players_{season}.json"));
-        let data = store.data.read().await;
-        let json = serde_json::to_string_pretty(&*data).unwrap();
-        drop(data);
-        tokio::fs::write(&path, &json).await.unwrap();
+        // Save using the real method
+        store.save_to_disk().await;
 
-        // Load into a new store from the file
-        let store2 = PlayerNameStore::new();
-        let contents = tokio::fs::read_to_string(&path).await.unwrap();
-        let loaded: HashMap<i32, CachedGamePlayers> = serde_json::from_str(&contents).unwrap();
-        {
-            let mut data = store2.data.write().await;
-            *data = loaded;
-        }
+        // Verify file was created
+        let path = temp_dir.path().join(format!("players_{season}.json"));
+        assert!(path.exists());
+
+        // Load into a fresh store using the real method
+        let store2 = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
+        store2.load_from_disk(season).await;
 
         assert_eq!(store2.len().await, 2);
         let result = store2.get(1001, 5).await;
@@ -286,6 +334,10 @@ mod tests {
         let names = result.unwrap();
         assert_eq!(names.get(&100), Some(&"Koivu".to_string()));
         assert_eq!(names.get(&200), Some(&"Selänne M.".to_string()));
+
+        let result2 = store2.get(1002, 3).await;
+        assert!(result2.is_some());
+        assert_eq!(result2.unwrap().get(&300), Some(&"Barkov".to_string()));
     }
 
     #[tokio::test]
@@ -294,30 +346,43 @@ mod tests {
         let path = temp_dir.path().join("players_2026.json");
         tokio::fs::write(&path, "not valid json{{{").await.unwrap();
 
-        // Directly test deserialization failure
-        let contents = tokio::fs::read_to_string(&path).await.unwrap();
-        let result: Result<HashMap<i32, CachedGamePlayers>, _> = serde_json::from_str(&contents);
-        assert!(result.is_err());
+        // Load from corrupted file — should recover gracefully with empty store
+        let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
+        store.load_from_disk(2026).await;
+        assert_eq!(store.len().await, 0);
+
+        // Store should still be usable after corruption recovery
+        store
+            .insert(1001, 3, HashMap::from([(100, "Test".to_string())]))
+            .await;
+        assert_eq!(store.len().await, 1);
     }
 
     #[tokio::test]
     async fn test_missing_file_starts_empty() {
-        let store = PlayerNameStore::new();
-        // Without loading, store is empty
+        let temp_dir = TempDir::new().unwrap();
+        let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
+
+        // Load from nonexistent file — should start empty and be operational
+        store.load_from_disk(2026).await;
         assert_eq!(store.len().await, 0);
+
+        // Store should be usable
+        store
+            .insert(1001, 3, HashMap::from([(100, "Test".to_string())]))
+            .await;
+        assert!(store.get(1001, 3).await.is_some());
     }
 
     #[tokio::test]
     async fn test_load_idempotent_for_same_season() {
-        let store = PlayerNameStore::new();
+        let temp_dir = TempDir::new().unwrap();
+        let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
 
-        // Simulate loading season (will be a no-op since file doesn't exist, but sets loaded_season)
-        {
-            let mut loaded = store.loaded_season.write().await;
-            *loaded = Some(2026);
-        }
+        // First load
+        store.load_from_disk(2026).await;
 
-        // Insert data after "loading"
+        // Insert data after loading
         store
             .insert(1001, 3, HashMap::from([(100, "Test".to_string())]))
             .await;
@@ -325,6 +390,41 @@ mod tests {
         // Second load for same season should be a no-op (data preserved)
         store.load_from_disk(2026).await;
         assert_eq!(store.len().await, 1);
+    }
+
+    #[tokio::test]
+    async fn test_save_noop_when_not_dirty() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
+        store.load_from_disk(2026).await;
+
+        // Save without inserting — should be a no-op (no file created)
+        store.save_to_disk().await;
+        let path = temp_dir.path().join("players_2026.json");
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_insert_overwrites_existing_entry() {
+        let store = PlayerNameStore::default();
+        store
+            .insert(1001, 5, HashMap::from([(100, "Koivu".to_string())]))
+            .await;
+        store
+            .insert(
+                1001,
+                6,
+                HashMap::from([(100, "Koivu".to_string()), (200, "Selänne".to_string())]),
+            )
+            .await;
+
+        // Old entry (goal_count=5) should be gone
+        assert!(store.get(1001, 5).await.is_none());
+
+        // New entry (goal_count=6) should be present
+        let result = store.get(1001, 6).await;
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 2);
     }
 
     #[tokio::test]

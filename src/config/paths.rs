@@ -35,9 +35,11 @@ pub fn get_log_dir_path() -> String {
 }
 
 /// Returns the platform-specific path for the cache directory.
+///
+/// Uses the platform cache directory (e.g., `~/.cache` on Linux, `%LOCALAPPDATA%` on Windows)
+/// rather than the config directory, since cache files can be safely deleted without data loss.
 pub fn get_cache_dir_path() -> PathBuf {
-    dirs::config_dir()
+    dirs::cache_dir()
         .unwrap_or_else(|| Path::new(".").to_path_buf())
         .join("liiga_teletext")
-        .join("cache")
 }
