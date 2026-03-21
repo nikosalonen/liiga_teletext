@@ -28,6 +28,9 @@ pub fn winning_goal_fg() -> Color {
 pub fn goal_type_fg() -> Color {
     Color::AnsiValue(226)
 } // Bright yellow
+pub fn scheduled_time_fg() -> Color {
+    Color::AnsiValue(51)
+} // Bright cyan
 pub fn title_bg() -> Color {
     Color::AnsiValue(46)
 } // Bright green

@@ -252,7 +252,8 @@ impl TeletextPage {
 
         let result_color = match score_type {
             ScoreType::Final => result_fg_code,
-            _ => text_fg_code,
+            ScoreType::Scheduled => get_ansi_code(scheduled_time_fg(), 51),
+            ScoreType::Ongoing => text_fg_code,
         };
 
         // Use optimized ANSI code generation for better performance (requirement 4.3)

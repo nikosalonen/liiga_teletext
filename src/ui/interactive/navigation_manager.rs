@@ -253,7 +253,9 @@ async fn create_base_page(
         (
             serie_order,
             g.play_off_phase.unwrap_or(i32::MAX),
+            g.start.clone(),
             g.play_off_pair.unwrap_or(i32::MAX),
+            g.home_team.clone(),
         )
     });
 
