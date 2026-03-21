@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Returns the platform-specific path for the config file.
 ///
@@ -32,4 +32,12 @@ pub fn get_log_dir_path() -> String {
         .join("logs")
         .to_string_lossy()
         .to_string()
+}
+
+/// Returns the platform-specific path for the cache directory.
+pub fn get_cache_dir_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| Path::new(".").to_path_buf())
+        .join("liiga_teletext")
+        .join("cache")
 }

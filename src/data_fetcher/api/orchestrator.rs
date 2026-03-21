@@ -1,6 +1,7 @@
 // src/data_fetcher/api/orchestrator.rs - Main API orchestration logic extracted from core.rs
 
 use crate::config::Config;
+use crate::data_fetcher::cache::persistence::PLAYER_NAME_STORE;
 use crate::data_fetcher::models::GameData;
 use crate::error::AppError;
 use tracing::{info, instrument, warn};
@@ -8,7 +9,7 @@ use tracing::{info, instrument, warn};
 // HTTP client utilities available from sibling http_client module
 use super::http_client::create_http_client_with_timeout;
 // Date and season logic available from sibling date_logic module
-use super::date_logic::determine_fetch_date;
+use super::date_logic::{determine_fetch_date, parse_date_and_season};
 // Season utilities available from sibling season_utils module
 use super::season_utils::{is_historical_date, should_use_schedule_for_playoffs};
 // Game-specific API operations available from sibling game_api module
@@ -76,6 +77,10 @@ pub async fn fetch_liiga_data(
 
     // Determine the date to fetch data for
     let (date, is_pre_noon_cutoff) = determine_fetch_date(custom_date);
+
+    // Load persistent player name cache for the current season
+    let (_, _, season) = parse_date_and_season(&date);
+    PLAYER_NAME_STORE.load_from_disk(season).await;
 
     // Check if this is a historical date (previous season) or requires schedule endpoint for playoffs
     let is_historical = is_historical_date(&date);
@@ -158,6 +163,9 @@ pub async fn fetch_liiga_data(
             return_date
         );
     }
+
+    // Persist any newly cached player names to disk
+    PLAYER_NAME_STORE.save_to_disk(season).await;
 
     Ok((all_games, return_date))
 }

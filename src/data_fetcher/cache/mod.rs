@@ -1,4 +1,5 @@
 mod core;
+pub mod persistence;
 pub mod ttl_cache;
 
 use std::collections::HashMap;

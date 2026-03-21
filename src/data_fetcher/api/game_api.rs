@@ -5,13 +5,13 @@ use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_players,
     cache_players_with_disambiguation, get_cached_detailed_game_data, get_cached_goal_events_data,
-    get_cached_players,
+    get_cached_players, persistence::PLAYER_NAME_STORE,
 };
 use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
     ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
-use crate::data_fetcher::player_names::format_for_display;
+use crate::data_fetcher::player_names::{format_for_display, format_with_disambiguation};
 use crate::data_fetcher::processors::{
     create_basic_goal_events, create_goal_events_with_rosters, determine_game_status, format_time,
     process_goal_events,
@@ -158,75 +158,22 @@ pub(super) async fn process_single_game(
     };
 
     let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
+    let total_goals = (game.home_team.goals + game.away_team.goals) as u32;
 
-    // Try to get full roster for accurate disambiguation
-    // First check if we have cached detailed game data
-    let goal_events = if let Some(cached_detailed) =
-        get_cached_detailed_game_data(game.season, game.id).await
-    {
-        create_goal_events_with_rosters(
-            &game,
-            &cached_detailed.home_team_players,
-            &cached_detailed.away_team_players,
-        )
-    } else {
-        // Try to fetch detailed game data for roster-based disambiguation
-        // Only for finished or ongoing games where roster matters
-        let should_fetch_roster = !matches!(score_type, ScoreType::Scheduled)
-            && (!game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty());
-
-        if should_fetch_roster {
-            // Add delay before roster fetch to avoid overwhelming the API
-            // Only delay for games that will actually make an API call
-            use std::sync::atomic::{AtomicUsize, Ordering};
-            static ROSTER_FETCH_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-            let fetch_number = ROSTER_FETCH_COUNT.fetch_add(1, Ordering::SeqCst);
-            if fetch_number > 0 {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            }
-
-            let game_url = build_game_url(&config.api_domain, game.season, game.id);
-
-            match fetch::<DetailedGameResponse>(client, &game_url).await {
-                Ok(detailed_response) => {
-                    debug!(
-                        "Game ID {}: fetched roster ({} home, {} away players)",
-                        game.id,
-                        detailed_response.home_team_players.len(),
-                        detailed_response.away_team_players.len()
-                    );
-
-                    // Cache the detailed response for future use
-                    let is_live = detailed_response.game.started && !detailed_response.game.ended;
-                    cache_detailed_game_data(
-                        game.season,
-                        game.id,
-                        detailed_response.clone(),
-                        is_live,
-                    )
-                    .await;
-
-                    // Use roster-based disambiguation
-                    create_goal_events_with_rosters(
-                        &game,
-                        &detailed_response.home_team_players,
-                        &detailed_response.away_team_players,
-                    )
-                }
-                Err(e) => {
-                    warn!(
-                        "Game ID {}: Failed to fetch roster data, using scorer-only disambiguation: {}",
-                        game.id, e
-                    );
-                    // Fallback to scorer-only disambiguation
-                    create_basic_goal_events(&game, &config.api_domain).await
-                }
-            }
+    // Try to get goal events, checking persistent player name store first for completed games
+    let goal_events = if game.ended {
+        if let Some(cached_players) = PLAYER_NAME_STORE.get(game.id, total_goals).await {
+            debug!(
+                "Game ID {}: using persistent player name cache ({} players)",
+                game.id,
+                cached_players.len()
+            );
+            process_goal_events(&game, &cached_players)
         } else {
-            // Scheduled game or no goals - use basic approach
-            create_basic_goal_events(&game, &config.api_domain).await
+            resolve_goal_events_with_roster(client, config, &game, &score_type, total_goals).await
         }
+    } else {
+        resolve_goal_events_with_roster(client, config, &game, &score_type, total_goals).await
     };
 
     Ok(GameData {
@@ -247,6 +194,113 @@ pub(super) async fn process_single_game(
         series_score: None,
         is_placeholder,
     })
+}
+
+/// Persists disambiguated player names from rosters into the player name store.
+async fn persist_player_names(
+    game_id: i32,
+    total_goals: u32,
+    home_roster: &[Player],
+    away_roster: &[Player],
+) {
+    let home_players: Vec<(i64, String, String)> = home_roster
+        .iter()
+        .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
+        .collect();
+    let away_players: Vec<(i64, String, String)> = away_roster
+        .iter()
+        .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
+        .collect();
+
+    let mut all_names = format_with_disambiguation(&home_players);
+    all_names.extend(format_with_disambiguation(&away_players));
+    PLAYER_NAME_STORE
+        .insert(game_id, total_goals, all_names)
+        .await;
+}
+
+/// Resolves goal events using roster data from cache or API, and populates
+/// the persistent player name store for completed games.
+async fn resolve_goal_events_with_roster(
+    client: &Client,
+    config: &Config,
+    game: &ScheduleGame,
+    score_type: &ScoreType,
+    total_goals: u32,
+) -> Vec<GoalEventData> {
+    // Check in-memory detailed game cache first
+    if let Some(cached_detailed) = get_cached_detailed_game_data(game.season, game.id).await {
+        if game.ended {
+            persist_player_names(
+                game.id,
+                total_goals,
+                &cached_detailed.home_team_players,
+                &cached_detailed.away_team_players,
+            )
+            .await;
+        }
+        return create_goal_events_with_rosters(
+            game,
+            &cached_detailed.home_team_players,
+            &cached_detailed.away_team_players,
+        );
+    }
+
+    // Try to fetch detailed game data for roster-based disambiguation
+    let should_fetch_roster = !matches!(score_type, ScoreType::Scheduled)
+        && (!game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty());
+
+    if should_fetch_roster {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static ROSTER_FETCH_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        let fetch_number = ROSTER_FETCH_COUNT.fetch_add(1, Ordering::SeqCst);
+        if fetch_number > 0 {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+
+        let game_url = build_game_url(&config.api_domain, game.season, game.id);
+
+        match fetch::<DetailedGameResponse>(client, &game_url).await {
+            Ok(detailed_response) => {
+                debug!(
+                    "Game ID {}: fetched roster ({} home, {} away players)",
+                    game.id,
+                    detailed_response.home_team_players.len(),
+                    detailed_response.away_team_players.len()
+                );
+
+                let is_live = detailed_response.game.started && !detailed_response.game.ended;
+                cache_detailed_game_data(game.season, game.id, detailed_response.clone(), is_live)
+                    .await;
+
+                if game.ended {
+                    persist_player_names(
+                        game.id,
+                        total_goals,
+                        &detailed_response.home_team_players,
+                        &detailed_response.away_team_players,
+                    )
+                    .await;
+                }
+
+                create_goal_events_with_rosters(
+                    game,
+                    &detailed_response.home_team_players,
+                    &detailed_response.away_team_players,
+                )
+            }
+            Err(e) => {
+                warn!(
+                    "Game ID {}: Failed to fetch roster data, using scorer-only disambiguation: {}",
+                    game.id, e
+                );
+                create_basic_goal_events(game, &config.api_domain).await
+            }
+        }
+    } else {
+        create_basic_goal_events(game, &config.api_domain).await
+    }
 }
 
 /// Processes all games in a single response with rate limiting to avoid API throttling.
