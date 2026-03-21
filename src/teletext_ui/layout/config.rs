@@ -153,7 +153,6 @@ pub enum ValidationIssueType {
 }
 
 /// Game data validator for ensuring data integrity before layout calculations
-#[derive(Debug)]
 pub struct GameDataValidator;
 
 impl GameDataValidator {
@@ -474,7 +473,6 @@ impl GameDataValidator {
 }
 
 /// Intelligent truncation utilities for handling extreme content cases
-#[derive(Debug)]
 pub struct IntelligentTruncator;
 
 impl IntelligentTruncator {

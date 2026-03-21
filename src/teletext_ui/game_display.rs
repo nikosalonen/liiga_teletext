@@ -2,7 +2,7 @@
 
 use super::core::get_ansi_code;
 use super::core::{TeletextPage, TeletextRow};
-use super::layout::{ColumnLayoutManager, LayoutConfig};
+use super::layout::{ColumnLayoutManager, IntelligentTruncator, LayoutConfig};
 use crate::data_fetcher::models::GameData;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
@@ -570,8 +570,6 @@ impl TeletextPage {
         let original_player_name_length = safe_player_name.len();
 
         // Use intelligent truncation for player names (requirement 3.2)
-        use super::layout::IntelligentTruncator;
-
         let player_name_display =
             if original_player_name_length > layout_config.max_player_name_width {
                 // Use intelligent truncation with ellipsis only as last resort (requirement 3.2)
