@@ -571,12 +571,11 @@ impl TeletextPage {
 
         // Use intelligent truncation for player names (requirement 3.2)
         use super::layout::IntelligentTruncator;
-        let truncator = IntelligentTruncator::new();
 
         let player_name_display =
             if original_player_name_length > layout_config.max_player_name_width {
                 // Use intelligent truncation with ellipsis only as last resort (requirement 3.2)
-                truncator.truncate_player_name(
+                IntelligentTruncator::truncate_player_name(
                     &safe_player_name,
                     layout_config.max_player_name_width,
                     Some(5),
@@ -687,9 +686,10 @@ impl TeletextPage {
         // Add goal type indicators with overflow prevention and validation (requirements 3.1, 3.2, 3.4)
         if !goal_type.is_empty() {
             // Validate that goal types can be displayed without truncation (requirement 3.4)
-            if !truncator
-                .validate_goal_types_no_truncation(&goal_type, layout_config.max_goal_types_width)
-            {
+            if !IntelligentTruncator::validate_goal_types_no_truncation(
+                &goal_type,
+                layout_config.max_goal_types_width,
+            ) {
                 tracing::warn!(
                     "Goal types '{}' exceed allocated width {}. Goal types should never be truncated.",
                     goal_type,
