@@ -4,16 +4,19 @@ mod ansi_cache;
 mod columns;
 mod config;
 
-pub use ansi_cache::*;
-#[allow(unused_imports)] // Items used by integration tests
-pub use columns::*;
-pub use config::*;
+#[allow(unused_imports)] // Used by integration tests
+pub use columns::AlignmentCalculator;
+pub use config::{IntelligentTruncator, LayoutConfig};
 
 use crate::data_fetcher::models::GameData;
 use std::collections::HashMap;
 
+use ansi_cache::AnsiCodeCache;
 use columns::generate_content_signature;
-use config::{ContentAnalysis, ContentCacheKey, LayoutCacheKey};
+use config::{
+    CacheStats, ContentAnalysis, ContentCacheKey, GameDataValidator, LayoutCacheKey,
+    TerminalWidthValidation, TruncationStrategy,
+};
 
 /// Manages column layout calculations for dynamic width determination
 #[derive(Debug)]
@@ -1314,6 +1317,10 @@ impl ColumnLayoutManager {
 
 #[cfg(test)]
 mod tests {
+    use super::columns::GoalTypePosition;
+    use super::config::{
+        GameDataValidator, TerminalWidthValidation, TruncationStrategy, ValidationIssueType,
+    };
     use super::*;
     use crate::data_fetcher::GoalEventData;
     use crate::teletext_ui::ScoreType;
