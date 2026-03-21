@@ -153,15 +153,9 @@ pub enum ValidationIssueType {
 }
 
 /// Game data validator for ensuring data integrity before layout calculations
-#[derive(Debug)]
 pub struct GameDataValidator;
 
 impl GameDataValidator {
-    /// Creates a new game data validator
-    pub fn new() -> Self {
-        Self
-    }
-
     /// Validates a single game's data and returns validation results with sanitized data
     ///
     /// # Arguments
@@ -169,7 +163,7 @@ impl GameDataValidator {
     ///
     /// # Returns
     /// * `GameDataValidation` - Validation results with sanitized data if fixable
-    pub fn validate_game(&self, game: &GameData) -> GameDataValidation {
+    pub fn validate_game(game: &GameData) -> GameDataValidation {
         let mut issues = Vec::new();
         let mut sanitized_game = game.clone();
         let mut is_valid = true;
@@ -207,7 +201,7 @@ impl GameDataValidator {
         }
 
         // Validate score format for finished games
-        if !game.result.trim().is_empty() && !self.is_valid_score_format(&game.result) {
+        if !game.result.trim().is_empty() && !Self::is_valid_score_format(&game.result) {
             issues.push(ValidationIssue {
                 issue_type: ValidationIssueType::InvalidScore,
                 description: format!("Invalid score format: '{}'", game.result),
@@ -223,7 +217,7 @@ impl GameDataValidator {
         // Validate goal events
         let mut sanitized_goal_events = Vec::new();
         for (index, event) in game.goal_events.iter().enumerate() {
-            let (sanitized_event, goal_issues) = self.validate_goal_event(event, index);
+            let (sanitized_event, goal_issues) = Self::validate_goal_event(event, index);
             issues.extend(goal_issues);
             sanitized_goal_events.push(sanitized_event);
         }
@@ -256,8 +250,8 @@ impl GameDataValidator {
     ///
     /// # Returns
     /// * `Vec<GameDataValidation>` - Validation results for each game
-    pub fn validate_games(&self, games: &[GameData]) -> Vec<GameDataValidation> {
-        games.iter().map(|game| self.validate_game(game)).collect()
+    pub fn validate_games(games: &[GameData]) -> Vec<GameDataValidation> {
+        games.iter().map(Self::validate_game).collect()
     }
 
     /// Validates and sanitizes games, returning only valid games with fallbacks applied
@@ -267,8 +261,8 @@ impl GameDataValidator {
     ///
     /// # Returns
     /// * `Vec<GameData>` - Vector of valid, sanitized game data
-    pub fn sanitize_games(&self, games: &[GameData]) -> Vec<GameData> {
-        let validations = self.validate_games(games);
+    pub fn sanitize_games(games: &[GameData]) -> Vec<GameData> {
+        let validations = Self::validate_games(games);
         let mut sanitized_games = Vec::new();
         let mut excluded_count = 0;
 
@@ -314,7 +308,6 @@ impl GameDataValidator {
     /// # Returns
     /// * `(GoalEventData, Vec<ValidationIssue>)` - Sanitized event and any validation issues found
     fn validate_goal_event(
-        &self,
         event: &GoalEventData,
         index: usize,
     ) -> (GoalEventData, Vec<ValidationIssue>) {
@@ -444,7 +437,7 @@ impl GameDataValidator {
     /// # Returns
     /// * `bool` - True if the score format is valid
     // pub(super) for test access from mod.rs tests
-    pub(super) fn is_valid_score_format(&self, score: &str) -> bool {
+    pub(super) fn is_valid_score_format(score: &str) -> bool {
         let score = score.trim();
 
         // Allow empty scores
@@ -479,22 +472,10 @@ impl GameDataValidator {
     }
 }
 
-impl Default for GameDataValidator {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Intelligent truncation utilities for handling extreme content cases
-#[derive(Debug, Default)]
 pub struct IntelligentTruncator;
 
 impl IntelligentTruncator {
-    /// Creates a new IntelligentTruncator
-    pub fn new() -> Self {
-        Self
-    }
-
     /// Intelligently truncates a player name to fit within available space
     /// Only uses ellipsis as a last resort (Requirement 3.2)
     ///
@@ -506,7 +487,6 @@ impl IntelligentTruncator {
     /// # Returns
     /// * `String` - Truncated player name with ellipsis if necessary
     pub fn truncate_player_name(
-        &self,
         player_name: &str,
         max_width: usize,
         preserve_critical_chars: Option<usize>,
@@ -593,11 +573,7 @@ impl IntelligentTruncator {
     ///
     /// # Returns
     /// * `bool` - True if goal types fit, false if they would need truncation
-    pub fn validate_goal_types_no_truncation(
-        &self,
-        goal_types: &str,
-        available_width: usize,
-    ) -> bool {
+    pub fn validate_goal_types_no_truncation(goal_types: &str, available_width: usize) -> bool {
         let fits = goal_types.len() <= available_width;
 
         if !fits {
@@ -631,7 +607,6 @@ impl IntelligentTruncator {
     /// * `(usize, bool)` - (optimal_spacing, needs_truncation)
     #[allow(dead_code)] // Used in tests
     pub fn calculate_spacing_reduction(
-        &self,
         content_length: usize,
         available_width: usize,
         min_spacing: Option<usize>,
@@ -658,7 +633,6 @@ impl IntelligentTruncator {
     /// # Returns
     /// * `TruncationStrategy` - Strategy to use for this terminal width
     pub fn determine_truncation_strategy(
-        &self,
         terminal_width: usize,
         critical_content_width: usize,
     ) -> TruncationStrategy {

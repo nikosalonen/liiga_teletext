@@ -390,8 +390,7 @@ impl ColumnLayoutManager {
         );
 
         // Validate and sanitize game data before layout calculations (requirement 4.1)
-        let validator = GameDataValidator::new();
-        let sanitized_games = validator.sanitize_games(games);
+        let sanitized_games = GameDataValidator::sanitize_games(games);
 
         // Handle case where all games were filtered out due to validation issues
         if sanitized_games.is_empty() {
@@ -570,8 +569,7 @@ impl ColumnLayoutManager {
         );
 
         // Validate and sanitize game data before layout calculations (requirement 4.1)
-        let validator = GameDataValidator::new();
-        let sanitized_games = validator.sanitize_games(games);
+        let sanitized_games = GameDataValidator::sanitize_games(games);
 
         if sanitized_games.len() != games.len() {
             tracing::info!(
@@ -976,7 +974,6 @@ impl ColumnLayoutManager {
         );
 
         let mut config = LayoutConfig::default();
-        let truncator = IntelligentTruncator::new();
 
         // Use reduced team widths for narrow terminals
         config.home_team_width = if self.terminal_width < Self::ABSOLUTE_MINIMUM_WIDTH {
@@ -989,8 +986,7 @@ impl ColumnLayoutManager {
         config.separator_width = 3; // Reduced separator for fallback layout
 
         // Analyze content but with stricter limits and intelligent truncation (with caching)
-        let content_analysis =
-            self.analyze_content_for_fallback_with_truncation_cached(games, &truncator);
+        let content_analysis = self.analyze_content_for_fallback_with_truncation_cached(games);
         config.max_player_name_width = content_analysis.max_player_name_width;
         config.max_goal_types_width = content_analysis.max_goal_types_width;
 
@@ -1012,8 +1008,10 @@ impl ColumnLayoutManager {
         } else {
             // Not enough space - use intelligent truncation strategy
             let critical_content_width = teams_width + Self::MIN_TIME_SCORE_SPACE;
-            let strategy = truncator
-                .determine_truncation_strategy(self.terminal_width, critical_content_width);
+            let strategy = IntelligentTruncator::determine_truncation_strategy(
+                self.terminal_width,
+                critical_content_width,
+            );
 
             match strategy {
                 TruncationStrategy::NoTruncation | TruncationStrategy::ReduceSpacing => {
@@ -1211,15 +1209,10 @@ impl ColumnLayoutManager {
     ///
     /// # Arguments
     /// * `games` - Slice of game data to analyze
-    /// * `truncator` - IntelligentTruncator for handling extreme cases
     ///
     /// # Returns
     /// * `ContentAnalysis` - Analysis results with intelligent truncation applied
-    fn analyze_content_for_fallback_with_truncation(
-        &self,
-        games: &[GameData],
-        truncator: &IntelligentTruncator,
-    ) -> ContentAnalysis {
+    fn analyze_content_for_fallback_with_truncation(&self, games: &[GameData]) -> ContentAnalysis {
         let mut max_player_name_width = 0;
         let mut max_goal_types_width = 0;
 
@@ -1233,8 +1226,10 @@ impl ColumnLayoutManager {
 
         // Determine truncation strategy based on terminal width
         let critical_content_width = self.content_margin + 30 + Self::MIN_TIME_SCORE_SPACE; // Basic teams + time/score
-        let strategy =
-            truncator.determine_truncation_strategy(self.terminal_width, critical_content_width);
+        let strategy = IntelligentTruncator::determine_truncation_strategy(
+            self.terminal_width,
+            critical_content_width,
+        );
 
         // Apply intelligent limits based on strategy
         max_player_name_width = match strategy {
@@ -1276,14 +1271,12 @@ impl ColumnLayoutManager {
     ///
     /// # Arguments
     /// * `games` - Slice of game data to analyze
-    /// * `truncator` - IntelligentTruncator for handling extreme cases
     ///
     /// # Returns
     /// * `ContentAnalysis` - Analysis results with intelligent truncation applied (cached or freshly calculated)
     fn analyze_content_for_fallback_with_truncation_cached(
         &mut self,
         games: &[GameData],
-        truncator: &IntelligentTruncator,
     ) -> ContentAnalysis {
         let content_signature = generate_content_signature(games);
         let cache_key = ContentCacheKey {
@@ -1309,7 +1302,7 @@ impl ColumnLayoutManager {
         );
 
         // Perform analysis
-        let analysis = self.analyze_content_for_fallback_with_truncation(games, truncator);
+        let analysis = self.analyze_content_for_fallback_with_truncation(games);
 
         // Cache the result
         self.content_analysis_cache
@@ -2447,101 +2440,119 @@ mod tests {
 
     #[test]
     fn test_intelligent_truncator_player_name_truncation() {
-        let truncator = IntelligentTruncator::new();
-
         // Test normal case - name fits
-        assert_eq!(truncator.truncate_player_name("Short", 10, None), "Short");
+        assert_eq!(
+            IntelligentTruncator::truncate_player_name("Short", 10, None),
+            "Short"
+        );
 
         // Test truncation with ellipsis
         assert_eq!(
-            truncator.truncate_player_name("Very Long Player Name", 10, None),
+            IntelligentTruncator::truncate_player_name("Very Long Player Name", 10, None),
             "Very Lo..."
         );
 
         // Test preserving critical characters
         assert_eq!(
-            truncator.truncate_player_name("Player", 8, Some(5)),
+            IntelligentTruncator::truncate_player_name("Player", 8, Some(5)),
             "Player"
         );
         assert_eq!(
-            truncator.truncate_player_name("Very Long Name", 8, Some(5)),
+            IntelligentTruncator::truncate_player_name("Very Long Name", 8, Some(5)),
             "Very ..."
         );
 
         // Test extreme case - very small width
-        assert_eq!(truncator.truncate_player_name("Player", 4, None), "P...");
-        assert_eq!(truncator.truncate_player_name("Player", 3, None), "Pla");
-        assert_eq!(truncator.truncate_player_name("Player", 2, None), "Pl");
+        assert_eq!(
+            IntelligentTruncator::truncate_player_name("Player", 4, None),
+            "P..."
+        );
+        assert_eq!(
+            IntelligentTruncator::truncate_player_name("Player", 3, None),
+            "Pla"
+        );
+        assert_eq!(
+            IntelligentTruncator::truncate_player_name("Player", 2, None),
+            "Pl"
+        );
     }
 
     #[test]
     fn test_intelligent_truncator_goal_types_validation() {
-        let truncator = IntelligentTruncator::new();
-
         // Test goal types that fit
-        assert!(truncator.validate_goal_types_no_truncation("YV", 5));
-        assert!(truncator.validate_goal_types_no_truncation("YV IM", 6));
+        assert!(IntelligentTruncator::validate_goal_types_no_truncation(
+            "YV", 5
+        ));
+        assert!(IntelligentTruncator::validate_goal_types_no_truncation(
+            "YV IM", 6
+        ));
 
         // Test goal types that don't fit
-        assert!(!truncator.validate_goal_types_no_truncation("YV IM TM", 6));
-        assert!(!truncator.validate_goal_types_no_truncation("Very Long Goal Type", 10));
+        assert!(!IntelligentTruncator::validate_goal_types_no_truncation(
+            "YV IM TM", 6
+        ));
+        assert!(!IntelligentTruncator::validate_goal_types_no_truncation(
+            "Very Long Goal Type",
+            10
+        ));
     }
 
     #[test]
     fn test_intelligent_truncator_spacing_reduction() {
-        let truncator = IntelligentTruncator::new();
-
         // Test content that fits with optimal spacing
-        let (spacing, needs_truncation) = truncator.calculate_spacing_reduction(10, 20, None);
+        let (spacing, needs_truncation) =
+            IntelligentTruncator::calculate_spacing_reduction(10, 20, None);
         assert_eq!(spacing, 10);
         assert!(!needs_truncation);
 
         // Test content that fits with minimal spacing
-        let (spacing, needs_truncation) = truncator.calculate_spacing_reduction(10, 11, None);
+        let (spacing, needs_truncation) =
+            IntelligentTruncator::calculate_spacing_reduction(10, 11, None);
         assert_eq!(spacing, 1);
         assert!(!needs_truncation);
 
         // Test content that doesn't fit
-        let (spacing, needs_truncation) = truncator.calculate_spacing_reduction(15, 10, None);
+        let (spacing, needs_truncation) =
+            IntelligentTruncator::calculate_spacing_reduction(15, 10, None);
         assert_eq!(spacing, 1);
         assert!(needs_truncation);
 
         // Test with custom minimum spacing that fits
-        let (spacing, needs_truncation) = truncator.calculate_spacing_reduction(6, 10, Some(3));
+        let (spacing, needs_truncation) =
+            IntelligentTruncator::calculate_spacing_reduction(6, 10, Some(3));
         assert_eq!(spacing, 4); // available_width - content_length = 10 - 6 = 4
         assert!(!needs_truncation);
 
         // Test with custom minimum spacing that doesn't fit
-        let (spacing, needs_truncation) = truncator.calculate_spacing_reduction(8, 10, Some(3));
+        let (spacing, needs_truncation) =
+            IntelligentTruncator::calculate_spacing_reduction(8, 10, Some(3));
         assert_eq!(spacing, 3); // Should return min_spacing when truncation needed
         assert!(needs_truncation);
     }
 
     #[test]
     fn test_intelligent_truncator_strategy_determination() {
-        let truncator = IntelligentTruncator::new();
-
         // Test adequate width
         assert_eq!(
-            truncator.determine_truncation_strategy(100, 50),
+            IntelligentTruncator::determine_truncation_strategy(100, 50),
             TruncationStrategy::NoTruncation
         );
 
         // Test reduced spacing needed
         assert_eq!(
-            truncator.determine_truncation_strategy(65, 50),
+            IntelligentTruncator::determine_truncation_strategy(65, 50),
             TruncationStrategy::ReduceSpacing
         );
 
         // Test minimal spacing needed
         assert_eq!(
-            truncator.determine_truncation_strategy(58, 50),
+            IntelligentTruncator::determine_truncation_strategy(58, 50),
             TruncationStrategy::MinimalSpacing
         );
 
         // Test aggressive truncation needed
         assert_eq!(
-            truncator.determine_truncation_strategy(52, 50),
+            IntelligentTruncator::determine_truncation_strategy(52, 50),
             TruncationStrategy::AggressiveTruncation
         );
     }
@@ -2577,15 +2588,13 @@ mod tests {
     #[test]
     fn test_content_analysis_with_truncation_strategies() {
         let manager = ColumnLayoutManager::new(50, 2); // Narrow terminal
-        let truncator = IntelligentTruncator::new();
-
         let goal_events = vec![create_test_goal_event(
             "Extremely Long Player Name",
             vec!["YV".to_string(), "IM".to_string(), "TM".to_string()],
         )];
 
         let games = vec![create_test_game_data("HIFK", "TPS", goal_events)];
-        let analysis = manager.analyze_content_for_fallback_with_truncation(&games, &truncator);
+        let analysis = manager.analyze_content_for_fallback_with_truncation(&games);
 
         // Should apply intelligent limits based on terminal width
         assert!(analysis.max_player_name_width <= 12);
@@ -2600,14 +2609,13 @@ mod tests {
 
     #[test]
     fn test_game_data_validator_valid_game() {
-        let validator = GameDataValidator::new();
         let game = create_test_game_data(
             "HIFK",
             "TPS",
             vec![create_test_goal_event("John Doe", vec!["EV".to_string()])],
         );
 
-        let validation = validator.validate_game(&game);
+        let validation = GameDataValidator::validate_game(&game);
 
         assert!(validation.is_valid);
         assert!(validation.issues.is_empty());
@@ -2616,10 +2624,9 @@ mod tests {
 
     #[test]
     fn test_game_data_validator_missing_team_names() {
-        let validator = GameDataValidator::new();
         let game = create_test_game_data("", "  ", vec![]);
 
-        let validation = validator.validate_game(&game);
+        let validation = GameDataValidator::validate_game(&game);
 
         assert!(validation.is_valid); // Should be valid after auto-fix
         assert_eq!(validation.issues.len(), 2); // Two missing team name issues
@@ -2636,7 +2643,6 @@ mod tests {
 
     #[test]
     fn test_game_data_validator_missing_player_names() {
-        let validator = GameDataValidator::new();
         let goal_events = vec![
             create_test_goal_event("", vec!["EV".to_string()]),
             create_test_goal_event("  ", vec!["YV".to_string()]),
@@ -2644,7 +2650,7 @@ mod tests {
         ];
         let game = create_test_game_data("HIFK", "TPS", goal_events);
 
-        let validation = validator.validate_game(&game);
+        let validation = GameDataValidator::validate_game(&game);
 
         assert!(validation.is_valid);
         let sanitized = validation.sanitized_game.unwrap();
@@ -2665,7 +2671,6 @@ mod tests {
 
     #[test]
     fn test_game_data_validator_invalid_goal_types() {
-        let validator = GameDataValidator::new();
         let goal_events = vec![
             create_test_goal_event(
                 "Player 1",
@@ -2678,7 +2683,7 @@ mod tests {
         ];
         let game = create_test_game_data("HIFK", "TPS", goal_events);
 
-        let validation = validator.validate_game(&game);
+        let validation = GameDataValidator::validate_game(&game);
 
         assert!(validation.is_valid);
         let sanitized = validation.sanitized_game.unwrap();
@@ -2699,11 +2704,10 @@ mod tests {
 
     #[test]
     fn test_game_data_validator_invalid_scores() {
-        let validator = GameDataValidator::new();
         let mut game = create_test_game_data("HIFK", "TPS", vec![]);
         game.result = "invalid-score".to_string();
 
-        let validation = validator.validate_game(&game);
+        let validation = GameDataValidator::validate_game(&game);
 
         assert!(validation.is_valid); // Should be valid after auto-fix
         let sanitized = validation.sanitized_game.unwrap();
@@ -2717,12 +2721,11 @@ mod tests {
 
     #[test]
     fn test_game_data_validator_missing_time_and_result() {
-        let validator = GameDataValidator::new();
         let mut game = create_test_game_data("HIFK", "TPS", vec![]);
         game.time = "".to_string();
         game.result = "".to_string();
 
-        let validation = validator.validate_game(&game);
+        let validation = GameDataValidator::validate_game(&game);
 
         assert!(validation.is_valid); // Should be valid after auto-fix
         let sanitized = validation.sanitized_game.unwrap();
@@ -2736,7 +2739,6 @@ mod tests {
 
     #[test]
     fn test_game_data_validator_sanitize_games() {
-        let validator = GameDataValidator::new();
         let games = vec![
             create_test_game_data("HIFK", "TPS", vec![]), // Valid game
             create_test_game_data("", "", vec![]),        // Missing team names (auto-fixable)
@@ -2749,7 +2751,7 @@ mod tests {
             ),
         ];
 
-        let sanitized = validator.sanitize_games(&games);
+        let sanitized = GameDataValidator::sanitize_games(&games);
 
         // All games should be included since all issues are auto-fixable
         assert_eq!(sanitized.len(), 3);
@@ -2762,26 +2764,24 @@ mod tests {
 
     #[test]
     fn test_score_format_validation() {
-        let validator = GameDataValidator::new();
-
         // Valid score formats
-        assert!(validator.is_valid_score_format("2-1"));
-        assert!(validator.is_valid_score_format("0-0"));
-        assert!(validator.is_valid_score_format("10-5"));
-        assert!(validator.is_valid_score_format("2-1 ja")); // With overtime
-        assert!(validator.is_valid_score_format("3-2 rl")); // With shootout
-        assert!(validator.is_valid_score_format("")); // Empty is valid
-        assert!(validator.is_valid_score_format("  ")); // Whitespace only is valid
+        assert!(GameDataValidator::is_valid_score_format("2-1"));
+        assert!(GameDataValidator::is_valid_score_format("0-0"));
+        assert!(GameDataValidator::is_valid_score_format("10-5"));
+        assert!(GameDataValidator::is_valid_score_format("2-1 ja")); // With overtime
+        assert!(GameDataValidator::is_valid_score_format("3-2 rl")); // With shootout
+        assert!(GameDataValidator::is_valid_score_format("")); // Empty is valid
+        assert!(GameDataValidator::is_valid_score_format("  ")); // Whitespace only is valid
 
         // Invalid score formats
-        assert!(!validator.is_valid_score_format("2"));
-        assert!(!validator.is_valid_score_format("2-"));
-        assert!(!validator.is_valid_score_format("-1"));
-        assert!(!validator.is_valid_score_format("a-b"));
-        assert!(!validator.is_valid_score_format("2:1"));
-        assert!(!validator.is_valid_score_format("invalid"));
-        assert!(!validator.is_valid_score_format("2-1 garbage")); // Trailing unknown suffix
-        assert!(!validator.is_valid_score_format("2-1 ja extra")); // Too many tokens
+        assert!(!GameDataValidator::is_valid_score_format("2"));
+        assert!(!GameDataValidator::is_valid_score_format("2-"));
+        assert!(!GameDataValidator::is_valid_score_format("-1"));
+        assert!(!GameDataValidator::is_valid_score_format("a-b"));
+        assert!(!GameDataValidator::is_valid_score_format("2:1"));
+        assert!(!GameDataValidator::is_valid_score_format("invalid"));
+        assert!(!GameDataValidator::is_valid_score_format("2-1 garbage")); // Trailing unknown suffix
+        assert!(!GameDataValidator::is_valid_score_format("2-1 ja extra")); // Too many tokens
     }
 
     #[test]
