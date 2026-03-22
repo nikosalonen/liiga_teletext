@@ -68,7 +68,7 @@ Rendering:
 - **`data_fetcher/models/`** — API response types (`GameData`, `ScheduleResponse`, `DetailedGameResponse`, `StandingsResponse`)
 - **`data_fetcher/game_utils.rs`** — Game state utilities and helper functions
 - **`data_fetcher/processors/`** — Game status determination, goal processing, player name fetching
-- **`data_fetcher/cache/`** — Multi-level TTL caching (HTTP responses, tournaments, games, goals, players)
+- **`data_fetcher/cache/`** — Multi-level TTL caching (HTTP responses, tournaments, games, goals, players) and persistent disk-backed player name store
 - **`data_fetcher/player_names/`** — Name formatting and disambiguation (e.g., "Saarela #7")
 - **`teletext_ui/`** — Teletext page structure, rendering pipeline, pagination, display modes, standings display, season utils
 - **`ui/interactive/`** — Interactive event loop: state management, navigation, refresh coordination, input handling, change detection, standings/series display
@@ -97,11 +97,13 @@ Auto-refresh intervals: 1 minute during live games, 1 hour for completed games o
 
 ### Caching Strategy
 
-TTL varies by game state:
+**In-memory TTL cache** — varies by game state:
 - Live games: 15s
 - Completed games: 1 hour
 - Starting soon: 30s
 - Player data: 24 hours
+
+**Persistent player name cache** (`data_fetcher/cache/persistence.rs`) — disk-backed JSON store keyed by team per season. Disambiguated player names (e.g., "A. Saarela") are persisted to the platform cache directory so completed games skip the detailed game API endpoint on restart. Uses atomic write (tmp + rename), a sequence counter for dirty tracking, and season-scoped files (`players_{season}.json`).
 
 ### Configuration
 
