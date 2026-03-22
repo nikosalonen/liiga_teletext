@@ -211,6 +211,8 @@ pub struct RefreshCoordinator {
     /// previous games existed.  After a threshold we stop treating the empty
     /// response as transient so stale data is not shown indefinitely.
     consecutive_transient_empty: u32,
+    /// Whether the one-time bracket availability check has been performed.
+    bracket_checked: bool,
 }
 
 impl RefreshCoordinator {
@@ -219,6 +221,7 @@ impl RefreshCoordinator {
         Self {
             cache_config: CacheMonitoringConfig::default(),
             consecutive_transient_empty: 0,
+            bracket_checked: false,
         }
     }
 
@@ -228,6 +231,7 @@ impl RefreshCoordinator {
         Self {
             cache_config,
             consecutive_transient_empty: 0,
+            bracket_checked: false,
         }
     }
 
@@ -454,6 +458,23 @@ impl RefreshCoordinator {
         // Always preserve the current page number before refresh, regardless of loading screen
         if let Some(page) = state.current_page() {
             state.preserve_page(page.get_current_page());
+        }
+
+        // One-time check for bracket data availability
+        if !self.bracket_checked {
+            self.bracket_checked = true;
+            if let Ok(config) = crate::config::Config::load().await {
+                let timeout = std::time::Duration::from_secs(config.http_timeout_seconds + 5);
+                if let Ok(Ok(bracket)) = tokio::time::timeout(
+                    timeout,
+                    crate::data_fetcher::api::bracket_api::fetch_playoff_bracket(&config),
+                )
+                .await
+                {
+                    state.navigation.has_bracket_data = bracket.has_data;
+                    tracing::info!("Bracket data check: has_data={}", bracket.has_data);
+                }
+            }
         }
 
         // Branch on view mode. Standings and Bracket are league-wide (not date-scoped),
@@ -861,6 +882,7 @@ impl RefreshCoordinator {
         let (bracket, had_error) = match bracket_result {
             Ok(Ok(bracket)) => {
                 tracing::info!("Bracket fetched: has_data={}", bracket.has_data);
+                state.navigation.has_bracket_data = bracket.has_data;
                 (Some(bracket), false)
             }
             Ok(Err(e)) => {

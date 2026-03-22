@@ -30,6 +30,7 @@ pub(super) struct KeyEventParams<'a> {
     pub preserved_games_page: &'a mut Option<usize>,
     pub preserved_live_mode: &'a mut bool,
     pub preserved_bracket_return_view: &'a mut Option<ViewMode>,
+    pub has_bracket_data: bool,
 }
 
 /// Checks if the given key event matches the date navigation shortcut.
@@ -453,20 +454,22 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                 }
             }
             KeyCode::Char('p') => {
-                tracing::info!("Bracket view toggle requested");
-                match *params.current_view {
-                    ViewMode::Bracket => {
-                        *params.current_view = params
-                            .preserved_bracket_return_view
-                            .take()
-                            .unwrap_or(ViewMode::Games);
+                if params.has_bracket_data || matches!(*params.current_view, ViewMode::Bracket) {
+                    tracing::info!("Bracket view toggle requested");
+                    match *params.current_view {
+                        ViewMode::Bracket => {
+                            *params.current_view = params
+                                .preserved_bracket_return_view
+                                .take()
+                                .unwrap_or(ViewMode::Games);
+                        }
+                        other => {
+                            *params.preserved_bracket_return_view = Some(other);
+                            *params.current_view = ViewMode::Bracket;
+                        }
                     }
-                    other => {
-                        *params.preserved_bracket_return_view = Some(other);
-                        *params.current_view = ViewMode::Bracket;
-                    }
+                    *params.needs_refresh = true;
                 }
-                *params.needs_refresh = true;
             }
             KeyCode::Char('s') => {
                 tracing::info!("View toggle requested");

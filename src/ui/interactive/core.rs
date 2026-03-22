@@ -89,6 +89,12 @@ pub async fn run_interactive_ui(
                 state.set_current_page(new_page);
             }
 
+            // Propagate bracket data availability to the current page for footer rendering
+            let has_bracket = state.has_bracket_data();
+            if let Some(page) = state.current_page_mut() {
+                page.set_has_bracket_data(has_bracket);
+            }
+
             // Process refresh results and update state
             let needs_state_render =
                 refresh_coordinator.process_refresh_results(&mut state, &refresh_result);

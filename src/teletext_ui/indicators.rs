@@ -114,7 +114,6 @@ impl TeletextPage {
     }
 
     /// Sets whether bracket data is available.
-    #[allow(dead_code)] // Will be used in Task 3 (propagate has_bracket_data)
     pub fn set_has_bracket_data(&mut self, has_data: bool) {
         self.has_bracket_data = has_data;
     }

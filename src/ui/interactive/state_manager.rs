@@ -176,6 +176,8 @@ pub struct NavigationState {
     pub preserved_live_mode: bool,
     /// Preserved view to return to when leaving bracket view
     pub preserved_bracket_return_view: Option<ViewMode>,
+    /// Whether the bracket API reported playoff data available
+    pub has_bracket_data: bool,
 }
 
 impl NavigationState {
@@ -188,6 +190,7 @@ impl NavigationState {
             preserved_games_page: None,
             preserved_live_mode: false,
             preserved_bracket_return_view: None,
+            has_bracket_data: false,
         }
     }
 
@@ -482,6 +485,11 @@ impl InteractiveState {
     /// Get current view mode
     pub fn current_view(&self) -> ViewMode {
         self.navigation.current_view
+    }
+
+    /// Whether the bracket API reported playoff data available
+    pub fn has_bracket_data(&self) -> bool {
+        self.navigation.has_bracket_data
     }
 }
 
