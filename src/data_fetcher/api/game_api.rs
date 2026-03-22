@@ -158,11 +158,16 @@ pub(super) async fn process_single_game(
     };
 
     let result = format!("{}-{}", game.home_team.goals, game.away_team.goals);
-    let total_goals = (game.home_team.goals + game.away_team.goals) as u32;
 
     // Try to get goal events, checking persistent player name store first for completed games
     let goal_events = if game.ended {
-        if let Some(cached_players) = PLAYER_NAME_STORE.get(game.id, total_goals).await {
+        if let Some(cached_players) = PLAYER_NAME_STORE
+            .get_players(
+                game.home_team.team_id.as_deref(),
+                game.away_team.team_id.as_deref(),
+            )
+            .await
+        {
             debug!(
                 "Game ID {}: using persistent player name cache ({} players)",
                 game.id,
@@ -170,10 +175,10 @@ pub(super) async fn process_single_game(
             );
             process_goal_events(&game, &cached_players)
         } else {
-            resolve_goal_events_with_roster(client, config, &game, &score_type, total_goals).await
+            resolve_goal_events_with_roster(client, config, &game, &score_type).await
         }
     } else {
-        resolve_goal_events_with_roster(client, config, &game, &score_type, total_goals).await
+        resolve_goal_events_with_roster(client, config, &game, &score_type).await
     };
 
     Ok(GameData {
@@ -196,27 +201,30 @@ pub(super) async fn process_single_game(
     })
 }
 
-/// Persists disambiguated player names from rosters into the player name store.
-async fn persist_player_names(
-    game_id: i32,
-    total_goals: u32,
+/// Persists disambiguated player names from rosters into the player name store, keyed by team.
+async fn persist_team_rosters(
+    home_team_id: Option<&str>,
+    away_team_id: Option<&str>,
     home_roster: &[Player],
     away_roster: &[Player],
 ) {
-    let home_players: Vec<(i64, String, String)> = home_roster
-        .iter()
-        .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
-        .collect();
-    let away_players: Vec<(i64, String, String)> = away_roster
-        .iter()
-        .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
-        .collect();
+    let to_tuples = |roster: &[Player]| -> Vec<(i64, String, String)> {
+        roster
+            .iter()
+            .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
+            .collect()
+    };
 
-    let mut all_names = format_with_disambiguation(&home_players);
-    all_names.extend(format_with_disambiguation(&away_players));
-    PLAYER_NAME_STORE
-        .insert(game_id, total_goals, all_names)
-        .await;
+    if let Some(team_id) = home_team_id {
+        PLAYER_NAME_STORE
+            .insert_team(team_id, format_with_disambiguation(&to_tuples(home_roster)))
+            .await;
+    }
+    if let Some(team_id) = away_team_id {
+        PLAYER_NAME_STORE
+            .insert_team(team_id, format_with_disambiguation(&to_tuples(away_roster)))
+            .await;
+    }
 }
 
 /// Resolves goal events using roster data from cache or API, and populates
@@ -226,14 +234,13 @@ async fn resolve_goal_events_with_roster(
     config: &Config,
     game: &ScheduleGame,
     score_type: &ScoreType,
-    total_goals: u32,
 ) -> Vec<GoalEventData> {
     // Check in-memory detailed game cache first
     if let Some(cached_detailed) = get_cached_detailed_game_data(game.season, game.id).await {
         if game.ended {
-            persist_player_names(
-                game.id,
-                total_goals,
+            persist_team_rosters(
+                game.home_team.team_id.as_deref(),
+                game.away_team.team_id.as_deref(),
                 &cached_detailed.home_team_players,
                 &cached_detailed.away_team_players,
             )
@@ -275,9 +282,9 @@ async fn resolve_goal_events_with_roster(
                     .await;
 
                 if game.ended {
-                    persist_player_names(
-                        game.id,
-                        total_goals,
+                    persist_team_rosters(
+                        game.home_team.team_id.as_deref(),
+                        game.away_team.team_id.as_deref(),
                         &detailed_response.home_team_players,
                         &detailed_response.away_team_players,
                     )

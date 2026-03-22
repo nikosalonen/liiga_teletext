@@ -3,26 +3,18 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
 use crate::config::paths::get_cache_dir_path;
 
-/// Cached player name data for a single game.
-#[derive(Serialize, Deserialize, Clone)]
-pub struct CachedGamePlayers {
-    pub goal_count: u32,
-    pub players: HashMap<i64, String>,
-}
-
-/// Persistent store for disambiguated player names, backed by a JSON file per season.
+/// Persistent store for disambiguated player names, keyed by team.
 ///
-/// Unlike `TtlCache`, this store has no LRU eviction or TTL — entries persist
-/// for the entire season. The `dirty` flag tracks whether new data has been
-/// added since the last save, enabling debounced writes.
+/// Stores a flat `team_id → (player_id → display_name)` map per season,
+/// backed by a JSON file. Each player is stored exactly once under their
+/// team, eliminating the per-game duplication of the previous design.
 pub struct PlayerNameStore {
-    data: RwLock<HashMap<i32, CachedGamePlayers>>,
+    data: RwLock<HashMap<String, HashMap<i64, String>>>,
     dirty: AtomicBool,
     loaded_season: RwLock<Option<i32>>,
     base_path: PathBuf,
@@ -56,47 +48,44 @@ impl PlayerNameStore {
         self.base_path.join(format!("players_{season}.json"))
     }
 
-    /// Returns cached player names for a game if the goal count matches.
+    /// Returns merged player names for both teams if both rosters are cached.
     ///
-    /// Returns `None` if the game is not cached or if the cached goal count
-    /// differs from `expected_goal_count` (indicating stale data).
-    pub async fn get(
+    /// Returns `None` if either team ID is missing or either team's roster
+    /// has not been cached yet, signalling that an API fetch is needed.
+    pub async fn get_players(
         &self,
-        game_id: i32,
-        expected_goal_count: u32,
+        home_team_id: Option<&str>,
+        away_team_id: Option<&str>,
     ) -> Option<HashMap<i64, String>> {
+        let (home_id, away_id) = match (home_team_id, away_team_id) {
+            (Some(h), Some(a)) => (h, a),
+            _ => return None,
+        };
+
         let data = self.data.read().await;
-        match data.get(&game_id) {
-            Some(cached) if cached.goal_count == expected_goal_count => {
-                debug!(
-                    "Player name store hit for game_id={game_id} (goal_count={expected_goal_count})"
-                );
-                Some(cached.players.clone())
-            }
-            Some(cached) => {
-                debug!(
-                    "Player name store stale for game_id={game_id}: cached goal_count={}, expected={expected_goal_count}",
-                    cached.goal_count
-                );
-                None
-            }
-            None => None,
-        }
+        let home = data.get(home_id)?;
+        let away = data.get(away_id)?;
+
+        let mut merged = home.clone();
+        merged.extend(away.iter().map(|(k, v)| (*k, v.clone())));
+        debug!(
+            "Player name store hit for {home_id} vs {away_id} ({} players)",
+            merged.len()
+        );
+        Some(merged)
     }
 
-    /// Inserts disambiguated player names for a completed game.
-    pub async fn insert(&self, game_id: i32, goal_count: u32, players: HashMap<i64, String>) {
+    /// Inserts a team's disambiguated roster into the store.
+    ///
+    /// Merges with any existing entries for the team, so new players
+    /// from later games are accumulated.
+    pub async fn insert_team(&self, team_id: &str, players: HashMap<i64, String>) {
         let player_count = players.len();
         let mut data = self.data.write().await;
-        data.insert(
-            game_id,
-            CachedGamePlayers {
-                goal_count,
-                players,
-            },
-        );
+        let entry = data.entry(team_id.to_string()).or_default();
+        entry.extend(players);
         self.dirty.store(true, Ordering::Release);
-        debug!("Player name store: cached {player_count} players for game_id={game_id}");
+        debug!("Player name store: cached {player_count} players for team {team_id}");
     }
 
     /// Loads cached player names from disk for the given season.
@@ -114,13 +103,15 @@ impl PlayerNameStore {
         let path = self.cache_file_path(season);
         let should_mark_loaded = match tokio::fs::read_to_string(&path).await {
             Ok(contents) => {
-                match serde_json::from_str::<HashMap<i32, CachedGamePlayers>>(&contents) {
+                match serde_json::from_str::<HashMap<String, HashMap<i64, String>>>(&contents) {
                     Ok(cached_data) => {
-                        let count = cached_data.len();
+                        let team_count = cached_data.len();
+                        let player_count: usize =
+                            cached_data.values().map(|roster| roster.len()).sum();
                         let mut data = self.data.write().await;
                         *data = cached_data;
                         info!(
-                            "Loaded {count} cached player entries from {}",
+                            "Loaded {team_count} team rosters ({player_count} players) from {}",
                             path.display()
                         );
                     }
@@ -201,11 +192,7 @@ impl PlayerNameStore {
                     return;
                 }
                 self.dirty.store(false, Ordering::Release);
-                info!(
-                    "Saved {} player cache entries to {}",
-                    data.len(),
-                    path.display()
-                );
+                info!("Saved {} team rosters to {}", data.len(), path.display());
             }
             Err(e) => {
                 error!("Failed to serialize player cache: {e}");
@@ -213,7 +200,7 @@ impl PlayerNameStore {
         }
     }
 
-    /// Returns the number of cached game entries.
+    /// Returns the number of cached team entries.
     #[cfg(test)]
     #[allow(clippy::len_without_is_empty)]
     pub async fn len(&self) -> usize {
@@ -244,41 +231,59 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_insert_and_get() {
+    async fn test_insert_and_get_players() {
         let store = PlayerNameStore::default();
-        let mut players = HashMap::new();
-        players.insert(100, "Koivu".to_string());
-        players.insert(200, "Selänne".to_string());
+        store
+            .insert_team(
+                "TPS",
+                HashMap::from([(100, "Koivu".to_string()), (200, "Selänne".to_string())]),
+            )
+            .await;
+        store
+            .insert_team("HIFK", HashMap::from([(300, "Barkov".to_string())]))
+            .await;
 
-        store.insert(1001, 5, players).await;
-
-        let result = store.get(1001, 5).await;
+        let result = store.get_players(Some("TPS"), Some("HIFK")).await;
         assert!(result.is_some());
         let names = result.unwrap();
-        assert_eq!(names.len(), 2);
+        assert_eq!(names.len(), 3);
         assert_eq!(names.get(&100), Some(&"Koivu".to_string()));
-        assert_eq!(names.get(&200), Some(&"Selänne".to_string()));
+        assert_eq!(names.get(&300), Some(&"Barkov".to_string()));
     }
 
     #[tokio::test]
-    async fn test_get_returns_none_for_missing_game() {
+    async fn test_get_returns_none_for_missing_team() {
         let store = PlayerNameStore::default();
-        assert!(store.get(9999, 3).await.is_none());
+        store
+            .insert_team("TPS", HashMap::from([(100, "Koivu".to_string())]))
+            .await;
+
+        // One team cached, other not → None
+        assert!(store.get_players(Some("TPS"), Some("HIFK")).await.is_none());
+
+        // Missing team IDs → None
+        assert!(store.get_players(None, Some("TPS")).await.is_none());
+        assert!(store.get_players(Some("TPS"), None).await.is_none());
     }
 
     #[tokio::test]
-    async fn test_staleness_detection() {
+    async fn test_insert_merges_with_existing() {
         let store = PlayerNameStore::default();
-        let mut players = HashMap::new();
-        players.insert(100, "Koivu".to_string());
+        store
+            .insert_team("TPS", HashMap::from([(100, "Koivu".to_string())]))
+            .await;
+        store
+            .insert_team("TPS", HashMap::from([(200, "Selänne".to_string())]))
+            .await;
 
-        store.insert(1001, 5, players).await;
-
-        // Same goal count → hit
-        assert!(store.get(1001, 5).await.is_some());
-
-        // Different goal count → stale, returns None
-        assert!(store.get(1001, 6).await.is_none());
+        // Both players should be present under TPS
+        store
+            .insert_team("HIFK", HashMap::from([(300, "Barkov".to_string())]))
+            .await;
+        let result = store.get_players(Some("TPS"), Some("HIFK")).await.unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.get(&100), Some(&"Koivu".to_string()));
+        assert_eq!(result.get(&200), Some(&"Selänne".to_string()));
     }
 
     #[tokio::test]
@@ -287,15 +292,14 @@ mod tests {
         let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
         assert!(!store.is_dirty());
 
-        // Load sets up the season (empty file = fresh start)
         store.load_from_disk(2026).await;
         assert!(!store.is_dirty());
 
-        // Insert sets dirty
-        store.insert(1001, 3, HashMap::new()).await;
+        store
+            .insert_team("TPS", HashMap::from([(100, "Koivu".to_string())]))
+            .await;
         assert!(store.is_dirty());
 
-        // Save clears dirty
         store.save_to_disk().await;
         assert!(!store.is_dirty());
     }
@@ -305,39 +309,34 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let season = 2026;
 
-        // Create store pointing at temp dir, load season, insert data
         let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
         store.load_from_disk(season).await;
 
-        let mut players = HashMap::new();
-        players.insert(100, "Koivu".to_string());
-        players.insert(200, "Selänne M.".to_string());
-        store.insert(1001, 5, players).await;
         store
-            .insert(1002, 3, HashMap::from([(300, "Barkov".to_string())]))
+            .insert_team(
+                "TPS",
+                HashMap::from([(100, "Koivu".to_string()), (200, "Selänne M.".to_string())]),
+            )
+            .await;
+        store
+            .insert_team("HIFK", HashMap::from([(300, "Barkov".to_string())]))
             .await;
 
-        // Save using the real method
         store.save_to_disk().await;
 
-        // Verify file was created
         let path = temp_dir.path().join(format!("players_{season}.json"));
         assert!(path.exists());
 
-        // Load into a fresh store using the real method
         let store2 = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
         store2.load_from_disk(season).await;
 
         assert_eq!(store2.len().await, 2);
-        let result = store2.get(1001, 5).await;
+        let result = store2.get_players(Some("TPS"), Some("HIFK")).await;
         assert!(result.is_some());
         let names = result.unwrap();
         assert_eq!(names.get(&100), Some(&"Koivu".to_string()));
         assert_eq!(names.get(&200), Some(&"Selänne M.".to_string()));
-
-        let result2 = store2.get(1002, 3).await;
-        assert!(result2.is_some());
-        assert_eq!(result2.unwrap().get(&300), Some(&"Barkov".to_string()));
+        assert_eq!(names.get(&300), Some(&"Barkov".to_string()));
     }
 
     #[tokio::test]
@@ -346,14 +345,12 @@ mod tests {
         let path = temp_dir.path().join("players_2026.json");
         tokio::fs::write(&path, "not valid json{{{").await.unwrap();
 
-        // Load from corrupted file — should recover gracefully with empty store
         let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
         store.load_from_disk(2026).await;
         assert_eq!(store.len().await, 0);
 
-        // Store should still be usable after corruption recovery
         store
-            .insert(1001, 3, HashMap::from([(100, "Test".to_string())]))
+            .insert_team("TPS", HashMap::from([(100, "Test".to_string())]))
             .await;
         assert_eq!(store.len().await, 1);
     }
@@ -363,15 +360,13 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
 
-        // Load from nonexistent file — should start empty and be operational
         store.load_from_disk(2026).await;
         assert_eq!(store.len().await, 0);
 
-        // Store should be usable
         store
-            .insert(1001, 3, HashMap::from([(100, "Test".to_string())]))
+            .insert_team("TPS", HashMap::from([(100, "Test".to_string())]))
             .await;
-        assert!(store.get(1001, 3).await.is_some());
+        assert!(store.get_players(Some("TPS"), Some("TPS")).await.is_some());
     }
 
     #[tokio::test]
@@ -379,15 +374,13 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
 
-        // First load
         store.load_from_disk(2026).await;
 
-        // Insert data after loading
         store
-            .insert(1001, 3, HashMap::from([(100, "Test".to_string())]))
+            .insert_team("TPS", HashMap::from([(100, "Test".to_string())]))
             .await;
 
-        // Second load for same season should be a no-op (data preserved)
+        // Second load for same season should be a no-op
         store.load_from_disk(2026).await;
         assert_eq!(store.len().await, 1);
     }
@@ -398,51 +391,24 @@ mod tests {
         let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
         store.load_from_disk(2026).await;
 
-        // Save without inserting — should be a no-op (no file created)
         store.save_to_disk().await;
         let path = temp_dir.path().join("players_2026.json");
         assert!(!path.exists());
     }
 
     #[tokio::test]
-    async fn test_insert_overwrites_existing_entry() {
-        let store = PlayerNameStore::default();
-        store
-            .insert(1001, 5, HashMap::from([(100, "Koivu".to_string())]))
-            .await;
-        store
-            .insert(
-                1001,
-                6,
-                HashMap::from([(100, "Koivu".to_string()), (200, "Selänne".to_string())]),
-            )
-            .await;
-
-        // Old entry (goal_count=5) should be gone
-        assert!(store.get(1001, 5).await.is_none());
-
-        // New entry (goal_count=6) should be present
-        let result = store.get(1001, 6).await;
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().len(), 2);
-    }
-
-    #[tokio::test]
     async fn test_serialization_format() {
-        let mut data = HashMap::new();
+        let mut data: HashMap<String, HashMap<i64, String>> = HashMap::new();
         data.insert(
-            1001,
-            CachedGamePlayers {
-                goal_count: 5,
-                players: HashMap::from([(100, "Koivu".to_string()), (200, "Selänne".to_string())]),
-            },
+            "TPS".to_string(),
+            HashMap::from([(100, "Koivu".to_string()), (200, "Selänne".to_string())]),
         );
 
         let json = serde_json::to_string_pretty(&data).unwrap();
-        let deserialized: HashMap<i32, CachedGamePlayers> = serde_json::from_str(&json).unwrap();
+        let deserialized: HashMap<String, HashMap<i64, String>> =
+            serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.len(), 1);
-        let entry = deserialized.get(&1001).unwrap();
-        assert_eq!(entry.goal_count, 5);
-        assert_eq!(entry.players.len(), 2);
+        let roster = deserialized.get("TPS").unwrap();
+        assert_eq!(roster.len(), 2);
     }
 }
