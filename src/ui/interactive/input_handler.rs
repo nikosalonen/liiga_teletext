@@ -29,7 +29,6 @@ pub(super) struct KeyEventParams<'a> {
     pub current_view: &'a mut ViewMode,
     pub preserved_games_page: &'a mut Option<usize>,
     pub preserved_live_mode: &'a mut bool,
-    pub preserved_bracket_return_view: &'a mut Option<ViewMode>,
     pub has_bracket_data: bool,
 }
 
@@ -458,13 +457,16 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                     tracing::info!("Bracket view toggle requested");
                     match *params.current_view {
                         ViewMode::Bracket => {
-                            *params.current_view = params
-                                .preserved_bracket_return_view
-                                .take()
-                                .unwrap_or(ViewMode::Games);
+                            *params.current_view = ViewMode::Games;
                         }
-                        other => {
-                            *params.preserved_bracket_return_view = Some(other);
+                        _ => {
+                            // Preserve current games page so the fast-restore
+                            // path rebuilds the page from cached data on return
+                            // (avoids change-detection skip when data is unchanged).
+                            if let Some(page) = params.current_page.as_ref() {
+                                *params.preserved_games_page =
+                                    Some(page.get_current_page());
+                            }
                             *params.current_view = ViewMode::Bracket;
                         }
                     }
@@ -474,8 +476,12 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
             KeyCode::Char('s') => {
                 tracing::info!("View toggle requested");
                 match *params.current_view {
-                    ViewMode::Games => {
-                        // Preserve current games page
+                    ViewMode::Standings { live_mode } => {
+                        *params.preserved_live_mode = live_mode;
+                        *params.current_view = ViewMode::Games;
+                    }
+                    _ => {
+                        // Preserve current games page when leaving games
                         if let Some(page) = params.current_page.as_ref() {
                             *params.preserved_games_page = Some(page.get_current_page());
                         }
@@ -483,11 +489,6 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                             live_mode: *params.preserved_live_mode,
                         };
                     }
-                    ViewMode::Standings { live_mode } => {
-                        *params.preserved_live_mode = live_mode;
-                        *params.current_view = ViewMode::Games;
-                    }
-                    ViewMode::Bracket => {} // No-op: press 'p' to leave bracket
                 }
                 *params.needs_refresh = true;
             }

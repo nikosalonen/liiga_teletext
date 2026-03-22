@@ -131,8 +131,6 @@ impl EventHandler {
         let mut current_view = previous_view;
         let mut preserved_games_page = state.navigation.preserved_games_page;
         let mut preserved_live_mode = state.navigation.preserved_live_mode;
-        let mut preserved_bracket_return_view = state.navigation.preserved_bracket_return_view;
-
         // Use existing input handler with extracted state
         let should_exit = handle_key_event(KeyEventParams {
             key_event,
@@ -146,7 +144,6 @@ impl EventHandler {
             current_view: &mut current_view,
             preserved_games_page: &mut preserved_games_page,
             preserved_live_mode: &mut preserved_live_mode,
-            preserved_bracket_return_view: &mut preserved_bracket_return_view,
             has_bracket_data: state.navigation.has_bracket_data,
         })
         .await?;
@@ -171,7 +168,6 @@ impl EventHandler {
         state.navigation.current_view = current_view;
         state.navigation.preserved_games_page = preserved_games_page;
         state.navigation.preserved_live_mode = preserved_live_mode;
-        state.navigation.preserved_bracket_return_view = preserved_bracket_return_view;
 
         if should_exit {
             Ok(EventResult::Exit)
