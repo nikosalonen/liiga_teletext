@@ -464,8 +464,7 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                             // path rebuilds the page from cached data on return
                             // (avoids change-detection skip when data is unchanged).
                             if let Some(page) = params.current_page.as_ref() {
-                                *params.preserved_games_page =
-                                    Some(page.get_current_page());
+                                *params.preserved_games_page = Some(page.get_current_page());
                             }
                             *params.current_view = ViewMode::Bracket;
                         }

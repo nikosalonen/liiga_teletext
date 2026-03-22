@@ -122,260 +122,44 @@ fn render_stacked(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Teletext
 
 /// Renders bracket as a tree with box-drawing characters.
 ///
-/// Uses reseeding-aware grouping: SF matchups are linked back to QF matchups
-/// by matching team names, so the bracket halves are derived dynamically.
+/// Each phase is rendered sequentially with its own header and BO label.
+/// Team names show progression between rounds (e.g., a QF winner appears
+/// in the SF matchup).
 fn render_tree(bracket: &PlayoffBracket, _terminal_width: u16) -> Vec<TeletextRow> {
     let mut rows: Vec<TeletextRow> = Vec::new();
     let phase_count = bracket.phases.len();
     let name_max = max_team_len(phase_count);
 
-    // Separate phases by role
-    let (early_phases, sf_phase, final_phase, bronze_phase) = classify_phases(&bracket.phases);
-
-    // Build bracket halves using reseeding-aware grouping
-    let halves = build_bracket_halves(&early_phases, sf_phase, name_max);
-
-    for (half_idx, half) in halves.iter().enumerate() {
-        if half_idx > 0 {
+    for (i, phase) in bracket.phases.iter().enumerate() {
+        if i > 0 {
             rows.push(TeletextRow::BracketLine(String::new()));
         }
-        let show_header = half_idx == 0;
-        render_half(half, &mut rows, name_max, show_header);
-    }
 
-    // Final
-    if let Some(fp) = final_phase {
-        let bo_label = fp
+        let bo_label = phase
             .matchups
             .first()
             .map(|m| format!(" {}{}{}", color(DIM), series_format(m.req_wins), RESET))
             .unwrap_or_default();
-        rows.push(TeletextRow::BracketLine(String::new()));
         rows.push(TeletextRow::BracketLine(format!(
             "{}{}{}{bo_label}",
             color(CYAN),
-            fp.name,
+            phase.name,
             RESET
         )));
-        for m in &fp.matchups {
+
+        for m in &phase.matchups {
             render_matchup_tree(m, &mut rows, name_max);
         }
     }
 
-    // Bronze
-    if let Some(bp) = bronze_phase {
-        let bo_label = bp
-            .matchups
-            .first()
-            .map(|m| format!(" {}{}{}", color(DIM), series_format(m.req_wins), RESET))
-            .unwrap_or_default();
-        rows.push(TeletextRow::BracketLine(String::new()));
-        rows.push(TeletextRow::BracketLine(format!(
-            "{}{}{}{bo_label}",
-            color(CYAN),
-            bp.name,
-            RESET
-        )));
-        for m in &bp.matchups {
-            render_matchup_tree(m, &mut rows, name_max);
-        }
-    }
-
-    // Champion label
     append_champion(&bracket.phases, &mut rows);
     rows
-}
-
-/// Classifies phases into early rounds (QF / first round), SF, final, and bronze.
-fn classify_phases(
-    phases: &[BracketPhase],
-) -> (
-    Vec<&BracketPhase>,
-    Option<&BracketPhase>,
-    Option<&BracketPhase>,
-    Option<&BracketPhase>,
-) {
-    let mut early: Vec<&BracketPhase> = Vec::new();
-    let mut sf: Option<&BracketPhase> = None;
-    let mut final_p: Option<&BracketPhase> = None;
-    let mut bronze: Option<&BracketPhase> = None;
-
-    for phase in phases {
-        match phase.phase_number {
-            4 => bronze = Some(phase),
-            5 => final_p = Some(phase),
-            3 => sf = Some(phase),
-            _ => early.push(phase), // phase 1 (first round) and 2 (QF)
-        }
-    }
-    // Sort early phases by phase number
-    early.sort_by_key(|p| p.phase_number);
-
-    (early, sf, final_p, bronze)
-}
-
-/// A bracket half: a group of early-round matchups feeding into one SF matchup.
-struct BracketHalf<'a> {
-    early_matchups: Vec<&'a BracketMatchup>,
-    sf_matchup: Option<&'a BracketMatchup>,
-    /// Phase headers for early rounds in this half
-    early_phase_name: Option<String>,
-}
-
-/// Builds bracket halves by linking SF teams back to QF/early-round winners.
-///
-/// This is the reseeding-aware algorithm:
-/// 1. For each SF matchup, find which early-round matchups produced its teams
-/// 2. Group early matchups into halves based on SF connections
-/// 3. Unmatched early matchups form their own independent groups
-fn build_bracket_halves<'a>(
-    early_phases: &[&'a BracketPhase],
-    sf_phase: Option<&'a BracketPhase>,
-    _name_max: usize,
-) -> Vec<BracketHalf<'a>> {
-    // Collect all early matchups with their phase info
-    let all_early: Vec<&BracketMatchup> = early_phases
-        .iter()
-        .flat_map(|p| p.matchups.iter())
-        .collect();
-
-    let early_phase_name = early_phases.last().map(|p| p.name.clone());
-
-    let Some(sf) = sf_phase else {
-        // No SF phase: each early matchup is its own group, or all in one half
-        if all_early.is_empty() {
-            return Vec::new();
-        }
-        // Split into pairs for visual balance
-        let mid = all_early.len().div_ceil(2);
-        let mut halves = Vec::new();
-        halves.push(BracketHalf {
-            early_matchups: all_early[..mid].to_vec(),
-            sf_matchup: None,
-            early_phase_name: early_phase_name.clone(),
-        });
-        if mid < all_early.len() {
-            halves.push(BracketHalf {
-                early_matchups: all_early[mid..].to_vec(),
-                sf_matchup: None,
-                early_phase_name,
-            });
-        }
-        return halves;
-    };
-
-    let mut halves: Vec<BracketHalf> = Vec::new();
-    let mut claimed: Vec<bool> = vec![false; all_early.len()];
-
-    for sf_matchup in &sf.matchups {
-        let mut connected: Vec<&BracketMatchup> = Vec::new();
-
-        for (i, em) in all_early.iter().enumerate() {
-            if claimed[i] {
-                continue;
-            }
-            if matchup_feeds_into(em, sf_matchup) {
-                connected.push(em);
-                claimed[i] = true;
-            }
-        }
-
-        halves.push(BracketHalf {
-            early_matchups: connected,
-            sf_matchup: Some(sf_matchup),
-            early_phase_name: early_phase_name.clone(),
-        });
-    }
-
-    // Any unclaimed early matchups go into a standalone group
-    let unclaimed: Vec<&BracketMatchup> = all_early
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !claimed[*i])
-        .map(|(_, m)| *m)
-        .collect();
-
-    if !unclaimed.is_empty() {
-        halves.push(BracketHalf {
-            early_matchups: unclaimed,
-            sf_matchup: None,
-            early_phase_name,
-        });
-    }
-
-    halves
-}
-
-/// Checks whether an early-round matchup feeds into a semifinal matchup.
-///
-/// A matchup feeds into an SF if the SF contains one of its teams (either as
-/// winner, team1, or team2). This handles both decided and in-progress series.
-fn matchup_feeds_into(early: &BracketMatchup, sf: &BracketMatchup) -> bool {
-    let sf_teams = [&sf.team1, &sf.team2];
-    // Check if the winner of the early matchup appears in SF
-    if let Some(ref winner) = early.winner
-        && sf_teams.contains(&winner)
-    {
-        return true;
-    }
-    // Also check team names directly (for in-progress series where winner may
-    // coincidentally share a name, or when teams advance)
-    sf_teams
-        .iter()
-        .any(|t| *t == &early.team1 || *t == &early.team2)
 }
 
 /// Formats series length from req_wins, e.g., req_wins=3 → "BO5", req_wins=4 → "BO7", req_wins=1 → "BO1"
 fn series_format(req_wins: u8) -> String {
     let games = req_wins as u16 * 2 - 1;
     format!("BO{games}")
-}
-
-/// Derives the series format label from the matchups in a phase, if consistent.
-fn phase_series_label(matchups: &[&BracketMatchup]) -> Option<String> {
-    let first = matchups.first()?;
-    Some(series_format(first.req_wins))
-}
-
-/// Renders one bracket half: early-round matchups followed by an optional SF matchup.
-fn render_half(
-    half: &BracketHalf,
-    rows: &mut Vec<TeletextRow>,
-    name_max: usize,
-    show_header: bool,
-) {
-    // Show early phase header only for the first half
-    if show_header
-        && !half.early_matchups.is_empty()
-        && let Some(ref phase_name) = half.early_phase_name
-    {
-        let bo_label = phase_series_label(&half.early_matchups)
-            .map(|bo| format!(" {}{bo}{}", color(DIM), RESET))
-            .unwrap_or_default();
-        rows.push(TeletextRow::BracketLine(format!(
-            "{}{}{}{bo_label}",
-            color(CYAN),
-            phase_name,
-            RESET
-        )));
-    }
-    for m in &half.early_matchups {
-        render_matchup_tree(m, rows, name_max);
-    }
-
-    if let Some(sf_m) = half.sf_matchup {
-        if show_header {
-            let bo_label = series_format(sf_m.req_wins);
-            rows.push(TeletextRow::BracketLine(format!(
-                "{}V\u{00C4}LIER\u{00C4}T{} {}{bo_label}{}",
-                color(CYAN),
-                RESET,
-                color(DIM),
-                RESET
-            )));
-        }
-        render_matchup_tree(sf_m, rows, name_max);
-    }
 }
 
 /// Renders a single matchup as 3-line tree block with box-drawing characters:
@@ -691,13 +475,7 @@ mod tests {
     }
 
     #[test]
-    fn test_reseeding_dynamic_grouping() {
-        // After QFs, reseeding means #1 seed plays lowest remaining seed.
-        // QF results: HIFK(1) beats TPS(8), Tappara(2) beats KooKoo(7),
-        //             Lukko(3) beats Ilves(6), Kärpät(4) beats Pelicans(5)
-        // Reseeded SF: HIFK(1) vs Kärpät(4), Tappara(2) vs Lukko(3)
-        // This means QF pair 1 (HIFK-TPS) groups with QF pair 4 (Kärpät-Pelicans),
-        // NOT with QF pair 2.
+    fn test_qf_and_sf_rendered_with_separate_headers() {
         let phases = vec![
             BracketPhase {
                 phase_number: 2,
@@ -713,9 +491,7 @@ mod tests {
                 phase_number: 3,
                 name: "V\u{00C4}LIER\u{00C4}T".to_string(),
                 matchups: vec![
-                    // Reseeded: #1 HIFK vs #4 Kärpät
                     make_matchup("HIFK", "K\u{00E4}rp\u{00E4}t", 2, 1, 3, 1),
-                    // Reseeded: #2 Tappara vs #3 Lukko
                     make_matchup("Tappara", "Lukko", 3, 2, 3, 2),
                 ],
             },
@@ -724,14 +500,85 @@ mod tests {
         let rows = render_bracket(&bracket, 80);
         let text = lines_text(&rows);
 
-        // Verify both SF matchups and their feeder QF matchups appear
+        // Both phases get their own header
+        assert!(
+            text.contains("PUOLIV\u{00C4}LIER\u{00C4}T"),
+            "Expected QF header in output"
+        );
+        assert!(
+            text.contains("V\u{00C4}LIER\u{00C4}T"),
+            "Expected SF header in output"
+        );
+        // All teams present
         assert!(text.contains("HIFK"), "Expected HIFK in output");
         assert!(
             text.contains("K\u{00E4}rp\u{00E4}"),
-            "Expected Kärpät in output (possibly truncated)"
+            "Expected K\u{00E4}rp\u{00E4}t in output (possibly truncated)"
         );
         assert!(text.contains("Tappara"), "Expected Tappara in output");
         assert!(text.contains("Lukko"), "Expected Lukko in output");
+        // QF header appears before SF header
+        let qf_pos = text.find("PUOLIV\u{00C4}LIER\u{00C4}T").unwrap();
+        let sf_pos = text.find("V\u{00C4}LIER\u{00C4}T").unwrap();
+        assert!(qf_pos < sf_pos, "QF header should appear before SF header");
+    }
+
+    #[test]
+    fn test_multi_early_phases_separate_headers() {
+        // Regression test for #114: phases 1, 2, and 3 must each get
+        // their own header with correct BO label.
+        let mut r1_matchup1 = make_matchup("Lukko", "HPK", 3, 1, 1, 1);
+        r1_matchup1.req_wins = 3; // BO5
+        let mut r1_matchup2 = make_matchup("JYP", "Pelicans", 1, 3, 1, 2);
+        r1_matchup2.req_wins = 3;
+        let phases = vec![
+            BracketPhase {
+                phase_number: 1,
+                name: "1. KIERROS".to_string(),
+                matchups: vec![r1_matchup1, r1_matchup2],
+            },
+            BracketPhase {
+                phase_number: 2,
+                name: "PUOLIV\u{00C4}LIER\u{00C4}T".to_string(),
+                matchups: vec![
+                    make_matchup("HIFK", "Lukko", 2, 1, 2, 1),
+                    make_matchup("Tappara", "Pelicans", 0, 0, 2, 2),
+                ],
+            },
+            BracketPhase {
+                phase_number: 3,
+                name: "V\u{00C4}LIER\u{00C4}T".to_string(),
+                matchups: vec![make_matchup("???", "???", 0, 0, 3, 1)],
+            },
+        ];
+        let bracket = make_bracket(phases);
+        let rows = render_bracket(&bracket, 80);
+        let text = lines_text(&rows);
+
+        // Each phase has its own header
+        assert!(text.contains("1. KIERROS"), "Expected 1. KIERROS header");
+        assert!(
+            text.contains("PUOLIV\u{00C4}LIER\u{00C4}T"),
+            "Expected QF header"
+        );
+        assert!(
+            text.contains("V\u{00C4}LIER\u{00C4}T"),
+            "Expected SF header"
+        );
+        // Correct BO labels
+        assert!(text.contains("BO5"), "Expected BO5 for 1. KIERROS");
+        assert!(text.contains("BO7"), "Expected BO7 for QF/SF");
+        // Phase ordering
+        let r1_pos = text.find("1. KIERROS").unwrap();
+        let qf_pos = text.find("PUOLIV\u{00C4}LIER\u{00C4}T").unwrap();
+        let sf_pos = text.find("V\u{00C4}LIER\u{00C4}T").unwrap();
+        assert!(r1_pos < qf_pos, "1. KIERROS should appear before QF");
+        assert!(qf_pos < sf_pos, "QF should appear before SF");
+        // All teams present
+        assert!(text.contains("Lukko"), "Missing Lukko");
+        assert!(text.contains("HPK"), "Missing HPK");
+        assert!(text.contains("HIFK"), "Missing HIFK");
+        assert!(text.contains("Tappara"), "Missing Tappara");
     }
 
     #[test]
