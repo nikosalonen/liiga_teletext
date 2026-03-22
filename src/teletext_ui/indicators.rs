@@ -119,7 +119,6 @@ impl TeletextPage {
     }
 
     /// Sets the initial fetched date (the date originally fetched on startup).
-    #[allow(dead_code)] // Will be used in Task 4 (hide t=Tänään on auto-forwarded initial date)
     pub fn set_initial_fetched_date(&mut self, date: Option<String>) {
         self.initial_fetched_date = date;
     }

@@ -84,15 +84,28 @@ pub async fn run_interactive_ui(
                 .perform_refresh_cycle(&mut state, &refresh_config, is_date_change)
                 .await?;
 
+            // Set the initial fetched date once on the first successful fetch
+            if state.navigation.initial_fetched_date.is_none()
+                && !refresh_result.fetched_date.is_empty()
+            {
+                state.navigation.initial_fetched_date = Some(refresh_result.fetched_date.clone());
+                tracing::info!(
+                    "Initial fetched date set to: {}",
+                    refresh_result.fetched_date
+                );
+            }
+
             // Update the current page if we have a new one (must be done before processing results)
             if let Some(new_page) = refresh_result.new_page.take() {
                 state.set_current_page(new_page);
             }
 
-            // Propagate bracket data availability to the current page for footer rendering
+            // Propagate bracket data availability and initial date to the current page for footer rendering
             let has_bracket = state.has_bracket_data();
+            let initial_date = state.initial_fetched_date().clone();
             if let Some(page) = state.current_page_mut() {
                 page.set_has_bracket_data(has_bracket);
+                page.set_initial_fetched_date(initial_date);
             }
 
             // Process refresh results and update state

@@ -54,7 +54,6 @@ pub struct TeletextPage {
     pub(super) is_loading_page: bool,         // Whether this is a loading/fetching page
     pub(super) is_bracket_page: bool,         // Whether this is a bracket display page
     pub(super) has_bracket_data: bool,        // Whether bracket data is available
-    #[allow(dead_code)] // Will be used in Task 4 (hide t=Tänään on auto-forwarded initial date)
     pub(super) initial_fetched_date: Option<String>, // The date originally fetched on startup
 }
 
@@ -611,7 +610,17 @@ impl TeletextPage {
                         .format("%Y-%m-%d")
                         .to_string()
                 };
-                date != &default_date
+                // Hide 't' when on the default date (today/yesterday)
+                if date == &default_date {
+                    return false;
+                }
+                // Hide 't' when still viewing the initial auto-forwarded date
+                if let Some(ref initial) = self.initial_fetched_date
+                    && date == initial
+                {
+                    return false;
+                }
+                true
             });
 
             super::footer::render_footer_with_view(

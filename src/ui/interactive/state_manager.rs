@@ -178,6 +178,8 @@ pub struct NavigationState {
     pub preserved_bracket_return_view: Option<ViewMode>,
     /// Whether the bracket API reported playoff data available
     pub has_bracket_data: bool,
+    /// The date originally fetched on startup (before any manual navigation)
+    pub initial_fetched_date: Option<String>,
 }
 
 impl NavigationState {
@@ -191,6 +193,7 @@ impl NavigationState {
             preserved_live_mode: false,
             preserved_bracket_return_view: None,
             has_bracket_data: false,
+            initial_fetched_date: None,
         }
     }
 
@@ -490,6 +493,11 @@ impl InteractiveState {
     /// Whether the bracket API reported playoff data available
     pub fn has_bracket_data(&self) -> bool {
         self.navigation.has_bracket_data
+    }
+
+    /// Get the initial fetched date (the date originally fetched on startup)
+    pub fn initial_fetched_date(&self) -> &Option<String> {
+        &self.navigation.initial_fetched_date
     }
 }
 
