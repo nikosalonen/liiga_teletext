@@ -64,13 +64,14 @@ Rendering:
 - **`cli.rs`** — Clap `Args` struct with all CLI flags
 - **`commands.rs`** — Command handlers for non-interactive modes
 - **`app.rs`** — Terminal setup (raw mode, alternate screen) with RAII cleanup
-- **`data_fetcher/api/`** — HTTP client, API orchestration, URL building, date/season logic
-- **`data_fetcher/models/`** — API response types (`GameData`, `ScheduleResponse`, `DetailedGameResponse`, `StandingsResponse`)
+- **`data_fetcher/api/`** — HTTP client, API orchestration, URL building, date/season logic, bracket API
+- **`data_fetcher/models/`** — API response types (`GameData`, `ScheduleResponse`, `DetailedGameResponse`, `StandingsResponse`, `BracketResponse`)
 - **`data_fetcher/game_utils.rs`** — Game state utilities and helper functions
 - **`data_fetcher/processors/`** — Game status determination, goal processing, player name fetching
 - **`data_fetcher/cache/`** — Multi-level TTL caching (HTTP responses, tournaments, games, goals, players) and persistent disk-backed player name store
 - **`data_fetcher/player_names/`** — Name formatting and disambiguation (e.g., "Saarela #7")
-- **`teletext_ui/`** — Teletext page structure, rendering pipeline, pagination, display modes, standings display, season utils
+- **`teletext_ui/`** — Teletext page structure, rendering pipeline, pagination, display modes, standings display, bracket display, season utils
+- **`teletext_ui/layout/`** — Column layout management, ANSI cache, layout config
 - **`ui/interactive/`** — Interactive event loop: state management, navigation, refresh coordination, input handling, change detection, standings/series display
 - **`schemas/`** — JSON schemas for API responses (game schedule, game details)
 - **`ui/components/`** — Team abbreviations
@@ -88,12 +89,12 @@ loop {
   1. Check if auto-refresh needed (RefreshCoordinator)
   2. Fetch data if refresh requested → update state
   3. Render page if state changed (buffered output)
-  4. Process keyboard events (←/→ pages, Shift+←/→ dates, 's' standings, 'r' refresh, 'q' quit)
+  4. Process keyboard events (←/→ pages, Shift+←/→ dates, 's' standings, 'p' bracket (playoffs only), 'l' live mode, 't' today, 'r' refresh, 'q' quit)
   5. Sleep 50ms
 }
 ```
 
-Auto-refresh intervals: 1 minute during live games, 1 hour for completed games only. Polling rate adapts to idle time (50ms → 200ms → 500ms).
+Auto-refresh intervals: 15 seconds during live games, 30 seconds near start time, 60 seconds otherwise (completed games served from 1-hour cache). Polling rate adapts to idle time (50ms → 200ms → 500ms).
 
 ### Caching Strategy
 
@@ -101,7 +102,7 @@ Auto-refresh intervals: 1 minute during live games, 1 hour for completed games o
 - Live games: 15s
 - Completed games: 1 hour
 - Starting soon: 30s
-- Player data: 24 hours
+- Player data: never expires (LRU eviction only)
 
 **Persistent player name cache** (`data_fetcher/cache/persistence.rs`) — disk-backed JSON store keyed by team per season. Disambiguated player names (e.g., "A. Saarela") are persisted to the platform cache directory so completed games skip the detailed game API endpoint on restart. Uses atomic write (tmp + rename), a sequence counter for dirty tracking, and season-scoped files (`players_{season}.json`).
 
@@ -109,7 +110,7 @@ Auto-refresh intervals: 1 minute during live games, 1 hour for completed games o
 
 TOML config at platform-specific paths (Linux: `~/.config/liiga_teletext/`, macOS: `~/Library/Application Support/liiga_teletext/`, Windows: `%APPDATA%\liiga_teletext/`).
 
-Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTTP_TIMEOUT`.
+Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTTP_TIMEOUT`, `LIIGA_API_FETCH_TIMEOUT`.
 
 ## Critical Requirements
 

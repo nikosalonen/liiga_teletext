@@ -76,10 +76,13 @@ cargo run --release
   - **Note**: Date navigation is limited to the current season for performance and UX reasons
   - To view games from previous seasons, use the `-d` flag with a specific date
 - Press `s` to toggle standings view (press again to toggle live mode, once more to return)
+- Press `p` to toggle playoff bracket view (visible during playoffs)
+- Press `l` to toggle live mode in standings
+- Press `t` to jump back to today's view
 - Press `r` to manually refresh data
 - Data refreshes automatically:
-  - Every minute for live games
-  - Every hour for non-live games
+  - Every 15 seconds for live games
+  - Every 60 seconds otherwise (completed games served from 1-hour cache)
 
 ### Command Line Options
 
@@ -98,6 +101,7 @@ cargo run --release
   - **Breaking Change**: The `-c` short flag has been removed to avoid conflict with `--compact`. Use the full `--config` flag instead.
 - `--set-log-file <PATH>` - Set a persistent custom log file location
 - `--clear-log-file` - Clear custom log file path and revert to default location
+- `--reset-cache` - Clear cached player names and start fresh
 - `-l, --list-config` - List current configuration settings
 
 #### Debug Options
