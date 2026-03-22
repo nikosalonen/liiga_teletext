@@ -29,7 +29,6 @@ pub struct FooterContext<'a> {
     pub season_countdown: &'a Option<String>,
     pub view_mode: Option<&'a crate::ui::interactive::state_manager::ViewMode>,
     pub show_today_shortcut: bool,
-    #[allow(dead_code)] // Will be used in Task 2 (footer shows 'p' conditionally)
     pub has_bracket_data: bool,
 }
 
@@ -66,20 +65,45 @@ pub fn render_footer_with_view(
                 "q=Lopeta s=Ottelut l=Live"
             }
         }
-        _ => match (
-            ctx.auto_refresh_disabled,
-            ctx.show_today_shortcut,
-            ctx.total_pages > 1,
-        ) {
-            (true, true, true) => "q=Lopeta ←→=Sivut s=Taulukko t=Tänään (Ei päivity)",
-            (true, true, false) => "q=Lopeta s=Taulukko t=Tänään (Ei päivity)",
-            (true, false, true) => "q=Lopeta ←→=Sivut s=Taulukko (Ei päivity)",
-            (true, false, false) => "q=Lopeta s=Taulukko (Ei päivity)",
-            (false, true, true) => "q=Lopeta ←→=Sivut s=Taulukko t=Tänään",
-            (false, true, false) => "q=Lopeta s=Taulukko t=Tänään",
-            (false, false, true) => "q=Lopeta ←→=Sivut s=Taulukko",
-            (false, false, false) => "q=Lopeta s=Taulukko",
-        },
+        Some(crate::ui::interactive::state_manager::ViewMode::Bracket) => {
+            match (ctx.auto_refresh_disabled, ctx.total_pages > 1) {
+                (true, true) => "q=Lopeta ←→=Sivut p=Pudotuspeli (Ei päivity)",
+                (true, false) => "q=Lopeta p=Pudotuspeli (Ei päivity)",
+                (false, true) => "q=Lopeta ←→=Sivut p=Pudotuspeli",
+                (false, false) => "q=Lopeta p=Pudotuspeli",
+            }
+        }
+        Some(crate::ui::interactive::state_manager::ViewMode::Games) | None => {
+            match (
+                ctx.auto_refresh_disabled,
+                ctx.show_today_shortcut,
+                ctx.total_pages > 1,
+                ctx.has_bracket_data,
+            ) {
+                (true, true, true, true) => {
+                    "q=Lopeta ←→=Sivut s=Taulukko p=Pudotuspeli t=Tänään (Ei päivity)"
+                }
+                (true, true, true, false) => "q=Lopeta ←→=Sivut s=Taulukko t=Tänään (Ei päivity)",
+                (true, true, false, true) => {
+                    "q=Lopeta s=Taulukko p=Pudotuspeli t=Tänään (Ei päivity)"
+                }
+                (true, true, false, false) => "q=Lopeta s=Taulukko t=Tänään (Ei päivity)",
+                (true, false, true, true) => {
+                    "q=Lopeta ←→=Sivut s=Taulukko p=Pudotuspeli (Ei päivity)"
+                }
+                (true, false, true, false) => "q=Lopeta ←→=Sivut s=Taulukko (Ei päivity)",
+                (true, false, false, true) => "q=Lopeta s=Taulukko p=Pudotuspeli (Ei päivity)",
+                (true, false, false, false) => "q=Lopeta s=Taulukko (Ei päivity)",
+                (false, true, true, true) => "q=Lopeta ←→=Sivut s=Taulukko p=Pudotuspeli t=Tänään",
+                (false, true, true, false) => "q=Lopeta ←→=Sivut s=Taulukko t=Tänään",
+                (false, true, false, true) => "q=Lopeta s=Taulukko p=Pudotuspeli t=Tänään",
+                (false, true, false, false) => "q=Lopeta s=Taulukko t=Tänään",
+                (false, false, true, true) => "q=Lopeta ←→=Sivut s=Taulukko p=Pudotuspeli",
+                (false, false, true, false) => "q=Lopeta ←→=Sivut s=Taulukko",
+                (false, false, false, true) => "q=Lopeta s=Taulukko p=Pudotuspeli",
+                (false, false, false, false) => "q=Lopeta s=Taulukko",
+            }
+        }
     };
 
     // Add season countdown above the footer if available
@@ -240,5 +264,88 @@ mod tests {
 
         // In non-interactive mode, footer should be below content
         assert_eq!(position, 11);
+    }
+
+    #[test]
+    fn test_footer_games_view_with_bracket_data() {
+        let mut buffer = String::new();
+        let mut stdout = std::io::stdout();
+        let ctx = FooterContext {
+            footer_y: 23,
+            width: 80,
+            total_pages: 2,
+            auto_refresh_indicator: &None,
+            auto_refresh_disabled: false,
+            error_warning_active: false,
+            season_countdown: &None,
+            view_mode: Some(&crate::ui::interactive::state_manager::ViewMode::Games),
+            show_today_shortcut: false,
+            has_bracket_data: true,
+        };
+        render_footer_with_view(&mut stdout, &mut buffer, &ctx).unwrap();
+        assert!(buffer.contains("p=Pudotuspeli"));
+        assert!(buffer.contains("s=Taulukko"));
+    }
+
+    #[test]
+    fn test_footer_games_view_without_bracket_data() {
+        let mut buffer = String::new();
+        let mut stdout = std::io::stdout();
+        let ctx = FooterContext {
+            footer_y: 23,
+            width: 80,
+            total_pages: 2,
+            auto_refresh_indicator: &None,
+            auto_refresh_disabled: false,
+            error_warning_active: false,
+            season_countdown: &None,
+            view_mode: Some(&crate::ui::interactive::state_manager::ViewMode::Games),
+            show_today_shortcut: false,
+            has_bracket_data: false,
+        };
+        render_footer_with_view(&mut stdout, &mut buffer, &ctx).unwrap();
+        assert!(!buffer.contains("p=Pudotuspeli"));
+        assert!(buffer.contains("s=Taulukko"));
+    }
+
+    #[test]
+    fn test_footer_bracket_view_no_standings_key() {
+        let mut buffer = String::new();
+        let mut stdout = std::io::stdout();
+        let ctx = FooterContext {
+            footer_y: 23,
+            width: 80,
+            total_pages: 2,
+            auto_refresh_indicator: &None,
+            auto_refresh_disabled: false,
+            error_warning_active: false,
+            season_countdown: &None,
+            view_mode: Some(&crate::ui::interactive::state_manager::ViewMode::Bracket),
+            show_today_shortcut: false,
+            has_bracket_data: true,
+        };
+        render_footer_with_view(&mut stdout, &mut buffer, &ctx).unwrap();
+        assert!(!buffer.contains("s=Taulukko"));
+        assert!(buffer.contains("p=Pudotuspeli"));
+    }
+
+    #[test]
+    fn test_footer_none_view_mode() {
+        let mut buffer = String::new();
+        let mut stdout = std::io::stdout();
+        let ctx = FooterContext {
+            footer_y: 23,
+            width: 80,
+            total_pages: 1,
+            auto_refresh_indicator: &None,
+            auto_refresh_disabled: false,
+            error_warning_active: false,
+            season_countdown: &None,
+            view_mode: None,
+            show_today_shortcut: false,
+            has_bracket_data: false,
+        };
+        render_footer_with_view(&mut stdout, &mut buffer, &ctx).unwrap();
+        assert!(buffer.contains("s=Taulukko"));
     }
 }
