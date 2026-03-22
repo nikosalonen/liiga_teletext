@@ -219,11 +219,21 @@ async fn persist_team_rosters(
         PLAYER_NAME_STORE
             .insert_team(team_id, format_with_disambiguation(&to_tuples(home_roster)))
             .await;
+    } else if !home_roster.is_empty() {
+        debug!(
+            "Cannot persist home team roster ({} players): team_id is None",
+            home_roster.len()
+        );
     }
     if let Some(team_id) = away_team_id {
         PLAYER_NAME_STORE
             .insert_team(team_id, format_with_disambiguation(&to_tuples(away_roster)))
             .await;
+    } else if !away_roster.is_empty() {
+        debug!(
+            "Cannot persist away team roster ({} players): team_id is None",
+            away_roster.len()
+        );
     }
 }
 

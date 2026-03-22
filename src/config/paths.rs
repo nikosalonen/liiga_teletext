@@ -40,6 +40,11 @@ pub fn get_log_dir_path() -> String {
 /// rather than the config directory, since cache files can be safely deleted without data loss.
 pub fn get_cache_dir_path() -> PathBuf {
     dirs::cache_dir()
-        .unwrap_or_else(|| Path::new(".").to_path_buf())
+        .unwrap_or_else(|| {
+            tracing::warn!(
+                "Platform cache directory not available, falling back to current directory"
+            );
+            Path::new(".").to_path_buf()
+        })
         .join("liiga_teletext")
 }

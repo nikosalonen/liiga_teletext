@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::config::paths::get_cache_dir_path;
 
@@ -20,7 +20,8 @@ pub struct PlayerNameStore {
     base_path: PathBuf,
 }
 
-pub static PLAYER_NAME_STORE: LazyLock<PlayerNameStore> = LazyLock::new(PlayerNameStore::default);
+pub(crate) static PLAYER_NAME_STORE: LazyLock<PlayerNameStore> =
+    LazyLock::new(PlayerNameStore::default);
 
 impl Default for PlayerNameStore {
     fn default() -> Self {
@@ -100,6 +101,12 @@ impl PlayerNameStore {
             }
         }
 
+        // Save any pending data from the previous season before switching
+        if self.dirty.load(Ordering::Acquire) {
+            info!("Season changed, saving pending data before loading season {season}");
+            self.save_to_disk().await;
+        }
+
         let path = self.cache_file_path(season);
         let should_mark_loaded = match tokio::fs::read_to_string(&path).await {
             Ok(contents) => {
@@ -117,9 +124,15 @@ impl PlayerNameStore {
                     }
                     Err(e) => {
                         error!(
-                            "Corrupted player cache at {}, starting fresh: {e}",
+                            "Corrupted player cache at {}, removing and starting fresh: {e}",
                             path.display()
                         );
+                        if let Err(remove_err) = tokio::fs::remove_file(&path).await {
+                            error!(
+                                "Failed to remove corrupted cache file {}: {remove_err}",
+                                path.display()
+                            );
+                        }
                         let mut data = self.data.write().await;
                         data.clear();
                     }
@@ -128,6 +141,8 @@ impl PlayerNameStore {
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 debug!("No player cache file at {}, starting fresh", path.display());
+                let mut data = self.data.write().await;
+                data.clear();
                 true
             }
             Err(e) => {
@@ -159,7 +174,12 @@ impl PlayerNameStore {
             let loaded = self.loaded_season.read().await;
             match *loaded {
                 Some(s) => s,
-                None => return,
+                None => {
+                    warn!(
+                        "Cannot save player cache: season unknown (load_from_disk was never called)"
+                    );
+                    return;
+                }
             }
         };
 
@@ -172,32 +192,36 @@ impl PlayerNameStore {
             return;
         }
 
-        let data = self.data.read().await;
-        match serde_json::to_string_pretty(&*data) {
-            Ok(json) => {
-                let tmp_path = path.with_extension("json.tmp");
-                if let Err(e) = tokio::fs::write(&tmp_path, &json).await {
-                    error!(
-                        "Failed to write player cache to {}: {e}",
-                        tmp_path.display()
-                    );
+        let (json, team_count) = {
+            let data = self.data.read().await;
+            let count = data.len();
+            match serde_json::to_string_pretty(&*data) {
+                Ok(json) => (json, count),
+                Err(e) => {
+                    error!("Failed to serialize player cache: {e}");
                     return;
                 }
-                if let Err(e) = tokio::fs::rename(&tmp_path, &path).await {
-                    error!(
-                        "Failed to rename player cache {} -> {}: {e}",
-                        tmp_path.display(),
-                        path.display()
-                    );
-                    return;
-                }
-                self.dirty.store(false, Ordering::Release);
-                info!("Saved {} team rosters to {}", data.len(), path.display());
             }
-            Err(e) => {
-                error!("Failed to serialize player cache: {e}");
-            }
+        }; // lock dropped before file I/O
+
+        let tmp_path = path.with_extension("json.tmp");
+        if let Err(e) = tokio::fs::write(&tmp_path, &json).await {
+            error!(
+                "Failed to write player cache to {}: {e}",
+                tmp_path.display()
+            );
+            return;
         }
+        if let Err(e) = tokio::fs::rename(&tmp_path, &path).await {
+            error!(
+                "Failed to rename player cache {} -> {}: {e}",
+                tmp_path.display(),
+                path.display()
+            );
+            return;
+        }
+        self.dirty.store(false, Ordering::Release);
+        info!("Saved {team_count} team rosters to {}", path.display());
     }
 
     /// Returns the number of cached team entries.
@@ -394,6 +418,63 @@ mod tests {
         store.save_to_disk().await;
         let path = temp_dir.path().join("players_2026.json");
         assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_season_switch_saves_pending_data() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
+
+        // Load season 2025 and insert data
+        store.load_from_disk(2025).await;
+        store
+            .insert_team("TPS", HashMap::from([(100, "Koivu".to_string())]))
+            .await;
+        assert!(store.is_dirty());
+
+        // Switch to season 2026 — should auto-save 2025 data first
+        store.load_from_disk(2026).await;
+
+        // Season 2025 file should exist on disk
+        let path_2025 = temp_dir.path().join("players_2025.json");
+        assert!(path_2025.exists());
+
+        // Verify the saved data is correct
+        let store2 = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
+        store2.load_from_disk(2025).await;
+        let result = store2.get_players(Some("TPS"), Some("TPS")).await;
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().get(&100), Some(&"Koivu".to_string()));
+
+        // Current store should now be on season 2026 with empty data
+        assert_eq!(store.len().await, 0);
+        assert!(!store.is_dirty());
+    }
+
+    #[tokio::test]
+    async fn test_corrupted_file_removed_on_load() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("players_2026.json");
+        tokio::fs::write(&path, "not valid json{{{").await.unwrap();
+        assert!(path.exists());
+
+        let store = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
+        store.load_from_disk(2026).await;
+
+        // Corrupted file should be removed
+        assert!(!path.exists());
+
+        // Store should work normally after recovery
+        store
+            .insert_team("TPS", HashMap::from([(100, "Test".to_string())]))
+            .await;
+        store.save_to_disk().await;
+        assert!(path.exists());
+
+        // Verify saved data is valid
+        let store2 = PlayerNameStore::with_base_path(temp_dir.path().to_path_buf());
+        store2.load_from_disk(2026).await;
+        assert_eq!(store2.len().await, 1);
     }
 
     #[tokio::test]
