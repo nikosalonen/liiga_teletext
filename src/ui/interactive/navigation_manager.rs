@@ -545,6 +545,8 @@ pub fn create_bracket_page(
         false,
     );
 
+    page.set_bracket_page(true);
+
     let rows = render_bracket(bracket, terminal_width);
     for row in rows {
         if let TeletextRow::BracketLine(line) = row {

@@ -52,6 +52,10 @@ pub struct TeletextPage {
     pub(super) playoffs_lines: Vec<u16>, // Positions after which to draw playoff separator lines
     pub(super) skip_screen_clear: Cell<bool>, // Interior mutability needed because render_buffered takes &self. When true, skips screen clear to avoid flicker.
     pub(super) is_loading_page: bool,         // Whether this is a loading/fetching page
+    pub(super) is_bracket_page: bool,         // Whether this is a bracket display page
+    pub(super) has_bracket_data: bool,        // Whether bracket data is available
+    #[allow(dead_code)] // Will be used in Task 4 (hide t=Tänään on auto-forwarded initial date)
+    pub(super) initial_fetched_date: Option<String>, // The date originally fetched on startup
 }
 
 #[derive(Debug)]
@@ -172,6 +176,9 @@ impl TeletextPage {
             playoffs_lines: Vec::new(),
             skip_screen_clear: Cell::new(false),
             is_loading_page: false,
+            is_bracket_page: false,
+            has_bracket_data: false,
+            initial_fetched_date: None,
         }
     }
 
@@ -588,6 +595,8 @@ impl TeletextPage {
                 Some(crate::ui::interactive::state_manager::ViewMode::Standings {
                     live_mode: self.standings_live_mode,
                 })
+            } else if self.is_bracket_page {
+                Some(crate::ui::interactive::state_manager::ViewMode::Bracket)
             } else {
                 Some(crate::ui::interactive::state_manager::ViewMode::Games)
             };
@@ -608,15 +617,18 @@ impl TeletextPage {
             super::footer::render_footer_with_view(
                 stdout,
                 &mut buffer,
-                footer_y,
-                width as usize,
-                total_pages,
-                &self.auto_refresh_indicator,
-                self.auto_refresh_disabled,
-                self.error_warning_active,
-                &self.season_countdown,
-                view_mode.as_ref(),
-                show_today_shortcut,
+                &super::footer::FooterContext {
+                    footer_y,
+                    width: width as usize,
+                    total_pages,
+                    auto_refresh_indicator: &self.auto_refresh_indicator,
+                    auto_refresh_disabled: self.auto_refresh_disabled,
+                    error_warning_active: self.error_warning_active,
+                    season_countdown: &self.season_countdown,
+                    view_mode: view_mode.as_ref(),
+                    show_today_shortcut,
+                    has_bracket_data: self.has_bracket_data,
+                },
             )?;
         }
 

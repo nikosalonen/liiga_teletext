@@ -18,49 +18,59 @@ use crossterm::{
 };
 use std::io::{Stdout, Write};
 
+/// Context for rendering the footer
+pub struct FooterContext<'a> {
+    pub footer_y: usize,
+    pub width: usize,
+    pub total_pages: usize,
+    pub auto_refresh_indicator: &'a Option<LoadingIndicator>,
+    pub auto_refresh_disabled: bool,
+    pub error_warning_active: bool,
+    pub season_countdown: &'a Option<String>,
+    pub view_mode: Option<&'a crate::ui::interactive::state_manager::ViewMode>,
+    pub show_today_shortcut: bool,
+    #[allow(dead_code)] // Will be used in Task 2 (footer shows 'p' conditionally)
+    pub has_bracket_data: bool,
+}
+
 /// Renders footer with view-mode-aware controls
-#[allow(clippy::too_many_arguments)]
 pub fn render_footer_with_view(
     _stdout: &mut Stdout,
     buffer: &mut String,
-    footer_y: usize,
-    width: usize,
-    total_pages: usize,
-    auto_refresh_indicator: &Option<LoadingIndicator>,
-    auto_refresh_disabled: bool,
-    error_warning_active: bool,
-    season_countdown: &Option<String>,
-    view_mode: Option<&crate::ui::interactive::state_manager::ViewMode>,
-    show_today_shortcut: bool,
+    ctx: &FooterContext<'_>,
 ) -> Result<(), AppError> {
     // Determine navigation controls based on view mode and page count
-    let controls = match view_mode {
+    let controls = match ctx.view_mode {
         Some(crate::ui::interactive::state_manager::ViewMode::Standings { live_mode }) => {
             if *live_mode {
-                if auto_refresh_disabled {
-                    if total_pages > 1 {
+                if ctx.auto_refresh_disabled {
+                    if ctx.total_pages > 1 {
                         "q=Lopeta ←→=Sivut s=Ottelut l=Live ✓ (Ei päivity)"
                     } else {
                         "q=Lopeta s=Ottelut l=Live ✓ (Ei päivity)"
                     }
-                } else if total_pages > 1 {
+                } else if ctx.total_pages > 1 {
                     "q=Lopeta ←→=Sivut s=Ottelut l=Live ✓"
                 } else {
                     "q=Lopeta s=Ottelut l=Live ✓"
                 }
-            } else if auto_refresh_disabled {
-                if total_pages > 1 {
+            } else if ctx.auto_refresh_disabled {
+                if ctx.total_pages > 1 {
                     "q=Lopeta ←→=Sivut s=Ottelut l=Live (Ei päivity)"
                 } else {
                     "q=Lopeta s=Ottelut l=Live (Ei päivity)"
                 }
-            } else if total_pages > 1 {
+            } else if ctx.total_pages > 1 {
                 "q=Lopeta ←→=Sivut s=Ottelut l=Live"
             } else {
                 "q=Lopeta s=Ottelut l=Live"
             }
         }
-        _ => match (auto_refresh_disabled, show_today_shortcut, total_pages > 1) {
+        _ => match (
+            ctx.auto_refresh_disabled,
+            ctx.show_today_shortcut,
+            ctx.total_pages > 1,
+        ) {
             (true, true, true) => "q=Lopeta ←→=Sivut s=Taulukko t=Tänään (Ei päivity)",
             (true, true, false) => "q=Lopeta s=Taulukko t=Tänään (Ei päivity)",
             (true, false, true) => "q=Lopeta ←→=Sivut s=Taulukko (Ei päivity)",
@@ -73,8 +83,8 @@ pub fn render_footer_with_view(
     };
 
     // Add season countdown above the footer if available
-    if let Some(countdown) = season_countdown {
-        let countdown_y = footer_y.saturating_sub(1);
+    if let Some(countdown) = ctx.season_countdown {
+        let countdown_y = ctx.footer_y.saturating_sub(1);
 
         // Use optimized ANSI code generation for countdown (requirement 4.3)
         // Convert 0-based countdown_y to 1-based for ANSI cursor positioning
@@ -83,7 +93,7 @@ pub fn render_footer_with_view(
             countdown_y + 1,
             get_ansi_code(Color::AnsiValue(226), 226), // Bright yellow
             countdown,
-            width = width
+            width = ctx.width
         );
         buffer.push_str(&countdown_code);
     }
@@ -92,17 +102,17 @@ pub fn render_footer_with_view(
     let footer_text = controls.to_string();
 
     // Build right padding with activity indicator
-    let footer_width = width.saturating_sub(6);
+    let footer_width = ctx.width.saturating_sub(6);
     let header_bg_code = get_ansi_code(header_bg(), 21);
 
     // Determine right padding content and color
-    let (right_padding, right_color_code) = if let Some(indicator) = auto_refresh_indicator {
+    let (right_padding, right_color_code) = if let Some(indicator) = ctx.auto_refresh_indicator {
         let frame = indicator.current_frame();
         (
             format!(" {frame} "),
             get_ansi_code(Color::AnsiValue(231), 231),
         ) // white
-    } else if error_warning_active {
+    } else if ctx.error_warning_active {
         (" ! ".to_string(), get_ansi_code(Color::AnsiValue(226), 226)) // yellow
     } else {
         ("   ".to_string(), get_ansi_code(Color::AnsiValue(21), 21)) // invisible
@@ -111,7 +121,7 @@ pub fn render_footer_with_view(
     // Convert 0-based footer_y to 1-based for ANSI cursor positioning
     let footer_code = format!(
         "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;{}m{}\x1b[0m",
-        footer_y + 1,
+        ctx.footer_y + 1,
         header_bg_code,
         "   ",
         footer_text,

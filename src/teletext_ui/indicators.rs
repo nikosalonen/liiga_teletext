@@ -107,4 +107,21 @@ impl TeletextPage {
     pub fn set_fetched_date(&mut self, date: String) {
         self.fetched_date = Some(date);
     }
+
+    /// Sets whether this page is a bracket display page.
+    pub fn set_bracket_page(&mut self, is_bracket: bool) {
+        self.is_bracket_page = is_bracket;
+    }
+
+    /// Sets whether bracket data is available.
+    #[allow(dead_code)] // Will be used in Task 3 (propagate has_bracket_data)
+    pub fn set_has_bracket_data(&mut self, has_data: bool) {
+        self.has_bracket_data = has_data;
+    }
+
+    /// Sets the initial fetched date (the date originally fetched on startup).
+    #[allow(dead_code)] // Will be used in Task 4 (hide t=Tänään on auto-forwarded initial date)
+    pub fn set_initial_fetched_date(&mut self, date: Option<String>) {
+        self.initial_fetched_date = date;
+    }
 }
