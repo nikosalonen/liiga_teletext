@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -15,7 +15,9 @@ use crate::config::paths::get_cache_dir_path;
 /// team, eliminating the per-game duplication of the previous design.
 pub struct PlayerNameStore {
     data: RwLock<HashMap<String, HashMap<i64, String>>>,
-    dirty: AtomicBool,
+    /// Mutation sequence counter. Zero means clean; each `insert_team` increments it.
+    /// `save_to_disk` uses compare-exchange so concurrent inserts are not lost.
+    dirty_seq: AtomicU64,
     loaded_season: RwLock<Option<i32>>,
     base_path: PathBuf,
 }
@@ -27,7 +29,7 @@ impl Default for PlayerNameStore {
     fn default() -> Self {
         Self {
             data: RwLock::new(HashMap::new()),
-            dirty: AtomicBool::new(false),
+            dirty_seq: AtomicU64::new(0),
             loaded_season: RwLock::new(None),
             base_path: get_cache_dir_path(),
         }
@@ -39,7 +41,7 @@ impl PlayerNameStore {
     pub fn with_base_path(base_path: PathBuf) -> Self {
         Self {
             data: RwLock::new(HashMap::new()),
-            dirty: AtomicBool::new(false),
+            dirty_seq: AtomicU64::new(0),
             loaded_season: RwLock::new(None),
             base_path,
         }
@@ -85,7 +87,7 @@ impl PlayerNameStore {
         let mut data = self.data.write().await;
         let entry = data.entry(team_id.to_string()).or_default();
         entry.extend(players);
-        self.dirty.store(true, Ordering::Release);
+        self.dirty_seq.fetch_add(1, Ordering::AcqRel);
         debug!("Player name store: cached {player_count} players for team {team_id}");
     }
 
@@ -102,13 +104,13 @@ impl PlayerNameStore {
         }
 
         // Save any pending data from the previous season before switching
-        if self.dirty.load(Ordering::Acquire) {
+        if self.dirty_seq.load(Ordering::Acquire) != 0 {
             info!("Season changed, saving pending data before loading season {season}");
             self.save_to_disk().await;
         }
 
         let path = self.cache_file_path(season);
-        let should_mark_loaded = match tokio::fs::read_to_string(&path).await {
+        match tokio::fs::read_to_string(&path).await {
             Ok(contents) => {
                 match serde_json::from_str::<HashMap<String, HashMap<i64, String>>>(&contents) {
                     Ok(cached_data) => {
@@ -137,28 +139,25 @@ impl PlayerNameStore {
                         data.clear();
                     }
                 }
-                true
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 debug!("No player cache file at {}, starting fresh", path.display());
                 let mut data = self.data.write().await;
                 data.clear();
-                true
             }
             Err(e) => {
                 error!(
-                    "Failed to read player cache at {}: {e} — will retry on next fetch cycle",
+                    "Failed to read player cache at {}: {e} — clearing stale data, will retry on next fetch cycle",
                     path.display()
                 );
-                false
+                let mut data = self.data.write().await;
+                data.clear();
             }
-        };
-
-        if should_mark_loaded {
-            let mut loaded = self.loaded_season.write().await;
-            *loaded = Some(season);
-            self.dirty.store(false, Ordering::Release);
         }
+
+        let mut loaded = self.loaded_season.write().await;
+        *loaded = Some(season);
+        self.dirty_seq.store(0, Ordering::Release);
     }
 
     /// Writes cached player names to disk if new data has been added since the last save.
@@ -166,7 +165,8 @@ impl PlayerNameStore {
     /// Derives the season from the previously loaded season. No-op if nothing was loaded
     /// or if no new data has been added since the last save.
     pub async fn save_to_disk(&self) {
-        if !self.dirty.load(Ordering::Acquire) {
+        let seq = self.dirty_seq.load(Ordering::Acquire);
+        if seq == 0 {
             return;
         }
 
@@ -220,7 +220,10 @@ impl PlayerNameStore {
             );
             return;
         }
-        self.dirty.store(false, Ordering::Release);
+        // Only clear if no concurrent inserts occurred since we snapshotted
+        let _ = self
+            .dirty_seq
+            .compare_exchange(seq, 0, Ordering::AcqRel, Ordering::Acquire);
         info!("Saved {team_count} team rosters to {}", path.display());
     }
 
@@ -234,7 +237,7 @@ impl PlayerNameStore {
     /// Returns whether the store has been modified since the last save.
     #[cfg(test)]
     pub fn is_dirty(&self) -> bool {
-        self.dirty.load(Ordering::Acquire)
+        self.dirty_seq.load(Ordering::Acquire) != 0
     }
 
     /// Clears all entries and resets state.
@@ -243,7 +246,7 @@ impl PlayerNameStore {
     pub async fn clear(&self) {
         let mut data = self.data.write().await;
         data.clear();
-        self.dirty.store(false, Ordering::Release);
+        self.dirty_seq.store(0, Ordering::Release);
         let mut loaded = self.loaded_season.write().await;
         *loaded = None;
     }
