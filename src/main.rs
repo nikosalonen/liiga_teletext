@@ -53,6 +53,11 @@ async fn main() -> Result<(), AppError> {
     // Load config first to fail early if there's an issue
     let _config = Config::load().await?;
 
+    if args.reset_cache {
+        let count = data_fetcher::cache::clear_all_cache_files().await;
+        println!("Cleared {count} player cache file(s).");
+    }
+
     if args.once {
         return commands::handle_once_command(&args, version_check).await;
     }

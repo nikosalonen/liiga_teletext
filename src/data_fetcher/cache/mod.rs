@@ -20,6 +20,7 @@ use crate::teletext_ui::ScoreType;
 
 // Re-export core cache functions
 pub use core::*;
+pub use persistence::clear_all_cache_files;
 
 // --- Player cache (backed by generic TtlCache) ---
 

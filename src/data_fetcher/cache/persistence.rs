@@ -8,6 +8,48 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::paths::get_cache_dir_path;
 
+/// Deletes all player cache files from the given directory.
+/// Returns the count of deleted files.
+pub async fn clear_all_cache_files_in(cache_dir: &std::path::Path) -> usize {
+    let mut deleted = 0;
+    let mut entries = match tokio::fs::read_dir(cache_dir).await {
+        Ok(entries) => entries,
+        Err(e) => {
+            debug!("Cache directory not accessible: {e}");
+            return 0;
+        }
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with("players_") && name_str.ends_with(".json") {
+            if let Err(e) = tokio::fs::remove_file(entry.path()).await {
+                warn!("Failed to delete {}: {e}", entry.path().display());
+            } else {
+                deleted += 1;
+            }
+        }
+    }
+    deleted
+}
+
+/// Deletes all persistent player cache files from the default cache directory.
+/// Returns the count of deleted files.
+pub async fn clear_all_cache_files() -> usize {
+    let cache_dir = get_cache_dir_path();
+    let count = clear_all_cache_files_in(&cache_dir).await;
+    if count > 0 {
+        info!(
+            "Deleted {count} player cache file(s) from {}",
+            cache_dir.display()
+        );
+    } else {
+        info!("No player cache files found in {}", cache_dir.display());
+    }
+    count
+}
+
 /// Persistent store for disambiguated player names, keyed by team.
 ///
 /// Stores a flat `team_id → (player_id → display_name)` map per season,
@@ -494,5 +536,46 @@ mod tests {
         assert_eq!(deserialized.len(), 1);
         let roster = deserialized.get("TPS").unwrap();
         assert_eq!(roster.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_clear_all_cache_files() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache_dir = temp_dir.path().to_path_buf();
+
+        // Create fake cache files
+        tokio::fs::write(cache_dir.join("players_2025.json"), "{}")
+            .await
+            .unwrap();
+        tokio::fs::write(cache_dir.join("players_2024.json"), "{}")
+            .await
+            .unwrap();
+        tokio::fs::write(cache_dir.join("other_file.txt"), "keep")
+            .await
+            .unwrap();
+
+        let count = clear_all_cache_files_in(&cache_dir).await;
+        assert_eq!(count, 2);
+
+        // Verify player files deleted
+        assert!(!cache_dir.join("players_2025.json").exists());
+        assert!(!cache_dir.join("players_2024.json").exists());
+        // Verify other files untouched
+        assert!(cache_dir.join("other_file.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_clear_all_cache_files_empty_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let count = clear_all_cache_files_in(temp_dir.path()).await;
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_clear_all_cache_files_missing_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("nonexistent_subdir");
+        let count = clear_all_cache_files_in(&path).await;
+        assert_eq!(count, 0);
     }
 }

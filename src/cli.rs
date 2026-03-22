@@ -38,8 +38,11 @@ pub fn is_noninteractive_mode(args: &Args) -> bool {
 /// In interactive mode (default):
 /// - Use arrow keys (←/→) to navigate between pages
 /// - Use Shift+←/→ to navigate between dates with games
+/// - Press 's' to toggle standings view
+/// - Press 'p' to toggle playoff bracket view
+/// - Press 'l' to toggle live mode in standings
 /// - Press 't' to jump back to today's view
-/// - Press 'r' to refresh data (10s cooldown between refreshes)
+/// - Press 'r' to refresh data (15s cooldown between refreshes)
 /// - Press 'q' to quit
 ///
 /// The viewer automatically refreshes:
@@ -93,6 +96,11 @@ pub struct Args {
     /// List current configuration settings
     #[arg(long = "list-config", short = 'l', help_heading = "Configuration")]
     pub list_config: bool,
+
+    /// Clear persistent player name cache and start fresh.
+    /// Removes cached player names from disk; the app continues running normally after reset.
+    #[arg(long = "reset-cache", help_heading = "Configuration")]
+    pub reset_cache: bool,
 
     /// Show games for a specific date in YYYY-MM-DD format.
     /// If not provided, shows today's or yesterday's games based on current time.
