@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Returns the platform-specific path for the config file.
 ///
@@ -32,4 +32,19 @@ pub fn get_log_dir_path() -> String {
         .join("logs")
         .to_string_lossy()
         .to_string()
+}
+
+/// Returns the platform-specific path for the cache directory.
+///
+/// Uses the platform cache directory (e.g., `~/.cache` on Linux, `%LOCALAPPDATA%` on Windows)
+/// rather than the config directory, since cache files can be safely deleted without data loss.
+pub fn get_cache_dir_path() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| {
+            tracing::warn!(
+                "Platform cache directory not available, falling back to current directory"
+            );
+            Path::new(".").to_path_buf()
+        })
+        .join("liiga_teletext")
 }
