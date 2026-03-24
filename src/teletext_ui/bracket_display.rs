@@ -85,6 +85,7 @@ fn render_stacked(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Teletext
             let t1 = truncate_team_name(&m.team1, max_name);
             let t2 = truncate_team_name(&m.team2, max_name);
             let (w1_color, w2_color) = win_colors(m);
+            let (t1_color, t2_color) = matchup_team_colors(m);
             let live_marker = if m.has_live_game {
                 format!(" {}\u{25CF}{}", color(CYAN), RESET)
             } else {
@@ -93,7 +94,7 @@ fn render_stacked(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Teletext
             rows.push(TeletextRow::BracketLine(format!(
                 "{}{:<width$}{}  {}{}{} - {}{}{}\
                  {}  {}{:<width$}{}",
-                team_color(m),
+                t1_color,
                 t1,
                 RESET,
                 w1_color,
@@ -103,7 +104,7 @@ fn render_stacked(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Teletext
                 m.team2_wins,
                 RESET,
                 live_marker,
-                team_color(m),
+                t2_color,
                 t2,
                 RESET,
                 width = max_name,
@@ -147,7 +148,10 @@ fn render_tree(bracket: &PlayoffBracket, _terminal_width: u16) -> Vec<TeletextRo
             RESET
         )));
 
-        for m in &phase.matchups {
+        for (j, m) in phase.matchups.iter().enumerate() {
+            if j > 0 {
+                rows.push(TeletextRow::BracketLine(String::new()));
+            }
             render_matchup_tree(m, &mut rows, name_max);
         }
     }
@@ -172,49 +176,63 @@ fn render_matchup_tree(m: &BracketMatchup, rows: &mut Vec<TeletextRow>, name_max
     let t1 = truncate_team_name(&m.team1, name_max);
     let t2 = truncate_team_name(&m.team2, name_max);
     let (w1_color, w2_color) = win_colors(m);
+    let (t1_color, t2_color) = matchup_team_colors(m);
 
     let t1_padded = format!("{:<width$}", t1, width = name_max);
     let t2_padded = format!("{:<width$}", t2, width = name_max);
 
+    let team1_won = m.winner.as_ref().is_some_and(|w| *w == m.team1);
+    let team2_won = m.winner.as_ref().is_some_and(|w| *w == m.team2);
+
+    let decided = team1_won || team2_won;
+    let box_color = if decided { color(GREEN) } else { color(WHITE) };
+
     let winner_label = match &m.winner {
-        Some(w) => truncate_team_name(w, name_max),
+        Some(w) => format!(
+            "{}{}{}",
+            color(GREEN),
+            truncate_team_name(w, name_max),
+            RESET
+        ),
         None if m.has_live_game => format!("{}LIVE{}", color(CYAN), RESET),
         None => format!("{}???{}", color(DIM), RESET),
     };
 
-    let box_color = color(WHITE);
-
-    // Line 1: Team1  W1 ─┐
+    // Line 1: Team1  W1 ─┐  (no bracket on loser side when team2 won)
+    let top_bracket = if team2_won {
+        "  ".to_string()
+    } else {
+        format!("{}\u{2500}\u{2510}{}", box_color, RESET)
+    };
     rows.push(TeletextRow::BracketLine(format!(
-        "{}{}{} {}{}{} {}\u{2500}\u{2510}{}",
-        team_color(m),
-        t1_padded,
-        RESET,
-        w1_color,
-        m.team1_wins,
-        RESET,
-        box_color,
-        RESET,
+        "{}{}{} {}{}{} {}",
+        t1_color, t1_padded, RESET, w1_color, m.team1_wins, RESET, top_bracket,
     )));
 
-    // Line 2:            ├── Winner
+    // Line 2: connector points toward winner
+    //   ├── (undecided)  └── (team1 won)  ┌── (team2 won)
+    let connector = if team1_won {
+        '\u{2514}' // └
+    } else if team2_won {
+        '\u{250C}' // ┌
+    } else {
+        '\u{251C}' // ├
+    };
     let spacer = " ".repeat(name_max + 4);
     rows.push(TeletextRow::BracketLine(format!(
-        "{}{}\u{251C}\u{2500}\u{2500} {}{}",
-        spacer, box_color, RESET, winner_label,
+        "{}{}{}\u{2500}\u{2500} {}{}",
+        spacer, box_color, connector, RESET, winner_label,
     )));
 
-    // Line 3: Team2  W2 ─┘
+    // Line 3: Team2  W2 ─┘  (no bracket on loser side when team1 won)
+    let bottom_bracket = if team1_won {
+        "  ".to_string()
+    } else {
+        format!("{}\u{2500}\u{2518}{}", box_color, RESET)
+    };
     rows.push(TeletextRow::BracketLine(format!(
-        "{}{}{} {}{}{} {}\u{2500}\u{2518}{}",
-        team_color(m),
-        t2_padded,
-        RESET,
-        w2_color,
-        m.team2_wins,
-        RESET,
-        box_color,
-        RESET,
+        "{}{}{} {}{}{} {}",
+        t2_color, t2_padded, RESET, w2_color, m.team2_wins, RESET, bottom_bracket,
     )));
 }
 
@@ -239,6 +257,16 @@ fn team_color(m: &BracketMatchup) -> String {
         color(CYAN)
     } else {
         color(WHITE)
+    }
+}
+
+/// Returns (team1_color, team2_color) for a matchup.
+/// Winner is green, loser is dim, undecided uses `team_color`.
+fn matchup_team_colors(m: &BracketMatchup) -> (String, String) {
+    match &m.winner {
+        Some(w) if *w == m.team1 => (color(GREEN), color(DIM)),
+        Some(_) => (color(DIM), color(GREEN)),
+        None => (team_color(m), team_color(m)),
     }
 }
 
