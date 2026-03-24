@@ -549,8 +549,10 @@ pub fn create_bracket_page(
 
     let rows = render_bracket(bracket, terminal_width);
     for row in rows {
-        if let TeletextRow::BracketLine(line) = row {
-            page.add_bracket_line(line);
+        match row {
+            TeletextRow::BracketLine(line) => page.add_bracket_line(line),
+            TeletextRow::BracketPageBreak => page.add_bracket_page_break(),
+            _ => {}
         }
     }
 

@@ -49,6 +49,7 @@ impl TeletextPage {
                 }
             }
             TeletextRow::BracketLine(_) => 1u16,
+            TeletextRow::BracketPageBreak => 0u16,
         }
     }
 
@@ -109,51 +110,52 @@ impl TeletextPage {
     /// - Maintains consistent item grouping across pages
     pub(super) fn get_page_content(&self) -> (Vec<&TeletextRow>, bool) {
         if self.ignore_height_limit {
-            // When ignoring height limit, return all content in one page
-            return (self.content_rows.iter().collect(), false);
+            return (
+                self.content_rows
+                    .iter()
+                    .filter(|r| !matches!(r, TeletextRow::BracketPageBreak))
+                    .collect(),
+                false,
+            );
         }
 
-        let available_height = self.screen_height.saturating_sub(5); // Reserve space for header, subheader, and footer
+        let available_height = self.screen_height.saturating_sub(5);
+
+        // Build pages, respecting forced page breaks (BracketPageBreak)
+        let mut pages: Vec<Vec<&TeletextRow>> = Vec::new();
+        let mut current_page_items: Vec<&TeletextRow> = Vec::new();
         let mut current_height = 0u16;
-        let mut page_content = Vec::new();
-        let mut has_more = false;
-        let mut items_per_page = Vec::new();
-        let mut current_page_items = Vec::new();
 
-        // First, calculate how many items fit on each page
         for game in self.content_rows.iter() {
-            let game_height = self.calculate_effective_game_height(game);
+            if matches!(game, TeletextRow::BracketPageBreak) {
+                if !current_page_items.is_empty() {
+                    pages.push(current_page_items);
+                    current_page_items = Vec::new();
+                    current_height = 0;
+                }
+                continue;
+            }
 
+            let game_height = self.calculate_effective_game_height(game);
             if current_height + game_height <= available_height {
                 current_page_items.push(game);
                 current_height += game_height;
             } else if !current_page_items.is_empty() {
-                items_per_page.push(current_page_items.len());
+                pages.push(current_page_items);
                 current_page_items = vec![game];
                 current_height = game_height;
             }
         }
         if !current_page_items.is_empty() {
-            items_per_page.push(current_page_items.len());
+            pages.push(current_page_items);
         }
 
-        // Calculate the starting index for the current page
-        let mut start_idx = 0;
-        for (page_idx, &items) in items_per_page.iter().enumerate() {
-            if page_idx == self.current_page {
-                break;
-            }
-            start_idx += items;
+        if let Some(items) = pages.get(self.current_page) {
+            let has_more = self.current_page + 1 < pages.len();
+            (items.clone(), has_more)
+        } else {
+            (Vec::new(), false)
         }
-
-        // Get the items for the current page
-        if let Some(&items_in_current_page) = items_per_page.get(self.current_page) {
-            let end_idx = (start_idx + items_in_current_page).min(self.content_rows.len());
-            page_content = self.content_rows[start_idx..end_idx].iter().collect();
-            has_more = end_idx < self.content_rows.len();
-        }
-
-        (page_content, has_more)
     }
 
     /// Calculates the total number of pages required to display all content.
@@ -162,12 +164,22 @@ impl TeletextPage {
     /// # Returns
     /// * `usize` - Total number of pages needed
     pub fn total_pages(&self) -> usize {
+        let available_height = self.screen_height.saturating_sub(5);
+
         let mut total_pages = 1;
         let mut current_height = 0u16;
-        let available_height = self.screen_height.saturating_sub(5);
         let mut current_page_items = 0;
 
         for game in &self.content_rows {
+            if matches!(game, TeletextRow::BracketPageBreak) {
+                if current_page_items > 0 {
+                    total_pages += 1;
+                    current_height = 0;
+                    current_page_items = 0;
+                }
+                continue;
+            }
+
             let game_height = self.calculate_effective_game_height(game);
             if current_height + game_height > available_height {
                 if current_page_items > 0 {

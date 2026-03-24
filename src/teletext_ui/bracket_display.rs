@@ -67,12 +67,34 @@ pub fn render_bracket(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Tele
 
 /// Renders bracket in stacked/vertical mode: each phase listed sequentially
 /// with matchups displayed as `Team1  W1 - W2  Team2`.
+///
+/// Phases are reordered for pagination: when 1. KIERROS is fully decided,
+/// it moves to page 2 so that active/later phases appear first.
 fn render_stacked(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<TeletextRow> {
     let mut rows: Vec<TeletextRow> = Vec::new();
     let max_name = (terminal_width as usize).saturating_sub(16).min(12);
 
-    for phase in &bracket.phases {
-        // Phase header
+    let (first_group, second_group) = split_phases_for_pagination(&bracket.phases);
+
+    render_stacked_group(&first_group, &mut rows, max_name);
+    if first_group.iter().any(|p| p.phase_number == 5) {
+        append_champion(&bracket.phases, &mut rows);
+    }
+
+    if !second_group.is_empty() {
+        rows.push(TeletextRow::BracketPageBreak);
+        render_stacked_group(&second_group, &mut rows, max_name);
+        if second_group.iter().any(|p| p.phase_number == 5) {
+            append_champion(&bracket.phases, &mut rows);
+        }
+    }
+
+    rows
+}
+
+/// Renders a group of phases in stacked layout.
+fn render_stacked_group(phases: &[&BracketPhase], rows: &mut Vec<TeletextRow>, max_name: usize) {
+    for phase in phases {
         rows.push(TeletextRow::BracketLine(String::new()));
         rows.push(TeletextRow::BracketLine(format!(
             "{}{}{}",
@@ -111,10 +133,6 @@ fn render_stacked(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Teletext
             )));
         }
     }
-
-    // Champion label
-    append_champion(&bracket.phases, &mut rows);
-    rows
 }
 
 // ---------------------------------------------------------------------------
@@ -124,14 +142,34 @@ fn render_stacked(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Teletext
 /// Renders bracket as a tree with box-drawing characters.
 ///
 /// Each phase is rendered sequentially with its own header and BO label.
-/// Team names show progression between rounds (e.g., a QF winner appears
-/// in the SF matchup).
+/// Phases are reordered for pagination: when 1. KIERROS is fully decided,
+/// it moves to page 2 so that active/later phases appear first.
 fn render_tree(bracket: &PlayoffBracket, _terminal_width: u16) -> Vec<TeletextRow> {
     let mut rows: Vec<TeletextRow> = Vec::new();
     let phase_count = bracket.phases.len();
     let name_max = max_team_len(phase_count);
 
-    for (i, phase) in bracket.phases.iter().enumerate() {
+    let (first_group, second_group) = split_phases_for_pagination(&bracket.phases);
+
+    render_tree_group(&first_group, &mut rows, name_max);
+    if first_group.iter().any(|p| p.phase_number == 5) {
+        append_champion(&bracket.phases, &mut rows);
+    }
+
+    if !second_group.is_empty() {
+        rows.push(TeletextRow::BracketPageBreak);
+        render_tree_group(&second_group, &mut rows, name_max);
+        if second_group.iter().any(|p| p.phase_number == 5) {
+            append_champion(&bracket.phases, &mut rows);
+        }
+    }
+
+    rows
+}
+
+/// Renders a group of phases in tree layout.
+fn render_tree_group(phases: &[&BracketPhase], rows: &mut Vec<TeletextRow>, name_max: usize) {
+    for (i, phase) in phases.iter().enumerate() {
         if i > 0 {
             rows.push(TeletextRow::BracketLine(String::new()));
         }
@@ -152,12 +190,9 @@ fn render_tree(bracket: &PlayoffBracket, _terminal_width: u16) -> Vec<TeletextRo
             if j > 0 {
                 rows.push(TeletextRow::BracketLine(String::new()));
             }
-            render_matchup_tree(m, &mut rows, name_max);
+            render_matchup_tree(m, rows, name_max);
         }
     }
-
-    append_champion(&bracket.phases, &mut rows);
-    rows
 }
 
 /// Formats series length from req_wins, e.g., req_wins=3 → "BO5", req_wins=4 → "BO7", req_wins=1 → "BO1"
@@ -234,6 +269,42 @@ fn render_matchup_tree(m: &BracketMatchup, rows: &mut Vec<TeletextRow>, name_max
         "{}{}{} {}{}{} {}",
         t2_color, t2_padded, RESET, w2_color, m.team2_wins, RESET, bottom_bracket,
     )));
+}
+
+// ---------------------------------------------------------------------------
+// Phase pagination
+// ---------------------------------------------------------------------------
+
+/// Splits bracket phases into two groups for pagination.
+///
+/// When 1. KIERROS (phase 1) is fully decided, moves it to the second group
+/// so that active/later phases appear on page 1. When phase 1 is still active,
+/// it stays on page 1 and later phases go to page 2.
+fn split_phases_for_pagination(
+    phases: &[BracketPhase],
+) -> (Vec<&BracketPhase>, Vec<&BracketPhase>) {
+    let phase1 = phases.iter().find(|p| p.phase_number == 1);
+
+    if let Some(p1) = phase1
+        && phases.len() > 1
+    {
+        let all_decided = !p1.matchups.is_empty() && p1.matchups.iter().all(|m| m.is_decided);
+
+        if all_decided {
+            // Phase 1 complete: later phases first (page 1), phase 1 on page 2
+            let first: Vec<_> = phases.iter().filter(|p| p.phase_number != 1).collect();
+            let second: Vec<_> = phases.iter().filter(|p| p.phase_number == 1).collect();
+            (first, second)
+        } else {
+            // Phase 1 active: phase 1 on page 1, later phases on page 2
+            let first: Vec<_> = phases.iter().filter(|p| p.phase_number == 1).collect();
+            let second: Vec<_> = phases.iter().filter(|p| p.phase_number != 1).collect();
+            (first, second)
+        }
+    } else {
+        // Single phase or no phase 1: no split needed
+        (phases.iter().collect(), Vec::new())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -646,6 +717,157 @@ mod tests {
         assert_eq!(
             matchup_count, 4,
             "Expected 4 matchup blocks, got {matchup_count}"
+        );
+    }
+
+    /// Helper to create a decided matchup (is_decided=true, winner set).
+    fn make_decided_matchup(
+        team1: &str,
+        team2: &str,
+        t1w: u8,
+        t2w: u8,
+        phase: i32,
+        pair: i32,
+        req_wins: u8,
+    ) -> BracketMatchup {
+        let is_decided = t1w >= req_wins || t2w >= req_wins;
+        let winner = if t1w >= req_wins {
+            Some(team1.to_string())
+        } else if t2w >= req_wins {
+            Some(team2.to_string())
+        } else {
+            None
+        };
+        BracketMatchup {
+            phase,
+            pair,
+            serie: 2,
+            team1: team1.to_string(),
+            team2: team2.to_string(),
+            team1_wins: t1w,
+            team2_wins: t2w,
+            req_wins,
+            is_decided,
+            has_live_game: false,
+            winner,
+        }
+    }
+
+    #[test]
+    fn test_decided_phase1_moves_to_page2() {
+        // When all 1. KIERROS matchups are decided, later phases come first
+        let phases = vec![
+            BracketPhase {
+                phase_number: 1,
+                name: "1. KIERROS".to_string(),
+                matchups: vec![
+                    make_decided_matchup("Lukko", "HPK", 3, 1, 1, 1, 3),
+                    make_decided_matchup("JYP", "Pelicans", 1, 3, 1, 2, 3),
+                ],
+            },
+            BracketPhase {
+                phase_number: 2,
+                name: "PUOLIV\u{00C4}LIER\u{00C4}T".to_string(),
+                matchups: vec![
+                    make_matchup("HIFK", "Lukko", 2, 1, 2, 1),
+                    make_matchup("Tappara", "Pelicans", 0, 0, 2, 2),
+                ],
+            },
+        ];
+        let bracket = make_bracket(phases);
+        let rows = render_bracket(&bracket, 80);
+        let text = lines_text(&rows);
+
+        // QF should appear BEFORE 1. KIERROS (because R1 is decided → page 2)
+        let qf_pos = text.find("PUOLIV\u{00C4}LIER\u{00C4}T").unwrap();
+        let r1_pos = text.find("1. KIERROS").unwrap();
+        assert!(qf_pos < r1_pos, "QF should come before decided 1. KIERROS");
+
+        // Page break marker should be present between them
+        assert!(
+            rows.iter()
+                .any(|r| matches!(r, TeletextRow::BracketPageBreak)),
+            "Expected a BracketPageBreak between phase groups"
+        );
+    }
+
+    #[test]
+    fn test_active_phase1_stays_on_page1() {
+        // When 1. KIERROS has undecided matchups, it stays first
+        let phases = vec![
+            BracketPhase {
+                phase_number: 1,
+                name: "1. KIERROS".to_string(),
+                matchups: vec![
+                    make_decided_matchup("Lukko", "HPK", 3, 1, 1, 1, 3),
+                    make_decided_matchup("JYP", "Pelicans", 1, 2, 1, 2, 3), // not decided
+                ],
+            },
+            BracketPhase {
+                phase_number: 2,
+                name: "PUOLIV\u{00C4}LIER\u{00C4}T".to_string(),
+                matchups: vec![make_matchup("HIFK", "Lukko", 0, 0, 2, 1)],
+            },
+        ];
+        let bracket = make_bracket(phases);
+        let rows = render_bracket(&bracket, 80);
+        let text = lines_text(&rows);
+
+        // 1. KIERROS should appear BEFORE QF (it's still active → page 1)
+        let r1_pos = text.find("1. KIERROS").unwrap();
+        let qf_pos = text.find("PUOLIV\u{00C4}LIER\u{00C4}T").unwrap();
+        assert!(r1_pos < qf_pos, "Active 1. KIERROS should come before QF");
+
+        // Page break should still be present
+        assert!(
+            rows.iter()
+                .any(|r| matches!(r, TeletextRow::BracketPageBreak)),
+            "Expected a BracketPageBreak between phase groups"
+        );
+    }
+
+    #[test]
+    fn test_no_phase1_no_page_break() {
+        // When there's no phase 1, no page break is inserted
+        let phases = vec![
+            BracketPhase {
+                phase_number: 2,
+                name: "PUOLIV\u{00C4}LIER\u{00C4}T".to_string(),
+                matchups: vec![make_matchup("HIFK", "TPS", 4, 1, 2, 1)],
+            },
+            BracketPhase {
+                phase_number: 3,
+                name: "V\u{00C4}LIER\u{00C4}T".to_string(),
+                matchups: vec![make_matchup("HIFK", "Lukko", 0, 0, 3, 1)],
+            },
+        ];
+        let bracket = make_bracket(phases);
+        let rows = render_bracket(&bracket, 80);
+
+        assert!(
+            !rows
+                .iter()
+                .any(|r| matches!(r, TeletextRow::BracketPageBreak)),
+            "No page break expected when there's no phase 1"
+        );
+    }
+
+    #[test]
+    fn test_single_phase_no_page_break() {
+        // Single phase: no page break regardless of decided status
+        let phases = vec![BracketPhase {
+            phase_number: 1,
+            name: "1. KIERROS".to_string(),
+            matchups: vec![make_decided_matchup("Lukko", "HPK", 3, 0, 1, 1, 3)],
+        }];
+        let bracket = make_bracket(phases);
+        let rows = render_bracket(&bracket, 80);
+
+        assert!(
+            !rows
+                .iter()
+                .any(|r| matches!(r, TeletextRow::BracketPageBreak)),
+            "No page break expected for single phase"
         );
     }
 }

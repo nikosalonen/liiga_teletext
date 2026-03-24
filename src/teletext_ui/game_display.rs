@@ -191,6 +191,7 @@ impl TeletextPage {
                     buffer.push_str(&line_code);
                     *current_line += 1;
                 }
+                TeletextRow::BracketPageBreak => {}
             }
         }
     }

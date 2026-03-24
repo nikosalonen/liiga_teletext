@@ -56,6 +56,7 @@ impl TeletextPage {
                     // Bracket line: pre-formatted ANSI content
                     size += line.len() + 30;
                 }
+                TeletextRow::BracketPageBreak => {}
             }
         }
 

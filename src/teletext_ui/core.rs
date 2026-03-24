@@ -93,6 +93,9 @@ pub enum TeletextRow {
         live_game_active: bool,
     },
     BracketLine(String),
+    /// Forced page break marker for bracket display.
+    /// Inserted between phase groups to prevent mid-matchup pagination.
+    BracketPageBreak,
 }
 
 impl TeletextPage {
@@ -532,13 +535,15 @@ impl TeletextPage {
             String::new()
         };
 
-        // Build subheader line
+        // Build subheader line — adapt right column width to actual subheader length
+        let subheader_col = self.subheader.len().max(20);
+        let page_info_width = (width as usize).saturating_sub(subheader_col);
         header_buffer.push_str(&format!(
             "\x1b[2;1H\x1b[38;5;{}m{:<20}{:>width$}\x1b[0m",
             subheader_fg_code,
             self.subheader,
             page_info,
-            width = header_width
+            width = page_info_width
         ));
 
         // Add batched header to main buffer

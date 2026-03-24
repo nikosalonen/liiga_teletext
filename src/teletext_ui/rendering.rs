@@ -470,6 +470,7 @@ impl TeletextPage {
                 String::new()
             }
             TeletextRow::BracketLine(line) => line.clone(),
+            TeletextRow::BracketPageBreak => String::new(),
         }
     }
 }

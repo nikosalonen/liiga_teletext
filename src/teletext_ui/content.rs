@@ -143,6 +143,11 @@ impl TeletextPage {
     pub fn add_bracket_line(&mut self, line: String) {
         self.content_rows.push(TeletextRow::BracketLine(line));
     }
+
+    /// Adds a forced page break marker for bracket pagination.
+    pub fn add_bracket_page_break(&mut self) {
+        self.content_rows.push(TeletextRow::BracketPageBreak);
+    }
 }
 
 #[cfg(test)]
