@@ -434,43 +434,39 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
                     *params.last_manual_refresh = Instant::now();
                 }
             }
-            KeyCode::Left => {
-                if params.last_page_change.elapsed() >= Duration::from_millis(200) {
-                    if let Some(page) = params.current_page.as_mut() {
-                        page.previous_page();
-                        *params.needs_render = true;
-                    }
-                    *params.last_page_change = Instant::now();
+            KeyCode::Left if params.last_page_change.elapsed() >= Duration::from_millis(200) => {
+                if let Some(page) = params.current_page.as_mut() {
+                    page.previous_page();
+                    *params.needs_render = true;
                 }
+                *params.last_page_change = Instant::now();
             }
-            KeyCode::Right => {
-                if params.last_page_change.elapsed() >= Duration::from_millis(200) {
-                    if let Some(page) = params.current_page.as_mut() {
-                        page.next_page();
-                        *params.needs_render = true;
-                    }
-                    *params.last_page_change = Instant::now();
+            KeyCode::Right if params.last_page_change.elapsed() >= Duration::from_millis(200) => {
+                if let Some(page) = params.current_page.as_mut() {
+                    page.next_page();
+                    *params.needs_render = true;
                 }
+                *params.last_page_change = Instant::now();
             }
-            KeyCode::Char('p') => {
-                if params.has_bracket_data || matches!(*params.current_view, ViewMode::Bracket) {
-                    tracing::info!("Bracket view toggle requested");
-                    match *params.current_view {
-                        ViewMode::Bracket => {
-                            *params.current_view = ViewMode::Games;
-                        }
-                        _ => {
-                            // Preserve current games page so the fast-restore
-                            // path rebuilds the page from cached data on return
-                            // (avoids change-detection skip when data is unchanged).
-                            if let Some(page) = params.current_page.as_ref() {
-                                *params.preserved_games_page = Some(page.get_current_page());
-                            }
-                            *params.current_view = ViewMode::Bracket;
-                        }
+            KeyCode::Char('p')
+                if params.has_bracket_data || matches!(*params.current_view, ViewMode::Bracket) =>
+            {
+                tracing::info!("Bracket view toggle requested");
+                match *params.current_view {
+                    ViewMode::Bracket => {
+                        *params.current_view = ViewMode::Games;
                     }
-                    *params.needs_refresh = true;
+                    _ => {
+                        // Preserve current games page so the fast-restore
+                        // path rebuilds the page from cached data on return
+                        // (avoids change-detection skip when data is unchanged).
+                        if let Some(page) = params.current_page.as_ref() {
+                            *params.preserved_games_page = Some(page.get_current_page());
+                        }
+                        *params.current_view = ViewMode::Bracket;
+                    }
                 }
+                *params.needs_refresh = true;
             }
             KeyCode::Char('s') => {
                 tracing::info!("View toggle requested");

@@ -1092,39 +1092,29 @@ impl RefreshCoordinator {
             "Cache status - Player: {}/{} ({}%), Tournament: {}/{} ({}%), Detailed Game: {}/{} ({}%), Goal Events: {}/{} ({}%), HTTP Response: {}/{} ({}%)",
             stats.player_cache.size,
             stats.player_cache.capacity,
-            if stats.player_cache.capacity > 0 {
-                (stats.player_cache.size * 100) / stats.player_cache.capacity
-            } else {
-                0
-            },
+            (stats.player_cache.size * 100)
+                .checked_div(stats.player_cache.capacity)
+                .unwrap_or(0),
             stats.tournament_cache.size,
             stats.tournament_cache.capacity,
-            if stats.tournament_cache.capacity > 0 {
-                (stats.tournament_cache.size * 100) / stats.tournament_cache.capacity
-            } else {
-                0
-            },
+            (stats.tournament_cache.size * 100)
+                .checked_div(stats.tournament_cache.capacity)
+                .unwrap_or(0),
             stats.detailed_game_cache.size,
             stats.detailed_game_cache.capacity,
-            if stats.detailed_game_cache.capacity > 0 {
-                (stats.detailed_game_cache.size * 100) / stats.detailed_game_cache.capacity
-            } else {
-                0
-            },
+            (stats.detailed_game_cache.size * 100)
+                .checked_div(stats.detailed_game_cache.capacity)
+                .unwrap_or(0),
             stats.goal_events_cache.size,
             stats.goal_events_cache.capacity,
-            if stats.goal_events_cache.capacity > 0 {
-                (stats.goal_events_cache.size * 100) / stats.goal_events_cache.capacity
-            } else {
-                0
-            },
+            (stats.goal_events_cache.size * 100)
+                .checked_div(stats.goal_events_cache.capacity)
+                .unwrap_or(0),
             stats.http_response_cache.size,
             stats.http_response_cache.capacity,
-            if stats.http_response_cache.capacity > 0 {
-                (stats.http_response_cache.size * 100) / stats.http_response_cache.capacity
-            } else {
-                0
-            }
+            (stats.http_response_cache.size * 100)
+                .checked_div(stats.http_response_cache.capacity)
+                .unwrap_or(0)
         );
 
         // Log detailed cache information for debugging if needed
