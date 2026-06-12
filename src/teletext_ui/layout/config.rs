@@ -476,8 +476,28 @@ impl GameDataValidator {
 pub struct IntelligentTruncator;
 
 impl IntelligentTruncator {
+    /// Splits a disambiguated player name (e.g. "Westerholm Po.") into the
+    /// surname and the disambiguation suffix ("Po."). The suffix is 1-3
+    /// alphabetic characters followed by a period, as produced by the player
+    /// name disambiguation logic. Returns None for names without a suffix.
+    fn split_disambiguation_suffix(name: &str) -> Option<(&str, &str)> {
+        let (surname, suffix) = name.rsplit_once(' ')?;
+        let body = suffix.strip_suffix('.')?;
+        let len = body.chars().count();
+        if (1..=3).contains(&len) && body.chars().all(|c| c.is_alphabetic()) && !surname.is_empty()
+        {
+            Some((surname, suffix))
+        } else {
+            None
+        }
+    }
+
     /// Intelligently truncates a player name to fit within available space
     /// Only uses ellipsis as a last resort (Requirement 3.2)
+    ///
+    /// Disambiguated names ("Westerholm Po.") keep their distinguishing
+    /// suffix: the surname is abbreviated with a period instead
+    /// ("Westerh. Po."), since the suffix is what tells players apart.
     ///
     /// # Arguments
     /// * `player_name` - The original player name
@@ -494,14 +514,29 @@ impl IntelligentTruncator {
         let preserve_chars = preserve_critical_chars.unwrap_or(5);
 
         // If name fits within max width, return as-is
-        if player_name.len() <= max_width {
+        if player_name.chars().count() <= max_width {
             tracing::debug!(
                 "Player name '{}' (length: {}) fits within max_width: {}",
                 player_name,
-                player_name.len(),
+                player_name.chars().count(),
                 max_width
             );
             return player_name.to_string();
+        }
+
+        // Disambiguation-aware truncation: abbreviate the surname but keep
+        // the suffix that distinguishes players with the same last name
+        if let Some((surname, suffix)) = Self::split_disambiguation_suffix(player_name) {
+            let suffix_width = suffix.chars().count() + 1; // +1 for separating space
+            let surname_budget = max_width.saturating_sub(suffix_width + 1); // +1 for '.'
+            if surname_budget >= 2 {
+                let abbreviated: String = surname.chars().take(surname_budget).collect();
+                let result = format!("{abbreviated}. {suffix}");
+                tracing::debug!(
+                    "Disambiguation-aware truncation: '{player_name}' -> '{result}' (max_width: {max_width})"
+                );
+                return result;
+            }
         }
 
         tracing::warn!(

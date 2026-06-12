@@ -22,7 +22,6 @@ use std::io::{Stdout, Write};
 pub struct FooterContext<'a> {
     pub footer_y: usize,
     pub width: usize,
-    pub total_pages: usize,
     pub auto_refresh_indicator: &'a Option<LoadingIndicator>,
     pub auto_refresh_disabled: bool,
     pub error_warning_active: bool,
@@ -32,80 +31,113 @@ pub struct FooterContext<'a> {
     pub has_bracket_data: bool,
 }
 
-/// Renders footer with view-mode-aware controls
+/// A footer segment: plain white text (no background) or a Fastext-style
+/// colored block with the given background and foreground ANSI 256 colors.
+struct FooterSegment {
+    text: &'static str,
+    block: Option<(u8, u8)>, // (bg, fg)
+}
+
+impl FooterSegment {
+    fn plain(text: &'static str) -> Self {
+        Self { text, block: None }
+    }
+
+    fn block(text: &'static str, bg: u8, fg: u8) -> Self {
+        Self {
+            text,
+            block: Some((bg, fg)),
+        }
+    }
+
+    /// Visible width in terminal cells (blocks have one space of padding on each side)
+    fn visible_width(&self) -> usize {
+        let pad = if self.block.is_some() { 2 } else { 0 };
+        self.text.chars().count() + pad
+    }
+}
+
+// Fastext block colors (authentic teletext red/green/yellow/blue shortcut row)
+const FASTEXT_RED: u8 = 196;
+const FASTEXT_GREEN: u8 = 46;
+const FASTEXT_YELLOW: u8 = 226;
+const FASTEXT_BLUE: u8 = 21;
+const BLOCK_TEXT_DARK: u8 = 16; // black text for light backgrounds
+const BLOCK_TEXT_LIGHT: u8 = 231; // white text for dark backgrounds
+
+/// Builds the view-specific footer segments in Fastext order (red, green, yellow, blue)
+fn build_footer_segments(ctx: &FooterContext<'_>) -> Vec<FooterSegment> {
+    use crate::ui::interactive::state_manager::ViewMode;
+
+    let mut segments = vec![FooterSegment::plain("q=Lopeta")];
+
+    match ctx.view_mode {
+        Some(ViewMode::Standings { live_mode }) => {
+            segments.push(FooterSegment::block(
+                "s=Ottelut",
+                FASTEXT_RED,
+                BLOCK_TEXT_LIGHT,
+            ));
+            segments.push(FooterSegment::block(
+                if *live_mode { "l=Live ✓" } else { "l=Live" },
+                FASTEXT_GREEN,
+                BLOCK_TEXT_DARK,
+            ));
+        }
+        Some(ViewMode::Bracket) => {
+            segments.push(FooterSegment::block(
+                "p=Ottelut",
+                FASTEXT_RED,
+                BLOCK_TEXT_LIGHT,
+            ));
+            segments.push(FooterSegment::block(
+                "s=Taulukko",
+                FASTEXT_YELLOW,
+                BLOCK_TEXT_DARK,
+            ));
+        }
+        Some(ViewMode::Games) | None => {
+            segments.push(FooterSegment::block(
+                "⇧←Edellinen",
+                FASTEXT_RED,
+                BLOCK_TEXT_LIGHT,
+            ));
+            segments.push(FooterSegment::block(
+                "⇧→Seuraava",
+                FASTEXT_GREEN,
+                BLOCK_TEXT_DARK,
+            ));
+            segments.push(FooterSegment::block(
+                "s=Taulukko",
+                FASTEXT_YELLOW,
+                BLOCK_TEXT_DARK,
+            ));
+            if ctx.has_bracket_data {
+                segments.push(FooterSegment::block(
+                    "p=Pudotuspelit",
+                    FASTEXT_BLUE,
+                    BLOCK_TEXT_LIGHT,
+                ));
+            }
+            if ctx.show_today_shortcut {
+                segments.push(FooterSegment::plain("t=Tänään"));
+            }
+        }
+    }
+
+    if ctx.auto_refresh_disabled {
+        segments.push(FooterSegment::plain("(Ei päivity)"));
+    }
+
+    segments
+}
+
+/// Renders footer with view-mode-aware Fastext-style controls
 pub fn render_footer_with_view(
     _stdout: &mut Stdout,
     buffer: &mut String,
     ctx: &FooterContext<'_>,
 ) -> Result<(), AppError> {
-    // Determine navigation controls based on view mode and page count
-    let controls = match ctx.view_mode {
-        Some(crate::ui::interactive::state_manager::ViewMode::Standings { live_mode }) => {
-            if *live_mode {
-                if ctx.auto_refresh_disabled {
-                    if ctx.total_pages > 1 {
-                        "q=Lopeta ←→=Sivut s=Ottelut l=Live ✓ (Ei päivity)"
-                    } else {
-                        "q=Lopeta s=Ottelut l=Live ✓ (Ei päivity)"
-                    }
-                } else if ctx.total_pages > 1 {
-                    "q=Lopeta ←→=Sivut s=Ottelut l=Live ✓"
-                } else {
-                    "q=Lopeta s=Ottelut l=Live ✓"
-                }
-            } else if ctx.auto_refresh_disabled {
-                if ctx.total_pages > 1 {
-                    "q=Lopeta ←→=Sivut s=Ottelut l=Live (Ei päivity)"
-                } else {
-                    "q=Lopeta s=Ottelut l=Live (Ei päivity)"
-                }
-            } else if ctx.total_pages > 1 {
-                "q=Lopeta ←→=Sivut s=Ottelut l=Live"
-            } else {
-                "q=Lopeta s=Ottelut l=Live"
-            }
-        }
-        Some(crate::ui::interactive::state_manager::ViewMode::Bracket) => {
-            match (ctx.auto_refresh_disabled, ctx.total_pages > 1) {
-                (true, true) => "q=Lopeta ←→=Sivut p=Pudotuspeli (Ei päivity)",
-                (true, false) => "q=Lopeta p=Pudotuspeli (Ei päivity)",
-                (false, true) => "q=Lopeta ←→=Sivut p=Pudotuspeli",
-                (false, false) => "q=Lopeta p=Pudotuspeli",
-            }
-        }
-        Some(crate::ui::interactive::state_manager::ViewMode::Games) | None => {
-            match (
-                ctx.auto_refresh_disabled,
-                ctx.show_today_shortcut,
-                ctx.total_pages > 1,
-                ctx.has_bracket_data,
-            ) {
-                (true, true, true, true) => {
-                    "q=Lopeta ←→=Sivut s=Taulukko p=Pudotuspeli t=Tänään (Ei päivity)"
-                }
-                (true, true, true, false) => "q=Lopeta ←→=Sivut s=Taulukko t=Tänään (Ei päivity)",
-                (true, true, false, true) => {
-                    "q=Lopeta s=Taulukko p=Pudotuspeli t=Tänään (Ei päivity)"
-                }
-                (true, true, false, false) => "q=Lopeta s=Taulukko t=Tänään (Ei päivity)",
-                (true, false, true, true) => {
-                    "q=Lopeta ←→=Sivut s=Taulukko p=Pudotuspeli (Ei päivity)"
-                }
-                (true, false, true, false) => "q=Lopeta ←→=Sivut s=Taulukko (Ei päivity)",
-                (true, false, false, true) => "q=Lopeta s=Taulukko p=Pudotuspeli (Ei päivity)",
-                (true, false, false, false) => "q=Lopeta s=Taulukko (Ei päivity)",
-                (false, true, true, true) => "q=Lopeta ←→=Sivut s=Taulukko p=Pudotuspeli t=Tänään",
-                (false, true, true, false) => "q=Lopeta ←→=Sivut s=Taulukko t=Tänään",
-                (false, true, false, true) => "q=Lopeta s=Taulukko p=Pudotuspeli t=Tänään",
-                (false, true, false, false) => "q=Lopeta s=Taulukko t=Tänään",
-                (false, false, true, true) => "q=Lopeta ←→=Sivut s=Taulukko p=Pudotuspeli",
-                (false, false, true, false) => "q=Lopeta ←→=Sivut s=Taulukko",
-                (false, false, false, true) => "q=Lopeta s=Taulukko p=Pudotuspeli",
-                (false, false, false, false) => "q=Lopeta s=Taulukko",
-            }
-        }
-    };
-
     // Add season countdown above the footer if available
     if let Some(countdown) = ctx.season_countdown {
         let countdown_y = ctx.footer_y.saturating_sub(1);
@@ -122,14 +154,50 @@ pub fn render_footer_with_view(
         buffer.push_str(&countdown_code);
     }
 
-    // Footer text is just the controls - indicators moved to right padding
-    let footer_text = controls.to_string();
+    let mut segments = build_footer_segments(ctx);
 
-    // Build right padding with activity indicator
-    let footer_width = ctx.width.saturating_sub(6);
-    let header_bg_code = get_ansi_code(header_bg(), 21);
+    // Right-side activity indicator reserves 3 cells
+    let indicator_width = 3;
+    let available = ctx.width.saturating_sub(indicator_width + 1);
 
-    // Determine right padding content and color
+    // Drop optional plain hints if the segments don't fit the terminal width
+    let total_width = |segs: &[FooterSegment]| -> usize {
+        segs.iter().map(|s| s.visible_width()).sum::<usize>() + segs.len().saturating_sub(1)
+    };
+    while total_width(&segments) > available && segments.len() > 1 {
+        // Drop optional plain hints first (oldest first, keeping "q=Lopeta"
+        // and the status hint as long as possible); fall back to the last block
+        let drop_idx = segments
+            .iter()
+            .position(|s| s.block.is_none() && s.text != "q=Lopeta")
+            .unwrap_or(segments.len() - 1);
+        segments.remove(drop_idx);
+    }
+
+    // Build the footer line: centered segments with colored blocks
+    let visible = total_width(&segments);
+    let left_pad = available.saturating_sub(visible) / 2;
+
+    let mut line = String::with_capacity(ctx.width + segments.len() * 16);
+    line.push_str(&" ".repeat(left_pad));
+    for (i, segment) in segments.iter().enumerate() {
+        if i > 0 {
+            line.push(' ');
+        }
+        match segment.block {
+            Some((bg, fg)) => {
+                line.push_str(&format!(
+                    "\x1b[48;5;{bg}m\x1b[38;5;{fg}m {} \x1b[0m",
+                    segment.text
+                ));
+            }
+            None => {
+                line.push_str(&format!("\x1b[38;5;231m{}\x1b[0m", segment.text));
+            }
+        }
+    }
+
+    // Determine right indicator content and color
     let (right_padding, right_color_code) = if let Some(indicator) = ctx.auto_refresh_indicator {
         let frame = indicator.current_frame();
         (
@@ -139,19 +207,22 @@ pub fn render_footer_with_view(
     } else if ctx.error_warning_active {
         (" ! ".to_string(), get_ansi_code(Color::AnsiValue(226), 226)) // yellow
     } else {
-        ("   ".to_string(), get_ansi_code(Color::AnsiValue(21), 21)) // invisible
+        ("   ".to_string(), get_ansi_code(Color::AnsiValue(16), 16)) // invisible
     };
+
+    // Pad the gap between segments and the right indicator
+    let gap = ctx
+        .width
+        .saturating_sub(left_pad + visible + indicator_width);
 
     // Convert 0-based footer_y to 1-based for ANSI cursor positioning
     let footer_code = format!(
-        "\x1b[{};1H\x1b[48;5;{}m\x1b[38;5;21m{}\x1b[38;5;231m{:^width$}\x1b[38;5;{}m{}\x1b[0m",
+        "\x1b[{};1H{}{}\x1b[38;5;{}m{}\x1b[0m",
         ctx.footer_y + 1,
-        header_bg_code,
-        "   ",
-        footer_text,
+        line,
+        " ".repeat(gap),
         right_color_code,
         right_padding,
-        width = footer_width
     );
     buffer.push_str(&footer_code);
 
@@ -273,7 +344,6 @@ mod tests {
         let ctx = FooterContext {
             footer_y: 23,
             width: 80,
-            total_pages: 2,
             auto_refresh_indicator: &None,
             auto_refresh_disabled: false,
             error_warning_active: false,
@@ -294,7 +364,6 @@ mod tests {
         let ctx = FooterContext {
             footer_y: 23,
             width: 80,
-            total_pages: 2,
             auto_refresh_indicator: &None,
             auto_refresh_disabled: false,
             error_warning_active: false,
@@ -309,13 +378,12 @@ mod tests {
     }
 
     #[test]
-    fn test_footer_bracket_view_no_standings_key() {
+    fn test_footer_bracket_view_keys() {
         let mut buffer = String::new();
         let mut stdout = std::io::stdout();
         let ctx = FooterContext {
             footer_y: 23,
             width: 80,
-            total_pages: 2,
             auto_refresh_indicator: &None,
             auto_refresh_disabled: false,
             error_warning_active: false,
@@ -325,8 +393,58 @@ mod tests {
             has_bracket_data: true,
         };
         render_footer_with_view(&mut stdout, &mut buffer, &ctx).unwrap();
-        assert!(!buffer.contains("s=Taulukko"));
-        assert!(buffer.contains("p=Pudotuspeli"));
+        // 's' switches to standings from bracket view and is advertised as a Fastext block
+        assert!(buffer.contains("s=Taulukko"));
+        // Bracket view exits via 'p' (back to games)
+        assert!(buffer.contains("p=Ottelut"));
+        assert!(!buffer.contains("p=Pudotuspelit"));
+    }
+
+    #[test]
+    fn test_footer_fastext_blocks_use_colored_backgrounds() {
+        let mut buffer = String::new();
+        let mut stdout = std::io::stdout();
+        let ctx = FooterContext {
+            footer_y: 23,
+            width: 80,
+            auto_refresh_indicator: &None,
+            auto_refresh_disabled: false,
+            error_warning_active: false,
+            season_countdown: &None,
+            view_mode: Some(&crate::ui::interactive::state_manager::ViewMode::Games),
+            show_today_shortcut: false,
+            has_bracket_data: true,
+        };
+        render_footer_with_view(&mut stdout, &mut buffer, &ctx).unwrap();
+        // All four Fastext background colors should appear (red, green, yellow, blue)
+        assert!(buffer.contains("\x1b[48;5;196m"));
+        assert!(buffer.contains("\x1b[48;5;46m"));
+        assert!(buffer.contains("\x1b[48;5;226m"));
+        assert!(buffer.contains("\x1b[48;5;21m"));
+        // Date navigation labels are present
+        assert!(buffer.contains("⇧←Edellinen"));
+        assert!(buffer.contains("⇧→Seuraava"));
+    }
+
+    #[test]
+    fn test_footer_drops_optional_hints_when_too_narrow() {
+        let mut buffer = String::new();
+        let mut stdout = std::io::stdout();
+        let ctx = FooterContext {
+            footer_y: 23,
+            width: 60, // too narrow for all games-view segments
+            auto_refresh_indicator: &None,
+            auto_refresh_disabled: true,
+            error_warning_active: false,
+            season_countdown: &None,
+            view_mode: Some(&crate::ui::interactive::state_manager::ViewMode::Games),
+            show_today_shortcut: true,
+            has_bracket_data: true,
+        };
+        render_footer_with_view(&mut stdout, &mut buffer, &ctx).unwrap();
+        // Plain optional hints are dropped before any Fastext block
+        assert!(!buffer.contains("(Ei päivity)"));
+        assert!(buffer.contains("s=Taulukko"));
     }
 
     #[test]
@@ -336,7 +454,6 @@ mod tests {
         let ctx = FooterContext {
             footer_y: 23,
             width: 80,
-            total_pages: 1,
             auto_refresh_indicator: &None,
             auto_refresh_disabled: false,
             error_warning_active: false,

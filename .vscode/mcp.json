@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "code-review-graph": {
+      "command": "uvx",
+      "args": [
+        "code-review-graph",
+        "serve"
+      ],
+      "cwd": "/Users/niko.salonen/Documents/GitHub/liiga_teletext",
+      "type": "stdio"
+    }
+  }
+}

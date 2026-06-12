@@ -53,6 +53,9 @@ pub async fn run_interactive_ui(
     // Track date to detect date navigation and reset transient empty counter
     let mut last_refresh_date: Option<String> = None;
 
+    // Track the displayed header clock so it refreshes when the minute changes
+    let mut last_clock_minute = chrono::Local::now().format("%H:%M").to_string();
+
     loop {
         // Process pending resize events after debounce period
         if state.ui.pending_resize
@@ -61,6 +64,24 @@ pub async fn run_interactive_ui(
             tracing::debug!("Processing debounced resize event");
             state.handle_resize();
             state.ui.pending_resize = false;
+        }
+
+        // Re-render when the header clock minute changes
+        let clock_minute = chrono::Local::now().format("%H:%M").to_string();
+        if clock_minute != last_clock_minute {
+            last_clock_minute = clock_minute;
+            state.request_render();
+        }
+
+        // Clear stale teletext page number entry after a short timeout
+        if !state.navigation.page_input.is_empty()
+            && state.timers.last_page_input.elapsed() >= Duration::from_secs(4)
+        {
+            state.navigation.page_input.clear();
+            if let Some(page) = state.current_page_mut() {
+                page.set_page_input(None);
+            }
+            state.request_render();
         }
 
         // Check if auto-refresh should be triggered

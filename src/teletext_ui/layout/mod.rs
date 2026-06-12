@@ -2485,6 +2485,35 @@ mod tests {
     }
 
     #[test]
+    fn test_intelligent_truncator_keeps_disambiguation_suffix() {
+        // Disambiguated names abbreviate the surname but keep the suffix,
+        // since the suffix is what distinguishes same-surname players
+        assert_eq!(
+            IntelligentTruncator::truncate_player_name("Westerholm Po.", 12, Some(5)),
+            "Westerh. Po."
+        );
+        assert_eq!(
+            IntelligentTruncator::truncate_player_name("Westerholm Pa.", 12, Some(5)),
+            "Westerh. Pa."
+        );
+        // Single-initial suffix
+        assert_eq!(
+            IntelligentTruncator::truncate_player_name("Koivumäki M.", 10, Some(5)),
+            "Koivum. M."
+        );
+        // Fits as-is: no truncation
+        assert_eq!(
+            IntelligentTruncator::truncate_player_name("Westerholm Po.", 14, Some(5)),
+            "Westerholm Po."
+        );
+        // Multibyte surnames are measured in characters, not bytes
+        assert_eq!(
+            IntelligentTruncator::truncate_player_name("Valkeejärvi", 11, Some(5)),
+            "Valkeejärvi"
+        );
+    }
+
+    #[test]
     fn test_intelligent_truncator_goal_types_validation() {
         // Test goal types that fit
         assert!(IntelligentTruncator::validate_goal_types_no_truncation(

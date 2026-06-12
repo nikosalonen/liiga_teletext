@@ -30,6 +30,8 @@ pub(super) struct KeyEventParams<'a> {
     pub preserved_games_page: &'a mut Option<usize>,
     pub preserved_live_mode: &'a mut bool,
     pub has_bracket_data: bool,
+    pub page_input: &'a mut String,
+    pub last_page_input: &'a mut Instant,
 }
 
 /// Checks if the given key event matches the date navigation shortcut.
@@ -299,8 +301,85 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
     None
 }
 
+/// Page numbers for the available views (teletext-style page entry)
+const PAGE_GAMES: &str = "221";
+const PAGE_STANDINGS: &str = "222";
+const PAGE_BRACKET: &str = "223";
+
+/// Handles a digit key press for teletext-style page number entry.
+/// Digits accumulate in the header (e.g. "22-"); after three digits the
+/// matching view is shown, or a block-graphics "SIVUA EI LÖYDY" page
+/// for numbers that aren't in use.
+fn handle_page_number_input(params: &mut KeyEventParams<'_>, digit: char) {
+    params.page_input.push(digit);
+    *params.last_page_input = Instant::now();
+
+    if params.page_input.len() < 3 {
+        // Show the accumulating digits in the header page number slot
+        if let Some(page) = params.current_page.as_mut() {
+            page.set_page_input(Some(params.page_input.clone()));
+        }
+        *params.needs_render = true;
+        return;
+    }
+
+    let entered = std::mem::take(params.page_input);
+    if let Some(page) = params.current_page.as_mut() {
+        page.set_page_input(None);
+    }
+    *params.needs_render = true;
+
+    // Preserve the games page position when leaving the games view,
+    // mirroring the behavior of the 's' and 'p' shortcuts.
+    let preserve_games_page = |params: &mut KeyEventParams<'_>| {
+        if matches!(*params.current_view, ViewMode::Games)
+            && let Some(page) = params.current_page.as_ref()
+        {
+            *params.preserved_games_page = Some(page.get_current_page());
+        }
+    };
+
+    match entered.as_str() {
+        PAGE_GAMES => {
+            if !matches!(*params.current_view, ViewMode::Games) {
+                tracing::info!("Page entry: switching to games view");
+                if let ViewMode::Standings { live_mode } = *params.current_view {
+                    *params.preserved_live_mode = live_mode;
+                }
+                *params.current_view = ViewMode::Games;
+                *params.needs_refresh = true;
+            }
+        }
+        PAGE_STANDINGS => {
+            if !matches!(*params.current_view, ViewMode::Standings { .. }) {
+                tracing::info!("Page entry: switching to standings view");
+                preserve_games_page(params);
+                *params.current_view = ViewMode::Standings {
+                    live_mode: *params.preserved_live_mode,
+                };
+                *params.needs_refresh = true;
+            }
+        }
+        PAGE_BRACKET if params.has_bracket_data => {
+            if !matches!(*params.current_view, ViewMode::Bracket) {
+                tracing::info!("Page entry: switching to bracket view");
+                preserve_games_page(params);
+                *params.current_view = ViewMode::Bracket;
+                *params.needs_refresh = true;
+            }
+        }
+        other => {
+            let number = other.parse::<u16>().unwrap_or(0);
+            tracing::info!("Page entry: page {number} not found");
+            *params.current_page = Some(super::navigation_manager::create_page_not_found_page(
+                number,
+            ));
+        }
+    }
+}
+
 /// Handle keyboard events
-pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool, AppError> {
+pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<bool, AppError> {
     // Only handle key press events, ignore Release/Repeat to prevent double-toggling on Windows
     if params.key_event.kind != KeyEventKind::Press {
         return Ok(false);
@@ -410,6 +489,11 @@ pub(super) async fn handle_key_event(params: KeyEventParams<'_>) -> Result<bool,
             KeyCode::Char('q') => {
                 tracing::info!("Quit requested");
                 return Ok(true); // Signal to quit
+            }
+            // Teletext-style page number entry: type three digits to jump
+            // to a page (221 = games, 222 = standings, 223 = playoffs)
+            KeyCode::Char(c) if c.is_ascii_digit() => {
+                handle_page_number_input(&mut params, c);
             }
             KeyCode::Char('r') => {
                 // Check if auto-refresh is disabled - ignore manual refresh too

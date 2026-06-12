@@ -19,7 +19,7 @@ A Rust terminal application that displays Finnish Liiga hockey results in authen
 
 ## Requirements
 
-- **Rust 1.89 or newer** - This project uses modern Rust features including if-let chains
+- **Rust 1.96 or newer** - This project uses modern Rust features including if-let chains
 - Terminal with Unicode support for best display experience
 
 You can check your Rust version with:
@@ -80,6 +80,11 @@ cargo run --release
 - Press `l` to toggle live mode in standings
 - Press `t` to jump back to today's view
 - Press `r` to manually refresh data
+- Type a three-digit page number to jump directly to a view, just like real teletext:
+  - `221` - Games
+  - `222` - Standings
+  - `223` - Playoff bracket (during playoffs)
+  - Any other number shows an authentic "SIVUA EI LÖYDY" (page not found) page
 - Data refreshes automatically:
   - Every 15 seconds for live games
   - Every 60 seconds otherwise (completed games served from 1-hour cache)

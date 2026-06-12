@@ -55,6 +55,7 @@ pub struct TeletextPage {
     pub(super) is_bracket_page: bool,         // Whether this is a bracket display page
     pub(super) has_bracket_data: bool,        // Whether bracket data is available
     pub(super) initial_fetched_date: Option<String>, // The date originally fetched on startup
+    pub(super) page_input_display: Option<String>, // Digits typed for teletext-style page entry, shown in header
 }
 
 #[derive(Debug)]
@@ -181,6 +182,23 @@ impl TeletextPage {
             is_bracket_page: false,
             has_bracket_data: false,
             initial_fetched_date: None,
+            page_input_display: None,
+        }
+    }
+
+    /// Sets the in-progress page number entry shown in the header
+    /// (e.g. "22" renders as "22-" in place of the page number).
+    /// Pass `None` to restore the normal page number display.
+    pub fn set_page_input(&mut self, digits: Option<String>) {
+        self.page_input_display = digits.filter(|d| !d.is_empty());
+    }
+
+    /// Formats the page number slot of the header: either the page number
+    /// itself or an in-progress page entry padded with dashes ("22-").
+    fn format_header_page_str(&self) -> String {
+        match &self.page_input_display {
+            Some(digits) => format!("{digits:-<3}"),
+            None => self.page_number.to_string(),
         }
     }
 
@@ -493,15 +511,17 @@ impl TeletextPage {
             }
         }
 
-        // Format the header text with date if available
+        // Format the header text with date if available, plus a teletext-style clock
+        let page_str = self.format_header_page_str();
+        let clock = Local::now().format("%H:%M").to_string();
         let header_text = if let Some(ref date) = self.fetched_date {
             let formatted_date = match chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
                 Ok(date) => date.format("%d.%m.%Y").to_string(),
                 Err(_) => date.clone(),
             };
-            format!("SM-LIIGA {} {}", self.page_number, formatted_date)
+            format!("SM-LIIGA {page_str} {formatted_date} {clock}")
         } else {
-            format!("SM-LIIGA {}", self.page_number)
+            format!("SM-LIIGA {page_str} {clock}")
         };
 
         // Use optimized ANSI code generation for headers (requirement 4.3)
@@ -544,6 +564,13 @@ impl TeletextPage {
             self.subheader,
             page_info,
             width = page_info_width
+        ));
+
+        // Thin teletext-style mosaic separator under the header band
+        header_buffer.push_str(&format!(
+            "\x1b[3;1H\x1b[38;5;{}m{}\x1b[0m",
+            header_bg_code,
+            "▀".repeat(width as usize)
         ));
 
         // Add batched header to main buffer
@@ -634,7 +661,6 @@ impl TeletextPage {
                 &super::footer::FooterContext {
                     footer_y,
                     width: width as usize,
-                    total_pages,
                     auto_refresh_indicator: &self.auto_refresh_indicator,
                     auto_refresh_disabled: self.auto_refresh_disabled,
                     error_warning_active: self.error_warning_active,
@@ -767,6 +793,35 @@ mod tests {
     use crate::teletext_ui::formatting::get_team_abbreviation;
     use crate::ui::teletext::{CompactModeValidation, TerminalWidthValidation};
     use crossterm::style::Color;
+
+    #[test]
+    fn test_header_page_str_shows_page_input_entry() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            false,
+            true,
+            true,
+            false,
+            false,
+        );
+        assert_eq!(page.format_header_page_str(), "221");
+
+        page.set_page_input(Some("2".to_string()));
+        assert_eq!(page.format_header_page_str(), "2--");
+
+        page.set_page_input(Some("22".to_string()));
+        assert_eq!(page.format_header_page_str(), "22-");
+
+        // Empty input restores the page number, as does None
+        page.set_page_input(Some(String::new()));
+        assert_eq!(page.format_header_page_str(), "221");
+
+        page.set_page_input(Some("23".to_string()));
+        page.set_page_input(None);
+        assert_eq!(page.format_header_page_str(), "221");
+    }
 
     #[test]
     fn test_team_abbreviation() {

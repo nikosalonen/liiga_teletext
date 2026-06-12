@@ -395,8 +395,8 @@ impl TeletextPage {
         let winning_goal_fg_code = get_ansi_code(winning_goal_fg(), 201);
         let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
 
-        let home_scorers: Vec<_> = goal_events.iter().filter(|e| e.is_home_team).collect();
-        let away_scorers: Vec<_> = goal_events.iter().filter(|e| !e.is_home_team).collect();
+        let (home_scorers, away_scorers): (Vec<_>, Vec<_>) =
+            goal_events.iter().partition(|e| e.is_home_team);
         let max_scorers = home_scorers.len().max(away_scorers.len());
 
         for i in 0..max_scorers {
@@ -583,37 +583,33 @@ impl TeletextPage {
                 safe_player_name
             };
 
-        // Calculate available space for player name based on team position
-        // This prevents padding from pushing into adjacent content areas
+        // Calculate available space for player name based on team position.
+        // Reserve room for the longest goal-type combination in the game
+        // (not just this event's) so the ▶ icons and goal-type indicators
+        // stay vertically aligned across all scorer rows.
+        let goal_type_reservation = if layout_config.max_goal_types_width > 0 {
+            layout_config.max_goal_types_width + 1 // +1 for space before goal types
+        } else {
+            0
+        };
         let available_space_for_name = if event.is_home_team {
-            // For home team: calculate space until away team starts
+            // For home team: content (name + icon + goal types) may use the
+            // blank gutter of the separator up to (but never under) the "-"
+            // divider, which sits at the center of the separator field.
             let home_pos = CONTENT_MARGIN + 1;
-            let away_team_start =
-                home_pos + layout_config.home_team_width + layout_config.separator_width;
+            let separator_start = home_pos + layout_config.home_team_width;
+            let divider_column = separator_start + layout_config.separator_width / 2;
             let name_start = column_offset + 3; // minute (2) + space (1)
-            let goal_type_len = event.get_goal_type_display().len();
-            let space_needed_for_goal_types = if goal_type_len > 0 {
-                goal_type_len + 1
-            } else {
-                0
-            }; // +1 for space before goal types
-            away_team_start
+            divider_column
                 .saturating_sub(name_start)
-                .saturating_sub(space_needed_for_goal_types)
-                .saturating_sub(1) // -1 for margin
+                .saturating_sub(goal_type_reservation)
         } else {
             // For away team: calculate space until time column
             let name_start = column_offset + 3;
-            let goal_type_len = event.get_goal_type_display().len();
-            let space_needed_for_goal_types = if goal_type_len > 0 {
-                goal_type_len + 1
-            } else {
-                0
-            };
             layout_config
                 .time_column
                 .saturating_sub(name_start)
-                .saturating_sub(space_needed_for_goal_types)
+                .saturating_sub(goal_type_reservation)
                 .saturating_sub(1)
         };
 
@@ -628,9 +624,13 @@ impl TeletextPage {
         let padding_width = available_space_for_name
             .saturating_sub(play_icon_width)
             .min(layout_config.max_player_name_width);
-        // Truncate player name to fit within padding_width so the play icon doesn't overflow
-        let truncated_player_name: String =
-            player_name_display.chars().take(padding_width).collect();
+        // Truncate the player name gracefully (ellipsis) when it doesn't fit,
+        // so the play icon never overflows the column
+        let truncated_player_name: String = if player_name_display.chars().count() > padding_width {
+            IntelligentTruncator::truncate_player_name(&player_name_display, padding_width, Some(5))
+        } else {
+            player_name_display
+        };
         let padded_player_name =
             format!("{:<width$}", truncated_player_name, width = padding_width);
 
@@ -696,20 +696,18 @@ impl TeletextPage {
                 );
             }
 
-            // Calculate safe position for goal types based on team (home vs away)
-            // Player name is padded to max_player_name_width, plus 1 space before goal type
-            let goal_type_start_position =
-                column_offset + 3 + layout_config.max_player_name_width + 1;
+            // Calculate the actual rendered position of the goal types:
+            // minute (2) + space (1) + padded name + play icon + space
+            let goal_type_start_position = column_offset + 3 + padding_width + play_icon_width + 1;
             let goal_type_end_position = goal_type_start_position + goal_type.len();
 
             // Calculate the boundary based on whether this is home or away team
             let boundary_column = if event.is_home_team {
-                // For home team: don't extend beyond the away team start position
-                // Calculate actual away team position: home_pos + home_width + separator_width
+                // For home team: goal types may use the separator's blank
+                // gutter but must never render under the "-" divider
                 let home_pos = CONTENT_MARGIN + 1;
-                let away_team_start =
-                    home_pos + layout_config.home_team_width + layout_config.separator_width;
-                away_team_start.saturating_sub(2) // Leave 2 spaces before away team for better separation
+                let separator_start = home_pos + layout_config.home_team_width;
+                separator_start + layout_config.separator_width / 2
             } else {
                 // For away team: use the time column position minus some margin
                 layout_config.time_column.saturating_sub(2) // Leave space before time column
@@ -803,5 +801,140 @@ impl TeletextPage {
         );
         buffer.push_str(&formatted_header);
         *current_line += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_fetcher::GoalEventData;
+
+    /// Strips ANSI escape sequences (CSI and OSC) to recover visible text
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::new();
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c != '\x1b' {
+                out.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some('[') => {
+                    for n in chars.by_ref() {
+                        if n.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    for n in chars.by_ref() {
+                        if n == '\x07' {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    fn make_home_event(name: &str, goal_types: &[&str]) -> GoalEventData {
+        GoalEventData {
+            scorer_player_id: 1,
+            scorer_name: name.to_string(),
+            minute: 4,
+            home_team_score: 1,
+            away_team_score: 0,
+            is_winning_goal: false,
+            goal_types: goal_types.iter().map(|s| s.to_string()).collect(),
+            is_home_team: true,
+            video_clip_url: None,
+        }
+    }
+
+    fn render_home_event_with_config(
+        name: &str,
+        goal_types: &[&str],
+        layout_config: &LayoutConfig,
+    ) -> String {
+        let page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            true, // disable video links
+            false,
+            true,
+            false,
+            false,
+        );
+        let event = make_home_event(name, goal_types);
+        let mut buffer = String::new();
+        page.render_goal_event_safe(
+            &mut buffer,
+            &event,
+            false,
+            false,
+            5,
+            CONTENT_MARGIN + 1,
+            51,
+            201,
+            226,
+            layout_config,
+        )
+        .unwrap();
+        strip_ansi(&buffer)
+    }
+
+    fn render_home_event(goal_types: &[&str]) -> String {
+        render_home_event_with_config("Borchardt", goal_types, &LayoutConfig::default())
+    }
+
+    #[test]
+    fn test_long_player_name_not_clipped() {
+        // Regression test: an 11-character name must render in full when a
+        // game's longest goal-type combination is "YV VT" (5 chars wide).
+        // The name field may use the separator's blank gutter for this.
+        let layout_config = LayoutConfig {
+            max_goal_types_width: 5,
+            ..LayoutConfig::default()
+        };
+        let visible = render_home_event_with_config("Valkeejärvi", &[], &layout_config);
+        assert!(
+            visible.contains("Valkeejärvi"),
+            "long player name was clipped: {visible:?}"
+        );
+    }
+
+    #[test]
+    fn test_home_goal_types_stay_within_home_column() {
+        // Regression test: with two goal types (e.g. "YV VT") the goal type
+        // column must not spill under the team separator ("-" divider).
+        // Content may use the separator's blank gutter up to (but never
+        // under) the divider at the separator's center.
+        let layout_config = LayoutConfig::default();
+        let max_content_width = layout_config.home_team_width + layout_config.separator_width / 2;
+        for types in [&["YV"][..], &["YV", "VT"][..]] {
+            let visible = render_home_event(types);
+            let visible_len = visible.trim_end().chars().count();
+            assert!(
+                visible_len <= max_content_width,
+                "home scorer row {visible:?} ({visible_len} cols) would overlap the divider (limit {max_content_width})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_goal_type_column_aligned_across_rows() {
+        // Goal types must start at the same column whether a row has one
+        // or two goal type indicators
+        let single = render_home_event(&["YV"]);
+        let double = render_home_event(&["YV", "VT"]);
+        let single_idx = single.find("YV").unwrap();
+        let double_idx = double.find("YV VT").unwrap();
+        assert_eq!(
+            single_idx, double_idx,
+            "goal type column misaligned: {single:?} vs {double:?}"
+        );
     }
 }

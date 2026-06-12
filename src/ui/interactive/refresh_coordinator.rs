@@ -661,7 +661,7 @@ impl RefreshCoordinator {
         } else {
             // Show loading indicator immediately so the UI feels responsive
             let mut loading_page = TeletextPage::new(
-                223,
+                222,
                 "JÄÄKIEKKO".to_string(),
                 "SARJATAULUKKO".to_string(),
                 config.disable_links,
@@ -785,7 +785,7 @@ impl RefreshCoordinator {
             Some(page)
         } else {
             let mut error_page = TeletextPage::new(
-                223,
+                222,
                 "JÄÄKIEKKO".to_string(),
                 "SARJATAULUKKO".to_string(),
                 config.disable_links,
@@ -843,7 +843,7 @@ impl RefreshCoordinator {
             state.clear_render_flag();
         } else {
             let mut loading_page = TeletextPage::new(
-                224,
+                223,
                 "JÄÄKIEKKO".to_string(),
                 "PUDOTUSPELIT".to_string(),
                 config.disable_links,
@@ -937,7 +937,7 @@ impl RefreshCoordinator {
             Some(page)
         } else {
             let mut error_page = TeletextPage::new(
-                224,
+                223,
                 "JÄÄKIEKKO".to_string(),
                 "PUDOTUSPELIT".to_string(),
                 config.disable_links,
@@ -1088,33 +1088,36 @@ impl RefreshCoordinator {
 
         let stats = get_all_cache_stats().await;
 
+        fn usage_percent(size: usize, capacity: usize) -> usize {
+            (size * 100).checked_div(capacity).unwrap_or(0)
+        }
+
         tracing::debug!(
             "Cache status - Player: {}/{} ({}%), Tournament: {}/{} ({}%), Detailed Game: {}/{} ({}%), Goal Events: {}/{} ({}%), HTTP Response: {}/{} ({}%)",
             stats.player_cache.size,
             stats.player_cache.capacity,
-            (stats.player_cache.size * 100)
-                .checked_div(stats.player_cache.capacity)
-                .unwrap_or(0),
+            usage_percent(stats.player_cache.size, stats.player_cache.capacity),
             stats.tournament_cache.size,
             stats.tournament_cache.capacity,
-            (stats.tournament_cache.size * 100)
-                .checked_div(stats.tournament_cache.capacity)
-                .unwrap_or(0),
+            usage_percent(stats.tournament_cache.size, stats.tournament_cache.capacity),
             stats.detailed_game_cache.size,
             stats.detailed_game_cache.capacity,
-            (stats.detailed_game_cache.size * 100)
-                .checked_div(stats.detailed_game_cache.capacity)
-                .unwrap_or(0),
+            usage_percent(
+                stats.detailed_game_cache.size,
+                stats.detailed_game_cache.capacity
+            ),
             stats.goal_events_cache.size,
             stats.goal_events_cache.capacity,
-            (stats.goal_events_cache.size * 100)
-                .checked_div(stats.goal_events_cache.capacity)
-                .unwrap_or(0),
+            usage_percent(
+                stats.goal_events_cache.size,
+                stats.goal_events_cache.capacity
+            ),
             stats.http_response_cache.size,
             stats.http_response_cache.capacity,
-            (stats.http_response_cache.size * 100)
-                .checked_div(stats.http_response_cache.capacity)
-                .unwrap_or(0)
+            usage_percent(
+                stats.http_response_cache.size,
+                stats.http_response_cache.capacity
+            )
         );
 
         // Log detailed cache information for debugging if needed

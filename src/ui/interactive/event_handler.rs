@@ -145,6 +145,8 @@ impl EventHandler {
             preserved_games_page: &mut preserved_games_page,
             preserved_live_mode: &mut preserved_live_mode,
             has_bracket_data: state.navigation.has_bracket_data,
+            page_input: &mut state.navigation.page_input,
+            last_page_input: &mut state.timers.last_page_input,
         })
         .await?;
 

@@ -91,23 +91,25 @@ impl TeletextPage {
         let games_for_layout = self.extract_games_for_layout(visible_rows);
         let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games_for_layout);
 
+        // Shared ANSI position-code cache for both columns (requirement 4.3)
+        let mut layout_manager = super::layout::ColumnLayoutManager::new(80, CONTENT_MARGIN);
+
         // Render left column
         let mut left_line = *current_line;
 
         for (game_index, game) in left_games.iter().enumerate() {
             let formatted_game =
                 self.format_game_for_wide_column(game, column_width, &wide_layout_config);
-            let lines: Vec<&str> = formatted_game.lines().collect();
 
-            // Use optimized ANSI code generation for left column (requirement 4.3)
-            let mut layout_manager = super::layout::ColumnLayoutManager::new(80, CONTENT_MARGIN);
-
-            for (line_index, line) in lines.iter().enumerate() {
+            let mut line_count = 0;
+            for (line_index, line) in formatted_game.lines().enumerate() {
                 let position_code =
                     layout_manager.get_position_code(left_line + line_index, left_column_start);
-                buffer.push_str(&format!("{}{}", position_code, line));
+                buffer.push_str(position_code);
+                buffer.push_str(line);
+                line_count = line_index + 1;
             }
-            left_line += lines.len();
+            left_line += line_count;
 
             // Add spacing between games (except after the last game)
             if game_index < left_games.len() - 1 {
@@ -122,17 +124,16 @@ impl TeletextPage {
         for (game_index, game) in right_games.iter().enumerate() {
             let formatted_game =
                 self.format_game_for_wide_column(game, column_width, &wide_layout_config);
-            let lines: Vec<&str> = formatted_game.lines().collect();
 
-            // Use optimized ANSI code generation for right column (requirement 4.3)
-            let mut layout_manager = super::layout::ColumnLayoutManager::new(80, CONTENT_MARGIN);
-
-            for (line_index, line) in lines.iter().enumerate() {
+            let mut line_count = 0;
+            for (line_index, line) in formatted_game.lines().enumerate() {
                 let position_code =
                     layout_manager.get_position_code(right_line + line_index, right_column_start);
-                buffer.push_str(&format!("{}{}", position_code, line));
+                buffer.push_str(position_code);
+                buffer.push_str(line);
+                line_count = line_index + 1;
             }
-            right_line += lines.len();
+            right_line += line_count;
 
             // Add spacing between games (except after the last game)
             if game_index < right_games.len() - 1 {
@@ -234,9 +235,9 @@ impl TeletextPage {
                         ScoreType::Ongoing => {
                             let formatted_time =
                                 format!("{:02}:{:02}", played_time / 60, played_time % 60);
-                            (formatted_time, result_text.clone())
+                            (formatted_time, result_text)
                         }
-                        ScoreType::Final => (String::new(), result_text.clone()),
+                        ScoreType::Final => (String::new(), result_text),
                     };
 
                     let result_color = match score_type {
@@ -351,13 +352,26 @@ impl TeletextPage {
                                 String::new()
                             };
 
-                            // Use layout config for player name width
+                            // Use layout config for player name and goal type widths
                             let player_name_width = layout_config.max_player_name_width;
+                            let goal_types_width = layout_config.max_goal_types_width;
 
-                            // Create a fixed-width area for minute + player name, then add goal types
-                            // This ensures goal types always start at the same column position
-                            let base_content = format!(
-                                " \x1b[38;5;{}m{:2} {:<width$}\x1b[0m{}",
+                            // Fixed-width fields (name, icon, goal types) keep the
+                            // away column aligned even when goal types differ per row
+                            let icon_field = if has_video {
+                                video_icon
+                            } else {
+                                " ".to_string()
+                            };
+                            let goal_type_field = if goal_type.is_empty() {
+                                " ".repeat(goal_types_width)
+                            } else {
+                                format!(
+                                    "\x1b[38;5;{goal_type_fg_code}m{goal_type:<goal_types_width$}\x1b[0m"
+                                )
+                            };
+                            format!(
+                                " \x1b[38;5;{}m{:2} {:<width$}\x1b[0m{} {}",
                                 scorer_color,
                                 event.minute,
                                 event
@@ -365,27 +379,20 @@ impl TeletextPage {
                                     .chars()
                                     .take(player_name_width)
                                     .collect::<String>(),
-                                video_icon,
+                                icon_field,
+                                goal_type_field,
                                 width = player_name_width
-                            );
-
-                            // Add goal type with consistent spacing
-                            if !goal_type.is_empty() {
-                                format!(
-                                    "{} \x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m",
-                                    base_content
-                                )
-                            } else {
-                                base_content
-                            }
+                            )
                         } else {
-                            // Calculate empty space based on layout config
+                            // Match the fixed home-side width:
+                            // space + minute (2) + space + name + icon + space + goal types
                             let total_width = 1
                                 + 2
                                 + 1
                                 + layout_config.max_player_name_width
-                                + layout_config.max_goal_types_width
-                                + 1;
+                                + 1
+                                + 1
+                                + layout_config.max_goal_types_width;
                             " ".repeat(total_width)
                         };
 

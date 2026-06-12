@@ -26,6 +26,8 @@ pub struct TimerState {
     pub last_resize: Instant,
     pub last_activity: Instant,
     pub cache_monitor_timer: Instant,
+    /// Last digit typed for teletext-style page number entry
+    pub last_page_input: Instant,
 }
 
 impl TimerState {
@@ -40,6 +42,7 @@ impl TimerState {
             last_resize: now.checked_sub(Duration::from_millis(500)).unwrap_or(now),
             last_activity: now,
             cache_monitor_timer: now,
+            last_page_input: now,
         }
     }
 
@@ -178,6 +181,8 @@ pub struct NavigationState {
     pub has_bracket_data: bool,
     /// The date originally fetched on startup (before any manual navigation)
     pub initial_fetched_date: Option<String>,
+    /// Accumulated digits for teletext-style page number entry (e.g. "22")
+    pub page_input: String,
 }
 
 impl NavigationState {
@@ -191,6 +196,7 @@ impl NavigationState {
             preserved_live_mode: false,
             has_bracket_data: false,
             initial_fetched_date: None,
+            page_input: String::new(),
         }
     }
 

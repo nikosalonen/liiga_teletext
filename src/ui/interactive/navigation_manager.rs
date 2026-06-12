@@ -444,6 +444,65 @@ pub fn create_error_page(
     error_page
 }
 
+/// 3x5 block-graphics glyphs for the "SIVUA EI LÖYDY" page art.
+/// Returns the five rows of a glyph, or None for unsupported characters.
+fn block_glyph(c: char) -> Option<[&'static str; 5]> {
+    match c {
+        'S' => Some(["███", "█  ", "███", "  █", "███"]),
+        'I' => Some(["███", " █ ", " █ ", " █ ", "███"]),
+        'V' => Some(["█ █", "█ █", "█ █", "█ █", " █ "]),
+        'U' => Some(["█ █", "█ █", "█ █", "█ █", "███"]),
+        'A' => Some([" █ ", "█ █", "███", "█ █", "█ █"]),
+        'E' => Some(["███", "█  ", "███", "█  ", "███"]),
+        'L' => Some(["█  ", "█  ", "█  ", "█  ", "███"]),
+        // Ö: umlaut dots on the first row, squashed O below
+        'Ö' => Some(["█ █", "███", "█ █", "█ █", "███"]),
+        'Y' => Some(["█ █", "█ █", " █ ", " █ ", " █ "]),
+        'D' => Some(["██ ", "█ █", "█ █", "█ █", "██ "]),
+        ' ' => Some(["   ", "   ", "   ", "   ", "   "]),
+        _ => None,
+    }
+}
+
+/// Renders text as 5-row block-graphics art (teletext mosaic style).
+/// Unsupported characters are skipped.
+fn render_block_text(text: &str) -> Vec<String> {
+    let glyphs: Vec<[&str; 5]> = text.chars().filter_map(block_glyph).collect();
+    (0..5)
+        .map(|row| glyphs.iter().map(|g| g[row]).collect::<Vec<_>>().join(" "))
+        .collect()
+}
+
+/// Creates the teletext-style "page not found" page shown when the user
+/// enters a page number that isn't in use (anything except 221/222/223).
+pub fn create_page_not_found_page(page_number: u16) -> TeletextPage {
+    let mut page = TeletextPage::new(
+        page_number,
+        "JÄÄKIEKKO".to_string(),
+        "SM-LIIGA".to_string(),
+        false,
+        true,
+        false,
+        false,
+        false,
+    );
+
+    // Block art centered within the classic 40-column teletext area
+    page.add_banner_line(" ".to_string());
+    for line in render_block_text("SIVUA") {
+        page.add_banner_line(format!("{:^40}", line));
+    }
+    page.add_banner_line(" ".to_string());
+    for line in render_block_text("EI LÖYDY") {
+        page.add_banner_line(format!("{:^40}", line));
+    }
+    page.add_banner_line(" ".to_string());
+    page.add_error_message(&format!("Sivu {page_number} ei ole käytössä"));
+    page.add_error_message("221 Ottelut  222 Taulukko  223 Pudotuspelit");
+
+    page
+}
+
 /// Validates if a game is in the future by checking both time and start fields
 pub fn is_future_game(game: &GameData) -> bool {
     // Check if time field is non-empty (indicates scheduled game)
@@ -504,7 +563,7 @@ pub fn create_standings_page(
 
     // Force normal mode for standings - compact/wide renderers don't support standings rows
     let mut page = TeletextPage::new(
-        223,
+        222,
         "JÄÄKIEKKO".to_string(),
         subheader,
         disable_links,
@@ -535,7 +594,7 @@ pub fn create_bracket_page(
 
     // Force normal mode (no compact/wide), same as standings
     let mut page = TeletextPage::new(
-        224,
+        223,
         "JÄÄKIEKKO".to_string(),
         subheader,
         disable_links,
@@ -580,6 +639,36 @@ mod tests {
 
         // Test invalid date - should return original string
         assert_eq!(format_date_for_display("invalid-date"), "invalid-date");
+    }
+
+    #[test]
+    fn test_render_block_text_dimensions() {
+        let sivua = render_block_text("SIVUA");
+        assert_eq!(sivua.len(), 5);
+        // 5 glyphs of width 3, joined with single spaces
+        assert!(sivua.iter().all(|row| row.chars().count() == 19));
+
+        let ei_loydy = render_block_text("EI LÖYDY");
+        assert_eq!(ei_loydy.len(), 5);
+        assert!(ei_loydy.iter().all(|row| row.chars().count() == 31));
+    }
+
+    #[test]
+    fn test_render_block_text_skips_unsupported_chars() {
+        let with_unsupported = render_block_text("S?I");
+        let without = render_block_text("SI");
+        assert_eq!(with_unsupported, without);
+    }
+
+    #[test]
+    fn test_create_page_not_found_page() {
+        let page = create_page_not_found_page(234);
+        let debug = format!("{page:?}");
+        // Header shows the entered page number
+        assert!(debug.contains("page_number: 234"));
+        // Explanation row and block art are present
+        assert!(debug.contains("Sivu 234 ei ole käytössä"));
+        assert!(debug.contains("█"));
     }
 
     #[tokio::test]

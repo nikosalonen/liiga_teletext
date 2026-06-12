@@ -102,6 +102,13 @@ impl TeletextPage {
             .push(TeletextRow::ErrorMessage(formatted_message));
     }
 
+    /// Adds a text row verbatim, preserving leading whitespace.
+    /// Used for block-graphics art (e.g. the "SIVUA EI LÖYDY" page) where
+    /// indentation is part of the drawing and must not be trimmed.
+    pub fn add_banner_line(&mut self, line: String) {
+        self.content_rows.push(TeletextRow::ErrorMessage(line));
+    }
+
     /// Adds a header row indicating future games with the specified text.
     /// Typically used to display "Seuraavat ottelut" (Next games) with a date.
     pub fn add_future_games_header(&mut self, header_text: String) {

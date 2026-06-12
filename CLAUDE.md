@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rust terminal application displaying Finnish Hockey League (Liiga) results in authentic YLE Teksti-TV (teletext) style. Features real-time data fetching from the Liiga API, multi-level caching, interactive page navigation, and multiple display modes.
 
-- **Rust Edition**: 2024 (requires Rust 1.89+)
+- **Rust Edition**: 2024 (requires Rust 1.96+)
 - **Async Runtime**: Tokio (full features)
 - **Terminal**: Crossterm for cross-platform raw mode / alternate screen
 
@@ -89,7 +89,7 @@ loop {
   1. Check if auto-refresh needed (RefreshCoordinator)
   2. Fetch data if refresh requested → update state
   3. Render page if state changed (buffered output)
-  4. Process keyboard events (←/→ pages, Shift+←/→ dates, 's' standings, 'p' bracket (playoffs only), 'l' live mode, 't' today, 'r' refresh, 'q' quit)
+  4. Process keyboard events (←/→ pages, Shift+←/→ dates, 's' standings, 'p' bracket (playoffs only), 'l' live mode, 't' today, 'r' refresh, 'q' quit, digits for teletext page entry: 221 games / 222 standings / 223 bracket, others show a "SIVUA EI LÖYDY" page)
   5. Sleep 50ms
 }
 ```
@@ -133,3 +133,42 @@ Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTT
 - `wiremock` for HTTP mocking, `tempfile` for file ops
 - `TestDataBuilder` in `testing_utils.rs` for mock game data
 - Integration tests in `tests/` directory
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+| ------ | ---------- |
+| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review — token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes` for code review.
+3. Use `get_affected_flows` to understand impact.
+4. Use `query_graph` pattern="tests_for" to check coverage.
