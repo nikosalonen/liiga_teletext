@@ -26,6 +26,19 @@ use crate::error::AppError;
 /// * `Result<T, AppError>` - Parsed response data or error
 #[instrument(skip(client))]
 pub(super) async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, AppError> {
+    fetch_with_retries(client, url, crate::constants::retry::MAX_ATTEMPTS).await
+}
+
+/// Same as [`fetch`] but with a custom retry budget. Use a low budget for
+/// endpoints whose failures are expected and long-lived (e.g. availability
+/// checks for unpublished tournaments) to avoid wasted requests and rate
+/// limiting.
+#[instrument(skip(client))]
+pub(super) async fn fetch_with_retries<T: DeserializeOwned>(
+    client: &Client,
+    url: &str,
+    max_retries: u32,
+) -> Result<T, AppError> {
     info!("Fetching data from URL: {url}");
 
     // Check HTTP response cache first
@@ -42,7 +55,6 @@ pub(super) async fn fetch<T: DeserializeOwned>(client: &Client, url: &str) -> Re
 
     // Handle reqwest errors with retries/backoff for transient failures
     let mut attempt = 0u32;
-    let max_retries = crate::constants::retry::MAX_ATTEMPTS;
     let mut backoff = Duration::from_millis(crate::constants::retry::INITIAL_BACKOFF_MS);
     let response = loop {
         match client.get(url).send().await {

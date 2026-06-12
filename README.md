@@ -13,6 +13,8 @@ A Rust terminal application that displays Finnish Liiga hockey results in authen
 - **Detailed game info** - Scores, goal scorers with timestamps, video links with play icons
 - **Standings view** - Toggle league standings with 's' key, live mode support
 - **Playoff series info** - Series scores, phase headers, and win indicators during playoffs
+- **Playoff bracket view** - Full tournament bracket with all rounds side by side and connectors on large terminals (80x24+), shown only while the playoffs are upcoming, ongoing, or recently finished
+- **Teletext page navigation** - Type 221/222/223 to jump between views, with Fastext-style colored footer shortcuts and a header clock
 - **Multiple display modes** - Compact (multi-column), wide (side-by-side), standard
 - **Configuration system** - Platform-specific storage, customizable settings
 - **Performance optimized** - Caching, request deduplication, intelligent refresh intervals
@@ -76,7 +78,9 @@ cargo run --release
   - **Note**: Date navigation is limited to the current season for performance and UX reasons
   - To view games from previous seasons, use the `-d` flag with a specific date
 - Press `s` to toggle standings view (press again to toggle live mode, once more to return)
-- Press `p` to toggle playoff bracket view (visible during playoffs)
+- Press `p` to toggle playoff bracket view (visible while playoffs are upcoming, ongoing, or recently finished)
+  - On terminals of 80x24 or larger the bracket shows every round side by side with connectors, including upcoming rounds as placeholders
+  - Outside the playoff season the view is hidden; set `LIIGA_BRACKET_GRACE_DAYS=400` to view the previous season's bracket
 - Press `l` to toggle live mode in standings
 - Press `t` to jump back to today's view
 - Press `r` to manually refresh data

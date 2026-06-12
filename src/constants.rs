@@ -25,6 +25,12 @@ pub mod cache_ttl {
     /// TTL for games that should be starting soon (increased from 5 to 30 seconds to reduce API calls)
     /// This should still catch the moment games become live but with less aggressive polling
     pub const STARTING_GAMES_SECONDS: u64 = 30;
+
+    /// How long to remember that a secondary tournament endpoint is
+    /// unavailable (502/503/404) before checking it again. Unpublished
+    /// tournaments (e.g. preseason before fixtures are announced) stay
+    /// unavailable for weeks, so re-checking within a session is wasteful.
+    pub const TOURNAMENT_UNAVAILABLE_SECONDS: u64 = 900;
 }
 
 /// Auto-refresh interval constants in seconds
@@ -60,6 +66,12 @@ pub mod env_vars {
     /// Environment variable for API fetch timeout in seconds (default: 5)
     /// Used for fallback player name fetching when cached names are missing
     pub const API_FETCH_TIMEOUT: &str = "LIIGA_API_FETCH_TIMEOUT";
+
+    /// Environment variable overriding the playoff bracket visibility grace
+    /// period in days (default: `bracket::VISIBILITY_GRACE_DAYS`). Useful
+    /// for testing the bracket view outside the playoff season, e.g.
+    /// `LIIGA_BRACKET_GRACE_DAYS=400` shows the previous season's bracket.
+    pub const BRACKET_GRACE_DAYS: &str = "LIIGA_BRACKET_GRACE_DAYS";
 }
 
 /// Retry configuration
@@ -69,6 +81,22 @@ pub mod retry {
 
     /// Initial backoff delay for HTTP fetch retries (milliseconds)
     pub const INITIAL_BACKOFF_MS: u64 = 250;
+
+    /// Maximum retry attempts for secondary tournament availability checks
+    /// (e.g. valmistavat_ottelut). These endpoints return 502 until the
+    /// tournament is published, so aggressive retries only waste requests
+    /// and risk rate limiting.
+    pub const SECONDARY_TOURNAMENT_MAX_ATTEMPTS: u32 = 1;
+}
+
+/// Playoff bracket visibility configuration
+pub mod bracket {
+    /// How many days after the last playoff game the bracket remains
+    /// offered in the UI. Once every game of the season's playoffs
+    /// concluded longer ago than this, the bracket belongs to a finished
+    /// season and the playoffs view is hidden until next season's
+    /// fixtures appear.
+    pub const VISIBILITY_GRACE_DAYS: i64 = 14;
 }
 
 /// Maximum length for player names

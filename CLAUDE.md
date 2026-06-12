@@ -106,11 +106,15 @@ Auto-refresh intervals: 15 seconds during live games, 30 seconds near start time
 
 **Persistent player name cache** (`data_fetcher/cache/persistence.rs`) — disk-backed JSON store keyed by team per season. Disambiguated player names (e.g., "A. Saarela") are persisted to the platform cache directory so completed games skip the detailed game API endpoint on restart. Uses atomic write (tmp + rename), a sequence counter for dirty tracking, and season-scoped files (`players_{season}.json`).
 
+**Tournament negative cache** (`data_fetcher/api/tournament_logic.rs`) — secondary tournament endpoints (e.g. unannounced `valmistavat_ottelut`) that fail with 502/503/404 are skipped for 15 minutes, with a reduced retry budget (1 instead of 3). `runkosarja` is exempt and always re-checked.
+
+**Playoff bracket visibility** (`data_fetcher/api/bracket_api.rs`) — the bracket (`p` / page 223) is hidden once every playoff game concluded more than 14 days ago (`LIIGA_BRACKET_GRACE_DAYS` overrides). The bracket renders as a full side-by-side path with connectors on terminals ≥ ~80x24 (`teletext_ui/bracket_display.rs::render_full_path`), falling back to sequential tree and stacked layouts on smaller terminals.
+
 ### Configuration
 
 TOML config at platform-specific paths (Linux: `~/.config/liiga_teletext/`, macOS: `~/Library/Application Support/liiga_teletext/`, Windows: `%APPDATA%\liiga_teletext/`).
 
-Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTTP_TIMEOUT`, `LIIGA_API_FETCH_TIMEOUT`.
+Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTTP_TIMEOUT`, `LIIGA_API_FETCH_TIMEOUT`, `LIIGA_BRACKET_GRACE_DAYS` (extends playoff bracket visibility, e.g. `400` to view last season's bracket in the off-season).
 
 ## Critical Requirements
 

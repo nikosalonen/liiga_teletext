@@ -39,9 +39,14 @@ pub fn truncate_team_name(name: &str, max_len: usize) -> String {
 
 /// Renders the complete playoff bracket as a list of `TeletextRow::BracketLine` entries.
 ///
-/// Chooses between stacked (narrow terminal) and tree (wide terminal) layout
-/// based on `terminal_width` and the number of playoff phases.
-pub fn render_bracket(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<TeletextRow> {
+/// Prefers the full-path layout (all rounds side by side with connectors)
+/// when the terminal is large enough, falling back to the sequential tree
+/// layout and finally the stacked layout on narrow terminals.
+pub fn render_bracket(
+    bracket: &PlayoffBracket,
+    terminal_width: u16,
+    terminal_height: u16,
+) -> Vec<TeletextRow> {
     if !bracket.has_data || bracket.phases.is_empty() {
         return vec![
             TeletextRow::BracketLine(String::new()),
@@ -53,12 +58,450 @@ pub fn render_bracket(bracket: &PlayoffBracket, terminal_width: u16) -> Vec<Tele
         ];
     }
 
+    if let Some(rows) = render_full_path(bracket, terminal_width, terminal_height) {
+        return rows;
+    }
+
     let phase_count = bracket.phases.len();
     if terminal_width < min_tree_width(phase_count) {
         render_stacked(bracket, terminal_width)
     } else {
         render_tree(bracket, terminal_width)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Full-path layout (large terminals): all rounds side by side
+// ---------------------------------------------------------------------------
+
+/// Minimum terminal height for the full-path layout. The complete canvas
+/// (headers + four quarterfinal blocks + bronze) needs 19 content rows,
+/// which corresponds to a 24-line terminal.
+const FULL_PATH_MIN_HEIGHT: u16 = 24;
+
+/// A character canvas with per-cell 256-color codes, used for 2D bracket
+/// drawing before serializing into `BracketLine` rows.
+struct Canvas {
+    cells: Vec<Vec<(char, u8)>>,
+}
+
+impl Canvas {
+    fn new() -> Self {
+        Self { cells: Vec::new() }
+    }
+
+    fn put(&mut self, x: usize, y: usize, ch: char, code: u8) {
+        while self.cells.len() <= y {
+            self.cells.push(Vec::new());
+        }
+        let row = &mut self.cells[y];
+        while row.len() <= x {
+            row.push((' ', WHITE));
+        }
+        row[x] = (ch, code);
+    }
+
+    fn put_str(&mut self, x: usize, y: usize, text: &str, code: u8) {
+        for (i, ch) in text.chars().enumerate() {
+            self.put(x + i, y, ch, code);
+        }
+    }
+
+    /// Serializes the canvas into colored `BracketLine` rows, trimming
+    /// trailing whitespace and emitting color escapes only on changes.
+    fn into_rows(self) -> Vec<TeletextRow> {
+        self.cells
+            .into_iter()
+            .map(|row| {
+                let end = row
+                    .iter()
+                    .rposition(|(ch, _)| *ch != ' ')
+                    .map_or(0, |i| i + 1);
+                let mut line = String::new();
+                let mut current: Option<u8> = None;
+                for (ch, code) in &row[..end] {
+                    if *ch != ' ' && current != Some(*code) {
+                        line.push_str(&color(*code));
+                        current = Some(*code);
+                    }
+                    line.push(*ch);
+                }
+                if current.is_some() {
+                    line.push_str(RESET);
+                }
+                TeletextRow::BracketLine(line)
+            })
+            .collect()
+    }
+}
+
+/// Display data for one side of a matchup slot.
+struct TeamLabel {
+    text: String,
+    color: u8,
+    wins: Option<(u8, u8)>, // (win count, color)
+}
+
+/// A matchup positioned on the canvas. `m` is None for rounds that have not
+/// been scheduled yet; their labels are then derived from feeder slots.
+struct PathSlot<'a> {
+    m: Option<&'a BracketMatchup>,
+    t1_row: usize,
+    t2_row: usize,
+    top: TeamLabel,
+    bottom: TeamLabel,
+}
+
+impl PathSlot<'_> {
+    fn mid(&self) -> usize {
+        self.t1_row.midpoint(self.t2_row)
+    }
+}
+
+/// Builds the label shown for an advancing team slot: the feeder's winner
+/// when decided, "LIVE" while the feeder series is running, "???" otherwise.
+fn advancing_label(feeder: Option<&PathSlot<'_>>, name_max: usize) -> TeamLabel {
+    match feeder.and_then(|s| s.m) {
+        Some(m) => match &m.winner {
+            Some(w) => TeamLabel {
+                text: truncate_team_name(w, name_max),
+                color: GREEN,
+                wins: None,
+            },
+            None if m.has_live_game => TeamLabel {
+                text: "LIVE".to_string(),
+                color: CYAN,
+                wins: None,
+            },
+            None => unknown_label(),
+        },
+        None => unknown_label(),
+    }
+}
+
+fn unknown_label() -> TeamLabel {
+    TeamLabel {
+        text: "???".to_string(),
+        color: DIM,
+        wins: None,
+    }
+}
+
+/// Builds (top, bottom) labels for a slot backed by real matchup data.
+/// `swapped` displays team2 on top (used when feeder geometry demands it).
+fn matchup_labels(m: &BracketMatchup, name_max: usize, swapped: bool) -> (TeamLabel, TeamLabel) {
+    let (c1, c2) = matchup_team_color_codes(m);
+    let (w1, w2) = win_color_codes(m);
+    let l1 = TeamLabel {
+        text: truncate_team_name(&m.team1, name_max),
+        color: c1,
+        wins: Some((m.team1_wins, w1)),
+    };
+    let l2 = TeamLabel {
+        text: truncate_team_name(&m.team2, name_max),
+        color: c2,
+        wins: Some((m.team2_wins, w2)),
+    };
+    if swapped { (l2, l1) } else { (l1, l2) }
+}
+
+/// Builds the slots of a later round using classic positional bracket
+/// geometry: slot k sits between feeder slots 2k and 2k+1. Matchups are
+/// assigned to slots (and oriented top/bottom) so that as many teams as
+/// possible line up with the feeder that produced them — with Liiga's
+/// re-seeding a perfect assignment is not always possible, in which case
+/// the closest match is used.
+fn build_round<'a>(
+    prev: &[PathSlot<'a>],
+    phase: Option<&'a BracketPhase>,
+    count: usize,
+    name_max: usize,
+) -> Vec<PathSlot<'a>> {
+    let mut remaining: Vec<&'a BracketMatchup> = phase
+        .map(|p| p.matchups.iter().collect())
+        .unwrap_or_default();
+
+    (0..count)
+        .map(|k| {
+            let t1_row = prev[2 * k].mid();
+            let t2_row = prev[2 * k + 1].mid();
+            let w_top = prev[2 * k].m.and_then(|m| m.winner.as_deref());
+            let w_bot = prev[2 * k + 1].m.and_then(|m| m.winner.as_deref());
+
+            // Score each candidate matchup in both orientations: one point
+            // per team that aligns with the feeder slot it came from
+            let alignment = |m: &BracketMatchup| -> (u32, bool) {
+                let team = |t: &str, w: Option<&str>| u32::from(w == Some(t));
+                let no_swap = team(&m.team1, w_top) + team(&m.team2, w_bot);
+                let swap = team(&m.team2, w_top) + team(&m.team1, w_bot);
+                if swap > no_swap {
+                    (swap, true)
+                } else {
+                    (no_swap, false)
+                }
+            };
+
+            let best = remaining
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, m)| alignment(m).0)
+                .map(|(i, _)| i);
+
+            match best {
+                Some(i) => {
+                    let m = remaining.remove(i);
+                    let (_, swapped) = alignment(m);
+                    let (top, bottom) = matchup_labels(m, name_max, swapped);
+                    PathSlot {
+                        m: Some(m),
+                        t1_row,
+                        t2_row,
+                        top,
+                        bottom,
+                    }
+                }
+                None => PathSlot {
+                    m: None,
+                    t1_row,
+                    t2_row,
+                    top: advancing_label(prev.get(2 * k), name_max),
+                    bottom: advancing_label(prev.get(2 * k + 1), name_max),
+                },
+            }
+        })
+        .collect()
+}
+
+/// Draws a matchup slot at column `x`: team labels, win counts, and the
+/// bracket connector pointing toward the winner at the slot's mid row.
+fn draw_slot(canvas: &mut Canvas, x: usize, slot: &PathSlot<'_>, name_max: usize) {
+    let mid = slot.mid();
+    let bar_x = x + name_max + 4;
+
+    let top_won = slot.top.wins.is_some_and(|(w, _)| {
+        slot.m
+            .is_some_and(|m| m.winner.is_some() && w >= m.req_wins)
+    });
+    let bottom_won = slot.bottom.wins.is_some_and(|(w, _)| {
+        slot.m
+            .is_some_and(|m| m.winner.is_some() && w >= m.req_wins)
+    });
+    let decided = top_won || bottom_won;
+    let box_code = if decided { GREEN } else { WHITE };
+
+    // Team rows: name, win count, and the corner bracket on the active side
+    for (label, row, corner, won_opposite) in [
+        (&slot.top, slot.t1_row, '\u{2510}', bottom_won),
+        (&slot.bottom, slot.t2_row, '\u{2518}', top_won),
+    ] {
+        canvas.put_str(x, row, &label.text, label.color);
+        if let Some((wins, win_color)) = label.wins {
+            canvas.put_str(x + name_max + 1, row, &wins.to_string(), win_color);
+        }
+        if !won_opposite {
+            canvas.put(bar_x - 1, row, '\u{2500}', box_code);
+            canvas.put(bar_x, row, corner, box_code);
+        }
+    }
+
+    // Vertical bar segments between the corners and the connector arm.
+    // Only the winner's side is drawn for decided series.
+    if !bottom_won {
+        for y in (slot.t1_row + 1)..mid {
+            canvas.put(bar_x, y, '\u{2502}', box_code);
+        }
+    }
+    if !top_won {
+        for y in (mid + 1)..slot.t2_row {
+            canvas.put(bar_x, y, '\u{2502}', box_code);
+        }
+    }
+
+    // Connector arm at the mid row, leading into the next round's slot
+    let connector = if top_won {
+        '\u{2514}' // └
+    } else if bottom_won {
+        '\u{250C}' // ┌
+    } else {
+        '\u{251C}' // ├
+    };
+    canvas.put(bar_x, mid, connector, box_code);
+    canvas.put_str(bar_x + 1, mid, "\u{2500}\u{2500}", box_code);
+}
+
+/// Renders the bracket with every round side by side, connectors routed to
+/// the actual feeder matchups, and rounds that are not yet scheduled shown
+/// as "???" placeholders so the whole path to the championship is visible.
+///
+/// Returns None when the terminal is too small or the bracket does not
+/// match the expected Liiga playoff structure (the caller then falls back
+/// to the sequential layouts).
+fn render_full_path(
+    bracket: &PlayoffBracket,
+    terminal_width: u16,
+    terminal_height: u16,
+) -> Option<Vec<TeletextRow>> {
+    if terminal_height < FULL_PATH_MIN_HEIGHT {
+        return None;
+    }
+
+    let phase = |n: i32| bracket.phases.iter().find(|p| p.phase_number == n);
+    let (r1, qf, sf, fin, bronze) = (phase(1), phase(2), phase(3), phase(5), phase(4));
+
+    // The path layout assumes the regular Liiga structure: an optional
+    // first round feeding the quarterfinals, then 4 -> 2 -> 1 matchups.
+    if qf.is_none() && sf.is_none() && fin.is_none() {
+        return None;
+    }
+    if r1.is_some_and(|p| p.matchups.len() > 4)
+        || qf.is_some_and(|p| p.matchups.len() > 4)
+        || sf.is_some_and(|p| p.matchups.len() > 2)
+        || fin.is_some_and(|p| p.matchups.len() > 1)
+    {
+        return None;
+    }
+
+    let has_r1 = r1.is_some_and(|p| !p.matchups.is_empty());
+    let cols = 3 + usize::from(has_r1);
+
+    // Column pitch is name + space + win digit + space + "─┐" + "├── " arm
+    let usable = (terminal_width as usize).saturating_sub(4);
+    let name_max = usable.saturating_sub(8 * cols) / (cols + 1);
+    let name_max = name_max.min(12);
+    if name_max < 7 {
+        return None;
+    }
+    let pitch = name_max + 8;
+
+    let base_y = 2; // Row 0: phase headers, row 1: blank
+    let mut canvas = Canvas::new();
+
+    // --- Quarterfinals: the positional base grid (4 blocks of 3 rows) ---
+    let qf_slots: Vec<PathSlot<'_>> = (0..4)
+        .map(|i| {
+            let m = qf.and_then(|p| p.matchups.get(i));
+            let (t1_row, t2_row) = (base_y + i * 4, base_y + i * 4 + 2);
+            let (top, bottom) = match m {
+                Some(m) => matchup_labels(m, name_max, false),
+                None => (unknown_label(), unknown_label()),
+            };
+            PathSlot {
+                m,
+                t1_row,
+                t2_row,
+                top,
+                bottom,
+            }
+        })
+        .collect();
+
+    let sf_slots = build_round(&qf_slots, sf, 2, name_max);
+    let fin_slots = build_round(&sf_slots, fin, 1, name_max);
+
+    // --- First round: anchored to the quarterfinal slot its winner occupies ---
+    let r1_slots: Vec<PathSlot<'_>> = if let Some(r1_phase) = r1.filter(|_| has_r1) {
+        let r1_matchups = &r1_phase.matchups;
+        let mut anchored: Vec<usize> = Vec::new();
+        for (i, m) in r1_matchups.iter().enumerate() {
+            let anchor = m.winner.as_deref().and_then(|w| {
+                qf_slots.iter().find_map(|s| {
+                    let qm = s.m?;
+                    if qm.team1 == w {
+                        Some(s.t1_row)
+                    } else if qm.team2 == w {
+                        Some(s.t2_row)
+                    } else {
+                        None
+                    }
+                })
+            });
+            anchored.push(anchor.unwrap_or(base_y + i * 4 + 1));
+        }
+        // Anchors too close together would overlap; fall back to stacking
+        let mut sorted = anchored.clone();
+        sorted.sort_unstable();
+        if sorted.windows(2).any(|w| w[1] - w[0] < 3) {
+            anchored = (0..r1_matchups.len()).map(|i| base_y + i * 4 + 1).collect();
+        }
+        r1_matchups
+            .iter()
+            .zip(anchored)
+            .map(|(m, mid)| {
+                let (top, bottom) = matchup_labels(m, name_max, false);
+                PathSlot {
+                    m: Some(m),
+                    t1_row: mid - 1,
+                    t2_row: mid + 1,
+                    top,
+                    bottom,
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    // --- Draw phase headers and all columns left to right ---
+    let mut col = 0;
+    let mut draw_column = |canvas: &mut Canvas, slots: &[PathSlot<'_>], header: &str| {
+        let x = col * pitch;
+        canvas.put_str(x, 0, &truncate_team_name(header, pitch - 1), CYAN);
+        for slot in slots {
+            draw_slot(canvas, x, slot, name_max);
+        }
+        col += 1;
+        x
+    };
+
+    if has_r1 {
+        draw_column(&mut canvas, &r1_slots, "1. KIERROS");
+    }
+    draw_column(&mut canvas, &qf_slots, "PUOLIV\u{00C4}LIER\u{00C4}T");
+    draw_column(&mut canvas, &sf_slots, "V\u{00C4}LIER\u{00C4}T");
+    let fin_x = draw_column(&mut canvas, &fin_slots, "FINAALI");
+
+    // --- Champion label after the final's connector arm ---
+    let champion = advancing_label(fin_slots.first(), name_max);
+    let champion_text = match fin_slots
+        .first()
+        .and_then(|s| s.m)
+        .and_then(|m| m.winner.as_ref())
+    {
+        Some(_) => format!("\u{2605} {}", champion.text),
+        None => champion.text.clone(),
+    };
+    if let Some(f) = fin_slots.first() {
+        canvas.put_str(
+            fin_x + name_max + 8,
+            f.mid(),
+            &champion_text,
+            champion.color,
+        );
+    }
+
+    // --- Bronze game in the free space under the final column ---
+    if let Some(m) = bronze.and_then(|p| p.matchups.first()) {
+        let header_y = base_y + 13;
+        canvas.put_str(
+            fin_x,
+            header_y,
+            &truncate_team_name("PRONSSIOTTELU", pitch - 1),
+            CYAN,
+        );
+        let (top, bottom) = matchup_labels(m, name_max, false);
+        let slot = PathSlot {
+            m: Some(m),
+            t1_row: header_y + 1,
+            t2_row: header_y + 3,
+            top,
+            bottom,
+        };
+        draw_slot(&mut canvas, fin_x, &slot, name_max);
+        let label = advancing_label(Some(&slot), name_max);
+        canvas.put_str(fin_x + name_max + 8, slot.mid(), &label.text, label.color);
+    }
+
+    Some(canvas.into_rows())
 }
 
 // ---------------------------------------------------------------------------
@@ -321,40 +764,48 @@ fn bold_color(code: u8) -> String {
     format!("\x1b[1m\x1b[38;5;{code}m")
 }
 
-/// Returns color escape for a team in a matchup.
+/// Returns the 256-color code for a team in a matchup.
 /// Cyan if the matchup has a live game, otherwise white.
-fn team_color(m: &BracketMatchup) -> String {
-    if m.has_live_game {
-        color(CYAN)
-    } else {
-        color(WHITE)
-    }
+fn team_color_code(m: &BracketMatchup) -> u8 {
+    if m.has_live_game { CYAN } else { WHITE }
 }
 
-/// Returns (team1_color, team2_color) for a matchup.
-/// Winner is green, loser is dim, undecided uses `team_color`.
-fn matchup_team_colors(m: &BracketMatchup) -> (String, String) {
+/// Returns (team1, team2) color codes for a matchup.
+/// Winner is green, loser is dim, undecided uses `team_color_code`.
+fn matchup_team_color_codes(m: &BracketMatchup) -> (u8, u8) {
     match &m.winner {
-        Some(w) if *w == m.team1 => (color(GREEN), color(DIM)),
-        Some(_) => (color(DIM), color(GREEN)),
-        None => (team_color(m), team_color(m)),
+        Some(w) if *w == m.team1 => (GREEN, DIM),
+        Some(_) => (DIM, GREEN),
+        None => (team_color_code(m), team_color_code(m)),
     }
 }
 
-/// Returns ANSI color codes for win counts (team1_wins, team2_wins).
+/// Returns (team1_wins, team2_wins) color codes for a matchup.
 /// A clinching win count (>= req_wins) is displayed in green.
-fn win_colors(m: &BracketMatchup) -> (String, String) {
+fn win_color_codes(m: &BracketMatchup) -> (u8, u8) {
     let w1 = if m.team1_wins >= m.req_wins {
-        color(GREEN)
+        GREEN
     } else {
-        color(YELLOW)
+        YELLOW
     };
     let w2 = if m.team2_wins >= m.req_wins {
-        color(GREEN)
+        GREEN
     } else {
-        color(YELLOW)
+        YELLOW
     };
     (w1, w2)
+}
+
+/// Returns (team1_color, team2_color) ANSI escapes for a matchup.
+fn matchup_team_colors(m: &BracketMatchup) -> (String, String) {
+    let (c1, c2) = matchup_team_color_codes(m);
+    (color(c1), color(c2))
+}
+
+/// Returns ANSI color escapes for win counts (team1_wins, team2_wins).
+fn win_colors(m: &BracketMatchup) -> (String, String) {
+    let (c1, c2) = win_color_codes(m);
+    (color(c1), color(c2))
 }
 
 /// Appends the "MESTARI: Team" champion label if the final (phase 5) is decided.
@@ -443,7 +894,7 @@ mod tests {
             phases: vec![],
             has_data: false,
         };
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
         let text = lines_text(&rows);
         assert!(
             text.contains("K\u{00C4}YNNISS\u{00C4}"),
@@ -462,7 +913,7 @@ mod tests {
             ],
         }];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 40);
+        let rows = render_bracket(&bracket, 40, 23);
         let text = lines_text(&rows);
         // Stacked layout should contain team names
         assert!(text.contains("HIFK"), "Expected 'HIFK' in stacked output");
@@ -488,7 +939,7 @@ mod tests {
             matchups: vec![make_matchup("HIFK", "TPS", 4, 1, 2, 1)],
         }];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
         let text = lines_text(&rows);
         // Tree layout uses box-drawing characters
         let has_box_chars = text.contains('\u{2500}')    // ─
@@ -529,7 +980,7 @@ mod tests {
             },
         ];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
         let text = lines_text(&rows);
         // The decided series should show the winning team name and its score
         assert!(
@@ -561,7 +1012,7 @@ mod tests {
             matchups: vec![make_matchup("HIFK", "Lukko", 4, 2, 5, 1)],
         }];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
         let text = lines_text(&rows);
         assert!(
             text.contains("MESTARI"),
@@ -596,7 +1047,7 @@ mod tests {
             },
         ];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
         let text = lines_text(&rows);
 
         // Both phases get their own header
@@ -651,7 +1102,7 @@ mod tests {
             },
         ];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
         let text = lines_text(&rows);
 
         // Each phase has its own header
@@ -693,7 +1144,7 @@ mod tests {
             ],
         }];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
         let text = lines_text(&rows);
 
         // All 4 matchups must appear
@@ -775,7 +1226,7 @@ mod tests {
             },
         ];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
         let text = lines_text(&rows);
 
         // QF should appear BEFORE 1. KIERROS (because R1 is decided → page 2)
@@ -810,7 +1261,7 @@ mod tests {
             },
         ];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
         let text = lines_text(&rows);
 
         // 1. KIERROS should appear BEFORE QF (it's still active → page 1)
@@ -842,7 +1293,7 @@ mod tests {
             },
         ];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
 
         assert!(
             !rows
@@ -861,7 +1312,7 @@ mod tests {
             matchups: vec![make_decided_matchup("Lukko", "HPK", 3, 0, 1, 1, 3)],
         }];
         let bracket = make_bracket(phases);
-        let rows = render_bracket(&bracket, 80);
+        let rows = render_bracket(&bracket, 80, 23);
 
         assert!(
             !rows
@@ -869,5 +1320,150 @@ mod tests {
                 .any(|r| matches!(r, TeletextRow::BracketPageBreak)),
             "No page break expected for single phase"
         );
+    }
+
+    /// Strips ANSI escapes from rendered rows for layout assertions.
+    fn plain_lines(rows: &[TeletextRow]) -> Vec<String> {
+        rows.iter()
+            .map(|r| match r {
+                TeletextRow::BracketLine(s) => {
+                    let mut out = String::new();
+                    let mut chars = s.chars();
+                    while let Some(c) = chars.next() {
+                        if c == '\x1b' {
+                            for n in chars.by_ref() {
+                                if n.is_ascii_alphabetic() {
+                                    break;
+                                }
+                            }
+                        } else {
+                            out.push(c);
+                        }
+                    }
+                    out
+                }
+                _ => String::new(),
+            })
+            .collect()
+    }
+
+    fn full_playoffs_bracket() -> PlayoffBracket {
+        make_bracket(vec![
+            BracketPhase {
+                phase_number: 1,
+                name: "1. KIERROS".to_string(),
+                matchups: vec![
+                    {
+                        let mut m = make_matchup("Jukurit", "Sport", 2, 0, 1, 1);
+                        m.req_wins = 2;
+                        m.is_decided = true;
+                        m.winner = Some("Jukurit".to_string());
+                        m
+                    },
+                    {
+                        let mut m = make_matchup("KooKoo", "Ässät", 2, 1, 1, 2);
+                        m.req_wins = 2;
+                        m.is_decided = true;
+                        m.winner = Some("KooKoo".to_string());
+                        m
+                    },
+                ],
+            },
+            BracketPhase {
+                phase_number: 2,
+                name: "PUOLIVÄLIERÄT".to_string(),
+                matchups: vec![
+                    make_matchup("Tappara", "KooKoo", 4, 1, 2, 1),
+                    make_matchup("Kärpät", "Jukurit", 4, 2, 2, 2),
+                    make_matchup("TPS", "Ilves", 4, 3, 2, 3),
+                    make_matchup("Pelicans", "Lukko", 4, 0, 2, 4),
+                ],
+            },
+            BracketPhase {
+                phase_number: 3,
+                name: "VÄLIERÄT".to_string(),
+                matchups: vec![
+                    make_matchup("Tappara", "Pelicans", 4, 2, 3, 1),
+                    make_matchup("Kärpät", "TPS", 2, 4, 3, 2),
+                ],
+            },
+            BracketPhase {
+                phase_number: 4,
+                name: "PRONSSIOTTELU".to_string(),
+                matchups: vec![make_matchup("Pelicans", "Kärpät", 1, 0, 4, 1)],
+            },
+            BracketPhase {
+                phase_number: 5,
+                name: "FINAALI".to_string(),
+                matchups: vec![make_matchup("Tappara", "TPS", 4, 2, 5, 1)],
+            },
+        ])
+    }
+
+    #[test]
+    fn test_full_path_layout_on_large_terminal() {
+        let bracket = full_playoffs_bracket();
+        let rows = render_bracket(&bracket, 80, 30);
+        let lines = plain_lines(&rows);
+
+        // All path phase headers share the first row
+        assert!(lines[0].contains("1. KIERROS"));
+        assert!(lines[0].contains("PUOLIVÄLIERÄT"));
+        assert!(lines[0].contains("VÄLIERÄT"));
+        assert!(lines[0].contains("FINAALI"));
+
+        let text = lines.join("\n");
+        // Champion marked after the final
+        assert!(text.contains("★ Tappara"));
+        // Bronze game is drawn on the same canvas
+        assert!(text.contains("PRONSSIOTTELU"));
+        // No forced page break: the whole path is one page
+        assert!(
+            !rows
+                .iter()
+                .any(|r| matches!(r, TeletextRow::BracketPageBreak))
+        );
+        // Nothing exceeds the terminal width
+        assert!(lines.iter().all(|l| l.chars().count() <= 80));
+    }
+
+    #[test]
+    fn test_full_path_visual_dump() {
+        let bracket = full_playoffs_bracket();
+        let rows = render_bracket(&bracket, 80, 30);
+        for line in plain_lines(&rows) {
+            println!("{line}");
+        }
+    }
+
+    #[test]
+    fn test_full_path_falls_back_on_short_terminal() {
+        let bracket = full_playoffs_bracket();
+        let rows = render_bracket(&bracket, 80, 23);
+        let lines = plain_lines(&rows);
+        // Sequential layout: headers are on separate rows
+        assert!(!lines[0].contains("FINAALI") || !lines[0].contains("PUOLIVÄLIERÄT"));
+    }
+
+    #[test]
+    fn test_full_path_synthesizes_unscheduled_rounds() {
+        // Only quarterfinals exist (ongoing): SF and final shown as placeholders
+        let bracket = make_bracket(vec![BracketPhase {
+            phase_number: 2,
+            name: "PUOLIVÄLIERÄT".to_string(),
+            matchups: vec![
+                make_matchup("Tappara", "KooKoo", 2, 1, 2, 1),
+                make_matchup("Kärpät", "Jukurit", 1, 2, 2, 2),
+                make_matchup("TPS", "Ilves", 3, 3, 2, 3),
+                make_matchup("Pelicans", "Lukko", 0, 0, 2, 4),
+            ],
+        }]);
+        let rows = render_bracket(&bracket, 80, 30);
+        let lines = plain_lines(&rows);
+
+        assert!(lines[0].contains("VÄLIERÄT"));
+        assert!(lines[0].contains("FINAALI"));
+        let text = lines.join("\n");
+        assert!(text.contains("???"));
     }
 }

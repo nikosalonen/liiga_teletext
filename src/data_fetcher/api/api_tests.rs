@@ -64,6 +64,7 @@ mod tests {
     async fn clear_all_caches_for_test() {
         use crate::data_fetcher::cache::clear_all_caches;
         clear_all_caches().await;
+        crate::data_fetcher::api::tournament_logic::clear_unavailable_tournaments_cache().await;
     }
 
     fn create_mock_schedule_response() -> ScheduleResponse {
@@ -2250,5 +2251,52 @@ mod tests {
         // Should continue processing despite API error and return runkosarja
         assert_eq!(active_tournaments.len(), 1);
         assert_eq!(active_tournaments, vec!["runkosarja"]);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_unavailable_tournament_is_negative_cached() {
+        clear_all_caches_for_test().await;
+
+        let mock_server = MockServer::start().await;
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+        let client = create_test_http_client();
+
+        // valmistavat_ottelut is unpublished -> 502. With the reduced retry
+        // budget the first check makes exactly 2 requests (initial + 1 retry);
+        // the negative cache must prevent any requests on the second check.
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .and(query_param("tournament", "valmistavat_ottelut"))
+            .respond_with(ResponseTemplate::new(502))
+            .expect(2)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .and(query_param("tournament", "runkosarja"))
+            .and(query_param("date", "2024-09-01"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(ScheduleResponse {
+                games: vec![],
+                previous_game_date: None,
+                next_game_date: Some("2024-09-05".to_string()),
+            }))
+            .mount(&mock_server)
+            .await;
+
+        // September: valmistavat_ottelut and runkosarja are both candidates
+        let first = determine_active_tournaments(&client, &config, "2024-09-01").await;
+        assert!(first.is_ok());
+        let (active, _) = first.unwrap();
+        assert_eq!(active, vec!["runkosarja"]);
+
+        // Second cycle: valmistavat_ottelut is skipped via the negative cache
+        // (the mock's expect(2) verifies no additional requests were made)
+        let second = determine_active_tournaments(&client, &config, "2024-09-01").await;
+        assert!(second.is_ok());
+        let (active, _) = second.unwrap();
+        assert_eq!(active, vec!["runkosarja"]);
     }
 }

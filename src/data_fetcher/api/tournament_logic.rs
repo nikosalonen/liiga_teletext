@@ -7,6 +7,9 @@ use chrono::{Datelike, Utc};
 use futures;
 use reqwest::Client;
 use std::collections::HashMap;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use super::date_logic::{
@@ -57,6 +60,53 @@ impl TournamentType {
             TournamentType::ValmistavatOttelut => 5,
         }
     }
+}
+
+/// Negative cache for tournament availability checks. When a secondary
+/// tournament endpoint fails with 502/503/404 (typically an unpublished
+/// tournament, e.g. preseason fixtures before they are announced), it is
+/// remembered here and skipped until the entry expires. Keyed by
+/// "{api_domain}:{tournament}" so tests with separate mock servers don't
+/// interfere with each other.
+static UNAVAILABLE_TOURNAMENTS: LazyLock<RwLock<HashMap<String, Instant>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+fn unavailable_key(api_domain: &str, tournament: &str) -> String {
+    format!("{api_domain}:{tournament}")
+}
+
+/// Whether the error indicates a long-lived "tournament not published"
+/// condition worth negative-caching (as opposed to a transient failure).
+fn is_unavailability_error(error: &AppError) -> bool {
+    matches!(
+        error,
+        AppError::ApiServiceUnavailable { .. } | AppError::ApiNotFound { .. }
+    )
+}
+
+async fn is_marked_unavailable(api_domain: &str, tournament: &str) -> bool {
+    UNAVAILABLE_TOURNAMENTS
+        .read()
+        .await
+        .get(&unavailable_key(api_domain, tournament))
+        .is_some_and(|expiry| *expiry > Instant::now())
+}
+
+async fn mark_unavailable(api_domain: &str, tournament: &str) {
+    let now = Instant::now();
+    let expiry =
+        now + Duration::from_secs(crate::constants::cache_ttl::TOURNAMENT_UNAVAILABLE_SECONDS);
+    let mut map = UNAVAILABLE_TOURNAMENTS.write().await;
+    map.retain(|_, e| *e > now); // Drop expired entries while we hold the lock
+    map.insert(unavailable_key(api_domain, tournament), expiry);
+}
+
+/// Clears the tournament unavailability cache. Test isolation only: mock
+/// server ports are reused across tests, so entries from one test could
+/// otherwise leak into another test's domain.
+#[cfg(test)]
+pub(super) async fn clear_unavailable_tournaments_cache() {
+    UNAVAILABLE_TOURNAMENTS.write().await.clear();
 }
 
 /// Determines which tournaments to check based on the month
@@ -248,7 +298,7 @@ pub async fn determine_active_tournaments(
     date: &str,
 ) -> Result<(Vec<&'static str>, HashMap<String, ScheduleResponse>), AppError> {
     // Import fetch function from core module
-    use super::fetch_utils::fetch;
+    use super::fetch_utils::fetch_with_retries;
 
     info!(
         "Determining active tournaments for date: {} using API nextGameDate logic",
@@ -301,22 +351,58 @@ pub async fn determine_active_tournaments(
         month, tournament_candidates
     );
 
+    // Skip secondary tournaments whose endpoint recently failed with a
+    // long-lived unavailability error (e.g. unpublished preseason fixtures).
+    // runkosarja is always re-checked: it is the primary data source and a
+    // transient failure must not suppress it.
+    let mut checkable_candidates = Vec::with_capacity(tournament_candidates.len());
+    for &tournament in &tournament_candidates {
+        if tournament != "runkosarja" && is_marked_unavailable(&config.api_domain, tournament).await
+        {
+            info!(
+                "Skipping tournament {} - endpoint recently unavailable, will re-check after cooldown",
+                tournament
+            );
+        } else {
+            checkable_candidates.push(tournament);
+        }
+    }
+
     // Create parallel futures for filtered tournament checks to improve performance
-    let fetch_futures: Vec<_> = tournament_candidates
+    let fetch_futures: Vec<_> = checkable_candidates
         .iter()
         .map(|&tournament| {
             let url = build_tournament_url(&config.api_domain, tournament, date);
             let tournament_name = tournament;
+            let api_domain = config.api_domain.clone();
+
+            // Secondary tournament endpoints return 502 until published;
+            // retrying those aggressively only risks rate limiting.
+            let max_retries = if tournament_name == "runkosarja" {
+                crate::constants::retry::MAX_ATTEMPTS
+            } else {
+                crate::constants::retry::SECONDARY_TOURNAMENT_MAX_ATTEMPTS
+            };
 
             async move {
                 info!("Checking tournament: {tournament_name}");
-                match fetch::<ScheduleResponse>(client, &url).await {
+                match fetch_with_retries::<ScheduleResponse>(client, &url, max_retries).await {
                     Ok(response) => Ok((tournament_name, response)),
                     Err(e) => {
-                        info!(
-                            "Failed to fetch tournament {}: {}, will skip this tournament",
-                            tournament_name, e
-                        );
+                        if tournament_name != "runkosarja" && is_unavailability_error(&e) {
+                            warn!(
+                                "Tournament {} endpoint unavailable ({}), skipping it for the next {} minutes",
+                                tournament_name,
+                                e,
+                                crate::constants::cache_ttl::TOURNAMENT_UNAVAILABLE_SECONDS / 60
+                            );
+                            mark_unavailable(&api_domain, tournament_name).await;
+                        } else {
+                            info!(
+                                "Failed to fetch tournament {}: {}, will skip this tournament",
+                                tournament_name, e
+                            );
+                        }
                         Err(e)
                     }
                 }
@@ -403,5 +489,42 @@ pub async fn build_tournament_list(
             let fallback_tournaments = build_tournament_list_fallback(date);
             Ok((fallback_tournaments, HashMap::new()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_unavailable_cache_is_domain_scoped() {
+        mark_unavailable("https://domain-a.test", "valmistavat_ottelut").await;
+
+        assert!(is_marked_unavailable("https://domain-a.test", "valmistavat_ottelut").await);
+        // Different domain (e.g. another mock server) is unaffected
+        assert!(!is_marked_unavailable("https://domain-b.test", "valmistavat_ottelut").await);
+        // Different tournament on the same domain is unaffected
+        assert!(!is_marked_unavailable("https://domain-a.test", "playoffs").await);
+    }
+
+    #[test]
+    fn test_unavailability_error_classification() {
+        assert!(is_unavailability_error(&AppError::api_service_unavailable(
+            502,
+            "Bad Gateway",
+            "http://test"
+        )));
+        assert!(is_unavailability_error(&AppError::api_not_found(
+            "http://test"
+        )));
+        // Transient/network errors must not be negative-cached
+        assert!(!is_unavailability_error(&AppError::network_timeout(
+            "http://test"
+        )));
+        assert!(!is_unavailability_error(&AppError::api_server_error(
+            500,
+            "Internal Server Error",
+            "http://test"
+        )));
     }
 }

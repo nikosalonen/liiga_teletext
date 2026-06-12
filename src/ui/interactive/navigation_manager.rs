@@ -589,6 +589,7 @@ pub fn create_bracket_page(
     bracket: &PlayoffBracket,
     disable_links: bool,
     terminal_width: u16,
+    terminal_height: u16,
 ) -> TeletextPage {
     let subheader = format!("PUDOTUSPELIT {}", bracket.season);
 
@@ -606,7 +607,7 @@ pub fn create_bracket_page(
 
     page.set_bracket_page(true);
 
-    let rows = render_bracket(bracket, terminal_width);
+    let rows = render_bracket(bracket, terminal_width, terminal_height);
     for row in rows {
         match row {
             TeletextRow::BracketLine(line) => page.add_bracket_line(line),

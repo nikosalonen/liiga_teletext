@@ -923,13 +923,14 @@ impl RefreshCoordinator {
             });
         }
 
-        let terminal_width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80);
+        let (terminal_width, terminal_height) = crossterm::terminal::size().unwrap_or((80, 24));
 
         let new_page = if let Some(bracket) = bracket {
             let mut page = navigation_manager::create_bracket_page(
                 &bracket,
                 config.disable_links,
                 terminal_width,
+                terminal_height,
             );
             if let Some(saved_page) = preserved_page {
                 page.set_current_page(saved_page);
