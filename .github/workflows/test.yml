@@ -37,3 +37,19 @@ jobs:
         env:
           RUST_BACKTRACE: 1
         run: cargo test --all-features
+
+  msrv:
+    name: Check MSRV (1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check with MSRV toolchain
+        run: cargo check --all-features --all-targets --locked

@@ -21,7 +21,7 @@ A Rust terminal application that displays Finnish Liiga hockey results in authen
 
 ## Requirements
 
-- **Rust 1.96 or newer** - This project uses modern Rust features including if-let chains
+- **Rust 1.88 or newer** - This project uses let chains (stabilized in 1.88) and the 2024 edition
 - Terminal with Unicode support for best display experience
 
 You can check your Rust version with:
