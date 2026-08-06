@@ -48,7 +48,7 @@ pub async fn run_interactive(
 
     // Create RAII guard immediately to ensure cleanup happens even on panic or early return
     // Note: We create the guard with stdout() to track cleanup responsibility
-    let _guard = TerminalGuard::new(stdout());
+    let guard = TerminalGuard::new(stdout());
     let mut out = stdout();
 
     // Set terminal title/header to show app name
@@ -67,7 +67,10 @@ pub async fn run_interactive(
     )
     .await;
 
-    // Terminal cleanup happens automatically when _guard is dropped
+    // Restore the terminal (leave alternate screen, disable raw mode) before
+    // printing anything below, otherwise the output lands in the alternate
+    // screen and is wiped when the guard drops at end of scope.
+    drop(guard);
 
     // Show version info after UI closes if update is available
     if let Ok(Some(latest_version)) = version_check.await {
