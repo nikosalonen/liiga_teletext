@@ -48,6 +48,7 @@ lto = "thin"
 strip = true
 
 [dev-dependencies]
+tokio = { version = "1.46", features = ["test-util"] }
 tempfile = "3.27"
 wiremock = "0.6"
 serial_test = "3.2.0"

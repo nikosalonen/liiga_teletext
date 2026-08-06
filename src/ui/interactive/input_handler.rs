@@ -129,6 +129,35 @@ fn would_be_previous_season(date: &str) -> bool {
     false
 }
 
+/// Upper bound on how long a Shift+arrow date search may run. The search
+/// currently blocks the event loop, so without a cap a long empty stretch
+/// (off-season) could freeze the UI for minutes of sequential fetches.
+const MAX_DATE_SEARCH_DURATION: Duration = Duration::from_secs(20);
+
+/// Probes candidate dates in order until `probe` reports a hit, giving up
+/// once the time budget is exhausted.
+async fn search_dates_with_budget<F, Fut>(
+    candidates: impl Iterator<Item = String>,
+    budget: Duration,
+    mut probe: F,
+) -> Option<String>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Option<String>>,
+{
+    let started = tokio::time::Instant::now();
+    for date in candidates {
+        if started.elapsed() >= budget {
+            tracing::warn!("Date search time budget exhausted, giving up");
+            return None;
+        }
+        if let Some(hit) = probe(date).await {
+            return Some(hit);
+        }
+    }
+    None
+}
+
 /// Finds the previous date with games by checking dates going backwards.
 /// Returns None if no games are found within the current season or a reasonable time range.
 /// Prevents navigation to previous season games for better UX.
@@ -143,81 +172,89 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
         current_date
     );
 
-    // Search up to 30 days in the past to stay within current season
-    for days_back in 1..=30 {
-        if let Some(check_date) = current_parsed.checked_sub_days(chrono::Days::new(days_back)) {
-            let date_string = check_date.format("%Y-%m-%d").to_string();
-
-            // Check if this date would be from the previous season
-            if would_be_previous_season(&date_string) {
+    // Search up to 30 days in the past, stopping at the previous season
+    // boundary and giving up once the time budget is spent.
+    let candidates = (1..=30)
+        .filter_map(|days_back| {
+            current_parsed
+                .checked_sub_days(chrono::Days::new(days_back))
+                .map(|d| d.format("%Y-%m-%d").to_string())
+        })
+        .take_while(|date_string| {
+            let previous_season = would_be_previous_season(date_string);
+            if previous_season {
                 tracing::info!(
                     "Reached previous season boundary at {}, stopping navigation (use -d flag for historical games)",
                     date_string
                 );
-                break;
             }
+            !previous_season
+        });
 
-            // Log progress every 10 days
-            if days_back % 10 == 0 {
-                tracing::info!(
-                    "Date navigation: checking {} ({} days back)",
-                    date_string,
-                    days_back
-                );
+    let result = search_dates_with_budget(candidates, MAX_DATE_SEARCH_DURATION, |date_string| {
+        // Only a result for the probed date itself counts as a hit here:
+        // the fetcher's fallback can jump ahead, but a later date is in the
+        // wrong direction for a backward search.
+        probe_date(date_string, |requested, fetched| {
+            (fetched == requested).then(|| requested.to_string())
+        })
+    })
+    .await;
+
+    if result.is_none() {
+        tracing::info!(
+            "No previous date with games found within current season from {}",
+            current_date
+        );
+    }
+    result
+}
+
+/// Fetches games for one candidate date and applies `accept` to decide
+/// whether the (possibly fallback-shifted) result concludes the search.
+async fn probe_date<A>(date_string: String, accept: A) -> Option<String>
+where
+    A: Fn(&str, &str) -> Option<String>,
+{
+    let fetch_future = fetch_liiga_data(Some(date_string.clone()));
+    let timeout_duration = Duration::from_secs(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5);
+
+    match tokio::time::timeout(timeout_duration, fetch_future).await {
+        Ok(Ok((games, fetched_date))) if !games.is_empty() => {
+            if let Some(hit) = accept(&date_string, &fetched_date) {
+                tracing::info!("Found date with games: {hit} (probed {date_string})");
+                return Some(hit);
             }
-
-            // Add timeout to the fetch operation (allow enough time for detailed game data including goal scorers)
-            let fetch_future = fetch_liiga_data(Some(date_string.clone()));
-            let timeout_duration =
-                Duration::from_secs(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5);
-
-            match tokio::time::timeout(timeout_duration, fetch_future).await {
-                Ok(Ok((games, fetched_date))) if !games.is_empty() => {
-                    // Ensure the fetched date matches the requested date
-                    if fetched_date == date_string {
-                        tracing::info!(
-                            "Found previous date with games: {} (after {} days)",
-                            date_string,
-                            days_back
-                        );
-                        return Some(date_string);
-                    } else {
-                        tracing::debug!(
-                            "Skipping date {} because fetcher returned different date: {} (after {} days)",
-                            date_string,
-                            fetched_date,
-                            days_back
-                        );
-                    }
-                }
-                Ok(Ok(_)) => {
-                    // No games found, continue searching
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!(
-                        "Error fetching data for {}: {} (continuing search)",
-                        date_string,
-                        e
-                    );
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        "Timeout fetching data for {} (continuing search)",
-                        date_string
-                    );
-                }
-            }
-
-            // Small delay to prevent API spam
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tracing::debug!(
+                "Skipping date {date_string} because fetcher returned unusable date: {fetched_date}"
+            );
+        }
+        Ok(Ok(_)) => {
+            // No games found, continue searching
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("Error fetching data for {date_string}: {e} (continuing search)");
+        }
+        Err(_) => {
+            tracing::warn!("Timeout fetching data for {date_string} (continuing search)");
         }
     }
 
-    tracing::info!(
-        "No previous date with games found within current season from {}",
-        current_date
-    );
+    // Small delay to prevent API spam
+    tokio::time::sleep(Duration::from_millis(50)).await;
     None
+}
+
+/// Decides whether a forward date-search probe found the answer.
+///
+/// `fetched` is the date the fetcher actually returned games for. When the
+/// requested date was empty, the fetcher's own fallback may have jumped ahead
+/// and returned games for a later date — that later date IS the next date
+/// with games, so the search can stop there instead of re-probing day by day.
+/// A `fetched` before `requested` is rejected so a backward jump can't
+/// masquerade as forward progress. ISO dates compare correctly as strings.
+fn forward_search_hit(requested: &str, fetched: &str) -> Option<String> {
+    (fetched >= requested).then(|| fetched.to_string())
 }
 
 /// Finds the next date with games by checking dates going forwards.
@@ -233,72 +270,26 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
         current_date
     );
 
-    // Search up to 60 days in the future (handles off-season periods)
-    for days_ahead in 1..=60 {
-        if let Some(check_date) = current_parsed.checked_add_days(chrono::Days::new(days_ahead)) {
-            let date_string = check_date.format("%Y-%m-%d").to_string();
+    // Search up to 60 days in the future (handles off-season periods),
+    // giving up once the time budget is spent.
+    let candidates = (1..=60).filter_map(|days_ahead| {
+        current_parsed
+            .checked_add_days(chrono::Days::new(days_ahead))
+            .map(|d| d.format("%Y-%m-%d").to_string())
+    });
 
-            // Log progress every 10 days
-            if days_ahead % 10 == 0 {
-                tracing::info!(
-                    "Date navigation: checking {} ({} days ahead)",
-                    date_string,
-                    days_ahead
-                );
-            }
+    let result = search_dates_with_budget(candidates, MAX_DATE_SEARCH_DURATION, |date_string| {
+        probe_date(date_string, forward_search_hit)
+    })
+    .await;
 
-            // Add timeout to the fetch operation (allow enough time for detailed game data including goal scorers)
-            let fetch_future = fetch_liiga_data(Some(date_string.clone()));
-            let timeout_duration =
-                Duration::from_secs(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5);
-
-            match tokio::time::timeout(timeout_duration, fetch_future).await {
-                Ok(Ok((games, fetched_date))) if !games.is_empty() => {
-                    // Ensure the fetched date matches the requested date
-                    if fetched_date == date_string {
-                        tracing::info!(
-                            "Found next date with games: {} (after {} days)",
-                            date_string,
-                            days_ahead
-                        );
-                        return Some(date_string);
-                    } else {
-                        tracing::debug!(
-                            "Skipping date {} because fetcher returned different date: {} (after {} days)",
-                            date_string,
-                            fetched_date,
-                            days_ahead
-                        );
-                    }
-                }
-                Ok(Ok(_)) => {
-                    // No games found, continue searching
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!(
-                        "Error fetching data for {}: {} (continuing search)",
-                        date_string,
-                        e
-                    );
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        "Timeout fetching data for {} (continuing search)",
-                        date_string
-                    );
-                }
-            }
-
-            // Small delay to prevent API spam
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
+    if result.is_none() {
+        tracing::info!(
+            "No next date with games found within search range from {}",
+            current_date
+        );
     }
-
-    tracing::info!(
-        "No next date with games found within search range from {}",
-        current_date
-    );
-    None
+    result
 }
 
 /// Page numbers for the available views (teletext-style page entry)
@@ -390,6 +381,17 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
         params.key_event.code,
         params.key_event.modifiers
     );
+
+    // A non-digit key abandons any partial teletext page entry so stale
+    // digits don't prepend to a later entry.
+    let is_digit_key = matches!(params.key_event.code, KeyCode::Char(c) if c.is_ascii_digit());
+    if !is_digit_key && !params.page_input.is_empty() {
+        params.page_input.clear();
+        if let Some(page) = params.current_page.as_mut() {
+            page.set_page_input(None);
+        }
+        *params.needs_render = true;
+    }
 
     // Disable date navigation in standings and bracket views
     let is_non_game_view = matches!(
@@ -590,4 +592,150 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
     }
 
     Ok(false) // Continue running
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_forward_search_hit_accepts_requested_date() {
+        assert_eq!(
+            forward_search_hit("2026-08-08", "2026-08-08"),
+            Some("2026-08-08".to_string())
+        );
+    }
+
+    #[test]
+    fn test_forward_search_hit_accepts_fallback_jumped_date() {
+        // Probing an empty date makes the fetcher's fallback jump ahead and
+        // return games for a later date — that later date is the answer.
+        assert_eq!(
+            forward_search_hit("2026-08-08", "2026-08-14"),
+            Some("2026-08-14".to_string())
+        );
+    }
+
+    #[test]
+    fn test_forward_search_hit_rejects_earlier_date() {
+        assert_eq!(forward_search_hit("2026-08-08", "2026-08-05"), None);
+    }
+
+    #[tokio::test]
+    async fn test_search_returns_first_hit() {
+        let result = search_dates_with_budget(
+            (1..=10).map(|i| format!("2026-08-{i:02}")),
+            Duration::from_secs(20),
+            |date| async move { (date == "2026-08-03").then_some(date) },
+        )
+        .await;
+        assert_eq!(result, Some("2026-08-03".to_string()));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_search_stops_probing_when_budget_exhausted() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let probes = AtomicUsize::new(0);
+        let result = search_dates_with_budget(
+            (1..=100).map(|i| format!("date-{i}")),
+            Duration::from_secs(20),
+            |_date| {
+                probes.fetch_add(1, Ordering::SeqCst);
+                async {
+                    // Each probe simulates a slow fetch (paused tokio time).
+                    tokio::time::sleep(Duration::from_secs(15)).await;
+                    None
+                }
+            },
+        )
+        .await;
+
+        assert_eq!(result, None);
+        let count = probes.load(Ordering::SeqCst);
+        assert!(
+            count <= 2,
+            "search must stop once the budget is spent, probed {count} times"
+        );
+    }
+
+    struct KeyEventState {
+        current_page: Option<TeletextPage>,
+        needs_render: bool,
+        needs_refresh: bool,
+        current_date: Option<String>,
+        last_manual_refresh: Instant,
+        last_page_change: Instant,
+        last_date_navigation: Instant,
+        current_view: ViewMode,
+        preserved_games_page: Option<usize>,
+        preserved_live_mode: bool,
+        page_input: String,
+        last_page_input: Instant,
+    }
+
+    impl KeyEventState {
+        fn new() -> Self {
+            Self {
+                current_page: None,
+                needs_render: false,
+                needs_refresh: false,
+                current_date: None,
+                last_manual_refresh: Instant::now(),
+                last_page_change: Instant::now(),
+                last_date_navigation: Instant::now(),
+                current_view: ViewMode::Games,
+                preserved_games_page: None,
+                preserved_live_mode: false,
+                page_input: String::new(),
+                last_page_input: Instant::now(),
+            }
+        }
+
+        fn params<'a>(&'a mut self, key_event: &'a event::KeyEvent) -> KeyEventParams<'a> {
+            KeyEventParams {
+                key_event,
+                current_page: &mut self.current_page,
+                needs_render: &mut self.needs_render,
+                needs_refresh: &mut self.needs_refresh,
+                current_date: &mut self.current_date,
+                last_manual_refresh: &mut self.last_manual_refresh,
+                last_page_change: &mut self.last_page_change,
+                last_date_navigation: &mut self.last_date_navigation,
+                current_view: &mut self.current_view,
+                preserved_games_page: &mut self.preserved_games_page,
+                preserved_live_mode: &mut self.preserved_live_mode,
+                has_bracket_data: false,
+                page_input: &mut self.page_input,
+                last_page_input: &mut self.last_page_input,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_non_digit_key_clears_partial_page_entry() {
+        let mut state = KeyEventState::new();
+        state.page_input = String::from("2");
+
+        let key_event = event::KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE);
+        let quit = handle_key_event(state.params(&key_event)).await.unwrap();
+
+        assert!(!quit);
+        assert!(
+            state.page_input.is_empty(),
+            "non-digit key must abandon the partial page entry, got {:?}",
+            state.page_input
+        );
+    }
+
+    #[tokio::test]
+    async fn test_digit_key_extends_partial_page_entry() {
+        let mut state = KeyEventState::new();
+        state.page_input = String::from("2");
+
+        let key_event = event::KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE);
+        handle_key_event(state.params(&key_event)).await.unwrap();
+
+        assert_eq!(state.page_input, "22");
+    }
 }
