@@ -40,18 +40,11 @@ pub(super) fn get_team_name(team: &ScheduleTeam) -> &str {
         .unwrap_or("Unknown")
 }
 
-/// Returns true if the game has real team names for both sides.
-/// Games where either team only has a placeholder (e.g. "RS5", "RS12") are
-/// not yet finalized. These games are retained in the data (tagged with
-/// `is_placeholder = true` in `GameData`) so that transient-empty detection
-/// sees a non-empty response, but they are filtered out at the render
-/// boundary to avoid displaying cryptic API codes to users.
-fn has_real_teams(game: &ScheduleGame) -> bool {
-    fn is_real_name(name: &Option<String>) -> bool {
-        name.as_ref()
-            .is_some_and(|n| !n.is_empty() && !is_placeholder_name(n))
-    }
-    is_real_name(&game.home_team.team_name) && is_real_name(&game.away_team.team_name)
+/// Returns true if the name is a real team name: non-empty and not a
+/// placeholder-style code like "RS5".
+fn is_real_name(name: &Option<String>) -> bool {
+    name.as_ref()
+        .is_some_and(|n| !n.is_empty() && !is_placeholder_name(n))
 }
 
 /// Detects placeholder-style team names like "RS5", "QF1", "SF2", etc.
@@ -103,13 +96,35 @@ pub(super) async fn process_single_game(
     game: ScheduleGame,
     game_idx: usize,
     response_idx: usize,
-    is_placeholder: bool,
 ) -> Result<GameData, AppError> {
-    let home_team_name = get_team_name(&game.home_team);
-    let away_team_name = get_team_name(&game.away_team);
+    let home_real = is_real_name(&game.home_team.team_name);
+    let away_real = is_real_name(&game.away_team.team_name);
+    // Playoff-type games with any undetermined side stay hidden: their
+    // bracket codes ("RS5", "QF2") carry meaning and the matchup isn't set.
+    // Elsewhere (practice/preseason tournaments) only fully undetermined
+    // games are hidden; a half-known game renders with "?" for the TBA side.
+    let is_playoff_serie = matches!(
+        game.serie.to_ascii_lowercase().as_str(),
+        "playoffs" | "playout" | "qualifications"
+    );
+    let is_placeholder = if is_playoff_serie {
+        !home_real || !away_real
+    } else {
+        !home_real && !away_real
+    };
+    let home_team_name = if home_real {
+        get_team_name(&game.home_team)
+    } else {
+        "?"
+    };
+    let away_team_name = if away_real {
+        get_team_name(&game.away_team)
+    } else {
+        "?"
+    };
 
-    // Short-circuit placeholder games — skip expensive roster/API fetches
-    if is_placeholder {
+    // Short-circuit games with any undetermined side — skip expensive fetches
+    if !home_real || !away_real {
         debug!(
             "Skipping placeholder game: {} vs {}",
             home_team_name, away_team_name
@@ -137,7 +152,7 @@ pub(super) async fn process_single_game(
             play_off_pair: game.play_off_pair,
             play_off_req_wins: game.play_off_req_wins,
             series_score: None,
-            is_placeholder: true,
+            is_placeholder,
         });
     }
 
@@ -347,23 +362,12 @@ pub(super) async fn process_response_games(
 
     let semaphore = Arc::new(Semaphore::new(3)); // Max 3 concurrent requests
 
-    // Mark placeholder games (teams not yet determined) but keep them in the
-    // result so that transient-empty detection sees a non-empty response for
-    // scheduled playoff dates. They are filtered out at the render boundary.
-    let games_with_placeholder: Vec<_> = response
+    let game_futures: Vec<_> = response
         .games
         .clone()
         .into_iter()
-        .map(|game| {
-            let placeholder = !has_real_teams(&game);
-            (game, placeholder)
-        })
-        .collect();
-
-    let game_futures: Vec<_> = games_with_placeholder
-        .into_iter()
         .enumerate()
-        .map(|(game_idx, (game, is_placeholder))| {
+        .map(|(game_idx, game)| {
             let client = client.clone();
             let config = config.clone();
             let sem = Arc::clone(&semaphore);
@@ -372,15 +376,7 @@ pub(super) async fn process_response_games(
                 // Acquire semaphore permit before making request
                 let _permit = sem.acquire().await.unwrap();
 
-                process_single_game(
-                    &client,
-                    &config,
-                    game,
-                    game_idx,
-                    response_idx,
-                    is_placeholder,
-                )
-                .await
+                process_single_game(&client, &config, game, game_idx, response_idx).await
             }
         })
         .collect();
@@ -1038,6 +1034,10 @@ mod tests {
     }
 
     fn make_game(home: ScheduleTeam, away: ScheduleTeam) -> ScheduleGame {
+        make_game_with_serie(home, away, "playoffs")
+    }
+
+    fn make_game_with_serie(home: ScheduleTeam, away: ScheduleTeam, serie: &str) -> ScheduleGame {
         ScheduleGame {
             id: 1,
             season: 2024,
@@ -1049,7 +1049,7 @@ mod tests {
             started: false,
             ended: false,
             game_time: 0,
-            serie: "playoffs".to_string(),
+            serie: serie.to_string(),
             play_off_phase: None,
             play_off_pair: None,
             play_off_req_wins: None,
@@ -1057,50 +1057,85 @@ mod tests {
     }
 
     #[test]
-    fn test_has_real_teams_both_valid() {
-        let game = make_game(
-            make_team(Some("HIFK Helsinki"), None),
-            make_team(Some("TPS Turku"), None),
-        );
-        assert!(has_real_teams(&game));
+    fn test_is_real_name() {
+        assert!(is_real_name(&Some("HIFK Helsinki".to_string())));
+        assert!(is_real_name(&Some("TPS Turku".to_string())));
+        assert!(!is_real_name(&None));
+        assert!(!is_real_name(&Some("".to_string())));
+        // Placeholder-style bracket codes in the team_name field are not real
+        assert!(!is_real_name(&Some("RS5".to_string())));
+        assert!(!is_real_name(&Some("QF1".to_string())));
     }
 
-    #[test]
-    fn test_has_real_teams_home_none() {
-        let game = make_game(
-            make_team(None, Some("RS5")),
-            make_team(Some("TPS Turku"), None),
-        );
-        assert!(!has_real_teams(&game));
-    }
-
-    #[test]
-    fn test_has_real_teams_away_empty() {
-        let game = make_game(
-            make_team(Some("HIFK Helsinki"), None),
-            make_team(Some(""), None),
-        );
-        assert!(!has_real_teams(&game));
-    }
-
-    #[test]
-    fn test_has_real_teams_both_none_with_placeholders() {
-        let game = make_game(make_team(None, Some("RS5")), make_team(None, Some("RS6")));
-        assert!(!has_real_teams(&game));
-    }
-
-    #[test]
-    fn test_has_real_teams_placeholder_string_in_team_name() {
+    #[tokio::test]
+    async fn test_half_known_playoff_game_stays_hidden() {
+        // Playoff bracket codes ("RS5", "SF2") carry bracket meaning; a
+        // half-known playoff matchup stays hidden until both teams are set,
+        // never rendered as "Team - ?".
         let game = make_game(
             make_team(Some("RS5"), None),
             make_team(Some("TPS Turku"), None),
         );
-        assert!(!has_real_teams(&game));
+        let client = reqwest::Client::new();
+        let config = make_test_config();
+
+        let result = process_single_game(&client, &config, game, 0, 0)
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_placeholder,
+            "half-known playoff games must stay hidden"
+        );
     }
 
-    #[test]
-    fn test_has_real_teams_both_placeholder_strings_in_team_name() {
-        let game = make_game(make_team(Some("QF1"), None), make_team(Some("QF2"), None));
-        assert!(!has_real_teams(&game));
+    // --- partially known games (one side TBA) ---
+
+    fn make_test_config() -> crate::config::Config {
+        crate::config::Config {
+            api_domain: "http://localhost:0".to_string(),
+            log_file_path: None,
+            http_timeout_seconds: 1,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_partially_known_practice_game_is_shown_with_question_mark() {
+        // Preseason placement games (e.g. Pitsiturnaus) have a real home team
+        // but a TBA opponent ("? #1"). They must be rendered, not hidden.
+        for serie in ["PRACTICE", "PITSITURNAUS"] {
+            let game = make_game_with_serie(
+                make_team(Some("Ilves"), None),
+                make_team(None, Some("? #1")),
+                serie,
+            );
+            let client = reqwest::Client::new();
+            let config = make_test_config();
+
+            let result = process_single_game(&client, &config, game, 0, 0)
+                .await
+                .unwrap();
+
+            assert!(
+                !result.is_placeholder,
+                "a {serie} game with one known team must not be hidden"
+            );
+            assert_eq!(result.home_team, "Ilves");
+            assert_eq!(result.away_team, "?");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fully_unknown_game_is_hidden() {
+        // Playoff bracket codes on both sides ("RS5" vs "QF2") stay hidden.
+        let game = make_game(make_team(None, Some("RS5")), make_team(None, Some("QF2")));
+        let client = reqwest::Client::new();
+        let config = make_test_config();
+
+        let result = process_single_game(&client, &config, game, 0, 0)
+            .await
+            .unwrap();
+
+        assert!(result.is_placeholder);
     }
 }
