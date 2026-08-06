@@ -1569,8 +1569,7 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        let result =
-            find_future_games_fallback(&client, &test_config, &["runkosarja"], "2024-01-14").await;
+        let result = find_future_games_fallback(&client, &test_config, "2024-01-14").await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -1580,6 +1579,53 @@ mod tests {
         assert_eq!(date, "2024-01-15");
 
         // Clear cache after test to prevent interference with other tests
+        clear_all_caches_for_test().await;
+    }
+
+    #[tokio::test]
+    async fn test_find_future_games_fallback_finds_preseason_games() {
+        clear_all_caches_for_test().await;
+
+        let mock_server = MockServer::start().await;
+        let config = create_mock_config();
+        let client = create_test_http_client();
+
+        // Reproduces the 2026-08-06 bug: the active-tournament detection
+        // collapses to ["runkosarja"] because every endpoint returns zero
+        // games and a null nextGameDate for today. The fallback scan must
+        // still find tomorrow's preseason games in valmistavat_ottelut.
+        let preseason_games = create_mock_schedule_response();
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .and(query_param("tournament", "valmistavat_ottelut"))
+            .and(query_param("date", "2026-08-07"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&preseason_games))
+            .mount(&mock_server)
+            .await;
+
+        // Every other tournament/date combination has no games
+        let empty = create_mock_empty_schedule_response_no_next_date();
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&empty))
+            .mount(&mock_server)
+            .await;
+
+        let mut test_config = config;
+        test_config.api_domain = mock_server.uri();
+
+        let result = find_future_games_fallback(&client, &test_config, "2026-08-06").await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(
+            response.is_some(),
+            "fallback must find preseason games even when the active tournament list collapsed to runkosarja"
+        );
+        let (responses, date) = response.unwrap();
+        assert_eq!(responses.len(), 1);
+        assert_eq!(date, "2026-08-07");
+
         clear_all_caches_for_test().await;
     }
 
@@ -1604,8 +1650,7 @@ mod tests {
         let mut test_config = config;
         test_config.api_domain = mock_server.uri();
 
-        let result =
-            find_future_games_fallback(&client, &test_config, &["runkosarja"], "2024-01-14").await;
+        let result = find_future_games_fallback(&client, &test_config, "2024-01-14").await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -1620,8 +1665,7 @@ mod tests {
         let config = create_mock_config();
         let client = create_test_http_client();
 
-        let result =
-            find_future_games_fallback(&client, &config, &["runkosarja"], "invalid-date").await;
+        let result = find_future_games_fallback(&client, &config, "invalid-date").await;
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), AppError::DateTimeParse(_)));

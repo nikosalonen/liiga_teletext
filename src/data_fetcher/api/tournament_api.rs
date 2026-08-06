@@ -379,7 +379,6 @@ pub(super) async fn process_next_game_dates(
 pub(super) async fn find_future_games_fallback(
     client: &Client,
     config: &Config,
-    tournaments: &[&str],
     current_date: &str,
 ) -> Result<Option<(Vec<ScheduleResponse>, String)>, AppError> {
     info!(
@@ -415,8 +414,14 @@ pub(super) async fn find_future_games_fallback(
         let date_str = check_date.format("%Y-%m-%d").to_string();
         info!("Checking for games on date: {date_str}");
 
+        // Scan with the month-based candidate list rather than the caller's
+        // active-tournament list: when no tournament has games or a
+        // nextGameDate today, that list collapses to just runkosarja and
+        // would hide e.g. tomorrow's preseason games (valmistavat_ottelut).
+        let candidates = super::tournament_logic::build_tournament_list_fallback(&date_str);
+
         // Try to fetch games for this date
-        match fetch_day_data(client, config, tournaments, &date_str, &[], &HashMap::new()).await {
+        match fetch_day_data(client, config, &candidates, &date_str, &[], &HashMap::new()).await {
             Ok((Some(responses), _)) => {
                 if !responses.is_empty() {
                     info!(
@@ -476,7 +481,7 @@ pub(super) async fn handle_no_games_found(
 
     // Fallback: try to find future games by checking upcoming dates
     info!("No next_game_date found, trying fallback mechanism to find future games");
-    let fallback_result = find_future_games_fallback(client, config, tournaments, date).await?;
+    let fallback_result = find_future_games_fallback(client, config, date).await?;
 
     if let Some((fallback_responses, fallback_date)) = fallback_result {
         info!(
