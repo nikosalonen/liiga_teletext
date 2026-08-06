@@ -166,4 +166,15 @@ impl TeletextPage {
             .filter(|row| matches!(row, TeletextRow::GameResult { .. }))
             .count()
     }
+
+    /// Returns the playoff phase header texts on this page (test-only).
+    pub fn playoff_phase_headers(&self) -> Vec<&str> {
+        self.content_rows
+            .iter()
+            .filter_map(|row| match row {
+                TeletextRow::PlayoffPhaseHeader(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
 }

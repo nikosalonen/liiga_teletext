@@ -259,9 +259,17 @@ async fn create_base_page(
         )
     });
 
+    // Phase headers only make sense for playoff-type series. The preseason API
+    // sets playOffPhase to 0 on every game, so gating on the field alone would
+    // emit a generic "OTTELUT" header at each serie/phase boundary.
     let mut last_header: Option<(&str, i32)> = None;
     for game in &sorted_games {
-        if let Some(phase) = game.play_off_phase {
+        if let Some(phase) = game.play_off_phase
+            && matches!(
+                game.serie.to_ascii_lowercase().as_str(),
+                "playoffs" | "playout" | "qualifications"
+            )
+        {
             let key = (game.serie.as_str(), phase);
             if last_header != Some(key) {
                 let header = playoff_phase_name(phase, &game.serie);
@@ -737,6 +745,67 @@ mod tests {
 
         // Page should contain only the real game, not the placeholder
         assert_eq!(page.game_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_no_phase_headers_for_preseason_games() {
+        // The preseason API sets playOffPhase to Some(0) on every game and mixes
+        // series (tournament games like PITSITURNAUS alongside PRACTICE), which
+        // used to emit a generic "OTTELUT" header at every serie/phase boundary.
+        let make = |id: i32, home: &str, away: &str, serie: &str, start: &str| {
+            let mut game = crate::testing_utils::TestDataBuilder::create_custom_game(
+                id, home, away, "", serie,
+            );
+            game.play_off_phase = Some(0);
+            game.play_off_pair = Some(0);
+            game.start = start.to_string();
+            game
+        };
+        let games = vec![
+            make(1, "Sport", "TPS", "PITSITURNAUS", "2026-08-07T05:45:00Z"),
+            make(2, "Lukko", "Ässät", "PITSITURNAUS", "2026-08-07T07:00:00Z"),
+            make(3, "HIFK", "JYP", "PRACTICE", "2026-08-07T12:00:00Z"),
+            make(4, "HPK", "Lukko", "PITSITURNAUS", "2026-08-07T12:00:00Z"),
+        ];
+
+        let page = create_base_page(
+            &games, true, false, true, false, false, true, None, None, None,
+        )
+        .await;
+
+        assert_eq!(
+            page.playoff_phase_headers(),
+            Vec::<&str>::new(),
+            "non-playoff games must not get phase headers"
+        );
+        assert_eq!(page.game_count(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_phase_headers_still_shown_for_playoffs() {
+        let make = |id: i32, home: &str, away: &str, phase: i32| {
+            let mut game = crate::testing_utils::TestDataBuilder::create_custom_game(
+                id, home, away, "", "playoffs",
+            );
+            game.play_off_phase = Some(phase);
+            game.start = "2026-04-01T16:30:00Z".to_string();
+            game
+        };
+        let games = vec![
+            make(1, "TPS", "HIFK", 2),
+            make(2, "Kärpät", "Tappara", 2),
+            make(3, "Ilves", "Lukko", 3),
+        ];
+
+        let page = create_base_page(
+            &games, true, false, true, false, false, true, None, None, None,
+        )
+        .await;
+
+        assert_eq!(
+            page.playoff_phase_headers(),
+            vec!["PUOLIVÄLIERÄT", "VÄLIERÄT"]
+        );
     }
 
     #[tokio::test]
