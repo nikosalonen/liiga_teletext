@@ -296,43 +296,32 @@ impl TeletextPage {
     /// ```
     #[allow(dead_code)]
     pub fn handle_resize(&mut self) {
-        // Update screen height and terminal width
         if let Ok((width, height)) = crossterm::terminal::size() {
-            self.screen_height = height;
-
-            // Clear old layout manager caches before creating new one
-            self.layout_manager.clear_caches();
-
-            // Update layout manager with new terminal width
-            self.layout_manager = ColumnLayoutManager::new(width as usize, CONTENT_MARGIN);
-
-            // Recalculate current page to ensure content fits
-            let available_height = self.screen_height.saturating_sub(5); // Reserve space for header, subheader, and footer
-            let mut current_height = 0u16;
-            let mut current_page = 0;
-
-            for game in &self.content_rows {
-                let game_height = self.calculate_game_height(game);
-
-                if current_height + game_height > available_height {
-                    current_page += 1;
-                    current_height = game_height;
-                } else {
-                    current_height += game_height;
-                }
-            }
-
-            // Ensure current_page is within bounds
-            self.current_page = self.current_page.min(current_page);
-
-            tracing::debug!(
-                "Resize handled: new dimensions {}x{}, current_page: {}, total_pages: {}",
-                width,
-                height,
-                self.current_page,
-                current_page
-            );
+            self.apply_resize(width, height);
         }
+    }
+
+    /// Applies new terminal dimensions: updates the layout manager and clamps
+    /// the current page so it stays within the recalculated page count.
+    fn apply_resize(&mut self, width: u16, height: u16) {
+        self.screen_height = height;
+
+        // Clear old layout manager caches before creating new one
+        self.layout_manager.clear_caches();
+
+        // Update layout manager with new terminal width
+        self.layout_manager = ColumnLayoutManager::new(width as usize, CONTENT_MARGIN);
+
+        // Clamp against the canonical pagination so forced bracket page
+        // breaks and wide-mode effective heights are respected.
+        self.current_page = self.current_page.min(self.total_pages().saturating_sub(1));
+
+        tracing::debug!(
+            "Resize handled: new dimensions {}x{}, current_page: {}",
+            width,
+            height,
+            self.current_page,
+        );
     }
 
     /// Distributes games between left and right columns for wide mode display.
@@ -793,6 +782,67 @@ mod tests {
     use crate::teletext_ui::formatting::get_team_abbreviation;
     use crate::ui::teletext::{CompactModeValidation, TerminalWidthValidation};
     use crossterm::style::Color;
+
+    #[test]
+    fn test_resize_preserves_bracket_page_position() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "PLAYOFFS".to_string(),
+            false,
+            true,
+            false,
+            false,
+            false,
+        );
+        page.set_screen_height(24);
+
+        // Four bracket phase groups separated by forced page breaks,
+        // mirroring the stacked/sequential bracket layouts.
+        for group in 0..4 {
+            for line in 0..5 {
+                page.add_bracket_line(format!("group {group} line {line}"));
+            }
+            if group < 3 {
+                page.add_bracket_page_break();
+            }
+        }
+        assert_eq!(page.total_pages(), 4);
+
+        page.set_current_page(3);
+        page.apply_resize(80, 24);
+
+        assert_eq!(
+            page.get_current_page(),
+            3,
+            "resize with unchanged dimensions must not move the current page"
+        );
+    }
+
+    #[test]
+    fn test_resize_clamps_page_when_content_shrinks_to_fewer_pages() {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "PLAYOFFS".to_string(),
+            false,
+            true,
+            false,
+            false,
+            false,
+        );
+        page.set_screen_height(10); // available = 5 -> 5 lines per page
+        for line in 0..20 {
+            page.add_bracket_line(format!("line {line}"));
+        }
+        assert_eq!(page.total_pages(), 4);
+        page.set_current_page(3);
+
+        // Growing the terminal fits everything on one page; the current
+        // page must be clamped back into range.
+        page.apply_resize(80, 30);
+        assert_eq!(page.get_current_page(), 0);
+    }
 
     #[test]
     fn test_header_page_str_shows_page_input_entry() {
