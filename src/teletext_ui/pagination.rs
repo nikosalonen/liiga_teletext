@@ -22,8 +22,12 @@ impl TeletextPage {
                 base_height + scorer_lines as u16 + spacer
             }
             TeletextRow::ErrorMessage(_) => 2u16, // Error message + spacer
-            TeletextRow::FutureGamesHeader(_) => 1u16, // Single line for future games header
-            TeletextRow::PlayoffPhaseHeader(_) | TeletextRow::SeriesHeader(_) => 2u16, // Reserve space for header + at least one following row
+            // Every header renders as a single line. Keeping one attached to
+            // the content below it is handled by placement_height, not by
+            // inflating the height here.
+            TeletextRow::FutureGamesHeader(_)
+            | TeletextRow::PlayoffPhaseHeader(_)
+            | TeletextRow::SeriesHeader(_) => 1u16,
             TeletextRow::StandingsHeader => {
                 if self.standings_use_spacing() {
                     2u16
@@ -95,6 +99,90 @@ impl TeletextPage {
         total_with_spacing <= available_height
     }
 
+    /// Returns true for rows that only make sense directly above the content
+    /// they introduce, and so must never end a page on their own.
+    fn is_section_header(row: &TeletextRow) -> bool {
+        matches!(
+            row,
+            TeletextRow::FutureGamesHeader(_)
+                | TeletextRow::PlayoffPhaseHeader(_)
+                | TeletextRow::SeriesHeader(_)
+        )
+    }
+
+    /// Height that must be free for the row at `index` to be placed.
+    ///
+    /// For ordinary rows this is just their own height. A section header also
+    /// claims the rows it introduces, up to and including the first one that
+    /// isn't itself a header — a lone "HARJOITUSOTTELUT" at the foot of a page
+    /// tells the reader nothing, so it belongs on the next page with its games.
+    fn placement_height(&self, index: usize) -> u16 {
+        let rows = &self.content_rows;
+        let mut total = self.calculate_effective_game_height(&rows[index]);
+        if !Self::is_section_header(&rows[index]) {
+            return total;
+        }
+
+        for row in &rows[index + 1..] {
+            // A forced break means nothing can follow the header here anyway.
+            if matches!(row, TeletextRow::BracketPageBreak) {
+                break;
+            }
+            total += self.calculate_effective_game_height(row);
+            if !Self::is_section_header(row) {
+                break;
+            }
+        }
+        total
+    }
+
+    /// Splits the content rows into pages that fit the current screen height.
+    ///
+    /// Single source of truth for both `get_page_content` and `total_pages`;
+    /// if the two chunked separately they could disagree and navigation would
+    /// run off the end of the real content.
+    fn paginate(&self) -> Vec<Vec<&TeletextRow>> {
+        let available_height = self.screen_height.saturating_sub(5);
+
+        let mut pages: Vec<Vec<&TeletextRow>> = Vec::new();
+        let mut current_page_items: Vec<&TeletextRow> = Vec::new();
+        let mut current_height = 0u16;
+
+        for (index, row) in self.content_rows.iter().enumerate() {
+            if matches!(row, TeletextRow::BracketPageBreak) {
+                if !current_page_items.is_empty() {
+                    pages.push(std::mem::take(&mut current_page_items));
+                    current_height = 0;
+                }
+                continue;
+            }
+
+            let row_height = self.calculate_effective_game_height(row);
+            let needed = self.placement_height(index);
+
+            if current_height + needed <= available_height {
+                current_page_items.push(row);
+                current_height += row_height;
+            } else if !current_page_items.is_empty() {
+                pages.push(std::mem::take(&mut current_page_items));
+                current_page_items.push(row);
+                current_height = row_height;
+            } else if row_height <= available_height {
+                // Already at the top of a page and the group still doesn't fit.
+                // Breaking again would gain nothing, so place the row here.
+                current_page_items.push(row);
+                current_height = row_height;
+            }
+            // Otherwise the row alone overflows the page and is skipped.
+        }
+
+        if !current_page_items.is_empty() {
+            pages.push(current_page_items);
+        }
+
+        pages
+    }
+
     /// Calculates and returns the content that should be displayed on the current page.
     /// Handles pagination based on available screen height and content size.
     ///
@@ -119,36 +207,7 @@ impl TeletextPage {
             );
         }
 
-        let available_height = self.screen_height.saturating_sub(5);
-
-        // Build pages, respecting forced page breaks (BracketPageBreak)
-        let mut pages: Vec<Vec<&TeletextRow>> = Vec::new();
-        let mut current_page_items: Vec<&TeletextRow> = Vec::new();
-        let mut current_height = 0u16;
-
-        for game in self.content_rows.iter() {
-            if matches!(game, TeletextRow::BracketPageBreak) {
-                if !current_page_items.is_empty() {
-                    pages.push(current_page_items);
-                    current_page_items = Vec::new();
-                    current_height = 0;
-                }
-                continue;
-            }
-
-            let game_height = self.calculate_effective_game_height(game);
-            if current_height + game_height <= available_height {
-                current_page_items.push(game);
-                current_height += game_height;
-            } else if !current_page_items.is_empty() {
-                pages.push(current_page_items);
-                current_page_items = vec![game];
-                current_height = game_height;
-            }
-        }
-        if !current_page_items.is_empty() {
-            pages.push(current_page_items);
-        }
+        let pages = self.paginate();
 
         if let Some(items) = pages.get(self.current_page) {
             let has_more = self.current_page + 1 < pages.len();
@@ -164,36 +223,8 @@ impl TeletextPage {
     /// # Returns
     /// * `usize` - Total number of pages needed
     pub fn total_pages(&self) -> usize {
-        let available_height = self.screen_height.saturating_sub(5);
-
-        let mut total_pages = 1;
-        let mut current_height = 0u16;
-        let mut current_page_items = 0;
-
-        for game in &self.content_rows {
-            if matches!(game, TeletextRow::BracketPageBreak) {
-                if current_page_items > 0 {
-                    total_pages += 1;
-                    current_height = 0;
-                    current_page_items = 0;
-                }
-                continue;
-            }
-
-            let game_height = self.calculate_effective_game_height(game);
-            if current_height + game_height > available_height {
-                if current_page_items > 0 {
-                    total_pages += 1;
-                    current_height = game_height;
-                    current_page_items = 1;
-                }
-            } else {
-                current_height += game_height;
-                current_page_items += 1;
-            }
-        }
-
-        total_pages
+        // An empty page still counts as one page to display.
+        self.paginate().len().max(1)
     }
 
     /// Gets the current page number (0-based index)
@@ -284,5 +315,225 @@ impl TeletextPage {
         } else {
             self.current_page - 1
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_fetcher::GameData;
+    use crate::teletext_ui::{GameResultData, ScoreType};
+
+    fn scheduled_game(index: usize) -> GameData {
+        GameData {
+            home_team: format!("Home {index}"),
+            away_team: format!("Away {index}"),
+            time: "18.00".to_string(),
+            result: "0-0".to_string(),
+            score_type: ScoreType::Scheduled,
+            is_overtime: false,
+            is_shootout: false,
+            goal_events: vec![],
+            played_time: 0,
+            serie: "PITSITURNAUS".to_string(),
+            start: "2026-08-07T15:00:00Z".to_string(),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            series_score: None,
+            is_placeholder: false,
+        }
+    }
+
+    /// Builds a page with `screen_height` and no height-limit override.
+    fn page_with_height(screen_height: u16) -> TeletextPage {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "HARJOITUSOTTELUT".to_string(),
+            true,
+            false,
+            false, // ignore_height_limit - pagination must actually run
+            false,
+            false,
+        );
+        page.set_screen_height(screen_height);
+        page
+    }
+
+    fn header_texts(rows: &[&TeletextRow]) -> Vec<String> {
+        rows.iter()
+            .filter_map(|row| match row {
+                TeletextRow::SeriesHeader(text) | TeletextRow::PlayoffPhaseHeader(text) => {
+                    Some(text.clone())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn game_count(rows: &[&TeletextRow]) -> usize {
+        rows.iter()
+            .filter(|row| matches!(row, TeletextRow::GameResult { .. }))
+            .count()
+    }
+
+    #[test]
+    fn test_series_header_is_not_stranded_at_page_bottom() {
+        // available = 10 lines. Four scheduled games fill 8, leaving exactly
+        // enough room for the header itself but not for any game beneath it.
+        let mut page = page_with_height(15);
+        for index in 0..4 {
+            page.add_game_result(GameResultData::new(&scheduled_game(index)));
+        }
+        page.add_series_header("HARJOITUSOTTELUT".to_string());
+        for index in 4..6 {
+            page.add_game_result(GameResultData::new(&scheduled_game(index)));
+        }
+
+        let (first_page, has_more) = page.get_page_content();
+        assert!(has_more);
+        assert_eq!(
+            header_texts(&first_page),
+            Vec::<String>::new(),
+            "a header with no room for its games must move to the next page"
+        );
+
+        page.set_current_page(1);
+        let (second_page, _) = page.get_page_content();
+        assert_eq!(header_texts(&second_page), vec!["HARJOITUSOTTELUT"]);
+        assert!(
+            game_count(&second_page) >= 1,
+            "the header must be followed by at least one of its games"
+        );
+    }
+
+    #[test]
+    fn test_no_content_is_lost_when_header_moves_pages() {
+        let mut page = page_with_height(15);
+        for index in 0..4 {
+            page.add_game_result(GameResultData::new(&scheduled_game(index)));
+        }
+        page.add_series_header("HARJOITUSOTTELUT".to_string());
+        for index in 4..6 {
+            page.add_game_result(GameResultData::new(&scheduled_game(index)));
+        }
+
+        let total = page.total_pages();
+        let mut seen_games = 0;
+        let mut seen_headers = 0;
+        for page_index in 0..total {
+            page.set_current_page(page_index);
+            let (rows, _) = page.get_page_content();
+            seen_games += game_count(&rows);
+            seen_headers += header_texts(&rows).len();
+        }
+
+        assert_eq!(seen_games, 6, "every game must appear on exactly one page");
+        assert_eq!(seen_headers, 1);
+    }
+
+    #[test]
+    fn test_reported_88x29_preseason_page_keeps_header_with_its_games() {
+        // The reported case: an 88x29 terminal (24 usable lines) showing the
+        // PITSITURNAUS header, its 10 games, then the HARJOITUSOTTELUT header,
+        // which landed on line 24 with its first game pushed to page 2.
+        let mut page = page_with_height(29);
+        page.add_series_header("PITSITURNAUS".to_string());
+        for index in 0..10 {
+            page.add_game_result(GameResultData::new(&scheduled_game(index)));
+        }
+        page.add_series_header("HARJOITUSOTTELUT".to_string());
+        for index in 10..13 {
+            page.add_game_result(GameResultData::new(&scheduled_game(index)));
+        }
+
+        let (first_page, has_more) = page.get_page_content();
+        assert!(has_more, "content should still span two pages");
+
+        let headers = header_texts(&first_page);
+        assert_eq!(headers, vec!["PITSITURNAUS", "HARJOITUSOTTELUT"]);
+        assert!(
+            !TeletextPage::is_section_header(first_page.last().unwrap()),
+            "page 1 must not end on the HARJOITUSOTTELUT header"
+        );
+        assert_eq!(
+            game_count(&first_page),
+            11,
+            "the practice header should bring its first game onto page 1"
+        );
+    }
+
+    #[test]
+    fn test_no_page_ends_with_a_header_at_any_terminal_height() {
+        // Mirrors a real preseason day: two series, ten games between them.
+        // Whatever the terminal height, a header must never be the last row on
+        // a page, and no game may be dropped or duplicated.
+        //
+        // Heights below 8 leave less than one header plus one game (1 + 2) of
+        // usable room, where no split can avoid stranding the header.
+        for screen_height in 9..=40u16 {
+            let mut page = page_with_height(screen_height);
+            page.add_series_header("PITSITURNAUS".to_string());
+            for index in 0..6 {
+                page.add_game_result(GameResultData::new(&scheduled_game(index)));
+            }
+            page.add_series_header("HARJOITUSOTTELUT".to_string());
+            for index in 6..10 {
+                page.add_game_result(GameResultData::new(&scheduled_game(index)));
+            }
+
+            let total = page.total_pages();
+            let mut seen_games = 0;
+            let mut seen_headers = 0;
+            for page_index in 0..total {
+                page.set_current_page(page_index);
+                let (rows, _) = page.get_page_content();
+                seen_games += game_count(&rows);
+                seen_headers += header_texts(&rows).len();
+
+                if let Some(last) = rows.last() {
+                    assert!(
+                        !TeletextPage::is_section_header(last),
+                        "height {screen_height}: page {page_index} of {total} ends with a header"
+                    );
+                }
+            }
+
+            assert_eq!(
+                seen_games, 10,
+                "height {screen_height}: games lost or duplicated across pages"
+            );
+            assert_eq!(
+                seen_headers, 2,
+                "height {screen_height}: headers lost or duplicated across pages"
+            );
+        }
+    }
+
+    #[test]
+    fn test_total_pages_agrees_with_page_content() {
+        // total_pages() and get_page_content() must chunk identically, or
+        // navigation runs off the end of the real content.
+        let mut page = page_with_height(15);
+        for index in 0..4 {
+            page.add_game_result(GameResultData::new(&scheduled_game(index)));
+        }
+        page.add_series_header("HARJOITUSOTTELUT".to_string());
+        for index in 4..9 {
+            page.add_game_result(GameResultData::new(&scheduled_game(index)));
+        }
+
+        let total = page.total_pages();
+        for page_index in 0..total {
+            page.set_current_page(page_index);
+            let (rows, has_more) = page.get_page_content();
+            assert!(!rows.is_empty(), "page {page_index} of {total} is empty");
+            assert_eq!(
+                has_more,
+                page_index + 1 < total,
+                "has_more disagrees with total_pages on page {page_index}"
+            );
+        }
     }
 }

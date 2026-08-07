@@ -196,6 +196,20 @@ impl TeletextPage {
             .collect()
     }
 
+    /// Returns true if the last row rendered on the current page is a section
+    /// header, i.e. a header stranded with none of its content (test-only).
+    pub fn last_visible_row_is_header(&self) -> bool {
+        let (rows, _) = self.get_page_content();
+        rows.last().is_some_and(|row| {
+            matches!(
+                row,
+                TeletextRow::FutureGamesHeader(_)
+                    | TeletextRow::PlayoffPhaseHeader(_)
+                    | TeletextRow::SeriesHeader(_)
+            )
+        })
+    }
+
     /// Returns the home team of every game result row, in display order (test-only).
     pub fn game_home_teams(&self) -> Vec<&str> {
         self.content_rows

@@ -869,6 +869,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_grouped_page_never_strands_a_header_when_paginated() {
+        // End-to-end over the interactive path: build today's real shape
+        // (PITSITURNAUS then standalone practice games) with pagination live,
+        // and confirm no page ends on a bare series header.
+        let mut games: Vec<GameData> = (0..6)
+            .map(|index| {
+                preseason_game(
+                    index,
+                    "Sport",
+                    "TPS",
+                    "PITSITURNAUS",
+                    &format!("2026-08-07T{:02}:00:00Z", 5 + index),
+                )
+            })
+            .collect();
+        games.extend((0..3).map(|index| {
+            preseason_game(
+                100 + index,
+                "HIFK",
+                "JYP",
+                "PRACTICE",
+                &format!("2026-08-07T{:02}:00:00Z", 12 + index),
+            )
+        }));
+
+        for screen_height in 9..=30u16 {
+            let mut page = create_base_page(
+                &games, true, false, false, // ignore_height_limit - pagination must run
+                false, false, true, None, None, None,
+            )
+            .await;
+            page.set_screen_height(screen_height);
+
+            let total = page.total_pages();
+            for page_index in 0..total {
+                page.set_current_page(page_index);
+                assert!(
+                    !page.last_visible_row_is_header(),
+                    "height {screen_height}: page {page_index} of {total} ends with a header"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn test_no_series_headers_when_all_games_share_a_serie() {
         let games = vec![
             preseason_game(1, "Sport", "TPS", "PITSITURNAUS", "2026-08-07T05:45:00Z"),
