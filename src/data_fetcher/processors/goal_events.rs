@@ -1,7 +1,7 @@
 use crate::data_fetcher::models::goals::EmbeddedPlayer;
 use crate::data_fetcher::models::{GoalEventData, HasGoalEvents, HasTeams, Player, ScheduleGame};
 use crate::data_fetcher::player_names::{
-    DisambiguationContext, create_fallback_name, format_for_display_with_first_initial,
+    DisambiguationContext, build_full_name, create_fallback_name, format_for_display,
 };
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
@@ -24,10 +24,13 @@ fn resolve_scorer_name(
 /// Extracts a display name from the embedded scorer player data.
 /// Used as a fallback when the primary player name lookup (disambiguation context
 /// or player map) does not contain the scorer's player ID.
-/// Uses first-initial format (e.g. "Koivu M.") to reduce ambiguity.
+///
+/// Renders the surname alone, matching what the disambiguation paths produce for
+/// an unambiguous player. Appending an initial here regardless of ambiguity would
+/// make the same scorer read differently depending on which lookup resolved them.
 fn scorer_name_from_embedded(player: Option<&EmbeddedPlayer>, scorer_id: i64) -> Option<String> {
     player.map(|p| {
-        let name = format_for_display_with_first_initial(&p.first_name, &p.last_name);
+        let name = format_for_display(&build_full_name("", &p.last_name));
         debug!(
             "Using embedded scorer data for player {scorer_id} (resolved: {name}), primary lookup missed"
         );
@@ -479,7 +482,9 @@ mod tests {
     fn test_scorer_name_from_embedded_with_player() {
         let player = make_embedded_player(999, "Mikko", "Koivu");
         let result = scorer_name_from_embedded(Some(&player), 999);
-        assert_eq!(result, Some("Koivu M.".to_string()));
+        // Surname only: the embedded payload says nothing about who else on the
+        // roster shares it, so an initial here would be unjustified.
+        assert_eq!(result, Some("Koivu".to_string()));
     }
 
     #[test]
@@ -499,7 +504,7 @@ mod tests {
         process_team_goals(&team, &player_names, true, &mut events);
 
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].scorer_name, "Koivu M.");
+        assert_eq!(events[0].scorer_name, "Koivu");
     }
 
     #[test]
@@ -543,7 +548,7 @@ mod tests {
         process_team_goals_with_disambiguation(&team, &context, true, &mut events);
 
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].scorer_name, "Koivu M.");
+        assert_eq!(events[0].scorer_name, "Koivu");
     }
 
     #[test]

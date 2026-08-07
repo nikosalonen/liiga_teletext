@@ -105,7 +105,9 @@ Auto-refresh intervals: 15 seconds during live games, 30 seconds near start time
 - Starting soon: 30s
 - Player data: never expires (LRU eviction only)
 
-**Persistent player name cache** (`data_fetcher/cache/persistence.rs`) — disk-backed JSON store keyed by team per season. Disambiguated player names (e.g., "A. Saarela") are persisted to the platform cache directory so completed games skip the detailed game API endpoint on restart. Uses atomic write (tmp + rename), a sequence counter for dirty tracking, and season-scoped files (`players_{season}.json`).
+**Persistent player name cache** (`data_fetcher/cache/persistence.rs`) — disk-backed JSON store keyed by team per season, so completed games skip the detailed game API endpoint on restart. Uses atomic write (tmp + rename), a sequence counter for dirty tracking, and season-scoped files (`players_{season}.json`) carrying a `version` field (current: 2 — files of any other version are discarded and rebuilt).
+
+Stores **raw** `{first, last}` names, never pre-formatted ones. Disambiguation is applied per team in `get_players` on every read, because the set of players sharing a surname grows as the season accumulates rosters — baking a display name in at write time froze it against whichever game first cached that player, so the same finished game could render "Koivu" one day and "Koivu M." the next. Every game, live or finished, resolves scorers through this one store (`game_api.rs::goal_events_from_roster`), so both states share a single disambiguation scope; `create_goal_events_with_rosters` is only the fallback for when a team ID is missing.
 
 **Tournament negative cache** (`data_fetcher/api/tournament_logic.rs`) — secondary tournament endpoints (e.g. unannounced `valmistavat_ottelut`) that fail with 502/503/404 are skipped for 15 minutes, with a reduced retry budget (1 instead of 3). `runkosarja` is exempt and always re-checked.
 

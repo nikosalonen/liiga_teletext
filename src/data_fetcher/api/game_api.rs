@@ -5,13 +5,14 @@ use crate::config::Config;
 use crate::data_fetcher::cache::{
     cache_detailed_game_data, cache_goal_events_data, cache_players,
     cache_players_with_disambiguation, get_cached_detailed_game_data, get_cached_goal_events_data,
-    get_cached_players, persistence::PLAYER_NAME_STORE,
+    get_cached_players,
+    persistence::{PLAYER_NAME_STORE, PlayerName},
 };
 use crate::data_fetcher::models::{
     DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
     ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
-use crate::data_fetcher::player_names::{format_for_display, format_with_disambiguation};
+use crate::data_fetcher::player_names::format_for_display;
 use crate::data_fetcher::processors::{
     create_basic_goal_events, create_goal_events_with_rosters, determine_game_status, format_time,
     process_goal_events,
@@ -234,23 +235,27 @@ pub(super) async fn process_single_game(
     })
 }
 
-/// Persists disambiguated player names from rosters into the player name store, keyed by team.
+/// Persists raw player names from rosters into the player name store, keyed by team.
+///
+/// Names are stored unformatted; the store disambiguates on read so that a
+/// player's display name tracks the full accumulated roster rather than the
+/// single game that happened to cache them first.
 async fn persist_team_rosters(
     home_team_id: Option<&str>,
     away_team_id: Option<&str>,
     home_roster: &[Player],
     away_roster: &[Player],
 ) {
-    let to_tuples = |roster: &[Player]| -> Vec<(i64, String, String)> {
+    let to_names = |roster: &[Player]| -> HashMap<i64, PlayerName> {
         roster
             .iter()
-            .map(|p| (p.id, p.first_name.clone(), p.last_name.clone()))
+            .map(|p| (p.id, PlayerName::new(&p.first_name, &p.last_name)))
             .collect()
     };
 
     if let Some(team_id) = home_team_id {
         PLAYER_NAME_STORE
-            .insert_team(team_id, format_with_disambiguation(&to_tuples(home_roster)))
+            .insert_team(team_id, to_names(home_roster))
             .await;
     } else if !home_roster.is_empty() {
         debug!(
@@ -260,7 +265,7 @@ async fn persist_team_rosters(
     }
     if let Some(team_id) = away_team_id {
         PLAYER_NAME_STORE
-            .insert_team(team_id, format_with_disambiguation(&to_tuples(away_roster)))
+            .insert_team(team_id, to_names(away_roster))
             .await;
     } else if !away_roster.is_empty() {
         debug!(
@@ -270,8 +275,43 @@ async fn persist_team_rosters(
     }
 }
 
-/// Resolves goal events using roster data from cache or API, and populates
-/// the persistent player name store for completed games.
+/// Turns a freshly obtained roster into goal events, routing through the player
+/// name store so live and finished games share one disambiguation scope.
+///
+/// Falls back to disambiguating against this game's roster alone when the store
+/// cannot serve the pair — which happens only when a team ID is missing.
+async fn goal_events_from_roster(
+    game: &ScheduleGame,
+    home_roster: &[Player],
+    away_roster: &[Player],
+) -> Vec<GoalEventData> {
+    persist_team_rosters(
+        game.home_team.team_id.as_deref(),
+        game.away_team.team_id.as_deref(),
+        home_roster,
+        away_roster,
+    )
+    .await;
+
+    if let Some(names) = PLAYER_NAME_STORE
+        .get_players(
+            game.home_team.team_id.as_deref(),
+            game.away_team.team_id.as_deref(),
+        )
+        .await
+    {
+        return process_goal_events(game, &names);
+    }
+
+    debug!(
+        "Game ID {}: player name store unavailable, disambiguating against this game's roster",
+        game.id
+    );
+    create_goal_events_with_rosters(game, home_roster, away_roster)
+}
+
+/// Resolves goal events using roster data from cache or API, populating the
+/// persistent player name store along the way.
 async fn resolve_goal_events_with_roster(
     client: &Client,
     config: &Config,
@@ -280,20 +320,12 @@ async fn resolve_goal_events_with_roster(
 ) -> Vec<GoalEventData> {
     // Check in-memory detailed game cache first
     if let Some(cached_detailed) = get_cached_detailed_game_data(game.season, game.id).await {
-        if game.ended {
-            persist_team_rosters(
-                game.home_team.team_id.as_deref(),
-                game.away_team.team_id.as_deref(),
-                &cached_detailed.home_team_players,
-                &cached_detailed.away_team_players,
-            )
-            .await;
-        }
-        return create_goal_events_with_rosters(
+        return goal_events_from_roster(
             game,
             &cached_detailed.home_team_players,
             &cached_detailed.away_team_players,
-        );
+        )
+        .await;
     }
 
     // Try to fetch detailed game data for roster-based disambiguation
@@ -324,21 +356,12 @@ async fn resolve_goal_events_with_roster(
                 cache_detailed_game_data(game.season, game.id, detailed_response.clone(), is_live)
                     .await;
 
-                if game.ended {
-                    persist_team_rosters(
-                        game.home_team.team_id.as_deref(),
-                        game.away_team.team_id.as_deref(),
-                        &detailed_response.home_team_players,
-                        &detailed_response.away_team_players,
-                    )
-                    .await;
-                }
-
-                create_goal_events_with_rosters(
+                goal_events_from_roster(
                     game,
                     &detailed_response.home_team_players,
                     &detailed_response.away_team_players,
                 )
+                .await
             }
             Err(e) => {
                 warn!(
