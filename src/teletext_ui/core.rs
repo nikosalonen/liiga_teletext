@@ -917,6 +917,12 @@ mod tests {
         assert_eq!(get_team_abbreviation("New Team"), "NEW"); // "NewTeam" -> "NEW"
         assert_eq!(get_team_abbreviation("AB"), "AB"); // Short name
         assert_eq!(get_team_abbreviation("A"), "A"); // Very short name
+
+        // Undetermined-slot labels keep their meaning but lose the space, so
+        // "?#2-?#1" occupies the same cell width as "TAP-IFK" in compact mode.
+        assert_eq!(get_team_abbreviation("? #2"), "?#2");
+        assert_eq!(get_team_abbreviation("? #10"), "?#10");
+        assert_eq!(get_team_abbreviation("?"), "?");
     }
 
     #[test]

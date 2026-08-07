@@ -52,8 +52,10 @@ pub fn get_team_abbreviation(team_name: &str) -> String {
             if letters_only.len() >= 3 {
                 letters_only.chars().take(3).collect()
             } else if letters_only.is_empty() {
-                // If no letters found, return original string
-                team_name.to_string()
+                // No letters at all: an undetermined-slot label like "? #2".
+                // Drop the spaces so it occupies the same cell width as a real
+                // abbreviation ("?#2" alongside "TAP") instead of overflowing.
+                team_name.split_whitespace().collect::<String>()
             } else {
                 // Less than 3 letters, return what we have
                 letters_only

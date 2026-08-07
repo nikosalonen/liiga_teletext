@@ -47,6 +47,20 @@ fn is_real_name(name: &Option<String>) -> bool {
         .is_some_and(|n| !n.is_empty() && !is_placeholder_name(n))
 }
 
+/// Label for a side whose team is not yet determined.
+///
+/// Preseason tournaments name the slot in `teamPlaceholder` (e.g. "? #2" for
+/// the second seed), which is what liiga.fi shows and what makes otherwise
+/// identical TBA matchups tellable apart. Bracket codes ("RS5", "QF2") are
+/// rejected — they read as noise — as is a missing label, both yielding "?".
+fn undetermined_label(team: &ScheduleTeam) -> &str {
+    team.team_placeholder
+        .as_deref()
+        .map(str::trim)
+        .filter(|placeholder| !placeholder.is_empty() && !is_placeholder_name(placeholder))
+        .unwrap_or("?")
+}
+
 /// Detects placeholder-style team names like "RS5", "QF1", "SF2", etc.
 /// These are short uppercase codes followed by digits that the API uses
 /// for not-yet-determined playoff matchups.
@@ -101,32 +115,36 @@ pub(super) async fn process_single_game(
     let away_real = is_real_name(&game.away_team.team_name);
     // Playoff-type games with any undetermined side stay hidden: their
     // bracket codes ("RS5", "QF2") carry meaning and the matchup isn't set.
-    // Elsewhere (practice/preseason tournaments) only fully undetermined
-    // games are hidden; a half-known game renders with "?" for the TBA side.
+    // Elsewhere (practice/preseason tournaments) an undetermined side shows the
+    // API's slot label, so e.g. a PITSITURNAUS bracket lists as "? #2 - ? #1".
+    // Only games with nothing to show on either side are hidden.
     let is_playoff_serie = matches!(
         game.serie.to_ascii_lowercase().as_str(),
         "playoffs" | "playout" | "qualifications"
     );
-    let is_placeholder = if is_playoff_serie {
-        !home_real || !away_real
-    } else {
-        !home_real && !away_real
-    };
     let home_team_name = if home_real {
         get_team_name(&game.home_team)
     } else {
-        "?"
+        undetermined_label(&game.home_team)
     };
     let away_team_name = if away_real {
         get_team_name(&game.away_team)
     } else {
-        "?"
+        undetermined_label(&game.away_team)
+    };
+    let is_placeholder = if is_playoff_serie {
+        !home_real || !away_real
+    } else {
+        // Both sides unknown and neither carries a readable slot label: the row
+        // would read "? - ?" and tell the reader nothing.
+        !home_real && !away_real && home_team_name == "?" && away_team_name == "?"
     };
 
-    // Short-circuit games with any undetermined side — skip expensive fetches
+    // Short-circuit games with any undetermined side — there are no rosters or
+    // goals to fetch yet, whether or not the game ends up displayed.
     if !home_real || !away_real {
         debug!(
-            "Skipping placeholder game: {} vs {}",
+            "Skipping detail fetch for undetermined game: {} vs {} (hidden: {is_placeholder})",
             home_team_name, away_team_name
         );
         return Ok(GameData {
@@ -1100,7 +1118,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_partially_known_practice_game_is_shown_with_question_mark() {
+    async fn test_partially_known_practice_game_is_shown_with_slot_label() {
         // Preseason placement games (e.g. Pitsiturnaus) have a real home team
         // but a TBA opponent ("? #1"). They must be rendered, not hidden.
         for serie in ["PRACTICE", "PITSITURNAUS"] {
@@ -1121,8 +1139,83 @@ mod tests {
                 "a {serie} game with one known team must not be hidden"
             );
             assert_eq!(result.home_team, "Ilves");
-            assert_eq!(result.away_team, "?");
+            // The API's slot label is kept rather than flattened to "?"
+            assert_eq!(result.away_team, "? #1");
         }
+    }
+
+    #[tokio::test]
+    async fn test_preseason_game_with_two_slot_labels_is_shown() {
+        // The PITSITURNAUS bracket lists its unplayed rounds as "? #2 - ? #1".
+        // liiga.fi shows these, and the seed numbers tell the rounds apart.
+        let game = make_game_with_serie(
+            make_team(None, Some("? #2")),
+            make_team(None, Some("? #1")),
+            "PITSITURNAUS",
+        );
+        let client = reqwest::Client::new();
+        let config = make_test_config();
+
+        let result = process_single_game(&client, &config, game, 0, 0)
+            .await
+            .unwrap();
+
+        assert!(!result.is_placeholder);
+        assert_eq!(result.home_team, "? #2");
+        assert_eq!(result.away_team, "? #1");
+    }
+
+    #[tokio::test]
+    async fn test_preseason_game_with_bracket_codes_stays_hidden() {
+        // Bracket codes are noise to a reader, so a non-playoff game carrying
+        // only those on both sides is still hidden rather than shown as
+        // "RS5 - QF2".
+        let game = make_game_with_serie(
+            make_team(None, Some("RS5")),
+            make_team(None, Some("QF2")),
+            "PITSITURNAUS",
+        );
+        let client = reqwest::Client::new();
+        let config = make_test_config();
+
+        let result = process_single_game(&client, &config, game, 0, 0)
+            .await
+            .unwrap();
+
+        assert!(result.is_placeholder);
+    }
+
+    #[tokio::test]
+    async fn test_preseason_game_with_no_labels_stays_hidden() {
+        let game =
+            make_game_with_serie(make_team(None, None), make_team(None, None), "PITSITURNAUS");
+        let client = reqwest::Client::new();
+        let config = make_test_config();
+
+        let result = process_single_game(&client, &config, game, 0, 0)
+            .await
+            .unwrap();
+
+        assert!(result.is_placeholder);
+    }
+
+    #[tokio::test]
+    async fn test_playoff_game_with_slot_labels_stays_hidden() {
+        // Playoff behaviour is unchanged: any undetermined side hides the game,
+        // regardless of how readable its label is.
+        let game = make_game_with_serie(
+            make_team(Some("Ilves"), None),
+            make_team(None, Some("? #1")),
+            "playoffs",
+        );
+        let client = reqwest::Client::new();
+        let config = make_test_config();
+
+        let result = process_single_game(&client, &config, game, 0, 0)
+            .await
+            .unwrap();
+
+        assert!(result.is_placeholder);
     }
 
     #[tokio::test]
