@@ -137,7 +137,8 @@ impl TeletextPage {
                     self.render_error_message(buffer, message, current_line, text_fg_code);
                 }
                 TeletextRow::FutureGamesHeader(header_text)
-                | TeletextRow::PlayoffPhaseHeader(header_text) => {
+                | TeletextRow::PlayoffPhaseHeader(header_text)
+                | TeletextRow::SeriesHeader(header_text) => {
                     self.render_future_games_header(
                         buffer,
                         header_text,

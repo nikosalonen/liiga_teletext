@@ -468,7 +468,8 @@ impl TeletextPage {
                 format!("\x1b[38;5;{text_fg_code}m{message}\x1b[0m")
             }
             TeletextRow::FutureGamesHeader(header_text)
-            | TeletextRow::PlayoffPhaseHeader(header_text) => {
+            | TeletextRow::PlayoffPhaseHeader(header_text)
+            | TeletextRow::SeriesHeader(header_text) => {
                 let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
                 format!("\x1b[38;5;{subheader_fg_code}m{header_text}\x1b[0m")
             }

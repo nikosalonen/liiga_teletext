@@ -41,7 +41,8 @@ impl TeletextPage {
                     size += message.len() + 50;
                 }
                 TeletextRow::FutureGamesHeader(header)
-                | TeletextRow::PlayoffPhaseHeader(header) => {
+                | TeletextRow::PlayoffPhaseHeader(header)
+                | TeletextRow::SeriesHeader(header) => {
                     // Header: actual length + ANSI sequences
                     size += header.len() + 30;
                 }
@@ -105,7 +106,9 @@ impl TeletextPage {
             // Handle headers as separate lines
             if matches!(
                 row,
-                TeletextRow::FutureGamesHeader(_) | TeletextRow::PlayoffPhaseHeader(_)
+                TeletextRow::FutureGamesHeader(_)
+                    | TeletextRow::PlayoffPhaseHeader(_)
+                    | TeletextRow::SeriesHeader(_)
             ) {
                 // Finish current game line if not empty
                 if !current_line.is_empty() {
@@ -236,7 +239,8 @@ impl TeletextPage {
                 format!("{padded_team}{score_display}")
             }
             TeletextRow::FutureGamesHeader(header_text)
-            | TeletextRow::PlayoffPhaseHeader(header_text) => {
+            | TeletextRow::PlayoffPhaseHeader(header_text)
+            | TeletextRow::SeriesHeader(header_text) => {
                 // Import color utilities
                 use super::core::get_ansi_code;
                 use crate::ui::teletext::colors::*;

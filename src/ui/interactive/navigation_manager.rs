@@ -7,12 +7,13 @@
 //! - Game analysis and validation for navigation decisions
 //! - Loading indicator coordination
 
-use super::series_utils::{get_subheader, playoff_phase_name};
+use super::series_utils::{get_subheader, is_playoff_type, playoff_phase_name, series_group_label};
 use crate::data_fetcher::models::bracket::PlayoffBracket;
 use crate::data_fetcher::{GameData, is_historical_date};
 use crate::teletext_ui::bracket_display::render_bracket;
 use crate::teletext_ui::{GameResultData, TeletextPage, TeletextRow};
 use chrono::NaiveDate;
+use std::collections::{HashMap, HashSet};
 
 /// Configuration for creating or restoring a teletext page
 #[derive(Debug)]
@@ -243,32 +244,77 @@ async fn create_base_page(
     // out of the display since their cryptic API names (e.g. "RS5", "QF2")
     // would confuse users.
     let mut sorted_games: Vec<&GameData> = games.iter().filter(|g| !g.is_placeholder).collect();
+
+    // Games that share a serie belong together. Preseason days in particular mix
+    // an API-named tournament (e.g. PITSITURNAUS) with standalone PRACTICE games,
+    // and sorting purely by start time interleaves the two. Non-playoff series are
+    // ordered by their earliest game so the day still reads chronologically.
+    let mut group_start: HashMap<String, &str> = HashMap::new();
+    for game in &sorted_games {
+        let entry = group_start
+            .entry(game.serie.to_ascii_lowercase())
+            .or_insert(game.start.as_str());
+        if game.start.as_str() < *entry {
+            *entry = game.start.as_str();
+        }
+    }
+
     sorted_games.sort_by_key(|g| {
-        let serie_order = match g.serie.as_str() {
+        let serie_key = g.serie.to_ascii_lowercase();
+        let serie_order = match serie_key.as_str() {
             "playoffs" => 0,
             "playout" => 1,
             "qualifications" => 2,
             _ => 3,
         };
+        // playOffPhase is 0 on every preseason game, so it only orders playoff series.
+        let phase = if is_playoff_type(&g.serie) {
+            g.play_off_phase.unwrap_or(i32::MAX)
+        } else {
+            i32::MAX
+        };
         (
             serie_order,
-            g.play_off_phase.unwrap_or(i32::MAX),
+            group_start
+                .get(&serie_key)
+                .copied()
+                .unwrap_or("")
+                .to_string(),
+            serie_key,
+            phase,
             g.start.clone(),
             g.play_off_pair.unwrap_or(i32::MAX),
             g.home_team.clone(),
         )
     });
 
+    // Only label the groups when the day actually holds more than one serie —
+    // an ordinary runkosarja day would just repeat the subheader.
+    let distinct_series = sorted_games
+        .iter()
+        .map(|g| g.serie.to_ascii_lowercase())
+        .collect::<HashSet<_>>()
+        .len();
+    let show_series_headers = distinct_series > 1;
+
     // Phase headers only make sense for playoff-type series. The preseason API
     // sets playOffPhase to 0 on every game, so gating on the field alone would
     // emit a generic "OTTELUT" header at each serie/phase boundary.
     let mut last_header: Option<(&str, i32)> = None;
+    let mut last_serie: Option<String> = None;
     for game in &sorted_games {
+        let serie_key = game.serie.to_ascii_lowercase();
+        // Playoff-type series are already labelled by their phase header.
+        if show_series_headers
+            && !is_playoff_type(&game.serie)
+            && last_serie.as_deref() != Some(serie_key.as_str())
+        {
+            page.add_series_header(series_group_label(&game.serie));
+        }
+        last_serie = Some(serie_key);
+
         if let Some(phase) = game.play_off_phase
-            && matches!(
-                game.serie.to_ascii_lowercase().as_str(),
-                "playoffs" | "playout" | "qualifications"
-            )
+            && is_playoff_type(&game.serie)
         {
             let key = (game.serie.as_str(), phase);
             if last_header != Some(key) {
@@ -779,6 +825,116 @@ mod tests {
             "non-playoff games must not get phase headers"
         );
         assert_eq!(page.game_count(), 4);
+    }
+
+    /// Builds a preseason-shaped game: the API sets playOffPhase on every game
+    /// regardless of serie, and names the tournament in `serie`.
+    fn preseason_game(id: i32, home: &str, away: &str, serie: &str, start: &str) -> GameData {
+        let mut game =
+            crate::testing_utils::TestDataBuilder::create_custom_game(id, home, away, "", serie);
+        game.play_off_phase = Some(0);
+        game.play_off_pair = Some(0);
+        game.start = start.to_string();
+        game
+    }
+
+    #[tokio::test]
+    async fn test_preseason_games_grouped_by_serie() {
+        // A real preseason day: the PITSITURNAUS tournament runs alongside
+        // standalone PRACTICE games, and pure start-time sorting interleaves them.
+        let games = vec![
+            preseason_game(1, "Sport", "TPS", "PITSITURNAUS", "2026-08-07T05:45:00Z"),
+            preseason_game(2, "HIFK", "JYP", "PRACTICE", "2026-08-07T12:00:00Z"),
+            preseason_game(3, "HPK", "Lukko", "PITSITURNAUS", "2026-08-07T12:00:00Z"),
+            preseason_game(4, "KalPa", "Jukurit", "PRACTICE", "2026-08-07T15:00:00Z"),
+            preseason_game(5, "Lukko", "Ässät", "PITSITURNAUS", "2026-08-07T07:00:00Z"),
+        ];
+
+        let page = create_base_page(
+            &games, true, false, true, false, false, true, None, None, None,
+        )
+        .await;
+
+        // Groups are ordered by their earliest game; PITSITURNAUS starts first.
+        assert_eq!(
+            page.series_headers(),
+            vec!["PITSITURNAUS", "HARJOITUSOTTELUT"]
+        );
+        assert_eq!(
+            page.game_home_teams(),
+            vec!["Sport", "Lukko", "HPK", "HIFK", "KalPa"]
+        );
+        // Series grouping must not introduce playoff phase headers.
+        assert_eq!(page.playoff_phase_headers(), Vec::<&str>::new());
+    }
+
+    #[tokio::test]
+    async fn test_no_series_headers_when_all_games_share_a_serie() {
+        let games = vec![
+            preseason_game(1, "Sport", "TPS", "PITSITURNAUS", "2026-08-07T05:45:00Z"),
+            preseason_game(2, "Lukko", "Ässät", "PITSITURNAUS", "2026-08-07T07:00:00Z"),
+        ];
+
+        let page = create_base_page(
+            &games, true, false, true, false, false, true, None, None, None,
+        )
+        .await;
+
+        // The subheader already names the serie, so per-group labels would just repeat it.
+        assert_eq!(page.series_headers(), Vec::<&str>::new());
+        assert_eq!(page.game_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_regular_season_day_gets_no_series_headers() {
+        let games = vec![
+            crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK"),
+            crate::testing_utils::TestDataBuilder::create_basic_game("Ilves", "Tappara"),
+        ];
+
+        let page = create_base_page(
+            &games, true, false, true, false, false, true, None, None, None,
+        )
+        .await;
+
+        assert_eq!(page.series_headers(), Vec::<&str>::new());
+    }
+
+    #[tokio::test]
+    async fn test_playoff_games_keep_phase_headers_instead_of_series_headers() {
+        // Mixing playoffs with another serie must still label playoffs by phase,
+        // not duplicate a "PLAYOFFS" series header above it.
+        let mut playoff = crate::testing_utils::TestDataBuilder::create_custom_game(
+            1, "TPS", "HIFK", "", "playoffs",
+        );
+        playoff.play_off_phase = Some(2);
+        playoff.start = "2026-04-01T16:30:00Z".to_string();
+
+        let mut regular = crate::testing_utils::TestDataBuilder::create_custom_game(
+            2,
+            "Ilves",
+            "Lukko",
+            "",
+            "runkosarja",
+        );
+        regular.start = "2026-04-01T16:30:00Z".to_string();
+
+        let page = create_base_page(
+            &[playoff, regular],
+            true,
+            false,
+            true,
+            false,
+            false,
+            true,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        assert_eq!(page.playoff_phase_headers(), vec!["PUOLIVÄLIERÄT"]);
+        assert_eq!(page.series_headers(), vec!["RUNKOSARJA"]);
     }
 
     #[tokio::test]

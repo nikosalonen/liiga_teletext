@@ -75,6 +75,9 @@ pub enum TeletextRow {
     ErrorMessage(String),
     FutureGamesHeader(String), // For "Seuraavat ottelut {date}" line
     PlayoffPhaseHeader(String),
+    /// Groups games that share the same `serie` value (e.g. the preseason
+    /// "PITSITURNAUS" tournament vs. standalone "PRACTICE" games).
+    SeriesHeader(String),
     StandingsHeader,
     StandingsRow {
         position: u16,

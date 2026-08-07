@@ -68,6 +68,13 @@ impl TeletextPage {
             .push(TeletextRow::PlayoffPhaseHeader(header_text));
     }
 
+    /// Adds a series group header row (e.g., "PITSITURNAUS", "HARJOITUSOTTELUT").
+    /// Used to separate games belonging to different `serie` values on the same day.
+    pub fn add_series_header(&mut self, header_text: String) {
+        self.content_rows
+            .push(TeletextRow::SeriesHeader(header_text));
+    }
+
     /// Adds an error message to be displayed on the page.
     /// The message will be formatted and displayed prominently.
     ///
@@ -173,6 +180,28 @@ impl TeletextPage {
             .iter()
             .filter_map(|row| match row {
                 TeletextRow::PlayoffPhaseHeader(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Returns the series group header texts on this page (test-only).
+    pub fn series_headers(&self) -> Vec<&str> {
+        self.content_rows
+            .iter()
+            .filter_map(|row| match row {
+                TeletextRow::SeriesHeader(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Returns the home team of every game result row, in display order (test-only).
+    pub fn game_home_teams(&self) -> Vec<&str> {
+        self.content_rows
+            .iter()
+            .filter_map(|row| match row {
+                TeletextRow::GameResult { home_team, .. } => Some(home_team.as_str()),
                 _ => None,
             })
             .collect()
