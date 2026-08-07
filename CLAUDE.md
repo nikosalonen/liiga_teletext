@@ -81,6 +81,7 @@ Rendering:
 - **`constants.rs`** — Cache TTLs, polling intervals, timeouts
 - **`logging.rs`** — Tracing setup with daily rolling file appender
 - **`version.rs`** — Crates.io version check
+- **`timezone_check.rs`** — Startup check that `chrono::Local` resolved a real zone. `chrono` falls back to UTC silently when zone resolution fails, which shifts every game time by the local UTC offset with no visible error. Compares against the zone named by the `/etc/localtime` symlink, **not** `iana_time_zone::get_timezone()` — the latter honors `TZ` and so hides exactly the `TZ=UTC` override this is meant to catch. Stays quiet for genuine UTC+00:00 zones (Europe/London in winter)
 
 ### Interactive Mode Event Loop (`ui/interactive/core.rs`)
 

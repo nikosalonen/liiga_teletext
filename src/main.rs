@@ -8,6 +8,7 @@ mod data_fetcher;
 mod error;
 mod logging;
 mod teletext_ui;
+mod timezone_check;
 mod ui;
 mod version;
 
@@ -47,6 +48,15 @@ async fn main() -> Result<(), AppError> {
         return commands::handle_config_update_command(&args).await;
     }
 
+    // Every game time is rendered through chrono::Local, which silently falls
+    // back to UTC when it cannot resolve the system zone. Catch that here so a
+    // whole page of times shifted by the local UTC offset is reported rather
+    // than displayed as if it were correct.
+    let timezone_problem = timezone_check::check();
+    if let Some(problem) = &timezone_problem {
+        tracing::warn!("Local timezone resolution failed: {}", problem.message());
+    }
+
     // Check for new version in the background for non-config operations
     let version_check = tokio::spawn(version::check_latest_version());
 
@@ -59,9 +69,14 @@ async fn main() -> Result<(), AppError> {
     }
 
     if args.once {
+        // Safe to print now: --once never takes over the terminal.
+        if let Some(problem) = &timezone_problem {
+            eprintln!("WARNING: {}", problem.message());
+        }
         return commands::handle_once_command(&args, version_check).await;
     }
 
-    // Interactive mode
-    app::run_interactive(&args, version_check).await
+    // Interactive mode. The warning is handed over rather than printed here
+    // because the alternate screen would wipe anything written before it opens.
+    app::run_interactive(&args, version_check, timezone_problem).await
 }

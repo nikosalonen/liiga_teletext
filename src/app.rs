@@ -38,10 +38,15 @@ impl Drop for TerminalGuard {
 /// - Sets up terminal raw mode and alternate screen
 /// - Runs the interactive UI
 /// - Cleans up terminal state (via RAII guard)
-/// - After exit, prints version update info if available
+/// - After exit, prints any timezone warning and version update info
+///
+/// `timezone_problem` is reported after the alternate screen closes, following
+/// the same pattern as the version notice: anything printed before or during the
+/// UI would be wiped when the alternate screen opens or closes.
 pub async fn run_interactive(
     args: &Args,
     version_check: tokio::task::JoinHandle<Option<String>>,
+    timezone_problem: Option<crate::timezone_check::TimezoneProblem>,
 ) -> Result<(), AppError> {
     // Interactive mode
     enable_raw_mode()?;
@@ -71,6 +76,12 @@ pub async fn run_interactive(
     // printing anything below, otherwise the output lands in the alternate
     // screen and is wiped when the guard drops at end of scope.
     drop(guard);
+
+    // Report a bad timezone before the version notice: it means every start
+    // time just shown on screen was wrong.
+    if let Some(problem) = &timezone_problem {
+        eprintln!("WARNING: {}", problem.message());
+    }
 
     // Show version info after UI closes if update is available
     if let Ok(Some(latest_version)) = version_check.await {

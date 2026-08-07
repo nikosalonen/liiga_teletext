@@ -46,6 +46,7 @@ pub mod data_fetcher;
 pub mod error;
 pub mod teletext_ui;
 pub mod testing_utils;
+pub mod timezone_check;
 pub mod ui;
 
 // Re-export commonly used types for convenience
