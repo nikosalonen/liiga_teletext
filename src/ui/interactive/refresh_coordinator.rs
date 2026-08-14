@@ -100,9 +100,8 @@ fn should_discard_for_date_mismatch(current_date: &Option<String>, fetched_date:
 /// allowing the UI to animate the loading indicator while waiting.
 async fn fetch_games_with_timeout(
     current_date: Option<String>,
-    timeout_seconds: u64,
+    timeout_duration: Duration,
 ) -> (Vec<GameData>, bool, String, bool) {
-    let timeout_duration = Duration::from_secs(timeout_seconds);
     let fetch_future = fetch_liiga_data(current_date.clone());
 
     match tokio::time::timeout(timeout_duration, fetch_future).await {
@@ -116,7 +115,8 @@ async fn fetch_games_with_timeout(
         }
         Err(_) => {
             tracing::warn!(
-                "Auto-refresh timeout after {timeout_seconds}s, continuing with existing data"
+                "Auto-refresh timeout after {}s, continuing with existing data",
+                timeout_duration.as_secs()
             );
             (Vec::new(), true, String::new(), true)
         }
@@ -450,7 +450,8 @@ impl RefreshCoordinator {
         if !self.bracket_checked {
             self.bracket_checked = true;
             if let Ok(config) = crate::config::Config::load().await {
-                let timeout = std::time::Duration::from_secs(config.http_timeout_seconds + 5);
+                let timeout =
+                    crate::constants::http_timeout_with_margin(config.http_timeout_seconds);
                 if let Ok(Ok(bracket)) = tokio::time::timeout(
                     timeout,
                     crate::data_fetcher::api::bracket_api::fetch_playoff_bracket(&config),
@@ -545,14 +546,13 @@ impl RefreshCoordinator {
         // Honor the configured HTTP timeout (plus safety margin) so the HTTP
         // layer reports the actual error before this outer timeout fires.
         let current_date_for_fetch = state.current_date().clone();
-        let timeout_seconds = crate::config::Config::load()
+        let http_timeout_seconds = crate::config::Config::load()
             .await
             .map(|config| config.http_timeout_seconds)
-            .unwrap_or(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS)
-            + 5;
+            .unwrap_or(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS);
         let fetch_handle = tokio::spawn(fetch_games_with_timeout(
             current_date_for_fetch,
-            timeout_seconds,
+            crate::constants::http_timeout_with_margin(http_timeout_seconds),
         ));
 
         // Animate the spinner while waiting for the fetch to complete
@@ -685,8 +685,7 @@ impl RefreshCoordinator {
             }
         };
         let http_timeout = app_config.http_timeout_seconds;
-        // Safety margin above the HTTP client timeout so reqwest reports the actual error
-        let timeout_duration = Duration::from_secs(http_timeout + 5);
+        let timeout_duration = crate::constants::http_timeout_with_margin(http_timeout);
 
         // Fetch in a background task so the spinner animates while waiting
         let fetch_handle = tokio::task::spawn(async move {
@@ -720,7 +719,7 @@ impl RefreshCoordinator {
             Ok(Err(_)) => {
                 tracing::error!(
                     "Standings fetch timed out after {}s (safety timeout, HTTP client should have timed out at {http_timeout}s)",
-                    http_timeout + 5
+                    timeout_duration.as_secs()
                 );
                 (vec![], vec![], true)
             }
@@ -891,8 +890,8 @@ impl RefreshCoordinator {
             }
         };
 
-        let http_timeout = app_config.http_timeout_seconds;
-        let timeout_duration = std::time::Duration::from_secs(http_timeout + 5);
+        let timeout_duration =
+            crate::constants::http_timeout_with_margin(app_config.http_timeout_seconds);
 
         // Fetch in a background task so the spinner animates while waiting
         let fetch_handle = tokio::task::spawn(async move {

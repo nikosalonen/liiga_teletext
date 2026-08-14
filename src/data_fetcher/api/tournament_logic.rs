@@ -312,18 +312,14 @@ async fn check_tournament(
         Ok(response) => Ok((tournament, response)),
         Err(e) => {
             if tournament != "runkosarja" && is_unavailability_error(&e) {
+                let cooldown_minutes =
+                    crate::constants::cache_ttl::TOURNAMENT_UNAVAILABLE_SECONDS / 60;
                 warn!(
-                    "Tournament {} endpoint unavailable ({}), skipping it for the next {} minutes",
-                    tournament,
-                    e,
-                    crate::constants::cache_ttl::TOURNAMENT_UNAVAILABLE_SECONDS / 60
+                    "Tournament {tournament} endpoint unavailable ({e}), skipping it for the next {cooldown_minutes} minutes"
                 );
                 mark_unavailable(&config.api_domain, tournament).await;
             } else {
-                info!(
-                    "Failed to fetch tournament {}: {}, will skip this tournament",
-                    tournament, e
-                );
+                info!("Failed to fetch tournament {tournament}: {e}, will skip this tournament");
             }
             Err(e)
         }

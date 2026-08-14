@@ -243,12 +243,20 @@ async fn regular_season_start_hint(
     if !super::date_logic::is_preseason_only_month(month) {
         return None;
     }
+    let current = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
 
     match super::tournament_api::fetch_tournament_data(client, config, "runkosarja", date).await {
         Ok(response) => {
-            // The strict `> date` filter also drops the garbage past dates the
-            // API is known to return in these hint fields
-            if let Some(hint) = response.next_game_date.filter(|next| next.as_str() > date) {
+            // Parse the hint before trusting it; the strict `> date` filter
+            // also drops the garbage past dates the API is known to return
+            // in these hint fields
+            if let Some(hint) = response
+                .next_game_date
+                .as_deref()
+                .and_then(|next| chrono::NaiveDate::parse_from_str(next, "%Y-%m-%d").ok())
+                .filter(|next| *next > current)
+            {
+                let hint = hint.format("%Y-%m-%d").to_string();
                 info!("Using runkosarja nextGameDate {hint} as next game date hint");
                 return Some(hint);
             }
@@ -263,10 +271,9 @@ async fn regular_season_start_hint(
         Ok(Some(start)) => {
             let start_date = chrono::DateTime::parse_from_rfc3339(&start)
                 .ok()?
-                .date_naive()
-                .format("%Y-%m-%d")
-                .to_string();
-            if start_date.as_str() > date {
+                .date_naive();
+            if start_date > current {
+                let start_date = start_date.format("%Y-%m-%d").to_string();
                 info!("Using regular season start {start_date} as next game date hint");
                 Some(start_date)
             } else {

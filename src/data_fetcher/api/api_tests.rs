@@ -2518,6 +2518,53 @@ mod tests {
         assert_eq!(result, None);
     }
 
+    #[test]
+    fn test_best_previous_game_date_ignores_malformed_hints() {
+        let mut responses = HashMap::new();
+        // Garbage that string comparison would have accepted ("2020-13-99" < "2025-11-20")
+        responses.insert(
+            "runkosarja-2025-11-20".to_string(),
+            schedule_response_with_hints(Some("2020-13-99"), None),
+        );
+        responses.insert(
+            "playoffs-2025-11-20".to_string(),
+            schedule_response_with_hints(Some("2025-11-18"), None),
+        );
+
+        let result = best_previous_game_date(&responses, "2025-11-20");
+        assert_eq!(result, Some("2025-11-18".to_string()));
+    }
+
+    #[test]
+    fn test_best_next_game_date_ignores_malformed_and_wrong_direction_hints() {
+        let mut responses = HashMap::new();
+        // Unpadded September date is BEFORE current, but string comparison
+        // would have ordered it after ('9' > '1')
+        responses.insert(
+            "runkosarja-2025-11-20".to_string(),
+            schedule_response_with_hints(None, Some("2025-9-25")),
+        );
+        responses.insert(
+            "playoffs-2025-11-20".to_string(),
+            schedule_response_with_hints(None, Some("not-a-date")),
+        );
+
+        let result = best_next_game_date(&responses, "2025-11-20");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_best_next_game_date_canonicalizes_unpadded_hint() {
+        let mut responses = HashMap::new();
+        responses.insert(
+            "runkosarja-2025-11-20".to_string(),
+            schedule_response_with_hints(None, Some("2025-12-3")),
+        );
+
+        let result = best_next_game_date(&responses, "2025-11-20");
+        assert_eq!(result, Some("2025-12-03".to_string()));
+    }
+
     /// End-to-end direction wiring: the previous-hint fetcher must pick the
     /// backward hint and the next-hint fetcher the forward one. A swapped
     /// picker in the orchestrator wrappers would compile cleanly; this pins it.
@@ -2631,6 +2678,63 @@ mod tests {
                 games: vec![],
                 previous_game_date: None,
                 next_game_date: None,
+            }))
+            .mount(&mock_server)
+            .await;
+
+        // Season schedule for the upcoming season (2027): opener on 2026-09-01
+        Mock::given(method("GET"))
+            .and(path("/schedule"))
+            .and(query_param("season", "2027"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(vec![ScheduleApiGame {
+                    id: 1,
+                    season: 2027,
+                    start: "2026-09-01T15:30:00Z".to_string(),
+                    home_team_name: "HIFK".to_string(),
+                    away_team_name: "Tappara".to_string(),
+                    serie: 1,
+                    finished_type: None,
+                    started: false,
+                    ended: false,
+                    game_time: None,
+                    play_off_phase: None,
+                    play_off_pair: None,
+                    play_off_req_wins: None,
+                    home_team_goals: 0,
+                    away_team_goals: 0,
+                }]),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let next = fetch_next_game_date_hint_with(&client, &config, "2026-08-27").await;
+        assert_eq!(next, Some("2026-09-01".to_string()));
+    }
+
+    /// Preseason boundary: a malformed runkosarja nextGameDate must not be
+    /// returned as a hint — the season schedule fallback supplies the opener.
+    #[tokio::test]
+    #[serial]
+    async fn test_next_hint_ignores_malformed_runkosarja_hint_in_august() {
+        clear_all_caches_for_test().await;
+
+        let mock_server = MockServer::start().await;
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+        let client = create_test_http_client();
+
+        mount_last_practice_day_mock(&mock_server).await;
+
+        // runkosarja day response carries a hint that isn't a valid date
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .and(query_param("tournament", "runkosarja"))
+            .and(query_param("date", "2026-08-27"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(ScheduleResponse {
+                games: vec![],
+                previous_game_date: None,
+                next_game_date: Some("2026-13-99".to_string()),
             }))
             .mount(&mock_server)
             .await;

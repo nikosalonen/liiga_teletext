@@ -10,6 +10,17 @@ pub const DEFAULT_HTTP_TIMEOUT_SECONDS: u64 = 10;
 /// Shorter than the overall request timeout to quickly detect unreachable hosts.
 pub const DEFAULT_HTTP_CONNECT_TIMEOUT_SECONDS: u64 = 5;
 
+/// Safety margin added on top of the configured HTTP client timeout by outer
+/// fetch timeouts, so the HTTP layer reports the actual error before the
+/// outer timeout fires.
+const HTTP_TIMEOUT_SAFETY_MARGIN_SECONDS: u64 = 5;
+
+/// Outer timeout for a fetch guarded by the configured HTTP client timeout:
+/// the client timeout plus a safety margin.
+pub const fn http_timeout_with_margin(http_timeout_seconds: u64) -> std::time::Duration {
+    std::time::Duration::from_secs(http_timeout_seconds + HTTP_TIMEOUT_SAFETY_MARGIN_SECONDS)
+}
+
 /// Maximum number of connections per host in the HTTP client pool
 pub const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 100;
 

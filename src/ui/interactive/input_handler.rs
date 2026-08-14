@@ -261,7 +261,7 @@ async fn probe_timeout_duration() -> Duration {
         .await
         .map(|config| config.http_timeout_seconds)
         .unwrap_or(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS);
-    Duration::from_secs(timeout_seconds + 5)
+    crate::constants::http_timeout_with_margin(timeout_seconds)
 }
 
 /// Fetches games for one candidate date and applies `accept` to decide
