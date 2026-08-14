@@ -363,19 +363,19 @@ impl TeletextPage {
         (left_games, right_games)
     }
 
-    /// Renders only the loading indicator area without redrawing the entire screen
-    #[allow(dead_code)] // Method for future use
-    pub fn render_loading_indicator_only(&self, stdout: &mut Stdout) -> Result<(), AppError> {
-        if !self.show_footer {
-            return Ok(());
+    /// Advances all active loading/auto-refresh spinner animations by one frame.
+    /// Returns true if any indicator was active (i.e. a re-render is worthwhile).
+    pub fn tick_loading_animations(&mut self) -> bool {
+        let mut active = false;
+        if let Some(indicator) = self.loading_indicator.as_mut() {
+            indicator.next_frame();
+            active = true;
         }
-
-        super::footer::render_loading_indicator_only(
-            stdout,
-            self.screen_height,
-            self.ignore_height_limit,
-            &self.loading_indicator,
-        )
+        if let Some(indicator) = self.auto_refresh_indicator.as_mut() {
+            indicator.next_frame();
+            active = true;
+        }
+        active
     }
 
     /// Sets whether to show the season countdown in the footer.
@@ -662,6 +662,14 @@ impl TeletextPage {
                     has_bracket_data: self.has_bracket_data,
                 },
             )?;
+
+            // Draw the loading spinner line just above the footer (interactive mode only;
+            // it shares the row with the season countdown, taking precedence while active)
+            if !self.ignore_height_limit
+                && let Some(ref loading) = self.loading_indicator
+            {
+                super::footer::render_loading_line(&mut buffer, footer_y, width as usize, loading);
+            }
         }
 
         // Write entire buffer in one operation (minimizes flicker)
@@ -983,6 +991,77 @@ mod tests {
         // Test hiding loading indicator
         page.hide_loading();
         assert!(page.loading_indicator.is_none());
+    }
+
+    #[test]
+    fn test_tick_loading_animations_advances_active_indicators() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            false,
+            false,
+        );
+
+        // No indicator active: nothing to animate
+        assert!(!page.tick_loading_animations());
+
+        // Loading indicator advances one frame per tick
+        page.show_loading("Etsitään otteluita...".to_string());
+        assert!(page.tick_loading_animations());
+        assert_eq!(
+            page.loading_indicator.as_ref().unwrap().current_frame(),
+            "⠙"
+        );
+
+        // Auto-refresh indicator advances too
+        page.hide_loading();
+        page.show_auto_refresh_indicator();
+        assert!(page.tick_loading_animations());
+        assert_eq!(
+            page.auto_refresh_indicator
+                .as_ref()
+                .unwrap()
+                .current_frame(),
+            "⠙"
+        );
+    }
+
+    #[test]
+    fn test_build_animation_frame_renders_only_active_indicators() {
+        let mut page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            false,
+            false,
+        );
+        page.set_screen_height(20);
+
+        // Nothing active: nothing to draw
+        assert!(page.build_animation_frame(80, 20).is_empty());
+
+        // Loading line drawn above the footer (0-based row 18 -> ANSI row 19)
+        page.show_loading("Etsitään otteluita...".to_string());
+        let frame = page.build_animation_frame(80, 20);
+        assert!(frame.contains("\x1b[19;1H"));
+        assert!(frame.contains("Etsitään otteluita..."));
+
+        // A height mismatch (terminal resized since the last full render)
+        // must suppress the overlay so it can't overwrite content rows
+        assert!(page.build_animation_frame(80, 24).is_empty());
+
+        // Corner spinner drawn in the footer's last cells (row 20, column 78)
+        page.hide_loading();
+        page.show_auto_refresh_indicator();
+        let frame = page.build_animation_frame(80, 20);
+        assert!(frame.contains("\x1b[20;78H"));
     }
 
     #[test]

@@ -76,6 +76,38 @@ pub(super) fn should_use_this_date(
     }
 }
 
+/// Picks the best `previousGameDate` hint from a set of tournament responses:
+/// the latest hinted date that is still strictly before the current date.
+/// ISO dates (YYYY-MM-DD) compare correctly as strings.
+pub(super) fn best_previous_game_date(
+    responses: &HashMap<String, ScheduleResponse>,
+    current_date: &str,
+) -> Option<String> {
+    responses
+        .values()
+        .filter_map(|response| response.previous_game_date.clone())
+        .filter(|hint| hint.as_str() < current_date)
+        .max()
+}
+
+/// Picks the best `nextGameDate` hint from a set of tournament responses:
+/// the earliest hinted date that is strictly after the current date.
+/// ISO dates (YYYY-MM-DD) compare correctly as strings.
+///
+/// Unlike [`should_use_this_date`], this deliberately applies no runkosarja
+/// preference: for date navigation the user wants the nearest date with any
+/// games, not the fetcher's tournament-transition heuristic.
+pub(super) fn best_next_game_date(
+    responses: &HashMap<String, ScheduleResponse>,
+    current_date: &str,
+) -> Option<String> {
+    responses
+        .values()
+        .filter_map(|response| response.next_game_date.clone())
+        .filter(|hint| hint.as_str() > current_date)
+        .min()
+}
+
 /// Determines the appropriate date to return based on whether games were found.
 /// If games were found on a different date than the original (earliest_date is set),
 /// returns that date. Otherwise returns the original date.

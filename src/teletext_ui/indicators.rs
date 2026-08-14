@@ -44,6 +44,38 @@ impl TeletextPage {
         self.auto_refresh_indicator.is_some()
     }
 
+    /// Checks if the loading indicator is active
+    pub fn is_loading_indicator_active(&self) -> bool {
+        self.loading_indicator.is_some()
+    }
+
+    /// Builds the minimal escape sequence that redraws only the active
+    /// indicator rows (the loading line above the footer and/or the footer's
+    /// corner spinner cell). Animation ticks write this instead of repainting
+    /// the whole page, because full repaints make some terminals (e.g.
+    /// Ghostty) flicker. Returns an empty string when there is nothing to
+    /// draw, or when `height` no longer matches the height the last full
+    /// render used (drawing after a resize would overwrite content rows).
+    pub fn build_animation_frame(&self, width: u16, height: u16) -> String {
+        let mut buffer = String::new();
+        if !self.show_footer || self.ignore_height_limit || height != self.screen_height {
+            return buffer;
+        }
+        let footer_y = self.screen_height.saturating_sub(1) as usize;
+        if let Some(ref loading) = self.loading_indicator {
+            super::footer::render_loading_line(&mut buffer, footer_y, width as usize, loading);
+        }
+        if let Some(ref auto_refresh) = self.auto_refresh_indicator {
+            super::footer::render_corner_spinner(
+                &mut buffer,
+                footer_y,
+                width as usize,
+                auto_refresh.current_frame(),
+            );
+        }
+        buffer
+    }
+
     /// Shows an error warning indicator in the footer
     pub fn show_error_warning(&mut self) {
         self.error_warning_active = true;

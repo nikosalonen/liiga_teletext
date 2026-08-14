@@ -140,12 +140,21 @@ pub async fn run_interactive_ui(
             refresh_coordinator.update_refresh_timing(&mut state, refresh_result.should_retry);
         }
 
-        // Update auto-refresh indicator animation (only when active)
+        // Update auto-refresh indicator animation (only when active), writing
+        // just the indicator cells instead of requesting a full repaint, which
+        // makes some terminals flicker
         if let Some(page) = state.current_page_mut()
             && page.is_auto_refresh_indicator_active()
         {
             page.update_auto_refresh_animation();
-            state.request_render();
+            if let Ok((width, height)) = crossterm::terminal::size() {
+                let frame = page.build_animation_frame(width, height);
+                if !frame.is_empty() {
+                    use std::io::Write;
+                    let _ = write!(stdout, "{frame}");
+                    let _ = stdout.flush();
+                }
+            }
         }
 
         // Batched UI rendering - only render when necessary

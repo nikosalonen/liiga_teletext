@@ -286,10 +286,56 @@ pub fn build_tournament_list_fallback(date: &str) -> Vec<&'static str> {
     tournaments
 }
 
+/// Fetches one tournament's day response, applying the per-tournament retry
+/// budget and negative-caching long-lived unavailability errors for
+/// secondary tournaments.
+async fn check_tournament(
+    client: &Client,
+    config: &Config,
+    tournament: &'static str,
+    date: &str,
+) -> Result<(&'static str, ScheduleResponse), AppError> {
+    use super::fetch_utils::fetch_with_retries;
+
+    let url = build_tournament_url(&config.api_domain, tournament, date);
+
+    // Secondary tournament endpoints return 502 until published;
+    // retrying those aggressively only risks rate limiting.
+    let max_retries = if tournament == "runkosarja" {
+        crate::constants::retry::MAX_ATTEMPTS
+    } else {
+        crate::constants::retry::SECONDARY_TOURNAMENT_MAX_ATTEMPTS
+    };
+
+    info!("Checking tournament: {tournament}");
+    match fetch_with_retries::<ScheduleResponse>(client, &url, max_retries).await {
+        Ok(response) => Ok((tournament, response)),
+        Err(e) => {
+            if tournament != "runkosarja" && is_unavailability_error(&e) {
+                warn!(
+                    "Tournament {} endpoint unavailable ({}), skipping it for the next {} minutes",
+                    tournament,
+                    e,
+                    crate::constants::cache_ttl::TOURNAMENT_UNAVAILABLE_SECONDS / 60
+                );
+                mark_unavailable(&config.api_domain, tournament).await;
+            } else {
+                info!(
+                    "Failed to fetch tournament {}: {}, will skip this tournament",
+                    tournament, e
+                );
+            }
+            Err(e)
+        }
+    }
+}
+
 /// Determines which tournaments are active by checking all tournament types in parallel.
 /// Uses the API's nextGameDate to determine when tournaments transition.
 /// Returns both the active tournaments and cached API responses to avoid double-fetching.
-/// - Fetches all tournament data simultaneously for better performance
+/// - During July-August, checks practice games first and skips the regular
+///   season request when practice games exist on the date
+/// - Otherwise fetches all tournament data simultaneously for better performance
 /// - Processes results in priority order (preseason -> regular -> playoffs -> playout -> qualifications)
 /// - This naturally handles tournament transitions using API data
 pub async fn determine_active_tournaments(
@@ -297,9 +343,6 @@ pub async fn determine_active_tournaments(
     config: &Config,
     date: &str,
 ) -> Result<(Vec<&'static str>, HashMap<String, ScheduleResponse>), AppError> {
-    // Import fetch function from core module
-    use super::fetch_utils::fetch_with_retries;
-
     info!(
         "Determining active tournaments for date: {} using API nextGameDate logic",
         date
@@ -368,50 +411,36 @@ pub async fn determine_active_tournaments(
         }
     }
 
-    // Create parallel futures for filtered tournament checks to improve performance
+    let mut results: Vec<Result<(&'static str, ScheduleResponse), AppError>> =
+        Vec::with_capacity(checkable_candidates.len());
+
+    // July-August: practice games are the only games being played (the
+    // regular season starts in September, playoffs ended in spring), so check
+    // valmistavat_ottelut first and skip the runkosarja request entirely when
+    // practice games exist on this date. Not applied in September, when the
+    // regular season starts while the last practice games may still be
+    // played, nor in May-June, when the playoff tournaments are candidates.
+    if super::date_logic::is_preseason_only_month(month)
+        && checkable_candidates.contains(&"valmistavat_ottelut")
+    {
+        let practice_result = check_tournament(client, config, "valmistavat_ottelut", date).await;
+        let has_practice_games = matches!(&practice_result, Ok((_, r)) if !r.games.is_empty());
+        results.push(practice_result);
+        checkable_candidates.retain(|&t| t != "valmistavat_ottelut");
+        if has_practice_games {
+            info!(
+                "Practice games found on {date} (month {month} is preseason-only), skipping regular season check"
+            );
+            checkable_candidates.clear();
+        }
+    }
+
+    // Check the remaining tournaments in parallel
     let fetch_futures: Vec<_> = checkable_candidates
         .iter()
-        .map(|&tournament| {
-            let url = build_tournament_url(&config.api_domain, tournament, date);
-            let tournament_name = tournament;
-            let api_domain = config.api_domain.clone();
-
-            // Secondary tournament endpoints return 502 until published;
-            // retrying those aggressively only risks rate limiting.
-            let max_retries = if tournament_name == "runkosarja" {
-                crate::constants::retry::MAX_ATTEMPTS
-            } else {
-                crate::constants::retry::SECONDARY_TOURNAMENT_MAX_ATTEMPTS
-            };
-
-            async move {
-                info!("Checking tournament: {tournament_name}");
-                match fetch_with_retries::<ScheduleResponse>(client, &url, max_retries).await {
-                    Ok(response) => Ok((tournament_name, response)),
-                    Err(e) => {
-                        if tournament_name != "runkosarja" && is_unavailability_error(&e) {
-                            warn!(
-                                "Tournament {} endpoint unavailable ({}), skipping it for the next {} minutes",
-                                tournament_name,
-                                e,
-                                crate::constants::cache_ttl::TOURNAMENT_UNAVAILABLE_SECONDS / 60
-                            );
-                            mark_unavailable(&api_domain, tournament_name).await;
-                        } else {
-                            info!(
-                                "Failed to fetch tournament {}: {}, will skip this tournament",
-                                tournament_name, e
-                            );
-                        }
-                        Err(e)
-                    }
-                }
-            }
-        })
+        .map(|&tournament| check_tournament(client, config, tournament, date))
         .collect();
-
-    // Execute all tournament checks in parallel
-    let results = futures::future::join_all(fetch_futures).await;
+    results.extend(futures::future::join_all(fetch_futures).await);
 
     let mut active: Vec<&'static str> = Vec::with_capacity(tournament_candidates.len());
     let mut cached_responses: HashMap<String, ScheduleResponse> = HashMap::new();
@@ -505,6 +534,66 @@ mod tests {
         assert!(!is_marked_unavailable("https://domain-b.test", "valmistavat_ottelut").await);
         // Different tournament on the same domain is unaffected
         assert!(!is_marked_unavailable("https://domain-a.test", "playoffs").await);
+    }
+
+    #[test]
+    fn test_month_windows_follow_liiga_calendar() {
+        // Practice games (valmistavat_ottelut) are played in August and can
+        // spill into early September, where the regular season also starts:
+        // both months must poll both tournaments
+        for month in [8, 9] {
+            let tournaments = determine_tournaments_for_month(month);
+            assert!(
+                tournaments.contains(&TournamentType::ValmistavatOttelut),
+                "month {month} must include valmistavat_ottelut"
+            );
+            assert!(
+                tournaments.contains(&TournamentType::Runkosarja),
+                "month {month} must include runkosarja"
+            );
+        }
+
+        // October-February: the regular season is the only ongoing tournament
+        for month in [10, 11, 12, 1, 2] {
+            assert_eq!(
+                determine_tournaments_for_month(month),
+                vec![TournamentType::Runkosarja],
+                "month {month} must poll only runkosarja"
+            );
+        }
+
+        // Spring: playoffs, playout, and qualifications join runkosarja
+        for month in [3, 4] {
+            let tournaments = determine_tournaments_for_month(month);
+            assert!(
+                tournaments.contains(&TournamentType::Playoffs),
+                "month {month} must include playoffs"
+            );
+            assert!(
+                tournaments.contains(&TournamentType::Runkosarja),
+                "month {month} must include runkosarja"
+            );
+        }
+    }
+
+    #[test]
+    fn test_fallback_tournament_list_follows_liiga_calendar() {
+        // September: preseason may still trickle in while the regular season starts
+        let september = build_tournament_list_fallback("2026-09-05");
+        assert!(september.contains(&"valmistavat_ottelut"));
+        assert!(september.contains(&"runkosarja"));
+
+        // August: practice games plus the (not yet started) regular season
+        let august = build_tournament_list_fallback("2026-08-14");
+        assert!(august.contains(&"valmistavat_ottelut"));
+        assert!(august.contains(&"runkosarja"));
+        assert!(!august.contains(&"playoffs"));
+
+        // October: regular season only
+        assert_eq!(
+            build_tournament_list_fallback("2026-10-14"),
+            vec!["runkosarja"]
+        );
     }
 
     #[test]

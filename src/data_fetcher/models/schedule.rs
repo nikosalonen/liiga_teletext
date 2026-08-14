@@ -1,6 +1,25 @@
 use super::goals::GoalEvent;
 use serde::{Deserialize, Serialize};
 
+/// The API schema declares `timeOut` as string|null, but its actual runtime
+/// type is unverified (observed values are always null). Accept any JSON value
+/// so a surprise here can never fail deserialization of the whole response.
+fn lenient_time_out<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|v| match v {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(s) => Some(s),
+        other => {
+            // Signal that the API drifted from its declared schema
+            tracing::debug!("timeOut had unexpected JSON type, coercing to string: {other}");
+            Some(other.to_string())
+        }
+    }))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ScheduleTeam {
     #[serde(rename = "teamId")]
@@ -10,8 +29,8 @@ pub struct ScheduleTeam {
     #[serde(rename = "teamName")]
     pub team_name: Option<String>,
     pub goals: i32,
-    #[serde(rename = "timeOut", default)]
-    pub time_out: Option<i32>,
+    #[serde(rename = "timeOut", default, deserialize_with = "lenient_time_out")]
+    pub time_out: Option<String>,
     #[serde(rename = "powerplayInstances", default)]
     pub powerplay_instances: i32,
     #[serde(rename = "powerplayGoals", default)]
@@ -223,6 +242,20 @@ mod tests {
         assert_eq!(team.ranking, None);
         assert_eq!(team.game_start_date_time, None);
         assert!(team.goal_events.is_empty());
+    }
+
+    #[test]
+    fn test_schedule_team_time_out_accepts_string_number_and_null() {
+        // The API schema declares timeOut as string|null
+        let team: ScheduleTeam = serde_json::from_str(r#"{"goals": 0, "timeOut": "30"}"#).unwrap();
+        assert_eq!(team.time_out, Some("30".to_string()));
+
+        // A numeric value must not fail the whole response either
+        let team: ScheduleTeam = serde_json::from_str(r#"{"goals": 0, "timeOut": 2}"#).unwrap();
+        assert_eq!(team.time_out, Some("2".to_string()));
+
+        let team: ScheduleTeam = serde_json::from_str(r#"{"goals": 0, "timeOut": null}"#).unwrap();
+        assert_eq!(team.time_out, None);
     }
 
     #[test]
