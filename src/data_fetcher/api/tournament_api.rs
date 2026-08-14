@@ -76,6 +76,46 @@ pub(super) fn should_use_this_date(
     }
 }
 
+/// Picks the best `previousGameDate` hint from a set of tournament responses:
+/// the latest hinted date that is still strictly before the current date.
+/// Hints are parsed before comparison — string comparison would let malformed
+/// API dates (unpadded or outright garbage) through in the wrong direction —
+/// and the winner is returned in canonical YYYY-MM-DD form.
+pub(super) fn best_previous_game_date(
+    responses: &HashMap<String, ScheduleResponse>,
+    current_date: &str,
+) -> Option<String> {
+    let current = chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d").ok()?;
+    responses
+        .values()
+        .filter_map(|response| response.previous_game_date.as_deref())
+        .filter_map(|hint| chrono::NaiveDate::parse_from_str(hint, "%Y-%m-%d").ok())
+        .filter(|hint| *hint < current)
+        .max()
+        .map(|hint| hint.format("%Y-%m-%d").to_string())
+}
+
+/// Picks the best `nextGameDate` hint from a set of tournament responses:
+/// the earliest hinted date that is strictly after the current date.
+/// Same parsing and canonicalization as [`best_previous_game_date`].
+///
+/// Unlike [`should_use_this_date`], this deliberately applies no runkosarja
+/// preference: for date navigation the user wants the nearest date with any
+/// games, not the fetcher's tournament-transition heuristic.
+pub(super) fn best_next_game_date(
+    responses: &HashMap<String, ScheduleResponse>,
+    current_date: &str,
+) -> Option<String> {
+    let current = chrono::NaiveDate::parse_from_str(current_date, "%Y-%m-%d").ok()?;
+    responses
+        .values()
+        .filter_map(|response| response.next_game_date.as_deref())
+        .filter_map(|hint| chrono::NaiveDate::parse_from_str(hint, "%Y-%m-%d").ok())
+        .filter(|hint| *hint > current)
+        .min()
+        .map(|hint| hint.format("%Y-%m-%d").to_string())
+}
+
 /// Determines the appropriate date to return based on whether games were found.
 /// If games were found on a different date than the original (earliest_date is set),
 /// returns that date. Otherwise returns the original date.

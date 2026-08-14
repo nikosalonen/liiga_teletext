@@ -100,9 +100,8 @@ fn should_discard_for_date_mismatch(current_date: &Option<String>, fetched_date:
 /// allowing the UI to animate the loading indicator while waiting.
 async fn fetch_games_with_timeout(
     current_date: Option<String>,
-    timeout_seconds: u64,
+    timeout_duration: Duration,
 ) -> (Vec<GameData>, bool, String, bool) {
-    let timeout_duration = Duration::from_secs(timeout_seconds);
     let fetch_future = fetch_liiga_data(current_date.clone());
 
     match tokio::time::timeout(timeout_duration, fetch_future).await {
@@ -116,7 +115,8 @@ async fn fetch_games_with_timeout(
         }
         Err(_) => {
             tracing::warn!(
-                "Auto-refresh timeout after {timeout_seconds}s, continuing with existing data"
+                "Auto-refresh timeout after {}s, continuing with existing data",
+                timeout_duration.as_secs()
             );
             (Vec::new(), true, String::new(), true)
         }
@@ -177,29 +177,15 @@ type FetchResult = (Vec<GameData>, bool, String, bool);
 
 async fn animate_during_fetch(
     state: &mut InteractiveState,
-    mut handle: tokio::task::JoinHandle<FetchResult>,
+    handle: tokio::task::JoinHandle<FetchResult>,
 ) -> FetchResult {
-    let mut stdout = std::io::stdout();
-
-    loop {
-        tokio::select! {
-            result = &mut handle => {
-                match result {
-                    Ok(value) => return value,
-                    Err(join_error) => {
-                        tracing::error!("Background fetch task failed: {join_error}");
-                        return (Vec::new(), true, String::new(), true);
-                    }
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                if let Some(page) = state.current_page_mut()
-                    && page.is_auto_refresh_indicator_active()
-                {
-                    page.update_auto_refresh_animation();
-                    let _ = page.render_buffered(&mut stdout);
-                }
-            }
+    match super::indicators::animate_page_during_task(&mut state.ui.current_page, handle, None)
+        .await
+    {
+        Ok(value) => value,
+        Err(join_error) => {
+            tracing::error!("Background fetch task failed: {join_error}");
+            (Vec::new(), true, String::new(), true)
         }
     }
 }
@@ -464,7 +450,8 @@ impl RefreshCoordinator {
         if !self.bracket_checked {
             self.bracket_checked = true;
             if let Ok(config) = crate::config::Config::load().await {
-                let timeout = std::time::Duration::from_secs(config.http_timeout_seconds + 5);
+                let timeout =
+                    crate::constants::http_timeout_with_margin(config.http_timeout_seconds);
                 if let Ok(Ok(bracket)) = tokio::time::timeout(
                     timeout,
                     crate::data_fetcher::api::bracket_api::fetch_playoff_bracket(&config),
@@ -555,12 +542,17 @@ impl RefreshCoordinator {
             state.clear_render_flag();
         }
 
-        // Spawn the network fetch as a background task so the spinner can animate
+        // Spawn the network fetch as a background task so the spinner can animate.
+        // Honor the configured HTTP timeout (plus safety margin) so the HTTP
+        // layer reports the actual error before this outer timeout fires.
         let current_date_for_fetch = state.current_date().clone();
-        let timeout_seconds = crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5;
+        let http_timeout_seconds = crate::config::Config::load()
+            .await
+            .map(|config| config.http_timeout_seconds)
+            .unwrap_or(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS);
         let fetch_handle = tokio::spawn(fetch_games_with_timeout(
             current_date_for_fetch,
-            timeout_seconds,
+            crate::constants::http_timeout_with_margin(http_timeout_seconds),
         ));
 
         // Animate the spinner while waiting for the fetch to complete
@@ -644,6 +636,9 @@ impl RefreshCoordinator {
         let is_auto_refresh = state.current_page().is_some_and(|p| p.is_standings_page())
             && last_standings_hash.is_some();
 
+        // Loading page shown (and animated) during initial loads; auto-refreshes
+        // animate the subtle spinner on the existing page instead.
+        let mut loading_page_slot: Option<TeletextPage> = None;
         if is_auto_refresh {
             // Show subtle spinner on existing page instead of full loading screen
             if let Some(page) = state.current_page_mut() {
@@ -659,7 +654,8 @@ impl RefreshCoordinator {
             }
             state.clear_render_flag();
         } else {
-            // Show loading indicator immediately so the UI feels responsive
+            // Show loading indicator immediately so the UI feels responsive;
+            // the animated spinner line layers on top after the grace period
             let mut loading_page = TeletextPage::new(
                 222,
                 "JÄÄKIEKKO".to_string(),
@@ -675,6 +671,7 @@ impl RefreshCoordinator {
             if let Err(e) = loading_page.render_buffered(&mut stdout) {
                 tracing::warn!("Failed to render standings loading page: {e}");
             }
+            loading_page_slot = Some(loading_page);
         }
 
         let app_config = match crate::config::Config::load().await {
@@ -688,29 +685,46 @@ impl RefreshCoordinator {
             }
         };
         let http_timeout = app_config.http_timeout_seconds;
-        // Safety margin above the HTTP client timeout so reqwest reports the actual error
-        let timeout_duration = Duration::from_secs(http_timeout + 5);
-        let fetch_future = fetch_standings(&app_config, live_mode);
+        let timeout_duration = crate::constants::http_timeout_with_margin(http_timeout);
 
-        let (mut standings, playoffs_lines, had_error) = match tokio::time::timeout(
-            timeout_duration,
-            fetch_future,
-        )
-        .await
-        {
-            Ok(Ok((standings, playoffs_lines))) => {
+        // Fetch in a background task so the spinner animates while waiting
+        let fetch_handle = tokio::task::spawn(async move {
+            tokio::time::timeout(timeout_duration, fetch_standings(&app_config, live_mode)).await
+        });
+        let fetch_result = if is_auto_refresh {
+            super::indicators::animate_page_during_task(
+                &mut state.ui.current_page,
+                fetch_handle,
+                None,
+            )
+            .await
+        } else {
+            super::indicators::animate_page_during_task(
+                &mut loading_page_slot,
+                fetch_handle,
+                Some("Haetaan sarjataulukkoa..."),
+            )
+            .await
+        };
+
+        let (mut standings, playoffs_lines, had_error) = match fetch_result {
+            Ok(Ok(Ok((standings, playoffs_lines)))) => {
                 tracing::info!("Standings fetched: {} teams", standings.len());
                 (standings, playoffs_lines, false)
             }
-            Ok(Err(e)) => {
+            Ok(Ok(Err(e))) => {
                 tracing::error!("Failed to fetch standings: {e}");
                 (vec![], vec![], true)
             }
-            Err(_) => {
+            Ok(Err(_)) => {
                 tracing::error!(
                     "Standings fetch timed out after {}s (safety timeout, HTTP client should have timed out at {http_timeout}s)",
-                    http_timeout + 5
+                    timeout_duration.as_secs()
                 );
+                (vec![], vec![], true)
+            }
+            Err(join_error) => {
+                tracing::error!("Standings fetch task failed: {join_error}");
                 (vec![], vec![], true)
             }
         };
@@ -829,6 +843,9 @@ impl RefreshCoordinator {
         let last_bracket_hash = state.change_detection.last_bracket_hash();
         let is_auto_refresh = state.current_page().is_some() && last_bracket_hash.is_some();
 
+        // Loading page shown (and animated) during initial loads; auto-refreshes
+        // animate the subtle spinner on the existing page instead.
+        let mut loading_page_slot: Option<TeletextPage> = None;
         if is_auto_refresh {
             if let Some(page) = state.current_page_mut() {
                 page.show_auto_refresh_indicator();
@@ -842,6 +859,8 @@ impl RefreshCoordinator {
             }
             state.clear_render_flag();
         } else {
+            // Immediate feedback; the animated spinner line layers on top
+            // after the grace period
             let mut loading_page = TeletextPage::new(
                 223,
                 "JÄÄKIEKKO".to_string(),
@@ -857,6 +876,7 @@ impl RefreshCoordinator {
             if let Err(e) = loading_page.render_buffered(&mut stdout) {
                 tracing::warn!("Failed to render bracket loading page: {e}");
             }
+            loading_page_slot = Some(loading_page);
         }
 
         let app_config = match crate::config::Config::load().await {
@@ -870,27 +890,49 @@ impl RefreshCoordinator {
             }
         };
 
-        let http_timeout = app_config.http_timeout_seconds;
-        let timeout_duration = std::time::Duration::from_secs(http_timeout + 5);
+        let timeout_duration =
+            crate::constants::http_timeout_with_margin(app_config.http_timeout_seconds);
 
-        let bracket_result = tokio::time::timeout(
-            timeout_duration,
-            crate::data_fetcher::api::bracket_api::fetch_playoff_bracket(&app_config),
-        )
-        .await;
+        // Fetch in a background task so the spinner animates while waiting
+        let fetch_handle = tokio::task::spawn(async move {
+            tokio::time::timeout(
+                timeout_duration,
+                crate::data_fetcher::api::bracket_api::fetch_playoff_bracket(&app_config),
+            )
+            .await
+        });
+        let bracket_result = if is_auto_refresh {
+            super::indicators::animate_page_during_task(
+                &mut state.ui.current_page,
+                fetch_handle,
+                None,
+            )
+            .await
+        } else {
+            super::indicators::animate_page_during_task(
+                &mut loading_page_slot,
+                fetch_handle,
+                Some("Haetaan pudotuspelejä..."),
+            )
+            .await
+        };
 
         let (bracket, had_error) = match bracket_result {
-            Ok(Ok(bracket)) => {
+            Ok(Ok(Ok(bracket))) => {
                 tracing::info!("Bracket fetched: has_data={}", bracket.has_data);
                 state.navigation.has_bracket_data = bracket.has_data;
                 (Some(bracket), false)
             }
-            Ok(Err(e)) => {
+            Ok(Ok(Err(e))) => {
                 tracing::error!("Failed to fetch bracket: {e}");
                 (None, true)
             }
-            Err(_) => {
+            Ok(Err(_)) => {
                 tracing::error!("Bracket fetch timed out");
+                (None, true)
+            }
+            Err(join_error) => {
+                tracing::error!("Bracket fetch task failed: {join_error}");
                 (None, true)
             }
         };

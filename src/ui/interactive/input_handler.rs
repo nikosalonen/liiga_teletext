@@ -11,7 +11,6 @@ use crate::error::AppError;
 use crate::teletext_ui::TeletextPage;
 use chrono::{Datelike, Local, NaiveDate, Utc};
 use crossterm::event::{self, KeyCode, KeyEventKind, KeyModifiers};
-use std::io::stdout;
 use std::time::{Duration, Instant};
 
 use super::state_manager::ViewMode;
@@ -85,8 +84,11 @@ fn get_target_date_for_navigation(current_date: &Option<String>) -> String {
 /// Checks if a date would require historical/schedule endpoint (from previous season).
 /// This prevents navigation to very old games via arrow keys, but allows reasonable historical access.
 fn would_be_previous_season(date: &str) -> bool {
-    let now = Utc::now().with_timezone(&Local);
+    would_be_previous_season_at(date, Utc::now().with_timezone(&Local))
+}
 
+/// [`would_be_previous_season`] with an injected "now" for testability.
+fn would_be_previous_season_at(date: &str, now: chrono::DateTime<Local>) -> bool {
     let date_parts: Vec<&str> = date.split('-').collect();
     if date_parts.len() < 2 {
         return false;
@@ -106,13 +108,16 @@ fn would_be_previous_season(date: &str) -> bool {
 
     // For dates within the past 2 years, use more nuanced season logic
     if date_year == current_year {
-        // Same year - check if we're trying to go to off-season of previous season
-        // Hockey season: September-February (regular), March-May (playoffs/playout)
-        // Off-season: June-August
+        // Same year - check if we're trying to go to the true off-season.
+        // Hockey season: September-February (regular), March-May (playoffs/playout),
+        // preseason practice games (valmistavat_ottelut) in August-early September.
+        // Off-season with no games at all: June-July.
 
-        // If we're in new regular season (September-December) and date is from off-season
-        // (June-August), it's from the previous season
-        if (9..=12).contains(&current_month) && (6..=8).contains(&date_month) {
+        // If we're in the new regular season (September-December) and the date is
+        // from the gameless off-season (June-July), block it. August stays
+        // navigable: its practice games belong to the season that starts in
+        // September, i.e. the current one.
+        if (9..=12).contains(&current_month) && (6..=7).contains(&date_month) {
             return true;
         }
     } else if date_year == current_year - 1 {
@@ -120,7 +125,8 @@ fn would_be_previous_season(date: &str) -> bool {
         // Only block if we're trying to access very old off-season games
 
         // If we're currently in the new season (September+) and trying to access
-        // off-season games from the previous year (June-August), block it
+        // off-season/preseason games from the previous year (June-August) - which
+        // belong to the season before the current one - block it
         if current_month >= 9 && (6..=8).contains(&date_month) {
             return true;
         }
@@ -135,23 +141,27 @@ fn would_be_previous_season(date: &str) -> bool {
 const MAX_DATE_SEARCH_DURATION: Duration = Duration::from_secs(20);
 
 /// Probes candidate dates in order until `probe` reports a hit, giving up
-/// once the time budget is exhausted.
+/// once the time budget is exhausted. Each probe receives a timeout capped
+/// at the remaining budget, so a single slow probe cannot block past the
+/// budget (the search blocks the event loop).
 async fn search_dates_with_budget<F, Fut>(
     candidates: impl Iterator<Item = String>,
     budget: Duration,
+    probe_timeout: Duration,
     mut probe: F,
 ) -> Option<String>
 where
-    F: FnMut(String) -> Fut,
+    F: FnMut(String, Duration) -> Fut,
     Fut: std::future::Future<Output = Option<String>>,
 {
     let started = tokio::time::Instant::now();
     for date in candidates {
-        if started.elapsed() >= budget {
+        let remaining = budget.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
             tracing::warn!("Date search time budget exhausted, giving up");
             return None;
         }
-        if let Some(hit) = probe(date).await {
+        if let Some(hit) = probe(date, probe_timeout.min(remaining)).await {
             return Some(hit);
         }
     }
@@ -172,6 +182,34 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
         current_date
     );
 
+    let search_started = tokio::time::Instant::now();
+    let probe_timeout = probe_timeout_duration().await;
+    let remaining_budget = || MAX_DATE_SEARCH_DURATION.saturating_sub(search_started.elapsed());
+
+    // Fast path: the current date's (usually cached) schedule responses carry
+    // the API's previousGameDate hint — jump straight there instead of probing
+    // every intermediate empty day with a full fetch each. The hint fetch and
+    // probe share the scan's time budget so the whole search stays bounded.
+    if let Ok(Some(hint)) = tokio::time::timeout(
+        remaining_budget(),
+        crate::data_fetcher::api::fetch_previous_game_date_hint(current_date),
+    )
+    .await
+        && !would_be_previous_season(&hint)
+    {
+        tracing::info!("Trying previousGameDate hint: {hint}");
+        let hit = probe_date(
+            hint,
+            probe_timeout.min(remaining_budget()),
+            |requested, fetched| (fetched == requested).then(|| requested.to_string()),
+        )
+        .await;
+        if hit.is_some() {
+            return hit;
+        }
+        tracing::info!("previousGameDate hint had no usable games, falling back to scan");
+    }
+
     // Search up to 30 days in the past, stopping at the previous season
     // boundary and giving up once the time budget is spent.
     let candidates = (1..=30)
@@ -191,14 +229,19 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
             !previous_season
         });
 
-    let result = search_dates_with_budget(candidates, MAX_DATE_SEARCH_DURATION, |date_string| {
-        // Only a result for the probed date itself counts as a hit here:
-        // the fetcher's fallback can jump ahead, but a later date is in the
-        // wrong direction for a backward search.
-        probe_date(date_string, |requested, fetched| {
-            (fetched == requested).then(|| requested.to_string())
-        })
-    })
+    let result = search_dates_with_budget(
+        candidates,
+        remaining_budget(),
+        probe_timeout,
+        |date_string, timeout| {
+            // Only a result for the probed date itself counts as a hit here:
+            // the fetcher's fallback can jump ahead, but a later date is in the
+            // wrong direction for a backward search.
+            probe_date(date_string, timeout, |requested, fetched| {
+                (fetched == requested).then(|| requested.to_string())
+            })
+        },
+    )
     .await;
 
     if result.is_none() {
@@ -210,14 +253,24 @@ async fn find_previous_date_with_games(current_date: &str) -> Option<String> {
     result
 }
 
+/// Per-probe timeout: the configured HTTP timeout plus a safety margin so the
+/// HTTP layer reports the actual error before the outer timeout fires. Falls
+/// back to the default when the config cannot be loaded.
+async fn probe_timeout_duration() -> Duration {
+    let timeout_seconds = crate::config::Config::load()
+        .await
+        .map(|config| config.http_timeout_seconds)
+        .unwrap_or(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS);
+    crate::constants::http_timeout_with_margin(timeout_seconds)
+}
+
 /// Fetches games for one candidate date and applies `accept` to decide
 /// whether the (possibly fallback-shifted) result concludes the search.
-async fn probe_date<A>(date_string: String, accept: A) -> Option<String>
+async fn probe_date<A>(date_string: String, timeout_duration: Duration, accept: A) -> Option<String>
 where
     A: Fn(&str, &str) -> Option<String>,
 {
     let fetch_future = fetch_liiga_data(Some(date_string.clone()));
-    let timeout_duration = Duration::from_secs(crate::constants::DEFAULT_HTTP_TIMEOUT_SECONDS + 5);
 
     match tokio::time::timeout(timeout_duration, fetch_future).await {
         Ok(Ok((games, fetched_date))) if !games.is_empty() => {
@@ -270,6 +323,36 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
         current_date
     );
 
+    let search_started = tokio::time::Instant::now();
+    let probe_timeout = probe_timeout_duration().await;
+    let remaining_budget = || MAX_DATE_SEARCH_DURATION.saturating_sub(search_started.elapsed());
+
+    // Fast path: the current date's (usually cached) schedule responses carry
+    // the API's nextGameDate hint — jump straight there instead of probing
+    // every intermediate empty day with a full fetch each. (The scan's first
+    // candidate would usually also resolve this via the fetcher's forward
+    // fallback, but the hint skips that extra probe when the hint fetch is
+    // served from cache.) The hint fetch and probe share the scan's time
+    // budget so the whole search stays bounded.
+    if let Ok(Some(hint)) = tokio::time::timeout(
+        remaining_budget(),
+        crate::data_fetcher::api::fetch_next_game_date_hint(current_date),
+    )
+    .await
+    {
+        tracing::info!("Trying nextGameDate hint: {hint}");
+        let hit = probe_date(
+            hint,
+            probe_timeout.min(remaining_budget()),
+            forward_search_hit,
+        )
+        .await;
+        if hit.is_some() {
+            return hit;
+        }
+        tracing::info!("nextGameDate hint had no usable games, falling back to scan");
+    }
+
     // Search up to 60 days in the future (handles off-season periods),
     // giving up once the time budget is spent.
     let candidates = (1..=60).filter_map(|days_ahead| {
@@ -278,9 +361,12 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
             .map(|d| d.format("%Y-%m-%d").to_string())
     });
 
-    let result = search_dates_with_budget(candidates, MAX_DATE_SEARCH_DURATION, |date_string| {
-        probe_date(date_string, forward_search_hit)
-    })
+    let result = search_dates_with_budget(
+        candidates,
+        remaining_budget(),
+        probe_timeout,
+        |date_string, timeout| probe_date(date_string, timeout, forward_search_hit),
+    )
     .await;
 
     if result.is_none() {
@@ -407,21 +493,28 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
             tracing::debug!("Current date state: {:?}", params.current_date);
             let target_date = get_target_date_for_navigation(params.current_date);
 
-            // Show loading indicator
-            if let Some(page) = params.current_page.as_mut() {
-                page.show_loading("Etsitään edellisiä otteluita...".to_string());
-                // Force immediate render to show loading indicator
-                let mut stdout = stdout();
-                let _ = page.render_buffered(&mut stdout);
-                *params.needs_render = true;
-            }
-
             tracing::info!(
                 "Searching for previous date with games from: {}",
                 target_date
             );
 
-            let result = find_previous_date_with_games(&target_date).await;
+            // Search in a background task; a loading spinner appears (and
+            // animates) only if the search outlasts the grace period
+            let search_handle =
+                tokio::task::spawn(
+                    async move { find_previous_date_with_games(&target_date).await },
+                );
+            let result = super::indicators::animate_page_during_task_with_grace(
+                params.current_page,
+                search_handle,
+                Some("Etsitään edellisiä otteluita..."),
+                super::indicators::SEARCH_LOADING_GRACE,
+            )
+            .await
+            .unwrap_or_else(|join_error| {
+                tracing::error!("Date search task failed: {join_error}");
+                None
+            });
 
             if let Some(prev_date) = result {
                 *params.current_date = Some(prev_date.clone());
@@ -438,9 +531,12 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
                 tracing::warn!("No previous date with games found");
             }
 
-            // Hide loading indicator
-            if let Some(page) = params.current_page.as_mut() {
+            // Hide the loading indicator and repaint to erase it, if it was shown
+            if let Some(page) = params.current_page.as_mut()
+                && page.is_loading_indicator_active()
+            {
                 page.hide_loading();
+                *params.needs_render = true;
             }
             *params.last_date_navigation = Instant::now();
         }
@@ -451,18 +547,23 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
             tracing::debug!("Current date state: {:?}", params.current_date);
             let target_date = get_target_date_for_navigation(params.current_date);
 
-            // Show loading indicator
-            if let Some(page) = params.current_page.as_mut() {
-                page.show_loading("Etsitään seuraavia otteluita...".to_string());
-                // Force immediate render to show loading indicator
-                let mut stdout = stdout();
-                let _ = page.render_buffered(&mut stdout);
-                *params.needs_render = true;
-            }
-
             tracing::info!("Searching for next date with games from: {target_date}");
 
-            let result = find_next_date_with_games(&target_date).await;
+            // Search in a background task; a loading spinner appears (and
+            // animates) only if the search outlasts the grace period
+            let search_handle =
+                tokio::task::spawn(async move { find_next_date_with_games(&target_date).await });
+            let result = super::indicators::animate_page_during_task_with_grace(
+                params.current_page,
+                search_handle,
+                Some("Etsitään seuraavia otteluita..."),
+                super::indicators::SEARCH_LOADING_GRACE,
+            )
+            .await
+            .unwrap_or_else(|join_error| {
+                tracing::error!("Date search task failed: {join_error}");
+                None
+            });
 
             if let Some(next_date) = result {
                 *params.current_date = Some(next_date.clone());
@@ -479,9 +580,12 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
                 tracing::warn!("No next date with games found");
             }
 
-            // Hide loading indicator
-            if let Some(page) = params.current_page.as_mut() {
+            // Hide the loading indicator and repaint to erase it, if it was shown
+            if let Some(page) = params.current_page.as_mut()
+                && page.is_loading_indicator_active()
+            {
                 page.hide_loading();
+                *params.needs_render = true;
             }
             *params.last_date_navigation = Instant::now();
         }
@@ -598,6 +702,104 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
 mod tests {
     use super::*;
 
+    fn local_datetime(date: &str) -> chrono::DateTime<Local> {
+        use chrono::TimeZone;
+        let naive = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        Local.from_local_datetime(&naive).unwrap()
+    }
+
+    #[test]
+    fn test_august_practice_games_belong_to_current_season() {
+        // Practice games (valmistavat_ottelut) are played in August and belong
+        // to the season that starts in September: navigating back to them from
+        // the regular season must stay allowed.
+        for now in ["2026-09-15", "2026-10-15", "2026-12-15"] {
+            assert!(
+                !would_be_previous_season_at("2026-08-20", local_datetime(now)),
+                "August practice games should be reachable from {now}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_gameless_offseason_is_previous_season() {
+        // June-July of the same year have no games; from the new regular
+        // season they count as the previous season's territory
+        assert!(would_be_previous_season_at(
+            "2026-07-10",
+            local_datetime("2026-09-15")
+        ));
+        assert!(would_be_previous_season_at(
+            "2026-06-10",
+            local_datetime("2026-11-15")
+        ));
+    }
+
+    #[test]
+    fn test_previous_year_preseason_is_previous_season() {
+        // August of the PREVIOUS year belongs to the season before the current
+        // one once the new season has started
+        assert!(would_be_previous_season_at(
+            "2025-08-20",
+            local_datetime("2026-10-15")
+        ));
+        // ...but while the current season is still running (before September),
+        // the previous year's August preseason opened this same season
+        assert!(!would_be_previous_season_at(
+            "2026-08-20",
+            local_datetime("2027-02-15")
+        ));
+    }
+
+    #[test]
+    fn test_dates_older_than_two_years_are_previous_season() {
+        assert!(would_be_previous_season_at(
+            "2024-05-01",
+            local_datetime("2026-08-14")
+        ));
+    }
+
+    #[test]
+    fn test_malformed_date_is_not_previous_season() {
+        assert!(!would_be_previous_season_at(
+            "not-a-date",
+            local_datetime("2026-08-14")
+        ));
+        assert!(!would_be_previous_season_at(
+            "2026",
+            local_datetime("2026-08-14")
+        ));
+    }
+
+    /// A single slow probe must not block past the search budget: its timeout
+    /// is capped at the remaining budget, and once the budget is spent no
+    /// further probes run.
+    #[tokio::test(start_paused = true)]
+    async fn test_search_probe_timeout_capped_by_remaining_budget() {
+        let mut granted_timeouts = Vec::new();
+        let result = search_dates_with_budget(
+            ["2026-08-28".to_string(), "2026-08-29".to_string()].into_iter(),
+            Duration::from_secs(10),
+            Duration::from_secs(35),
+            |_, timeout| {
+                granted_timeouts.push(timeout);
+                async move {
+                    // Consume the entire allowance without finding anything
+                    tokio::time::sleep(timeout).await;
+                    None
+                }
+            },
+        )
+        .await;
+
+        assert_eq!(result, None);
+        // First probe was capped to the 10s budget; the second never ran
+        assert_eq!(granted_timeouts, vec![Duration::from_secs(10)]);
+    }
+
     #[test]
     fn test_forward_search_hit_accepts_requested_date() {
         assert_eq!(
@@ -626,7 +828,8 @@ mod tests {
         let result = search_dates_with_budget(
             (1..=10).map(|i| format!("2026-08-{i:02}")),
             Duration::from_secs(20),
-            |date| async move { (date == "2026-08-03").then_some(date) },
+            Duration::from_secs(15),
+            |date, _timeout| async move { (date == "2026-08-03").then_some(date) },
         )
         .await;
         assert_eq!(result, Some("2026-08-03".to_string()));
@@ -640,7 +843,8 @@ mod tests {
         let result = search_dates_with_budget(
             (1..=100).map(|i| format!("date-{i}")),
             Duration::from_secs(20),
-            |_date| {
+            Duration::from_secs(15),
+            |_date, _timeout| {
                 probes.fetch_add(1, Ordering::SeqCst);
                 async {
                     // Each probe simulates a slow fetch (paused tokio time).

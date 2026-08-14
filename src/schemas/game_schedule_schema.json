@@ -28,7 +28,10 @@
           "cacheUpdateDate": { "type": "string", "format": "date-time" },
           "provider": { "type": "string" },
           "stale": { "type": "boolean" },
-          "serie": { "type": "string" },
+          "serie": {
+            "type": "string",
+            "description": "String on this endpoint (e.g. \"RUNKOSARJA\"); the season schedule endpoint (see season_schedule_schema.json) returns serie as an integer instead"
+          },
           "gameWeek": { "type": "integer" }
         }
       }

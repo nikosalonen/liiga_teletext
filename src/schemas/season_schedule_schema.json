@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hockey Season Schedule Data",
+  "description": "Response of the season schedule endpoint (/schedule?tournament=...&season=...). A flat array of games, deserialized as Vec<ScheduleApiGame>. Note that several field types differ from the games-by-date endpoint documented in game_schedule_schema.json — most notably 'serie' is an integer here but a string there.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "season", "start", "homeTeamName", "awayTeamName", "serie", "started", "ended"],
+    "properties": {
+      "id": { "type": "integer" },
+      "season": { "type": "integer" },
+      "start": {
+        "type": ["string", "null"],
+        "format": "date-time",
+        "description": "Null for unresolved playoff matchups; the app maps null to an empty string"
+      },
+      "homeTeamName": {
+        "type": ["string", "null"],
+        "description": "Null for unresolved playoff matchups; the app maps null to an empty string"
+      },
+      "awayTeamName": {
+        "type": ["string", "null"],
+        "description": "Null for unresolved playoff matchups; the app maps null to an empty string"
+      },
+      "serie": {
+        "type": "integer",
+        "description": "Integer on this endpoint, unlike the games-by-date endpoint where serie is a string (e.g. \"RUNKOSARJA\")"
+      },
+      "finishedType": { "type": ["string", "null"] },
+      "started": { "type": "boolean" },
+      "ended": { "type": "boolean" },
+      "gameTime": { "type": ["integer", "null"] },
+      "playOffPhase": { "type": ["integer", "null"] },
+      "playOffPair": { "type": ["integer", "null"] },
+      "playOffReqWins": { "type": ["integer", "null"] },
+      "homeTeamGoals": { "type": "integer" },
+      "awayTeamGoals": { "type": "integer" }
+    }
+  }
+}

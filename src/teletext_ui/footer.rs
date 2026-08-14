@@ -11,12 +11,8 @@ use crate::error::AppError;
 use crate::teletext_ui::core::get_ansi_code;
 use crate::ui::teletext::colors::*;
 use crate::ui::teletext::loading_indicator::LoadingIndicator;
-use crossterm::{
-    cursor::MoveTo,
-    execute,
-    style::{Color, Print, ResetColor, SetForegroundColor},
-};
-use std::io::{Stdout, Write};
+use crossterm::style::Color;
+use std::io::Stdout;
 
 /// Context for rendering the footer
 pub struct FooterContext<'a> {
@@ -156,9 +152,8 @@ pub fn render_footer_with_view(
 
     let mut segments = build_footer_segments(ctx);
 
-    // Right-side activity indicator reserves 3 cells
-    let indicator_width = 3;
-    let available = ctx.width.saturating_sub(indicator_width + 1);
+    // Right-side activity indicator reserves INDICATOR_WIDTH cells
+    let available = ctx.width.saturating_sub(INDICATOR_WIDTH + 1);
 
     // Drop optional plain hints if the segments don't fit the terminal width
     let total_width = |segs: &[FooterSegment]| -> usize {
@@ -213,7 +208,7 @@ pub fn render_footer_with_view(
     // Pad the gap between segments and the right indicator
     let gap = ctx
         .width
-        .saturating_sub(left_pad + visible + indicator_width);
+        .saturating_sub(left_pad + visible + INDICATOR_WIDTH);
 
     // Convert 0-based footer_y to 1-based for ANSI cursor positioning
     let footer_code = format!(
@@ -229,65 +224,48 @@ pub fn render_footer_with_view(
     Ok(())
 }
 
-/// Renders only the loading indicator area without redrawing the entire screen
-///
-/// This is used for updating loading animations without redrawing the whole page.
-///
-/// # Arguments
-/// * `stdout` - The stdout to write to
-/// * `screen_height` - The height of the terminal
-/// * `ignore_height_limit` - Whether to ignore terminal height limits
-/// * `loading_indicator` - Optional loading indicator
-///
-/// # Returns
-/// * `Result<(), AppError>` - Result indicating success or failure
-pub fn render_loading_indicator_only(
-    stdout: &mut Stdout,
-    screen_height: u16,
-    ignore_height_limit: bool,
-    loading_indicator: &Option<LoadingIndicator>,
-) -> Result<(), AppError> {
-    if ignore_height_limit {
-        // In --once mode, we don't update loading indicators
-        return Ok(());
-    }
+/// Renders the loading indicator line (spinner frame + message, centered) into
+/// the render buffer on the line directly above the footer.
+pub fn render_loading_line(
+    buffer: &mut String,
+    footer_y: usize,
+    width: usize,
+    loading: &LoadingIndicator,
+) {
+    let loading_y = footer_y.saturating_sub(1);
+    let loading_text = format!("{} {}", loading.current_frame(), loading.message());
+    let loading_width = loading_text.chars().count();
+    let left_padding = width.saturating_sub(loading_width) / 2;
+    // Pad to full width so anything else on this row (e.g. the season
+    // countdown) is fully overwritten while the loading line is active
+    let right_padding = width.saturating_sub(left_padding + loading_width);
 
-    let (width, _) = crossterm::terminal::size()?;
-    let footer_y = screen_height.saturating_sub(1);
-    let empty_y = footer_y.saturating_sub(1);
+    // Convert 0-based loading_y to 1-based for ANSI cursor positioning
+    buffer.push_str(&format!(
+        "\x1b[{};1H\x1b[38;5;{}m{}{}{}\x1b[0m",
+        loading_y + 1,
+        get_ansi_code(goal_type_fg(), 226), // Bright yellow
+        " ".repeat(left_padding),
+        loading_text,
+        " ".repeat(right_padding)
+    ));
+}
 
-    // Clear the loading indicator line first
-    execute!(
-        stdout,
-        MoveTo(0, empty_y),
-        Print(" ".repeat(width as usize))
-    )?;
+/// Width in cells of the footer's right-corner activity indicator. Shared by
+/// the full footer render and the animation-tick overlay so the animated
+/// spinner always lands on the exact cells the footer reserves for it.
+const INDICATOR_WIDTH: usize = 3;
 
-    // Show loading indicator if active
-    if let Some(loading) = loading_indicator {
-        let loading_text = format!("{} {}", loading.current_frame(), loading.message());
-        let loading_width = loading_text.chars().count();
-        let left_padding = if width as usize > loading_width {
-            (width as usize - loading_width) / 2
-        } else {
-            0
-        };
-        execute!(
-            stdout,
-            MoveTo(0, empty_y),
-            SetForegroundColor(goal_type_fg()), // Use existing color function for consistency
-            Print(format!(
-                "{space:>pad$}{text}",
-                space = "",
-                pad = left_padding,
-                text = loading_text
-            )),
-            ResetColor
-        )?;
-    }
-
-    stdout.flush()?;
-    Ok(())
+/// Renders just the footer's right-corner activity spinner cell into the
+/// buffer, matching the position `render_footer_with_view` reserves for it.
+pub fn render_corner_spinner(buffer: &mut String, footer_y: usize, width: usize, frame: &str) {
+    // Convert 0-based coordinates to 1-based for ANSI cursor positioning;
+    // the indicator occupies the footer row's last INDICATOR_WIDTH cells
+    buffer.push_str(&format!(
+        "\x1b[{};{}H\x1b[38;5;231m {frame} \x1b[0m",
+        footer_y + 1,
+        width.saturating_sub(INDICATOR_WIDTH - 1).max(1),
+    ));
 }
 
 /// Calculates the footer position based on settings and screen size
@@ -445,6 +423,35 @@ mod tests {
         // Plain optional hints are dropped before any Fastext block
         assert!(!buffer.contains("(Ei päivity)"));
         assert!(buffer.contains("s=Taulukko"));
+    }
+
+    #[test]
+    fn test_render_loading_line_contains_frame_and_message() {
+        let mut buffer = String::new();
+        let indicator = LoadingIndicator::new("Etsitään otteluita...".to_string());
+        render_loading_line(&mut buffer, 23, 80, &indicator);
+        assert!(buffer.contains("⠋"));
+        assert!(buffer.contains("Etsitään otteluita..."));
+        // Rendered on the line above the footer (0-based row 22 -> 1-based ANSI row 23)
+        assert!(buffer.contains("\x1b[23;1H"));
+    }
+
+    #[test]
+    fn test_render_corner_spinner_positions_in_footer_corner() {
+        let mut buffer = String::new();
+        render_corner_spinner(&mut buffer, 19, 80, "⠙");
+        // Footer row 19 (0-based) -> ANSI row 20; last 3 cells start at column 78
+        assert!(buffer.contains("\x1b[20;78H"));
+        assert!(buffer.contains("⠙"));
+    }
+
+    #[test]
+    fn test_render_loading_line_centers_text() {
+        let mut buffer = String::new();
+        let indicator = LoadingIndicator::new("Haetaan...".to_string());
+        render_loading_line(&mut buffer, 23, 80, &indicator);
+        // "⠋ Haetaan..." is 12 chars wide -> centered with 34 cells of left padding
+        assert!(buffer.contains(&format!("{}⠋ Haetaan...", " ".repeat(34))));
     }
 
     #[test]

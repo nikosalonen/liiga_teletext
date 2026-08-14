@@ -9,6 +9,13 @@ pub const PRESEASON_END_MONTH: u32 = 9; // September
 pub const PLAYOFFS_START_MONTH: u32 = 3; // March
 pub const PLAYOFFS_END_MONTH: u32 = 6; // June
 
+/// Months where practice games (valmistavat_ottelut) are the only games being
+/// played: after the playoff window, before the regular season starts in
+/// September. Currently July-August.
+pub fn is_preseason_only_month(month: u32) -> bool {
+    ((PLAYOFFS_END_MONTH + 1)..PRESEASON_END_MONTH).contains(&month)
+}
+
 /// Determines the date to fetch data for based on custom date or current time.
 /// Returns today's date if games should be shown today, otherwise yesterday's date.
 /// Uses UTC internally for consistent calculations, formats as local date for display.
