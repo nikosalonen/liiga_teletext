@@ -12,22 +12,21 @@ fn get_styles() -> Styles {
         .invalid(AnsiColor::Red.on_default())
 }
 
-/// Determines if the application should run in non-interactive mode
+/// Determines if the application runs without the full-screen interactive UI.
 /// Non-interactive mode is used when any of these conditions are met:
 /// - --once flag is set (run once and exit)
-/// - --compact flag is set (display games in compact format)
 /// - config operations are requested
 /// - --version flag is set
-/// - --debug mode is enabled (debug mode always runs once and exits)
+///
+/// `--compact`, `--wide` and `--debug` still open the interactive UI, so they
+/// do not count. Logging uses this to decide whether stdout is free to write to.
 pub fn is_noninteractive_mode(args: &Args) -> bool {
     args.once
-        || args.compact
         || args.new_api_domain.is_some()
         || args.new_log_file_path.is_some()
         || args.clear_log_file_path
         || args.list_config
         || args.version
-        || args.debug
 }
 
 /// Finnish Hockey League (Liiga) Teletext Viewer
@@ -125,4 +124,30 @@ pub struct Args {
     /// Higher values reduce API calls but may miss updates. Use with caution.
     #[arg(long = "min-refresh-interval", help_heading = "Display Options")]
     pub min_refresh_interval: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(flags: &[&str]) -> Args {
+        Args::parse_from(std::iter::once("liiga_teletext").chain(flags.iter().copied()))
+    }
+
+    #[test]
+    fn compact_and_debug_run_the_interactive_ui() {
+        // Both open the full-screen UI, so logging must not write to stdout.
+        assert!(!is_noninteractive_mode(&parse(&["--compact"])));
+        assert!(!is_noninteractive_mode(&parse(&["--debug"])));
+        assert!(!is_noninteractive_mode(&parse(&[])));
+    }
+
+    #[test]
+    fn once_version_and_config_commands_are_noninteractive() {
+        assert!(is_noninteractive_mode(&parse(&["--once"])));
+        assert!(is_noninteractive_mode(&parse(&["--once", "--compact"])));
+        assert!(is_noninteractive_mode(&parse(&["--version"])));
+        assert!(is_noninteractive_mode(&parse(&["--list-config"])));
+        assert!(is_noninteractive_mode(&parse(&["--clear-log-file"])));
+    }
 }

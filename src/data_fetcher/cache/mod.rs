@@ -244,6 +244,44 @@ pub fn has_live_games(response: &ScheduleResponse) -> bool {
         .any(|game| game.started && !game.ended)
 }
 
+/// How long before a game's scheduled start its day's data counts as "starting soon".
+const STARTING_SOON_LEAD_MINUTES: i64 = 5;
+
+/// How long after the scheduled start a game the API still marks as not started
+/// keeps its day's data on the short TTL. Covers late puck drops without keeping
+/// a postponed game's date on the short TTL forever.
+const LATE_START_GRACE_MINUTES: i64 = 60;
+
+/// Returns a short cache TTL (in seconds) for a schedule response whose data is
+/// about to change: `LIVE_GAMES_SECONDS` while a game is in progress, and
+/// `STARTING_GAMES_SECONDS` around a game's scheduled start. Returns `None`
+/// when nothing is about to change, so callers keep their normal TTL.
+///
+/// Both cache layers (HTTP responses and parsed tournament data) use this.
+/// Without it, a response fetched just before puck drop was cached for
+/// minutes and hid the game start and early goals.
+pub fn short_schedule_ttl(
+    response: &ScheduleResponse,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<u64> {
+    if has_live_games(response) {
+        return Some(cache_ttl::LIVE_GAMES_SECONDS);
+    }
+
+    let starting_soon = response.games.iter().any(|game| {
+        if game.started {
+            return false;
+        }
+        let Ok(start) = chrono::DateTime::parse_from_rfc3339(&game.start) else {
+            return false;
+        };
+        let minutes_since_start = now.signed_duration_since(start).num_minutes();
+        (-STARTING_SOON_LEAD_MINUTES..=LATE_START_GRACE_MINUTES).contains(&minutes_since_start)
+    });
+
+    starting_soon.then_some(cache_ttl::STARTING_GAMES_SECONDS)
+}
+
 /// Determines whether the cache should be completely bypassed for games near their start time.
 pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> bool {
     current_games.iter().any(|game| {
@@ -280,20 +318,28 @@ pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> boo
     })
 }
 
-/// Caches tournament data with automatic live game detection.
+/// TTL for a parsed tournament response: short while a game is live or about
+/// to start, otherwise the completed-games TTL.
+fn tournament_cache_ttl(
+    response: &ScheduleResponse,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Duration {
+    short_schedule_ttl(response, now)
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| game_state_ttl(false))
+}
+
+/// Caches tournament data with automatic live and starting-soon game detection.
 pub async fn cache_tournament_data(key: String, data: ScheduleResponse) {
-    let has_live = has_live_games(&data);
-
-    TOURNAMENT_CACHE
-        .insert(key.clone(), data, game_state_ttl(has_live))
-        .await;
-
-    if has_live {
+    let ttl = tournament_cache_ttl(&data, chrono::Utc::now());
+    if ttl < game_state_ttl(false) {
         info!(
-            "Live game cache entry: key={key}, ttl={}s",
-            cache_ttl::LIVE_GAMES_SECONDS
+            "Short-lived tournament cache entry: key={key}, ttl={}s",
+            ttl.as_secs()
         );
     }
+
+    TOURNAMENT_CACHE.insert(key, data, ttl).await;
 }
 
 /// Retrieves cached tournament data if it has not expired.
@@ -333,4 +379,94 @@ pub async fn get_tournament_cache_size() -> usize {
 #[allow(dead_code)]
 pub async fn clear_tournament_cache() {
     TOURNAMENT_CACHE.clear().await
+}
+
+#[cfg(test)]
+mod schedule_ttl_tests {
+    use super::*;
+    use chrono::{DateTime, TimeZone, Utc};
+
+    fn response_with_game(start: &str, started: bool, ended: bool) -> ScheduleResponse {
+        let json = format!(
+            r#"{{"games":[{{"id":1,"season":2026,"start":"{start}",
+                "homeTeam":{{"teamId":"a","teamName":"A","goals":0,"goalEvents":[]}},
+                "awayTeam":{{"teamId":"b","teamName":"B","goals":0,"goalEvents":[]}},
+                "finishedType":null,"started":{started},"ended":{ended},
+                "serie":"RUNKOSARJA"}}],
+                "previousGameDate":null,"nextGameDate":null}}"#
+        );
+        serde_json::from_str(&json).expect("test schedule JSON should parse")
+    }
+
+    fn at(hour: u32, minute: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 10, 1, hour, minute, 0).unwrap()
+    }
+
+    const START: &str = "2026-10-01T15:30:00Z";
+
+    #[test]
+    fn live_game_gets_live_ttl() {
+        let response = response_with_game(START, true, false);
+        assert_eq!(
+            short_schedule_ttl(&response, at(15, 45)),
+            Some(cache_ttl::LIVE_GAMES_SECONDS)
+        );
+    }
+
+    #[test]
+    fn game_starting_within_five_minutes_gets_starting_ttl() {
+        let response = response_with_game(START, false, false);
+        assert_eq!(
+            short_schedule_ttl(&response, at(15, 26)),
+            Some(cache_ttl::STARTING_GAMES_SECONDS)
+        );
+    }
+
+    #[test]
+    fn game_past_its_start_time_but_not_started_gets_starting_ttl() {
+        // Late puck drop: the API still says not started 20 minutes after the
+        // scheduled start. Caching this for minutes would hide the start.
+        let response = response_with_game(START, false, false);
+        assert_eq!(
+            short_schedule_ttl(&response, at(15, 50)),
+            Some(cache_ttl::STARTING_GAMES_SECONDS)
+        );
+    }
+
+    #[test]
+    fn game_hours_away_gets_no_short_ttl() {
+        let response = response_with_game(START, false, false);
+        assert_eq!(short_schedule_ttl(&response, at(12, 0)), None);
+    }
+
+    #[test]
+    fn finished_game_gets_no_short_ttl() {
+        let response = response_with_game(START, true, true);
+        assert_eq!(short_schedule_ttl(&response, at(18, 0)), None);
+    }
+
+    #[test]
+    fn tournament_cache_uses_starting_ttl_before_puck_drop() {
+        let response = response_with_game(START, false, false);
+        assert_eq!(
+            tournament_cache_ttl(&response, at(15, 28)),
+            Duration::from_secs(cache_ttl::STARTING_GAMES_SECONDS)
+        );
+    }
+
+    #[test]
+    fn tournament_cache_keeps_long_ttl_for_finished_day() {
+        let response = response_with_game(START, true, true);
+        assert_eq!(
+            tournament_cache_ttl(&response, at(20, 0)),
+            Duration::from_secs(cache_ttl::COMPLETED_GAMES_SECONDS)
+        );
+    }
+
+    #[test]
+    fn game_that_never_started_long_ago_gets_no_short_ttl() {
+        // A postponed game on a past date must not keep that day on a 30s TTL forever.
+        let response = response_with_game(START, false, false);
+        assert_eq!(short_schedule_ttl(&response, at(23, 0)), None);
+    }
 }
