@@ -492,18 +492,34 @@ impl TeletextPage {
 /// # Returns
 /// * `String` - Truncated team name
 pub fn truncate_team_name_gracefully(team_name: &str, max_length: usize) -> String {
-    if team_name.len() <= max_length {
+    if team_name.chars().count() <= max_length {
         return team_name.to_string();
     }
 
-    // Try to find a good truncation point (space, hyphen, or vowel)
-    let mut best_pos = max_length;
-    for (i, c) in team_name.char_indices().take(max_length) {
-        if c == ' ' || c == '-' {
-            best_pos = i;
-            break;
-        }
-    }
+    // Try to find a good truncation point (space or hyphen). Count characters,
+    // not bytes, so names with Ä/Ö cut at the right place.
+    let best_pos = team_name
+        .chars()
+        .take(max_length)
+        .position(|c| c == ' ' || c == '-')
+        .unwrap_or(max_length);
 
     team_name.chars().take(best_pos).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_team_name_gracefully;
+
+    #[test]
+    fn truncation_cuts_finnish_names_at_the_space() {
+        // The space in "Kärpät Oulu" is character 6 but byte 8; mixing the two
+        // produced "Kärpät O".
+        assert_eq!(truncate_team_name_gracefully("Kärpät Oulu", 9), "Kärpät");
+    }
+
+    #[test]
+    fn truncation_keeps_names_that_fit_by_display_width() {
+        assert_eq!(truncate_team_name_gracefully("Ässät", 5), "Ässät");
+    }
 }

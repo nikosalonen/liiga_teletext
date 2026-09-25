@@ -722,7 +722,7 @@ impl ColumnLayoutManager {
                     event.scorer_name.clone()
                 };
 
-                let player_name_len = safe_player_name.len();
+                let player_name_len = safe_player_name.chars().count();
                 if player_name_len > max_player_name_width {
                     max_player_name_width = player_name_len;
                     tracing::debug!(
@@ -735,7 +735,7 @@ impl ColumnLayoutManager {
                 // Track longest goal type combination with safe fallbacks
                 let goal_type_display = event.get_goal_type_display();
 
-                let goal_type_len = goal_type_display.len();
+                let goal_type_len = goal_type_display.chars().count();
                 if goal_type_len > max_goal_types_width {
                     max_goal_types_width = goal_type_len;
                     tracing::debug!(
@@ -1188,9 +1188,10 @@ impl ColumnLayoutManager {
 
         for game in games {
             for event in &game.goal_events {
-                max_player_name_width = max_player_name_width.max(event.scorer_name.len());
+                max_player_name_width =
+                    max_player_name_width.max(event.scorer_name.chars().count());
                 let goal_type_display = event.get_goal_type_display();
-                max_goal_types_width = max_goal_types_width.max(goal_type_display.len());
+                max_goal_types_width = max_goal_types_width.max(goal_type_display.chars().count());
             }
         }
 
@@ -1223,9 +1224,10 @@ impl ColumnLayoutManager {
 
         for game in games {
             for event in &game.goal_events {
-                max_player_name_width = max_player_name_width.max(event.scorer_name.len());
+                max_player_name_width =
+                    max_player_name_width.max(event.scorer_name.chars().count());
                 let goal_type_display = event.get_goal_type_display();
-                max_goal_types_width = max_goal_types_width.max(goal_type_display.len());
+                max_goal_types_width = max_goal_types_width.max(goal_type_display.chars().count());
             }
         }
 
@@ -1803,6 +1805,27 @@ mod tests {
 
         assert!(layout.max_player_name_width >= 1);
         assert!(layout.max_player_name_width < 42);
+    }
+
+    #[test]
+    fn test_layout_measures_names_by_display_width_not_bytes() {
+        // "Hämäläinen" is 10 columns but 13 bytes. Counting bytes pushed the
+        // score to column 80 on an 80-column terminal, where it wrapped.
+        let layout_for = |scorer: &str| {
+            let mut manager = ColumnLayoutManager::new(80, 2);
+            let goal_events = vec![create_test_goal_event(
+                scorer,
+                vec!["YV".to_string(), "TM".to_string()],
+            )];
+            manager.calculate_layout(&[create_test_game_data("HIFK", "TPS", goal_events)])
+        };
+
+        let finnish = layout_for("Hämäläinen Ma.");
+        let ascii = layout_for("Hamalainen Ma.");
+
+        assert_eq!(finnish.max_player_name_width, ascii.max_player_name_width);
+        assert_eq!(finnish.time_column, ascii.time_column);
+        assert_eq!(finnish.score_column, ascii.score_column);
     }
 
     #[test]

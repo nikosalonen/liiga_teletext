@@ -66,9 +66,14 @@ pub(super) fn calculate_standings_hash(
 }
 
 /// Calculates a hash of playoff bracket data for change detection.
-pub(super) fn calculate_bracket_hash(bracket: &PlayoffBracket) -> u64 {
+///
+/// Includes the terminal size because the bracket page's layout (full path,
+/// tree or stacked) is chosen from it when the page is built: a resize has to
+/// count as a change so the page is rebuilt for the new size.
+pub(super) fn calculate_bracket_hash(bracket: &PlayoffBracket, terminal_size: (u16, u16)) -> u64 {
     let mut hasher = DefaultHasher::new();
     bracket.hash(&mut hasher);
+    terminal_size.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -148,6 +153,25 @@ pub(super) fn detect_and_log_changes(games: &[GameData], last_games: &[GameData]
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_bracket_hash_changes_with_terminal_size() {
+        // The bracket layout (full path, tree or stacked) depends on the
+        // terminal size, so a resize must count as a change and rebuild the page.
+        let bracket = PlayoffBracket {
+            season: "2025-2026".to_string(),
+            phases: vec![],
+            has_data: true,
+        };
+        assert_ne!(
+            calculate_bracket_hash(&bracket, (100, 30)),
+            calculate_bracket_hash(&bracket, (60, 30))
+        );
+        assert_eq!(
+            calculate_bracket_hash(&bracket, (100, 30)),
+            calculate_bracket_hash(&bracket, (100, 30))
+        );
+    }
 
     fn make_game(home: &str, away: &str, result: &str, serie: &str) -> GameData {
         crate::testing_utils::TestDataBuilder::create_custom_game(0, home, away, result, serie)

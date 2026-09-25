@@ -995,8 +995,13 @@ impl RefreshCoordinator {
             }
         };
 
+        let (terminal_width, terminal_height) = crossterm::terminal::size().unwrap_or((80, 24));
+
         let data_changed = if let Some(ref b) = bracket {
-            let new_hash = super::change_detection::calculate_bracket_hash(b);
+            let new_hash = super::change_detection::calculate_bracket_hash(
+                b,
+                (terminal_width, terminal_height),
+            );
             state.change_detection.update_bracket_hash(new_hash)
         } else {
             true
@@ -1022,8 +1027,6 @@ impl RefreshCoordinator {
                 skip_change_detection: true,
             });
         }
-
-        let (terminal_width, terminal_height) = crossterm::terminal::size().unwrap_or((80, 24));
 
         let new_page = if let Some(bracket) = bracket {
             let mut page = navigation_manager::create_bracket_page(

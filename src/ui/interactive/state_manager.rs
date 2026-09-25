@@ -466,6 +466,13 @@ impl InteractiveState {
     /// Handle resize event (delegates to UI state)
     pub fn handle_resize(&mut self) {
         self.ui.handle_resize();
+
+        // The bracket page is laid out for the terminal size it was built at.
+        // Refresh so it is rebuilt for the new size (the bracket response is
+        // cached, so this does not wait on the network).
+        if self.navigation.current_view == ViewMode::Bracket {
+            self.request_refresh();
+        }
     }
 
     /// Set current date (delegates to navigation state)
@@ -543,6 +550,29 @@ impl InteractiveState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_resize_in_bracket_view_requests_refresh() {
+        // The bracket page is laid out for the terminal size it was built at;
+        // a refresh rebuilds it for the new size.
+        let mut state = InteractiveState::new(None);
+        state.clear_refresh_flag();
+        state.navigation.current_view = ViewMode::Bracket;
+
+        state.handle_resize();
+
+        assert!(state.needs_refresh());
+    }
+
+    #[test]
+    fn test_resize_in_games_view_does_not_refetch() {
+        let mut state = InteractiveState::new(None);
+        state.clear_refresh_flag();
+
+        state.handle_resize();
+
+        assert!(!state.needs_refresh());
+    }
 
     #[test]
     fn test_view_mode_default_is_games() {

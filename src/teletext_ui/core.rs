@@ -344,22 +344,28 @@ impl TeletextPage {
             return (Vec::new(), Vec::new());
         }
 
-        // Split games roughly evenly between columns using balanced distribution
-        // Left column gets the extra game if there's an odd number
-        let total_games = visible_rows.len();
-        let games_per_column = total_games.div_ceil(2);
+        // Balance the columns by height, not by count: one game with many
+        // scorers can be as tall as several without, and a count split could
+        // push the left column past the footer.
+        let heights: Vec<u16> = visible_rows
+            .iter()
+            .map(|row| self.wide_column_row_height(row))
+            .collect();
+        let is_header: Vec<bool> = visible_rows
+            .iter()
+            .map(|row| {
+                matches!(
+                    row,
+                    TeletextRow::FutureGamesHeader(_)
+                        | TeletextRow::PlayoffPhaseHeader(_)
+                        | TeletextRow::SeriesHeader(_)
+                )
+            })
+            .collect();
+        let split = super::pagination::balanced_split_index(&heights, &is_header);
 
-        let mut left_games: Vec<&TeletextRow> = Vec::new();
-        let mut right_games: Vec<&TeletextRow> = Vec::new();
-
-        for (i, game) in visible_rows.iter().enumerate() {
-            if i < games_per_column {
-                left_games.push(game);
-            } else {
-                right_games.push(game);
-            }
-        }
-
+        let mut left_games = visible_rows;
+        let right_games = left_games.split_off(split);
         (left_games, right_games)
     }
 
@@ -548,7 +554,7 @@ impl TeletextPage {
         };
 
         // Build subheader line — adapt right column width to actual subheader length
-        let subheader_col = self.subheader.len().max(20);
+        let subheader_col = self.subheader.chars().count().max(20);
         let page_info_width = (width as usize).saturating_sub(subheader_col);
         header_buffer.push_str(&format!(
             "\x1b[2;1H\x1b[38;5;{}m{:<20}{:>width$}\x1b[0m",
