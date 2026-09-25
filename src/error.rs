@@ -242,7 +242,6 @@ impl AppError {
     }
 
     /// Check if error indicates data not found (business logic, not technical error)
-    #[allow(dead_code)] // Used in tests
     pub fn is_not_found(&self) -> bool {
         matches!(
             self,

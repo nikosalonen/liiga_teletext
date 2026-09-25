@@ -13,7 +13,7 @@ use super::date_logic::{determine_fetch_date, parse_date_and_season};
 // Season utilities available from sibling season_utils module
 use super::season_utils::{is_historical_date, should_use_schedule_for_playoffs};
 // Game-specific API operations available from sibling game_api module
-use super::game_api::{fetch_historical_games, process_games};
+use super::game_api::{add_series_scores, fetch_historical_games, process_games};
 // Tournament logic available from sibling tournament_logic module
 use super::tournament_logic::build_tournament_list;
 // Tournament-specific API operations available from sibling tournament_api module
@@ -151,10 +151,12 @@ pub async fn fetch_liiga_data(
     };
 
     // Process games if we found any
-    let all_games = process_games(&client, &config, response_data).await?;
+    let mut all_games = process_games(&client, &config, response_data).await?;
 
     // Determine the appropriate date to return
     let return_date = determine_return_date(&all_games, earliest_date.clone(), &date);
+
+    add_series_scores(&client, &config, &mut all_games, &return_date).await;
 
     if all_games.is_empty() {
         info!("No games found after processing all data");

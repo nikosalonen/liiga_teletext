@@ -87,6 +87,51 @@ impl Default for CacheMonitoringConfig {
     }
 }
 
+/// Returns a page to show when a games refresh would otherwise leave the screen
+/// blank: nothing is on screen yet, and the result either brings no page or
+/// failed (its page would only be the loading screen).
+///
+/// This happens on the first fetch with `--date`: a day without games returns
+/// another date's games, which are discarded, and a failed fetch brings no page.
+fn page_for_blank_screen(
+    state: &InteractiveState,
+    result: &RefreshResult,
+    config: &RefreshCycleConfig,
+) -> Option<TeletextPage> {
+    if state.current_page().is_some() || (result.new_page.is_some() && !result.had_error) {
+        return None;
+    }
+
+    if result.had_error {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            config.disable_links,
+            true,
+            false,
+            config.compact_mode,
+            config.wide_mode,
+        );
+        page.add_error_message("Otteluiden haku epäonnistui.");
+        page.add_error_message("");
+        page.add_error_message("Yritetään uudelleen automaattisesti,");
+        page.add_error_message("tai paina 'r' päivittääksesi tiedot.");
+        return Some(page);
+    }
+
+    let date = state
+        .current_date()
+        .clone()
+        .unwrap_or_else(|| result.fetched_date.clone());
+    Some(navigation_manager::create_error_page(
+        &date,
+        config.disable_links,
+        config.compact_mode,
+        config.wide_mode,
+    ))
+}
+
 /// Check if fetched data should be discarded due to a date mismatch.
 /// Returns true when a date is already set and the fetched date differs.
 fn should_discard_for_date_mismatch(current_date: &Option<String>, fetched_date: &str) -> bool {
@@ -562,7 +607,7 @@ impl RefreshCoordinator {
         let fetched_date = raw_fetched_date.trim().to_string();
 
         // Process the fetched data (change detection, page creation, etc.)
-        let result = self
+        let mut result = self
             .process_fetched_data(
                 DataFetchParams {
                     current_date: state.current_date(),
@@ -599,7 +644,7 @@ impl RefreshCoordinator {
                     page.hide_auto_refresh_indicator();
                     state.request_render();
                 }
-                return Ok(RefreshResult {
+                let mut discarded = RefreshResult {
                     games: vec![],
                     had_error: false,
                     fetched_date: state.current_date().clone().unwrap_or_default(),
@@ -607,10 +652,20 @@ impl RefreshCoordinator {
                     new_page: None,
                     needs_render: false,
                     skip_change_detection: true,
-                });
+                };
+                if let Some(page) = page_for_blank_screen(state, &discarded, config) {
+                    discarded.new_page = Some(page);
+                    discarded.needs_render = true;
+                }
+                return Ok(discarded);
             }
             state.set_current_date(Some(result.fetched_date.clone()));
             tracing::debug!("Updated current_date to: {:?}", state.current_date());
+        }
+
+        if let Some(page) = page_for_blank_screen(state, &result, config) {
+            result.new_page = Some(page);
+            result.needs_render = true;
         }
 
         Ok(result)
@@ -1529,6 +1584,69 @@ mod tests {
 
         assert_eq!(state.change_detection.last_games().len(), 1);
         assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
+    }
+
+    fn blank_screen_test_config() -> RefreshCycleConfig {
+        RefreshCycleConfig {
+            min_refresh_interval: None,
+            disable_links: false,
+            compact_mode: false,
+            wide_mode: false,
+        }
+    }
+
+    fn empty_result(had_error: bool) -> RefreshResult {
+        RefreshResult {
+            games: vec![],
+            had_error,
+            fetched_date: String::new(),
+            should_retry: had_error,
+            new_page: None,
+            needs_render: false,
+            skip_change_detection: !had_error,
+        }
+    }
+
+    #[test]
+    fn test_blank_screen_gets_no_games_page_for_requested_date() {
+        // --date on a day without games: the fetched next-game-day result is
+        // discarded, and without this nothing was ever drawn.
+        let state = InteractiveState::new(Some("2026-09-28".to_string()));
+
+        let page = page_for_blank_screen(&state, &empty_result(false), &blank_screen_test_config())
+            .expect("a blank screen should get a page");
+
+        assert!(page.has_error_message("Ei otteluita päivälle"));
+    }
+
+    #[test]
+    fn test_blank_screen_gets_error_page_when_fetch_failed() {
+        let state = InteractiveState::new(Some("2026-09-28".to_string()));
+
+        let page = page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
+            .expect("a failed first fetch should get a page");
+
+        assert!(page.has_error_message("Otteluiden haku epäonnistui"));
+    }
+
+    #[test]
+    fn test_existing_page_is_not_replaced_by_blank_screen_page() {
+        let mut state = InteractiveState::new(Some("2026-09-28".to_string()));
+        state.set_current_page(TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            false,
+            true,
+            true,
+            false,
+            false,
+        ));
+
+        assert!(
+            page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
+                .is_none()
+        );
     }
 
     #[test]

@@ -9,7 +9,7 @@ use crate::data_fetcher::cache::{
     persistence::{PLAYER_NAME_STORE, PlayerName},
 };
 use crate::data_fetcher::models::{
-    DetailedGame, DetailedGameResponse, DetailedTeam, GameData, GoalEvent, GoalEventData, Player,
+    DetailedGame, DetailedGameResponse, GameData, GoalEvent, GoalEventData, Player,
     ScheduleApiGame, ScheduleGame, ScheduleResponse, ScheduleTeam,
 };
 use crate::data_fetcher::player_names::format_for_display;
@@ -673,16 +673,6 @@ fn find_period_and_event_id_for_goal(
     (period, event_id)
 }
 
-/// Helper to fetch and convert detailed game data
-async fn fetch_and_convert_detailed_game_data(
-    client: &Client,
-    config: &Config,
-    season: i32,
-    game_id: i32,
-) -> DetailedGameData {
-    fetch_detailed_game_data_for_historical_game(client, config, season, game_id).await
-}
-
 /// Helper to convert goal events for a team
 fn convert_goal_events_for_team(
     goal_events: &[GoalEventData],
@@ -728,9 +718,25 @@ async fn convert_api_game_to_schedule_game(
 ) -> Result<ScheduleGame, AppError> {
     let start_time = api_game.start.clone();
 
-    // 1. Fetch detailed game data
-    let detailed_game_data =
-        fetch_and_convert_detailed_game_data(client, config, season, api_game.id).await;
+    // 1. Fetch detailed game data. If that fails, keep the score the schedule
+    // already gave us and show the game without scorers, rather than 0-0.
+    let Some(detailed_game_data) =
+        fetch_detailed_game_data_for_historical_game(client, config, season, api_game.id).await
+    else {
+        let home_team = build_schedule_team_from_api_and_detailed(
+            api_game.home_team_name.clone(),
+            api_game.home_team_goals,
+            start_time.clone(),
+            Vec::new(),
+        );
+        let away_team = build_schedule_team_from_api_and_detailed(
+            api_game.away_team_name.clone(),
+            api_game.away_team_goals,
+            start_time.clone(),
+            Vec::new(),
+        );
+        return Ok(schedule_game_from_api_game(api_game, home_team, away_team));
+    };
 
     // 2. Create a player name mapping from the resolved goal events to preserve player names
     // Only cache if we don't already have player data (to avoid overwriting detailed disambiguation)
@@ -772,12 +778,21 @@ async fn convert_api_game_to_schedule_game(
         away_goal_events,
     );
 
+    Ok(schedule_game_from_api_game(api_game, home_team, away_team))
+}
+
+/// Builds a ScheduleGame from a schedule API game and its two teams.
+fn schedule_game_from_api_game(
+    api_game: ScheduleApiGame,
+    home_team: ScheduleTeam,
+    away_team: ScheduleTeam,
+) -> ScheduleGame {
     let tournament = TournamentType::from_serie(api_game.serie);
 
-    Ok(ScheduleGame {
+    ScheduleGame {
         id: api_game.id,
         season: api_game.season,
-        start: start_time.clone(),
+        start: api_game.start,
         end: None, // Not available in schedule API
         home_team,
         away_team,
@@ -789,7 +804,7 @@ async fn convert_api_game_to_schedule_game(
         play_off_phase: api_game.play_off_phase,
         play_off_pair: api_game.play_off_pair,
         play_off_req_wins: api_game.play_off_req_wins,
-    })
+    }
 }
 
 /// Fetches games for a specific date from a historical season using the schedule endpoint.
@@ -876,14 +891,46 @@ pub(super) async fn fetch_historical_games(
     Ok(games)
 }
 
+/// Fills in playoff series scores for games from the date-based games endpoint.
+///
+/// That endpoint carries no series standings, so this counts wins from the
+/// season schedule of the tournaments that are played as series. Does nothing
+/// when no game is a playoff game. Historical dates get their series scores in
+/// [`fetch_historical_games`], which already has the full schedule.
+pub(super) async fn add_series_scores(
+    client: &Client,
+    config: &Config,
+    games: &mut [GameData],
+    date: &str,
+) {
+    if !games.iter().any(|g| g.play_off_phase.is_some()) {
+        return;
+    }
+
+    let (_, _, season) = parse_date_and_season(date);
+    let series_tournaments = [
+        TournamentType::Playoffs,
+        TournamentType::Playout,
+        TournamentType::Qualifications,
+    ];
+    let schedule = fetch_tournament_games(client, config, &series_tournaments, season).await;
+    if schedule.is_empty() {
+        warn!("No playoff schedule for season {season}; series scores are not shown");
+        return;
+    }
+
+    use crate::data_fetcher::processors::playoff_series::calculate_series_scores;
+    calculate_series_scores(&schedule, games, date);
+}
+
 /// Fetches detailed game data for a historical game to get actual scores and goal events.
-/// Returns a struct with home and away team goals and goal events.
+/// Returns `None` if the fetch fails, so the caller can fall back to the schedule's score.
 async fn fetch_detailed_game_data_for_historical_game(
     client: &Client,
     config: &Config,
     season: i32,
     game_id: i32,
-) -> DetailedGameData {
+) -> Option<DetailedGameData> {
     let url = build_game_url(&config.api_domain, season, game_id);
 
     match fetch::<DetailedGameResponse>(client, &url).await {
@@ -896,53 +943,18 @@ async fn fetch_detailed_game_data_for_historical_game(
             )
             .await;
 
-            DetailedGameData {
+            Some(DetailedGameData {
                 home_goals: response.game.home_team.goals,
                 away_goals: response.game.away_team.goals,
                 goal_events,
                 detailed_game: response.game,
-            }
+            })
         }
         Err(e) => {
             warn!(
-                "Failed to fetch detailed game data for game ID {}: {}. Using default scores.",
-                game_id, e
+                "Failed to fetch detailed game data for game ID {game_id}: {e}. Using the schedule's score without scorers."
             );
-            // Return default data if detailed data fetch fails
-            // Create a minimal DetailedGame for fallback
-            let fallback_game = DetailedGame {
-                id: game_id,
-                season,
-                start: "".to_string(),
-                end: None,
-                home_team: DetailedTeam {
-                    team_id: "".to_string(),
-                    team_name: "".to_string(),
-                    goals: 0,
-                    goal_events: vec![],
-                    penalty_events: vec![],
-                },
-                away_team: DetailedTeam {
-                    team_id: "".to_string(),
-                    team_name: "".to_string(),
-                    goals: 0,
-                    goal_events: vec![],
-                    penalty_events: vec![],
-                },
-                periods: vec![],
-                finished_type: None,
-                started: false,
-                ended: false,
-                game_time: 0,
-                serie: "runkosarja".to_string(),
-            };
-
-            DetailedGameData {
-                home_goals: 0,
-                away_goals: 0,
-                goal_events: vec![],
-                detailed_game: fallback_game,
-            }
+            None
         }
     }
 }

@@ -223,6 +223,7 @@ pub(super) async fn fetch_day_data(
     let mut responses = Vec::new();
     let mut found_games = false;
     let mut tournament_responses = HashMap::new();
+    let mut last_fetch_error = None;
 
     // Process tournaments sequentially to respect priority order
     for tournament in tournaments {
@@ -246,7 +247,16 @@ pub(super) async fn fetch_day_data(
             .await
             {
                 Ok(resp) => resp,
-                Err(_) => continue, // Skip this tournament if fetch fails
+                Err(e) => {
+                    // A missing tournament just has no games. Anything else
+                    // (network down, server errors) is remembered so a day
+                    // where every fetch failed is not shown as "no games".
+                    if !e.is_not_found() {
+                        warn!("Failed to fetch {tournament} for {date}: {e}");
+                        last_fetch_error = Some(e);
+                    }
+                    continue;
+                }
             }
         };
 
@@ -261,10 +271,14 @@ pub(super) async fn fetch_day_data(
     }
 
     if found_games {
-        Ok((Some(responses), tournament_responses))
-    } else {
-        Ok((None, tournament_responses))
+        return Ok((Some(responses), tournament_responses));
     }
+    if tournament_responses.is_empty()
+        && let Some(error) = last_fetch_error
+    {
+        return Err(error);
+    }
+    Ok((None, tournament_responses))
 }
 
 /// Processes next game dates when no games are found for the current date.
