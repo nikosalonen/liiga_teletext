@@ -332,7 +332,8 @@ async fn resolve_goal_events_with_roster(
     let should_fetch_roster = !matches!(score_type, ScoreType::Scheduled)
         && (!game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty());
 
-    // Concurrency is already capped by the semaphore in process_response_games
+    // No delay between roster fetches: process_response_games runs at most
+    // 3 games at once, and fetch() backs off on 429
     if should_fetch_roster {
         let game_url = build_game_url(&config.api_domain, game.season, game.id);
 

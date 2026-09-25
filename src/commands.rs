@@ -82,15 +82,10 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
     use crossterm::style::{Print, ResetColor, SetForegroundColor};
 
     // Start from the saved file, not Config::load(), so LIIGA_* environment
-    // overrides for this run are not written into the config file.
-    let mut config = match Config::load_saved().await {
-        Ok(Some(cfg)) => cfg,
-        Ok(None) => Config::default(),
-        Err(e) => {
-            tracing::warn!("Failed to load config: {e}, using default configuration");
-            Config::default()
-        }
-    };
+    // overrides for this run are not written into the config file. A file
+    // that can't be read or parsed stops the command rather than being
+    // replaced with defaults.
+    let mut config = Config::load_saved().await?.unwrap_or_default();
 
     if let Some(new_domain) = &args.new_api_domain {
         if new_domain.trim().is_empty() {
@@ -131,7 +126,8 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
         );
     }
 
-    // No config file yet: ask for the domain, as the first normal run would
+    // No saved domain. Usually there is no file because LIIGA_API_DOMAIN is
+    // set, so Config::load() in setup_logging didn't prompt and create one.
     if config.api_domain.is_empty() {
         config.api_domain = prompt_for_api_domain().await?;
     }

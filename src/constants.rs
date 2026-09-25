@@ -105,8 +105,9 @@ pub mod retry {
     /// and risk rate limiting.
     pub const SECONDARY_TOURNAMENT_MAX_ATTEMPTS: u32 = 1;
 
-    /// Longest wait we honor from a `Retry-After` header (seconds). A server
-    /// asking for more would otherwise freeze the refresh for that long.
+    /// Longest wait we honor from a `Retry-After` header (seconds). A longer
+    /// wait would outlast the interactive refresh timeout (HTTP timeout + 5s),
+    /// so the refresh would fail instead of retrying, and `--once` would hang.
     pub const MAX_RETRY_AFTER_SECONDS: u64 = 10;
 }
 

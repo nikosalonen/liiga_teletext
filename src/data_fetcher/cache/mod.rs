@@ -130,14 +130,14 @@ pub async fn get_cached_http_response(url: &str) -> Option<String> {
 }
 
 /// Clear all HTTP response cache entries.
-#[allow(dead_code)]
 pub async fn clear_http_response_cache() {
     HTTP_RESPONSE_CACHE.clear().await;
 }
 
-/// Drops cached API responses so the next fetch goes to the API.
-/// Used by manual refresh. Rosters and player names are kept, because
-/// they don't change during a game.
+/// Drops cached schedule, standings and other HTTP responses, so manual
+/// refresh gets fresh scores. Keeps rosters (`DETAILED_GAME_CACHE`) and
+/// player names, which don't change once a game starts, and the list of
+/// unavailable tournaments, which stay skipped until that entry expires.
 pub async fn clear_response_caches() {
     clear_http_response_cache().await;
     clear_tournament_cache().await;
@@ -397,7 +397,6 @@ pub async fn get_tournament_cache_size() -> usize {
 }
 
 /// Clears all tournament cache entries.
-#[allow(dead_code)]
 pub async fn clear_tournament_cache() {
     TOURNAMENT_CACHE.clear().await
 }

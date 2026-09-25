@@ -18,8 +18,9 @@ const DEFAULT_LOG_FILE_NAME: &str = "liiga_teletext.log";
 /// - Creates log directory if it doesn't exist
 /// - Uses daily rolling file appender
 ///
-/// Returns the path to the log file and the guard that must be kept alive
-/// for the duration of the program to ensure proper log flushing.
+/// Returns the log file name pattern (`<path>.YYYY-MM-DD`) and the guard
+/// that must be kept alive for the duration of the program to ensure proper
+/// log flushing.
 pub async fn setup_logging(args: &Args) -> Result<(String, WorkerGuard), AppError> {
     // Try to load config to get log file path if specified
     let config_log_path = Config::load()
@@ -106,7 +107,8 @@ pub async fn setup_logging(args: &Args) -> Result<(String, WorkerGuard), AppErro
 
 /// Splits a custom log path into its directory and file name.
 /// A bare file name like `app.log` has an empty parent, which means the
-/// current directory, not the filesystem root.
+/// current directory, not the filesystem root. With no custom path, returns
+/// `default_dir` and `liiga_teletext.log`.
 fn log_location(custom_path: Option<&str>, default_dir: &str) -> (PathBuf, String) {
     let Some(custom_path) = custom_path else {
         return (
@@ -162,9 +164,10 @@ mod tests {
         let reported = describe_log_path(&PathBuf::from("/var/log/liiga"), "app.log");
         assert_eq!(
             reported,
+            // Built with join, like the code, so the separator matches on Windows
             format!(
                 "{}.YYYY-MM-DD",
-                Path::new("/var/log/liiga/app.log").display()
+                Path::new("/var/log/liiga").join("app.log").display()
             )
         );
     }
