@@ -19,7 +19,8 @@ fn get_styles() -> Styles {
 /// - --version flag is set
 ///
 /// `--compact`, `--wide` and `--debug` still open the interactive UI, so they
-/// do not count. Logging uses this to decide whether stdout is free to write to.
+/// do not count. `logging::setup_logging` uses this: interactive runs log only
+/// to the file, because the UI owns stdout.
 pub fn is_noninteractive_mode(args: &Args) -> bool {
     args.once
         || args.new_api_domain.is_some()
@@ -45,8 +46,9 @@ pub fn is_noninteractive_mode(args: &Args) -> bool {
 /// - Press 'q' to quit
 ///
 /// The viewer automatically refreshes:
-/// - Every minute when there are ongoing games
-/// - Every hour when showing only completed games
+/// - Every 15 seconds when there are ongoing games
+/// - Every 30 seconds around a game's scheduled start
+/// - Every minute otherwise (finished games come from a 1-hour cache)
 #[derive(Parser, Debug)]
 #[command(author = "Niko Salonen", about, long_about = None)]
 #[command(disable_version_flag = true)]

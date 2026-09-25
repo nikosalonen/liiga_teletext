@@ -33,8 +33,9 @@ pub mod cache_ttl {
     /// TTL for completed games (1 hour)
     pub const COMPLETED_GAMES_SECONDS: u64 = 3600;
 
-    /// TTL for games that should be starting soon (increased from 5 to 30 seconds to reduce API calls)
-    /// This should still catch the moment games become live but with less aggressive polling
+    /// TTL for a day's data from 5 minutes before a game's scheduled start until
+    /// it starts (up to 60 minutes late). Short enough to show the start and the
+    /// first goals quickly without polling too hard.
     pub const STARTING_GAMES_SECONDS: u64 = 30;
 
     /// How long to remember that a secondary tournament endpoint is

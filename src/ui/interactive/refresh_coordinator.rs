@@ -290,6 +290,7 @@ impl RefreshCoordinator {
                 min_interval_between_refreshes,
                 last_rate_limit_hit: state.adaptive_polling.last_backoff_hit(),
                 rate_limit_backoff: state.adaptive_polling.retry_backoff(),
+                retry_pending: !state.adaptive_polling.retry_backoff().is_zero(),
                 current_date: state.current_date(),
             })
         } else {
@@ -398,9 +399,7 @@ impl RefreshCoordinator {
                 needs_render = true;
             }
         } else if had_error {
-            tracing::debug!(
-                "Auto-refresh failed but no data changes detected, continuing with existing UI"
-            );
+            tracing::debug!("Refresh failed; keeping the existing UI");
         }
 
         // Handle page restoration when loading screen was shown but data didn't change
@@ -1014,11 +1013,11 @@ impl RefreshCoordinator {
         let mut needs_state_render = false;
 
         // Skip change detection for results that carry no meaningful game data
-        // (date-mismatch discards, standings refreshes, or transient-empty preserves)
+        // (date-mismatch discards, standings or bracket refreshes, or transient-empty preserves)
         // to avoid clearing last_games state
         if result.skip_change_detection {
             tracing::debug!(
-                "Skipping change detection (standings, date-mismatch, or transient-empty preserve)"
+                "Skipping change detection (standings, bracket, date-mismatch, or transient-empty preserve)"
             );
             // Still hide the auto-refresh spinner so it doesn't stay stuck
             if let Some(page) = state.current_page_mut()
@@ -1032,9 +1031,11 @@ impl RefreshCoordinator {
             return needs_state_render;
         }
 
-        // A failed fetch carries no games. Handle it before change detection:
-        // otherwise its empty list replaces last_games, which hides the error
-        // warning and makes the next refresh interval use "no games" timing.
+        // A failed games fetch returns an empty list. Handle it before change
+        // detection: otherwise the empty list counts as a change, overwrites
+        // last_games, skips the error warning, and makes the next refresh use
+        // the 60 s "no games" interval. (Standings and bracket failures return
+        // earlier, via skip_change_detection.)
         if result.had_error {
             tracing::debug!(
                 "Refresh failed; keeping last_games and showing the error warning until a retry succeeds"
@@ -1552,6 +1553,10 @@ mod tests {
             .change_detection
             .update_state(vec![game.clone()], games_hash);
 
+        if let Some(page) = state.current_page_mut() {
+            page.show_auto_refresh_indicator();
+        }
+
         // A failed fetch carries no games. It must not replace the last good data.
         let failed_result = RefreshResult {
             games: vec![],
@@ -1571,6 +1576,35 @@ mod tests {
                 .current_page_mut()
                 .is_some_and(|page| page.is_error_warning_active()),
             "a failed refresh should show the error warning"
+        );
+        assert!(
+            state
+                .current_page_mut()
+                .is_some_and(|page| !page.is_auto_refresh_indicator_active()),
+            "a failed refresh should hide the auto-refresh spinner"
+        );
+
+        // The retry succeeds: the warning goes away and the new games replace the old ones
+        let mut retried_game =
+            crate::testing_utils::TestDataBuilder::create_basic_game("Tappara", "Ilves");
+        retried_game.result = "1-0".to_string();
+        let success_result = RefreshResult {
+            games: vec![retried_game],
+            had_error: false,
+            fetched_date: "2025-03-13".to_string(),
+            should_retry: false,
+            new_page: None,
+            needs_render: false,
+            skip_change_detection: false,
+        };
+        coordinator.process_refresh_results(&mut state, &success_result);
+
+        assert_eq!(state.change_detection.last_games()[0].home_team, "Tappara");
+        assert!(
+            state
+                .current_page_mut()
+                .is_some_and(|page| !page.is_error_warning_active()),
+            "a successful retry should clear the error warning"
         );
     }
 

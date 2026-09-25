@@ -8,7 +8,7 @@ A Rust terminal application that displays Finnish Liiga hockey results in authen
 ## Features
 
 - **Authentic teletext interface** - YLE Teksti-TV channel 221 appearance
-- **Real-time updates** - Automatic refresh (every minute for live games, hourly for completed)
+- **Real-time updates** - Automatic refresh (every 15 seconds for live games, every minute otherwise)
 - **Tournament support** - Regular season, playoffs, playout, qualifications, practice games
 - **Interactive navigation** - Arrow keys for page navigation, automatic date navigation
 - **Detailed game info** - Scores, goal scorers with timestamps, video links with play icons

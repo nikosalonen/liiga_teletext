@@ -252,7 +252,7 @@ impl TeletextPage {
                     // Special handling for "Seuraavat ottelut DD.MM." - abbreviate "Seuraavat" to preserve date
                     header_text.replace("Seuraavat ottelut ", "Seur. ottelut ")
                 } else if header_text.chars().count() > 30 {
-                    // For other long headers, truncate at 30 characters (increased from 22).
+                    // Truncate other long headers to 30 characters.
                     // Count chars, not bytes: slicing bytes panics inside Ä/Ö.
                     let truncated: String = header_text.chars().take(30).collect();
                     format!("{truncated}...")

@@ -95,14 +95,14 @@ loop {
 }
 ```
 
-Auto-refresh intervals: 15 seconds during live games, 30 seconds near start time, 60 seconds otherwise (completed games served from 1-hour cache). Polling rate adapts to idle time (50ms → 200ms → 500ms).
+Auto-refresh intervals: 15 seconds during live games, 30 seconds from 5 min before to 10 min after a scheduled start, 60 seconds otherwise (completed games served from 1-hour cache). A failed refresh keeps the last good games on screen with an error warning and is retried with backoff (2 → 4 → 8 → 10s), even when those games are all scheduled for later. Polling rate adapts to idle time (50ms → 200ms → 500ms).
 
 ### Caching Strategy
 
-**In-memory TTL cache** — varies by game state:
+**In-memory TTL cache** — varies by game state. `cache/mod.rs::schedule_cache_ttl` picks the TTL of a day's schedule for both the HTTP response cache and the parsed tournament cache:
 - Live games: 15s
-- Completed games: 1 hour
-- Starting soon: 30s
+- Starting soon: 30s, from 5 minutes before a game's scheduled start until the API marks it started, for at most 60 minutes after the scheduled start (covers late puck drops; a postponed game drops back to the normal TTL)
+- Otherwise: 1 hour for parsed tournament, detailed game and goal event data; raw HTTP responses by endpoint (15s standings, 5 min `/games/`, 30 min `/schedule`, 10 min other). A schedule entry written before a game's 5-minute window is cut short so it expires when the window opens — the TTL is fixed at write time, so without this cap an entry fetched at T-6 min would hide the puck drop
 - Player data: never expires (LRU eviction only)
 
 **Persistent player name cache** (`data_fetcher/cache/persistence.rs`) — disk-backed JSON store keyed by team per season, so completed games skip the detailed game API endpoint on restart. Uses atomic write (tmp + rename), a sequence counter for dirty tracking, and season-scoped files (`players_{season}.json`) carrying a `version` field (current: 2 — files of any other version are discarded and rebuilt).

@@ -6,7 +6,7 @@ use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::data_fetcher::cache::{
-    cache_http_response, get_cached_http_response, short_schedule_ttl,
+    cache_http_response, get_cached_http_response, schedule_cache_ttl,
 };
 use crate::data_fetcher::models::ScheduleResponse;
 use crate::error::AppError;
@@ -189,9 +189,10 @@ pub(super) async fn fetch_with_retries<T: DeserializeOwned>(
 
 /// Picks the HTTP cache TTL (in seconds) for a successful response.
 ///
-/// Tournament and schedule responses drop to a short TTL while a game is live
-/// or about to start (see [`short_schedule_ttl`]); otherwise the TTL depends on
-/// the endpoint.
+/// The TTL depends on the endpoint. Tournament day responses can drop below it
+/// while a game is live, about to start, or late to start (see
+/// [`schedule_cache_ttl`]). `/schedule` responses are season lists that do not
+/// parse as `ScheduleResponse`, so they keep the endpoint TTL.
 fn http_cache_ttl(url: &str, response_text: &str, now: chrono::DateTime<chrono::Utc>) -> u64 {
     let endpoint_ttl = if url.contains("/games/") {
         300 // 5 minutes for game data
@@ -210,18 +211,15 @@ fn http_cache_ttl(url: &str, response_text: &str, now: chrono::DateTime<chrono::
     }
 
     match serde_json::from_str::<ScheduleResponse>(response_text) {
-        Ok(schedule_response) => match short_schedule_ttl(&schedule_response, now) {
-            Some(short_ttl) => {
-                info!(
-                    "Live or starting games in response from {url}, using {short_ttl}s cache TTL"
-                );
-                short_ttl
+        Ok(schedule_response) => {
+            let ttl = schedule_cache_ttl(&schedule_response, now, endpoint_ttl);
+            if ttl < endpoint_ttl {
+                info!("Live or upcoming game in response from {url}, using {ttl}s cache TTL");
+            } else {
+                debug!("No live or upcoming games in response from {url}, using default TTL");
             }
-            None => {
-                debug!("No live or starting games in response from {url}, using default TTL");
-                endpoint_ttl
-            }
-        },
+            ttl
+        }
         Err(_) => endpoint_ttl,
     }
 }
@@ -254,6 +252,19 @@ mod tests {
             two_minutes_before,
         );
         assert_eq!(ttl, crate::constants::cache_ttl::STARTING_GAMES_SECONDS);
+    }
+
+    #[test]
+    fn tournament_response_fetched_before_the_window_expires_when_it_opens() {
+        // Fetched at T-6 min: the 10-minute default would keep the "not
+        // started" response cached until T+4 min and hide the puck drop.
+        let six_minutes_before = Utc.with_ymd_and_hms(2026, 10, 1, 15, 24, 0).unwrap();
+        let ttl = http_cache_ttl(
+            TOURNAMENT_URL,
+            &schedule_body(false, false),
+            six_minutes_before,
+        );
+        assert_eq!(ttl, 60);
     }
 
     #[test]
