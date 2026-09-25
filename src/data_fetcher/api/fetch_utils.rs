@@ -5,7 +5,9 @@ use serde::de::DeserializeOwned;
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::data_fetcher::cache::{cache_http_response, get_cached_http_response, has_live_games};
+use crate::data_fetcher::cache::{
+    cache_http_response, get_cached_http_response, schedule_cache_ttl,
+};
 use crate::data_fetcher::models::ScheduleResponse;
 use crate::error::AppError;
 
@@ -151,42 +153,7 @@ pub(super) async fn fetch_with_retries<T: DeserializeOwned>(
     let preview: String = response_text.chars().take(1024).collect();
     debug!("Response text (first 1024 chars): {preview}");
 
-    // Determine TTL for successful HTTP responses
-    let ttl_seconds = if url.contains("/games/") {
-        300 // 5 minutes for game data
-    } else if url.contains("/schedule") {
-        1800 // 30 minutes for schedule data
-    } else if url.contains("/standings/") {
-        crate::constants::cache_ttl::LIVE_GAMES_SECONDS // Short TTL so live standings refresh promptly
-    } else {
-        600 // 10 minutes for other data
-    };
-
-    // For both tournament and schedule URLs, check if the response contains live games
-    let final_ttl =
-        if (url.contains("tournament=") && url.contains("date=")) || url.contains("/schedule") {
-            // Try to parse as ScheduleResponse to check for live games
-            match serde_json::from_str::<ScheduleResponse>(&response_text) {
-                Ok(schedule_response) => {
-                    if has_live_games(&schedule_response) {
-                        info!(
-                            "Live games detected in response from {}, using short cache TTL",
-                            url
-                        );
-                        crate::constants::cache_ttl::LIVE_GAMES_SECONDS // Use live games TTL (15 seconds)
-                    } else {
-                        debug!(
-                            "No live games detected in response from {}, using default TTL",
-                            url
-                        );
-                        ttl_seconds // Use default TTL for completed games
-                    }
-                }
-                Err(_) => ttl_seconds, // Fallback to default if parsing fails
-            }
-        } else {
-            ttl_seconds // Use default TTL for other URLs
-        };
+    let final_ttl = http_cache_ttl(url, &response_text, chrono::Utc::now());
 
     // Enhanced JSON parsing with more specific error handling
     match serde_json::from_str::<T>(&response_text) {
@@ -217,5 +184,100 @@ pub(super) async fn fetch_with_retries<T: DeserializeOwned>(
                 Err(AppError::api_unexpected_structure(e.to_string(), url))
             }
         }
+    }
+}
+
+/// Picks the HTTP cache TTL (in seconds) for a successful response.
+///
+/// The TTL depends on the endpoint. Tournament day responses can drop below it
+/// while a game is live, about to start, or late to start (see
+/// [`schedule_cache_ttl`]). `/schedule` responses are season lists that do not
+/// parse as `ScheduleResponse`, so they keep the endpoint TTL.
+fn http_cache_ttl(url: &str, response_text: &str, now: chrono::DateTime<chrono::Utc>) -> u64 {
+    let endpoint_ttl = if url.contains("/games/") {
+        300 // 5 minutes for game data
+    } else if url.contains("/schedule") {
+        1800 // 30 minutes for schedule data
+    } else if url.contains("/standings/") {
+        crate::constants::cache_ttl::LIVE_GAMES_SECONDS // Short TTL so live standings refresh promptly
+    } else {
+        600 // 10 minutes for other data
+    };
+
+    let is_schedule_like =
+        (url.contains("tournament=") && url.contains("date=")) || url.contains("/schedule");
+    if !is_schedule_like {
+        return endpoint_ttl;
+    }
+
+    match serde_json::from_str::<ScheduleResponse>(response_text) {
+        Ok(schedule_response) => {
+            let ttl = schedule_cache_ttl(&schedule_response, now, endpoint_ttl);
+            if ttl < endpoint_ttl {
+                info!("Live or upcoming game in response from {url}, using {ttl}s cache TTL");
+            } else {
+                debug!("No live or upcoming games in response from {url}, using default TTL");
+            }
+            ttl
+        }
+        Err(_) => endpoint_ttl,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    const TOURNAMENT_URL: &str =
+        "https://liiga.fi/api/v2/games?tournament=runkosarja&date=2026-10-01";
+
+    fn schedule_body(started: bool, ended: bool) -> String {
+        format!(
+            r#"{{"games":[{{"id":1,"season":2026,"start":"2026-10-01T15:30:00Z",
+                "homeTeam":{{"teamId":"a","teamName":"A","goals":0,"goalEvents":[]}},
+                "awayTeam":{{"teamId":"b","teamName":"B","goals":0,"goalEvents":[]}},
+                "finishedType":null,"started":{started},"ended":{ended},
+                "serie":"RUNKOSARJA"}}],
+                "previousGameDate":null,"nextGameDate":null}}"#
+        )
+    }
+
+    #[test]
+    fn tournament_response_just_before_puck_drop_gets_starting_ttl() {
+        let two_minutes_before = Utc.with_ymd_and_hms(2026, 10, 1, 15, 28, 0).unwrap();
+        let ttl = http_cache_ttl(
+            TOURNAMENT_URL,
+            &schedule_body(false, false),
+            two_minutes_before,
+        );
+        assert_eq!(ttl, crate::constants::cache_ttl::STARTING_GAMES_SECONDS);
+    }
+
+    #[test]
+    fn tournament_response_fetched_before_the_window_expires_when_it_opens() {
+        // Fetched at T-6 min: the 10-minute default would keep the "not
+        // started" response cached until T+4 min and hide the puck drop.
+        let six_minutes_before = Utc.with_ymd_and_hms(2026, 10, 1, 15, 24, 0).unwrap();
+        let ttl = http_cache_ttl(
+            TOURNAMENT_URL,
+            &schedule_body(false, false),
+            six_minutes_before,
+        );
+        assert_eq!(ttl, 60);
+    }
+
+    #[test]
+    fn tournament_response_with_live_game_gets_live_ttl() {
+        let mid_game = Utc.with_ymd_and_hms(2026, 10, 1, 16, 0, 0).unwrap();
+        let ttl = http_cache_ttl(TOURNAMENT_URL, &schedule_body(true, false), mid_game);
+        assert_eq!(ttl, crate::constants::cache_ttl::LIVE_GAMES_SECONDS);
+    }
+
+    #[test]
+    fn finished_tournament_response_keeps_default_ttl() {
+        let evening = Utc.with_ymd_and_hms(2026, 10, 1, 20, 0, 0).unwrap();
+        let ttl = http_cache_ttl(TOURNAMENT_URL, &schedule_body(true, true), evening);
+        assert_eq!(ttl, 600);
     }
 }

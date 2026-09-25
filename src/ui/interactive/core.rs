@@ -97,13 +97,20 @@ pub async fn run_interactive_ui(
             let is_date_change = state.current_date() != &last_refresh_date;
             if is_date_change {
                 refresh_coordinator.reset_transient_empty_counter();
-                last_refresh_date = state.current_date().clone();
             }
+            let requested_date = state.current_date().clone();
 
             // Perform comprehensive refresh cycle
             let mut refresh_result = refresh_coordinator
                 .perform_refresh_cycle(&mut state, &refresh_config, is_date_change)
                 .await?;
+
+            // Record the date only once a fetch for it succeeds. A failed fetch
+            // leaves last_games from the old date, so its retry must still count
+            // as a date change.
+            if !refresh_result.had_error {
+                last_refresh_date = requested_date;
+            }
 
             // Set the initial fetched date once on the first successful fetch
             if state.navigation.initial_fetched_date.is_none()

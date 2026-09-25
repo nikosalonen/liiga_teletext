@@ -290,6 +290,7 @@ impl RefreshCoordinator {
                 min_interval_between_refreshes,
                 last_rate_limit_hit: state.adaptive_polling.last_backoff_hit(),
                 rate_limit_backoff: state.adaptive_polling.retry_backoff(),
+                retry_pending: !state.adaptive_polling.retry_backoff().is_zero(),
                 current_date: state.current_date(),
             })
         } else {
@@ -398,9 +399,7 @@ impl RefreshCoordinator {
                 needs_render = true;
             }
         } else if had_error {
-            tracing::debug!(
-                "Auto-refresh failed but no data changes detected, continuing with existing UI"
-            );
+            tracing::debug!("Refresh failed; keeping the existing UI");
         }
 
         // Handle page restoration when loading screen was shown but data didn't change
@@ -1014,11 +1013,11 @@ impl RefreshCoordinator {
         let mut needs_state_render = false;
 
         // Skip change detection for results that carry no meaningful game data
-        // (date-mismatch discards, standings refreshes, or transient-empty preserves)
+        // (date-mismatch discards, standings or bracket refreshes, or transient-empty preserves)
         // to avoid clearing last_games state
         if result.skip_change_detection {
             tracing::debug!(
-                "Skipping change detection (standings, date-mismatch, or transient-empty preserve)"
+                "Skipping change detection (standings, bracket, date-mismatch, or transient-empty preserve)"
             );
             // Still hide the auto-refresh spinner so it doesn't stay stuck
             if let Some(page) = state.current_page_mut()
@@ -1026,6 +1025,27 @@ impl RefreshCoordinator {
             {
                 page.hide_auto_refresh_indicator();
                 page.skip_next_screen_clear();
+                state.request_render();
+                needs_state_render = true;
+            }
+            return needs_state_render;
+        }
+
+        // A failed games fetch returns an empty list. Handle it before change
+        // detection: otherwise the empty list counts as a change, overwrites
+        // last_games, skips the error warning, and makes the next refresh use
+        // the 60 s "no games" interval. (Standings and bracket failures return
+        // earlier, via skip_change_detection.)
+        if result.had_error {
+            tracing::debug!(
+                "Refresh failed; keeping last_games and showing the error warning until a retry succeeds"
+            );
+            if let Some(page) = state.current_page_mut() {
+                page.show_error_warning();
+                if page.is_auto_refresh_indicator_active() {
+                    page.hide_auto_refresh_indicator();
+                    page.skip_next_screen_clear();
+                }
                 state.request_render();
                 needs_state_render = true;
             }
@@ -1050,15 +1070,6 @@ impl RefreshCoordinator {
                 // Since we can't clone TeletextPage, we'll need to restructure this
                 // For now, we'll handle this in the calling code
             }
-        } else if result.had_error {
-            tracing::debug!(
-                "Auto-refresh failed but no data changes detected, continuing with existing UI"
-            );
-            if let Some(page) = state.current_page_mut() {
-                page.show_error_warning();
-                state.request_render();
-                needs_state_render = true;
-            }
         } else {
             // Track ongoing games with static time to confirm API limitations
             self.analyze_ongoing_games(&result.games);
@@ -1069,23 +1080,17 @@ impl RefreshCoordinator {
             tracing::debug!("No data changes detected, skipping UI update");
         }
 
-        // Update change detection variables only on successful fetch
-        if !result.had_error {
-            if let Some(page) = state.current_page_mut()
-                && page.is_error_warning_active()
-            {
-                page.hide_error_warning();
-                state.request_render();
-                needs_state_render = true;
-            }
-            state
-                .change_detection
-                .update_state(result.games.clone(), games_hash);
-        } else {
-            tracing::debug!(
-                "Preserving last_games due to fetch error; will retry without clearing state"
-            );
+        // The fetch succeeded, so clear any warning left by an earlier failure
+        if let Some(page) = state.current_page_mut()
+            && page.is_error_warning_active()
+        {
+            page.hide_error_warning();
+            state.request_render();
+            needs_state_render = true;
         }
+        state
+            .change_detection
+            .update_state(result.games.clone(), games_hash);
 
         // Hide auto-refresh spinner after fetch completes
         if let Some(page) = state.current_page_mut()
@@ -1524,6 +1529,83 @@ mod tests {
 
         assert_eq!(state.change_detection.last_games().len(), 1);
         assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
+    }
+
+    #[test]
+    fn test_process_refresh_results_keeps_last_games_on_fetch_error() {
+        let coordinator = RefreshCoordinator::new();
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+        state.set_current_page(TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            false,
+            true,
+            true,
+            false,
+            false,
+        ));
+
+        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        game.result = "3-2".to_string();
+        let games_hash = calculate_games_hash(std::slice::from_ref(&game));
+        state
+            .change_detection
+            .update_state(vec![game.clone()], games_hash);
+
+        if let Some(page) = state.current_page_mut() {
+            page.show_auto_refresh_indicator();
+        }
+
+        // A failed fetch carries no games. It must not replace the last good data.
+        let failed_result = RefreshResult {
+            games: vec![],
+            had_error: true,
+            fetched_date: String::new(),
+            should_retry: true,
+            new_page: None,
+            needs_render: false,
+            skip_change_detection: false,
+        };
+        coordinator.process_refresh_results(&mut state, &failed_result);
+
+        assert_eq!(state.change_detection.last_games().len(), 1);
+        assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
+        assert!(
+            state
+                .current_page_mut()
+                .is_some_and(|page| page.is_error_warning_active()),
+            "a failed refresh should show the error warning"
+        );
+        assert!(
+            state
+                .current_page_mut()
+                .is_some_and(|page| !page.is_auto_refresh_indicator_active()),
+            "a failed refresh should hide the auto-refresh spinner"
+        );
+
+        // The retry succeeds: the warning goes away and the new games replace the old ones
+        let mut retried_game =
+            crate::testing_utils::TestDataBuilder::create_basic_game("Tappara", "Ilves");
+        retried_game.result = "1-0".to_string();
+        let success_result = RefreshResult {
+            games: vec![retried_game],
+            had_error: false,
+            fetched_date: "2025-03-13".to_string(),
+            should_retry: false,
+            new_page: None,
+            needs_render: false,
+            skip_change_detection: false,
+        };
+        coordinator.process_refresh_results(&mut state, &success_result);
+
+        assert_eq!(state.change_detection.last_games()[0].home_team, "Tappara");
+        assert!(
+            state
+                .current_page_mut()
+                .is_some_and(|page| !page.is_error_warning_active()),
+            "a successful retry should clear the error warning"
+        );
     }
 
     #[test]

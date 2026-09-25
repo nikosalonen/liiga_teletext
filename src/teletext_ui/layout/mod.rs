@@ -1073,7 +1073,9 @@ impl ColumnLayoutManager {
                             );
                         } else {
                             // Extreme case: reduce everything to fit
-                            config.max_player_name_width = (available_for_play_area - 2).max(1); // Reserve 2 for spacing
+                            // Reserve 2 for spacing; the area can be as small as 1 column
+                            config.max_player_name_width =
+                                available_for_play_area.saturating_sub(2).max(1);
                             config.max_goal_types_width = 0; // Will be handled specially in rendering
 
                             tracing::error!(
@@ -1784,6 +1786,23 @@ mod tests {
         assert!(layout.play_icon_column < 45);
         assert!(layout.time_column < 45);
         assert!(layout.score_column < 45);
+    }
+
+    #[test]
+    fn test_fallback_layout_at_42_columns_does_not_underflow() {
+        // At 42 columns only 1 column is left for the play area. The old
+        // `available - 2` underflowed: a panic in debug, usize::MAX in release.
+        let mut manager = ColumnLayoutManager::new(42, 2);
+
+        let goal_events = vec![create_test_goal_event(
+            "Long Player Name",
+            vec!["YV".to_string(), "IM".to_string()],
+        )];
+        let games = vec![create_test_game_data("HIFK", "TPS", goal_events)];
+        let layout = manager.create_fallback_layout(&games);
+
+        assert!(layout.max_player_name_width >= 1);
+        assert!(layout.max_player_name_width < 42);
     }
 
     #[test]

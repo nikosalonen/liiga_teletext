@@ -251,9 +251,11 @@ impl TeletextPage {
                 let abbreviated_header = if header_text.starts_with("Seuraavat ottelut ") {
                     // Special handling for "Seuraavat ottelut DD.MM." - abbreviate "Seuraavat" to preserve date
                     header_text.replace("Seuraavat ottelut ", "Seur. ottelut ")
-                } else if header_text.len() > 30 {
-                    // For other long headers, truncate at 30 characters (increased from 22)
-                    format!("{}...", &header_text[..30])
+                } else if header_text.chars().count() > 30 {
+                    // Truncate other long headers to 30 characters.
+                    // Count chars, not bytes: slicing bytes panics inside Ä/Ö.
+                    let truncated: String = header_text.chars().take(30).collect();
+                    format!("{truncated}...")
                 } else {
                     header_text.clone()
                 };
@@ -438,6 +440,33 @@ pub fn should_highlight_score(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_header_truncation_handles_multibyte_characters() {
+        // Byte 30 falls inside "Ä"; slicing by bytes panicked here.
+        let header = format!("{}ÄÄKKÖSET JA MUUT OTTELUT", "A".repeat(29));
+        let page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            true,
+            false,
+        );
+
+        let formatted = page.format_compact_game(
+            &TeletextRow::SeriesHeader(header),
+            &crate::teletext_ui::CompactDisplayConfig::default(),
+        );
+
+        let expected = format!(">>> {}Ä...", "A".repeat(29));
+        assert!(
+            formatted.contains(&expected),
+            "expected {expected:?} in {formatted:?}"
+        );
+    }
 
     #[test]
     fn test_format_score_with_indicators_final() {

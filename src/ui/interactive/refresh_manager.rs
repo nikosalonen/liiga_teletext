@@ -98,6 +98,8 @@ pub(super) struct AutoRefreshParams<'a> {
     pub min_interval_between_refreshes: Duration,
     pub last_rate_limit_hit: Instant,
     pub rate_limit_backoff: Duration,
+    /// The last refresh failed and has not been retried successfully yet.
+    pub retry_pending: bool,
     pub current_date: &'a Option<String>,
 }
 
@@ -133,6 +135,13 @@ pub(super) fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool
         return true;
     }
 
+    // A failed refresh keeps the last good games on screen. Retry it even when
+    // those games are all scheduled for later, or the retry would never run.
+    if params.retry_pending {
+        tracing::debug!("Auto-refresh triggered: retrying a failed refresh");
+        return true;
+    }
+
     let has_ongoing_games = has_live_games_from_game_data(params.games);
     let all_scheduled = !params.games.is_empty() && params.games.iter().all(is_future_game);
 
@@ -152,5 +161,58 @@ pub(super) fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool
             tracing::debug!("Auto-refresh skipped - all games are scheduled for future");
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing_utils::TestDataBuilder;
+
+    /// A game scheduled three hours from now, well outside the near-start window.
+    fn game_later_today() -> GameData {
+        let mut game = TestDataBuilder::create_basic_game("TPS", "HIFK");
+        game.score_type = ScoreType::Scheduled;
+        game.start = (chrono::Utc::now() + chrono::Duration::hours(3)).to_rfc3339();
+        game
+    }
+
+    fn params_for(games: &[GameData], retry_pending: bool) -> AutoRefreshParams<'_> {
+        let long_ago = Instant::now()
+            .checked_sub(Duration::from_secs(600))
+            .unwrap_or_else(Instant::now);
+        AutoRefreshParams {
+            needs_refresh: false,
+            games,
+            last_auto_refresh: long_ago,
+            auto_refresh_interval: Duration::from_secs(60),
+            min_interval_between_refreshes: Duration::from_secs(10),
+            last_rate_limit_hit: long_ago,
+            rate_limit_backoff: Duration::from_secs(2),
+            retry_pending,
+            current_date: &None,
+        }
+    }
+
+    #[test]
+    fn all_scheduled_day_does_not_auto_refresh() {
+        let games = [game_later_today()];
+        assert!(!should_trigger_auto_refresh(params_for(&games, false)));
+    }
+
+    #[test]
+    fn failed_refresh_is_retried_even_when_all_games_are_scheduled() {
+        // A failed refresh keeps the last good games. If those are all scheduled
+        // for later, the retry must still run once the backoff has passed.
+        let games = [game_later_today()];
+        assert!(should_trigger_auto_refresh(params_for(&games, true)));
+    }
+
+    #[test]
+    fn failed_refresh_still_waits_for_backoff() {
+        let games = [game_later_today()];
+        let mut params = params_for(&games, true);
+        params.last_rate_limit_hit = Instant::now();
+        assert!(!should_trigger_auto_refresh(params));
     }
 }
