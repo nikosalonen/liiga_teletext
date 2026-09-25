@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rust terminal application displaying Finnish Hockey League (Liiga) results in authentic YLE Teksti-TV (teletext) style. Features real-time data fetching from the Liiga API, multi-level caching, interactive page navigation, and multiple display modes.
 
-- **Rust Edition**: 2024, MSRV 1.88 (let chains). Keep `rust-version` in Cargo.toml, the README, and the CI `msrv` job in sync; only bump when code actually needs a newer feature
+- **Rust Edition**: 2024, MSRV 1.93.1 (let chains need 1.88; the `serial_test` 4 dev-dependency needs 1.93.1). Keep `rust-version` in Cargo.toml, the README, and the CI `msrv` job in sync; only bump when code actually needs a newer feature
 - **Async Runtime**: Tokio (full features)
 - **Terminal**: Crossterm for cross-platform raw mode / alternate screen
 
