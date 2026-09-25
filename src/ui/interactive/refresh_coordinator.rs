@@ -995,9 +995,12 @@ impl RefreshCoordinator {
             }
         };
 
+        let (terminal_width, terminal_height) = crossterm::terminal::size().unwrap_or((80, 24));
+
         let data_changed = if let Some(ref b) = bracket {
-            let new_hash = super::change_detection::calculate_bracket_hash(b);
-            state.change_detection.update_bracket_hash(new_hash)
+            state
+                .change_detection
+                .update_bracket(b, (terminal_width, terminal_height))
         } else {
             true
         };
@@ -1007,7 +1010,30 @@ impl RefreshCoordinator {
             if !data_changed {
                 page.skip_next_screen_clear();
             }
+            // A successful fetch clears the warning left by a failed one.
+            if bracket.is_some() {
+                page.hide_error_warning();
+            }
             state.request_render();
+        }
+
+        // A failed auto-refresh keeps the bracket on screen, with the footer
+        // warning, and is retried with backoff.
+        if bracket.is_none()
+            && is_auto_refresh
+            && let Some(page) = state.current_page_mut()
+            && page.is_bracket_page()
+        {
+            page.show_error_warning();
+            return Ok(RefreshResult {
+                games: vec![],
+                had_error,
+                fetched_date: String::new(),
+                should_retry: had_error,
+                new_page: None,
+                needs_render: true,
+                skip_change_detection: true,
+            });
         }
 
         if !data_changed {
@@ -1022,8 +1048,6 @@ impl RefreshCoordinator {
                 skip_change_detection: true,
             });
         }
-
-        let (terminal_width, terminal_height) = crossterm::terminal::size().unwrap_or((80, 24));
 
         let new_page = if let Some(bracket) = bracket {
             let mut page = navigation_manager::create_bracket_page(

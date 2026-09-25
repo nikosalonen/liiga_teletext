@@ -57,24 +57,16 @@ impl TeletextPage {
         }
     }
 
-    /// Calculates the effective game height considering wide mode.
-    /// In wide mode, we can fit two games side by side, effectively halving the height usage.
-    ///
-    /// # Arguments
-    /// * `game` - The teletext row to calculate effective height for
-    ///
-    /// # Returns
-    /// * `u16` - Effective height in terminal lines considering layout mode
-    pub(super) fn calculate_effective_game_height(&self, game: &TeletextRow) -> u16 {
-        let base_height = self.calculate_game_height(game);
-        if self.wide_mode && self.can_fit_two_pages() {
-            // In wide mode, we can fit two games in the same vertical space
-            // Add spacing between games (1 extra line per game except the last)
-            let height_with_spacing = base_height + 1; // Add space between games
-            // So each game effectively uses half the height
-            height_with_spacing.div_ceil(2) // Round up to ensure we don't underestimate
-        } else {
-            base_height
+    /// Lines a row takes in a wide-mode column, including the blank line that
+    /// `render_wide_mode_content` draws after it. Headers and error messages
+    /// are one line there, plus that blank line.
+    pub(super) fn wide_column_row_height(&self, row: &TeletextRow) -> u16 {
+        match row {
+            TeletextRow::FutureGamesHeader(_)
+            | TeletextRow::PlayoffPhaseHeader(_)
+            | TeletextRow::SeriesHeader(_)
+            | TeletextRow::ErrorMessage(_) => 2,
+            _ => self.calculate_game_height(row),
         }
     }
 
@@ -101,7 +93,7 @@ impl TeletextPage {
 
     /// Returns true for rows that only make sense directly above the content
     /// they introduce, and so must never end a page on their own.
-    fn is_section_header(row: &TeletextRow) -> bool {
+    pub(super) fn is_section_header(row: &TeletextRow) -> bool {
         matches!(
             row,
             TeletextRow::FutureGamesHeader(_)
@@ -118,7 +110,7 @@ impl TeletextPage {
     /// tells the reader nothing, so it belongs on the next page with its games.
     fn placement_height(&self, index: usize) -> u16 {
         let rows = &self.content_rows;
-        let mut total = self.calculate_effective_game_height(&rows[index]);
+        let mut total = self.calculate_game_height(&rows[index]);
         if !Self::is_section_header(&rows[index]) {
             return total;
         }
@@ -128,7 +120,7 @@ impl TeletextPage {
             if matches!(row, TeletextRow::BracketPageBreak) {
                 break;
             }
-            total += self.calculate_effective_game_height(row);
+            total += self.calculate_game_height(row);
             if !Self::is_section_header(row) {
                 break;
             }
@@ -142,6 +134,14 @@ impl TeletextPage {
     /// if the two chunked separately they could disagree and navigation would
     /// run off the end of the real content.
     fn paginate(&self) -> Vec<Vec<&TeletextRow>> {
+        // Same conditions render_buffered uses to pick wide or compact rendering
+        if self.wide_mode && self.can_fit_two_pages() {
+            return self.paginate_wide();
+        }
+        if self.compact_mode {
+            return self.paginate_compact();
+        }
+
         let available_height = self.screen_height.saturating_sub(5);
 
         let mut pages: Vec<Vec<&TeletextRow>> = Vec::new();
@@ -157,23 +157,31 @@ impl TeletextPage {
                 continue;
             }
 
-            let row_height = self.calculate_effective_game_height(row);
+            let row_height = self.calculate_game_height(row);
             let needed = self.placement_height(index);
+
+            // Headers alone at the top of a page were placed because their
+            // group doesn't fit on any page; breaking now would strand them.
+            let page_has_content = current_page_items
+                .iter()
+                .any(|placed| !Self::is_section_header(placed));
 
             if current_height + needed <= available_height {
                 current_page_items.push(row);
                 current_height += row_height;
-            } else if !current_page_items.is_empty() {
+            } else if page_has_content {
                 pages.push(std::mem::take(&mut current_page_items));
                 current_page_items.push(row);
                 current_height = row_height;
-            } else if row_height <= available_height {
-                // Already at the top of a page and the group still doesn't fit.
-                // Breaking again would gain nothing, so place the row here.
+            } else {
+                // At the top of a page (or below only headers) and the row, or
+                // its header group, still doesn't fit. Breaking again would gain
+                // nothing, so place it here. A row taller than the whole page is
+                // clipped by the renderer rather than dropped: showing the result
+                // and the scorers that fit beats an empty page.
                 current_page_items.push(row);
-                current_height = row_height;
+                current_height += row_height;
             }
-            // Otherwise the row alone overflows the page and is skipped.
         }
 
         if !current_page_items.is_empty() {
@@ -181,6 +189,120 @@ impl TeletextPage {
         }
 
         pages
+    }
+
+    /// Splits content rows into pages of two wide-mode columns.
+    /// See [`pack_two_columns`] for how rows fill the columns.
+    fn paginate_wide(&self) -> Vec<Vec<&TeletextRow>> {
+        let available_height = self.screen_height.saturating_sub(5);
+        let units: Vec<WideUnit> = self
+            .content_rows
+            .iter()
+            .map(|row| WideUnit {
+                height: self.wide_column_row_height(row),
+                keep_with_next: Self::is_section_header(row),
+                page_break: matches!(row, TeletextRow::BracketPageBreak),
+            })
+            .collect();
+
+        pack_two_columns(&units, available_height)
+            .into_iter()
+            .map(|indices| indices.into_iter().map(|i| &self.content_rows[i]).collect())
+            .collect()
+    }
+
+    /// Splits content rows into pages by an upper bound on the lines compact
+    /// mode draws.
+    ///
+    /// Compact mode puts several games on one line followed by a blank line,
+    /// draws headers and error messages on lines of their own, and draws no
+    /// scorer lines, so the normal per-game heights would overestimate each
+    /// page several times over. Mirrors `group_games_for_compact_display`,
+    /// which lays out each page's rows.
+    fn paginate_compact(&self) -> Vec<Vec<&TeletextRow>> {
+        use crate::ui::teletext::compact_display::{CompactDisplayConfig, CompactModeValidation};
+
+        // `render_compact_mode_content` draws any warnings above every page.
+        let warning_lines = match self.validate_compact_mode_compatibility() {
+            CompactModeValidation::CompatibleWithWarnings { warnings } => warnings.len() as u16,
+            _ => 0,
+        };
+        let available_height = self.screen_height.saturating_sub(5 + warning_lines);
+        let games_per_line = CompactDisplayConfig::default()
+            .calculate_games_per_line(self.compact_render_width())
+            .max(1);
+
+        let mut pages: Vec<Vec<&TeletextRow>> = Vec::new();
+        let mut current_page_items: Vec<&TeletextRow> = Vec::new();
+        let mut current_height = 0u16;
+        let mut games_in_line = 0usize;
+
+        let rows = &self.content_rows;
+        for (index, row) in rows.iter().enumerate() {
+            if matches!(row, TeletextRow::BracketPageBreak) {
+                if !current_page_items.is_empty() {
+                    pages.push(std::mem::take(&mut current_page_items));
+                    current_height = 0;
+                    games_in_line = 0;
+                }
+                continue;
+            }
+
+            let is_game = matches!(row, TeletextRow::GameResult { .. });
+            let is_header = Self::is_section_header(row);
+            // A new game line costs the line itself plus the blank line after it.
+            let height_for = |games_in_line: usize| -> u16 {
+                match row {
+                    TeletextRow::GameResult { .. } => {
+                        if games_in_line == 0 {
+                            2
+                        } else {
+                            0
+                        }
+                    }
+                    TeletextRow::ErrorMessage(message) => message.lines().count() as u16,
+                    _ if is_header => 1,
+                    // Compact mode draws nothing for standings and bracket rows;
+                    // those pages always use normal mode.
+                    _ => 0,
+                }
+            };
+            // Keep a header on the same page as the first game line below it.
+            let followed_by_game = rows
+                .get(index + 1)
+                .is_some_and(|next| matches!(next, TeletextRow::GameResult { .. }));
+            let header_group = if is_header && followed_by_game { 2 } else { 0 };
+
+            let mut row_height = height_for(games_in_line);
+            if current_height + row_height + header_group > available_height
+                && !current_page_items.is_empty()
+            {
+                pages.push(std::mem::take(&mut current_page_items));
+                current_height = 0;
+                games_in_line = 0;
+                row_height = height_for(0);
+            }
+
+            current_page_items.push(row);
+            current_height += row_height;
+            games_in_line = if is_game {
+                (games_in_line + 1) % games_per_line
+            } else {
+                0
+            };
+        }
+
+        if !current_page_items.is_empty() {
+            pages.push(current_page_items);
+        }
+
+        pages
+    }
+
+    /// Terminal width compact mode will render at. Matches `render_buffered`:
+    /// fixed widths in non-interactive mode, the live terminal width otherwise.
+    fn compact_render_width(&self) -> usize {
+        self.layout_width() as usize
     }
 
     /// Calculates and returns the content that should be displayed on the current page.
@@ -318,6 +440,115 @@ impl TeletextPage {
     }
 }
 
+/// One content row as wide-mode pagination sees it.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct WideUnit {
+    /// Lines the row takes in a column, including the blank line after it.
+    pub(super) height: u16,
+    /// A section header: keep it in the same column as the row below it.
+    pub(super) keep_with_next: bool,
+    /// A forced page break (bracket pages); takes no space.
+    pub(super) page_break: bool,
+}
+
+/// Packs rows into pages of two columns, each `available` lines tall: the left
+/// column fills first, then the right, then a new page starts. Returns the row
+/// indices on each page, in order.
+///
+/// This only decides which rows share a page. The renderer re-splits each page
+/// between the columns by height (`balanced_split_index`), which never makes
+/// the taller column taller than this packing.
+///
+/// A row taller than a whole column still gets a column of its own rather than
+/// being dropped; the renderer clips it above the footer.
+pub(super) fn pack_two_columns(units: &[WideUnit], available: u16) -> Vec<Vec<usize>> {
+    let mut pages = Vec::new();
+    let mut page = Vec::new();
+    let mut in_right_column = false;
+    let mut used = 0u16;
+    // Whether the current column holds anything besides headers. Headers alone
+    // in a column were placed because their group fits in no column; moving
+    // on now would strand them.
+    let mut column_has_content = false;
+
+    for (index, unit) in units.iter().enumerate() {
+        if unit.page_break {
+            if !page.is_empty() {
+                pages.push(std::mem::take(&mut page));
+            }
+            in_right_column = false;
+            used = 0;
+            column_has_content = false;
+            continue;
+        }
+
+        // A header claims the rows it introduces, up to and including the
+        // first one that isn't itself a header.
+        let mut needed = unit.height;
+        if unit.keep_with_next {
+            for next in &units[index + 1..] {
+                if next.page_break {
+                    break;
+                }
+                needed += next.height;
+                if !next.keep_with_next {
+                    break;
+                }
+            }
+        }
+        // The last row in a column doesn't draw its trailing blank line.
+        let fits = used + needed <= available + 1;
+
+        if !fits && column_has_content {
+            if in_right_column {
+                pages.push(std::mem::take(&mut page));
+                in_right_column = false;
+            } else {
+                in_right_column = true;
+            }
+            used = 0;
+            column_has_content = false;
+        }
+
+        page.push(index);
+        used += unit.height;
+        column_has_content |= !unit.keep_with_next;
+    }
+
+    if !page.is_empty() {
+        pages.push(page);
+    }
+    pages
+}
+
+/// Chooses how many rows of a wide-mode page go into the left column, so the
+/// taller column is as short as possible. On a tie the left column takes more.
+/// Never splits directly after a header, which would strand it at the bottom
+/// of the left column. If every inner split would do that, all rows go in the
+/// left column.
+pub(super) fn balanced_split_index(heights: &[u16], is_header: &[bool]) -> usize {
+    let total: u32 = heights.iter().map(|&h| u32::from(h)).sum();
+    let mut best: Option<(u32, usize)> = None;
+    let mut left: u32 = 0;
+
+    for split in 0..=heights.len() {
+        if split > 0 {
+            left += u32::from(heights[split - 1]);
+        }
+        let strands_header = split > 0 && split < heights.len() && is_header[split - 1];
+        if strands_header {
+            continue;
+        }
+        let taller = left.max(total - left);
+        if best.is_none_or(|(best_taller, _)| taller <= best_taller) {
+            best = Some((taller, split));
+        }
+    }
+
+    // Split 0 never strands a header, so `best` is always set.
+    best.map_or(0, |(_, split)| split)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,6 +607,482 @@ mod tests {
         rows.iter()
             .filter(|row| matches!(row, TeletextRow::GameResult { .. }))
             .count()
+    }
+
+    /// A finished game where the home team scored `home_goals` times, each by
+    /// a different scorer: one result line plus one scorer line per goal.
+    fn finished_game(index: usize, home_goals: i32) -> GameData {
+        let mut game = scheduled_game(index);
+        game.score_type = ScoreType::Final;
+        game.result = format!("{home_goals}-0");
+        game.goal_events = (1..=home_goals)
+            .map(|goal| {
+                crate::testing_utils::TestDataBuilder::create_goal_event(
+                    "Scorer",
+                    goal * 3,
+                    goal,
+                    0,
+                    true,
+                )
+            })
+            .collect();
+        game
+    }
+
+    /// A finished 7-0 game: one result line plus seven scorer lines plus a spacer.
+    fn seven_goal_game() -> GameData {
+        finished_game(0, 7)
+    }
+
+    /// Builds a wide- or compact-mode page laid out for a `width` x `height`
+    /// terminal, with pagination running (no height-limit override).
+    fn page_with_size(
+        width: u16,
+        height: u16,
+        compact_mode: bool,
+        wide_mode: bool,
+    ) -> TeletextPage {
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            true,
+            false,
+            false,
+            compact_mode,
+            wide_mode,
+        );
+        page.set_screen_height(height);
+        page.set_terminal_width(width);
+        page
+    }
+
+    /// Renders every page with `render_page` and returns the games seen and
+    /// the lowest row drawn on each page.
+    fn render_all_pages(
+        page: &mut TeletextPage,
+        render_page: impl Fn(&TeletextPage, &[&TeletextRow], &mut String),
+    ) -> (usize, Vec<usize>) {
+        let mut seen_games = 0;
+        let mut bottom_rows = Vec::new();
+        for page_index in 0..page.total_pages() {
+            page.set_current_page(page_index);
+            let (rows, _) = page.get_page_content();
+            assert!(!rows.is_empty(), "page {page_index} is empty");
+            seen_games += game_count(&rows);
+            let mut buffer = String::new();
+            render_page(page, &rows, &mut buffer);
+            bottom_rows.push(max_rendered_row(&buffer));
+        }
+        (seen_games, bottom_rows)
+    }
+
+    fn render_wide(page: &TeletextPage, rows: &[&TeletextRow], buffer: &mut String) {
+        let mut current_line = 4;
+        page.render_wide_mode_content(buffer, rows, 136, &mut current_line, 231, 46);
+    }
+
+    fn render_compact(page: &TeletextPage, rows: &[&TeletextRow], buffer: &mut String) {
+        let mut current_line = 4;
+        let width = page.layout_width() as usize;
+        page.render_compact_mode_content(buffer, rows, width, &mut current_line, 231);
+    }
+
+    /// Largest 1-based ANSI row that `buffer` positions the cursor on.
+    fn max_rendered_row(buffer: &str) -> usize {
+        // Cursor moves look like "\x1b[{row};{col}H"; colors ("\x1b[38;5;..m") don't end in H.
+        buffer
+            .split("\x1b[")
+            .skip(1)
+            .filter_map(|code| code.split_once('H').map(|(position, _)| position))
+            .filter_map(|position| position.split_once(';'))
+            .filter_map(|(row, column)| {
+                column.parse::<usize>().ok()?;
+                row.parse::<usize>().ok()
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn test_game_taller_than_page_is_still_shown() {
+        // available = 7 lines, but the game needs 9. It used to be skipped
+        // silently, leaving an empty page with no hint that a game existed.
+        let mut page = page_with_height(12);
+        page.add_game_result(GameResultData::new(&seven_goal_game()));
+
+        let (rows, _) = page.get_page_content();
+        assert_eq!(game_count(&rows), 1);
+        assert_eq!(page.total_pages(), 1);
+    }
+
+    #[test]
+    fn test_game_taller_than_page_is_clipped_above_footer() {
+        let mut page = page_with_height(12);
+        page.add_game_result(GameResultData::new(&seven_goal_game()));
+
+        let (rows, _) = page.get_page_content();
+        let mut buffer = String::new();
+        let mut current_line = 4;
+        page.render_normal_mode_content(&mut buffer, &rows, &mut current_line, 231, 46, 46);
+
+        // Rows 11 and 12 belong to the loading line and the footer. Row 10,
+        // the last content row, says the last two goals are not shown.
+        assert_eq!(max_rendered_row(&buffer), 10);
+        assert!(buffer.contains("+2 maalia"), "no marker for hidden goals");
+    }
+
+    #[test]
+    fn test_header_above_oversized_game_shares_its_page() {
+        // The header's group (1 + 9 lines) fits on no 7-line page. It used to
+        // get a page of its own, with the game alone on the next one.
+        let mut page = page_with_height(12);
+        page.add_game_result(GameResultData::new(&scheduled_game(1)));
+        page.add_series_header("PUDOTUSPELIT".to_string());
+        page.add_game_result(GameResultData::new(&seven_goal_game()));
+        page.add_game_result(GameResultData::new(&scheduled_game(2)));
+
+        assert_eq!(page.total_pages(), 3);
+        page.set_current_page(1);
+        let (rows, _) = page.get_page_content();
+        assert_eq!(header_texts(&rows), vec!["PUDOTUSPELIT"]);
+        assert_eq!(
+            game_count(&rows),
+            1,
+            "the header must share a page with its game"
+        );
+    }
+
+    #[test]
+    fn test_wide_pages_stay_above_footer() {
+        // 136x24: two 19-line columns, content on rows 4-22.
+        let mut page = page_with_size(136, 24, false, true);
+        page.add_series_header("RUNKOSARJA".to_string());
+        for (index, goals) in [7, 7, 5, 1, 1, 3, 6, 0, 2, 4].into_iter().enumerate() {
+            page.add_game_result(GameResultData::new(&finished_game(index, goals)));
+        }
+
+        let (seen_games, bottom_rows) = render_all_pages(&mut page, render_wide);
+
+        assert_eq!(seen_games, 10, "every game must appear on exactly one page");
+        assert!(
+            bottom_rows.iter().all(|&row| row <= 22),
+            "a page drew into the footer: {bottom_rows:?}"
+        );
+        // 55 lines of games in 38-line pages: two pages, not one per column.
+        assert_eq!(bottom_rows.len(), 2);
+    }
+
+    #[test]
+    fn test_wide_game_taller_than_column_is_clipped_above_footer() {
+        // 136x14: 9-line columns, content on rows 4-12.
+        let mut page = page_with_size(136, 14, false, true);
+        page.add_game_result(GameResultData::new(&finished_game(0, 12)));
+        page.add_game_result(GameResultData::new(&finished_game(1, 1)));
+
+        let (seen_games, bottom_rows) = render_all_pages(&mut page, render_wide);
+
+        assert_eq!(seen_games, 2);
+        assert_eq!(bottom_rows, vec![12]);
+        page.set_current_page(0);
+        let (rows, _) = page.get_page_content();
+        let mut buffer = String::new();
+        render_wide(&page, &rows, &mut buffer);
+        // Result line plus 7 scorer lines shown, then the marker for the rest.
+        assert!(buffer.contains("+5 maalia"), "no marker for hidden goals");
+    }
+
+    #[test]
+    fn test_compact_pages_stay_above_footer() {
+        // Enough games that a 12-row terminal (7 content lines) needs several
+        // pages, with a header in the middle and more than 20 games so the
+        // "many games" warning line takes a line too.
+        for width in [80, 136] {
+            let mut page = page_with_size(width, 12, true, false);
+            for index in 0..12 {
+                page.add_game_result(GameResultData::new(&finished_game(index, 3)));
+            }
+            page.add_series_header("HARJOITUSOTTELUT".to_string());
+            for index in 12..25 {
+                page.add_game_result(GameResultData::new(&finished_game(index, 1)));
+            }
+
+            let (seen_games, bottom_rows) = render_all_pages(&mut page, render_compact);
+
+            assert_eq!(seen_games, 25, "width {width}: games lost or duplicated");
+            assert!(
+                bottom_rows.iter().all(|&row| row <= 10),
+                "width {width}: a page drew into the footer: {bottom_rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compact_page_count_follows_games_per_line() {
+        // 7 content lines hold three game lines (each plus a blank line).
+        // 18 games at 3 per line (80 columns) are 6 game lines: 2 pages.
+        // At 2 per line (40 columns) they are 9 game lines: 3 pages.
+        let pages_at = |width: u16| {
+            let mut page = page_with_size(width, 12, true, false);
+            for index in 0..18 {
+                page.add_game_result(GameResultData::new(&finished_game(index, 2)));
+            }
+            page.total_pages()
+        };
+        assert_eq!(pages_at(80), 2);
+        assert_eq!(pages_at(40), 3);
+    }
+
+    #[test]
+    fn test_compact_mode_draws_error_messages() {
+        // A fetch error page in compact mode used to show only its header
+        // and footer.
+        let mut page = page_with_size(80, 24, true, false);
+        page.add_error_message("Otteluiden haku epäonnistui.");
+
+        let (rows, _) = page.get_page_content();
+        let mut buffer = String::new();
+        render_compact(&page, &rows, &mut buffer);
+
+        assert!(buffer.contains("Otteluiden haku epäonnistui."));
+    }
+
+    #[test]
+    fn test_compact_mode_paginates_by_compact_lines() {
+        // Compact mode draws no scorer lines, so seven games with five scorers
+        // each take at most 7 x 2 lines (one game per line plus a blank line),
+        // well within the 19 available. Normal-mode heights spread them over 4 pages.
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            true,
+            false,
+            false,
+            true, // compact_mode
+            false,
+        );
+        page.set_screen_height(24);
+        for index in 0..7 {
+            let mut game = scheduled_game(index);
+            game.score_type = ScoreType::Final;
+            game.result = "5-0".to_string();
+            game.goal_events = (1..=5)
+                .map(|goal| {
+                    crate::testing_utils::TestDataBuilder::create_goal_event(
+                        "Scorer",
+                        goal * 5,
+                        goal,
+                        0,
+                        true,
+                    )
+                })
+                .collect();
+            page.add_game_result(GameResultData::new(&game));
+        }
+
+        assert_eq!(page.total_pages(), 1);
+        let (rows, has_more) = page.get_page_content();
+        assert_eq!(game_count(&rows), 7);
+        assert!(!has_more);
+    }
+
+    fn unit(height: u16) -> WideUnit {
+        WideUnit {
+            height,
+            keep_with_next: false,
+            page_break: false,
+        }
+    }
+
+    #[test]
+    fn test_wide_column_split_is_by_height_not_count() {
+        // Max scorer counts 7, 7, 5, 1, 1. Splitting by count put the first
+        // three (24 lines) in the left column.
+        let mut page = TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "RUNKOSARJA".to_string(),
+            true,
+            false,
+            true, // ignore_height_limit: wide mode assumes 136 columns
+            false,
+            true, // wide_mode
+        );
+        for (index, scorers) in [7, 7, 5, 1, 1].into_iter().enumerate() {
+            let mut game = scheduled_game(index);
+            game.score_type = ScoreType::Final;
+            game.goal_events = (1..=scorers)
+                .map(|goal| {
+                    crate::testing_utils::TestDataBuilder::create_goal_event(
+                        "Scorer",
+                        goal * 5,
+                        goal,
+                        0,
+                        true,
+                    )
+                })
+                .collect();
+            page.add_game_result(GameResultData::new(&game));
+        }
+
+        let (left, right) = page.distribute_games_for_wide_display();
+        assert_eq!((left.len(), right.len()), (2, 3));
+    }
+
+    #[test]
+    fn test_wide_pages_fill_left_then_right_column() {
+        // 24-row terminal: 19 lines per column. Heights include the blank
+        // line after each game, which the last game in a column doesn't draw.
+        let units: Vec<WideUnit> = [9, 9, 7, 3, 3, 9, 9].into_iter().map(unit).collect();
+
+        let pages = pack_two_columns(&units, 19);
+
+        // Left: 9 + 9 (17 lines). Right: 7 + 3 + 3. The last two need a new page.
+        assert_eq!(pages, vec![vec![0, 1, 2, 3, 4], vec![5, 6]]);
+    }
+
+    #[test]
+    fn test_wide_pages_place_oversized_row_alone() {
+        let units: Vec<WideUnit> = [30, 3].into_iter().map(unit).collect();
+        assert_eq!(pack_two_columns(&units, 19), vec![vec![0, 1]]);
+    }
+
+    fn header(height: u16) -> WideUnit {
+        WideUnit {
+            keep_with_next: true,
+            ..unit(height)
+        }
+    }
+
+    fn page_break() -> WideUnit {
+        WideUnit {
+            page_break: true,
+            ..unit(0)
+        }
+    }
+
+    #[test]
+    fn test_wide_pages_keep_header_with_oversized_row() {
+        // The header and its 30-line game fit in no column. The header used
+        // to end page 1 with its game starting page 2.
+        let units = [unit(3), header(2), unit(30), unit(3)];
+        assert_eq!(pack_two_columns(&units, 19), vec![vec![0, 1, 2], vec![3]]);
+    }
+
+    #[test]
+    fn test_wide_pages_keep_header_chain_with_its_row() {
+        // Two headers in a row (e.g. "Seuraavat ottelut" and a playoff phase)
+        // and their game: 13 lines, with 6 left in the right column. Looking
+        // only one row ahead ended page 1 with the first header.
+        let units = [unit(18), unit(14), header(2), header(2), unit(9)];
+        assert_eq!(
+            pack_two_columns(&units, 19),
+            vec![vec![0, 1], vec![2, 3, 4]]
+        );
+    }
+
+    #[test]
+    fn test_wide_pages_exact_fit_stays_in_one_column() {
+        // 10 + 10 is 20 lines with blanks, 19 drawn: fits a 19-line column.
+        assert_eq!(
+            pack_two_columns(&[unit(10), unit(10)], 19),
+            vec![vec![0, 1]]
+        );
+        // With a full right column too, the next row needs a new page.
+        let units = [unit(10), unit(10), unit(10), unit(10), unit(1)];
+        assert_eq!(
+            pack_two_columns(&units, 19),
+            vec![vec![0, 1, 2, 3], vec![4]]
+        );
+        // 10 + 11 doesn't fit, so each column holds one row.
+        let units = [unit(10), unit(11), unit(10), unit(11), unit(1)];
+        assert_eq!(
+            pack_two_columns(&units, 19),
+            vec![vec![0, 1], vec![2, 3, 4]]
+        );
+    }
+
+    #[test]
+    fn test_wide_pages_follow_page_breaks_without_empty_pages() {
+        let units = [
+            page_break(),
+            unit(3),
+            page_break(),
+            page_break(),
+            unit(3),
+            page_break(),
+        ];
+        assert_eq!(pack_two_columns(&units, 19), vec![vec![1], vec![4]]);
+        assert_eq!(pack_two_columns(&[], 19), Vec::<Vec<usize>>::new());
+    }
+
+    #[test]
+    fn test_wide_column_split_never_exceeds_the_packed_columns() {
+        // Pagination packs rows left column first; rendering re-splits each
+        // page by height. The re-split must never make a column taller than
+        // the page was packed for. Checked over many generated row lists.
+        let mut seed = 0x2545_f491_u32;
+        let mut next = |bound: u32| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed % bound
+        };
+
+        for _ in 0..500 {
+            let available = [9, 14, 19, 25][next(4) as usize];
+            let count = 1 + next(14) as usize;
+            let mut units = Vec::new();
+            for index in 0..count {
+                // Headers are 2 lines; never two in a row, never last.
+                let previous_is_header = units.last().is_some_and(|u: &WideUnit| u.keep_with_next);
+                if index + 1 < count && !previous_is_header && next(4) == 0 {
+                    units.push(header(2));
+                } else {
+                    units.push(unit(2 + next(6) as u16));
+                }
+            }
+
+            let pages = pack_two_columns(&units, available);
+
+            let flattened: Vec<usize> = pages.iter().flatten().copied().collect();
+            assert_eq!(flattened, (0..count).collect::<Vec<_>>(), "{units:?}");
+            for page in &pages {
+                assert!(!page.is_empty());
+                let heights: Vec<u16> = page.iter().map(|&i| units[i].height).collect();
+                let is_header: Vec<bool> = page.iter().map(|&i| units[i].keep_with_next).collect();
+                let split = balanced_split_index(&heights, &is_header);
+                let left: u16 = heights[..split].iter().sum();
+                let right: u16 = heights[split..].iter().sum();
+                assert!(
+                    left <= available + 1 && right <= available + 1,
+                    "available {available}, page {heights:?} split at {split}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_wide_column_split_balances_by_height() {
+        // Splitting by count (3 left, 2 right) gives a 24-line left column
+        // that runs off a 24-row terminal. Balancing by height gives 17 / 12.
+        assert_eq!(balanced_split_index(&[9, 9, 7, 3, 3], &[false; 5]), 2);
+    }
+
+    #[test]
+    fn test_wide_column_split_gives_left_the_extra_equal_row() {
+        assert_eq!(balanced_split_index(&[3, 3, 3], &[false; 3]), 2);
+    }
+
+    #[test]
+    fn test_wide_column_split_keeps_header_with_its_game() {
+        // Best split by height is after index 1, which is a header: that
+        // would leave it alone at the bottom of the left column. Splits 1 and
+        // 3 tie at 8 lines; the left column takes more.
+        let heights = [3, 2, 3, 3];
+        let headers = [false, true, false, false];
+        assert_eq!(balanced_split_index(&heights, &headers), 3);
     }
 
     #[test]

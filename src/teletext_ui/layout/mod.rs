@@ -722,7 +722,7 @@ impl ColumnLayoutManager {
                     event.scorer_name.clone()
                 };
 
-                let player_name_len = safe_player_name.len();
+                let player_name_len = safe_player_name.chars().count();
                 if player_name_len > max_player_name_width {
                     max_player_name_width = player_name_len;
                     tracing::debug!(
@@ -735,7 +735,7 @@ impl ColumnLayoutManager {
                 // Track longest goal type combination with safe fallbacks
                 let goal_type_display = event.get_goal_type_display();
 
-                let goal_type_len = goal_type_display.len();
+                let goal_type_len = goal_type_display.chars().count();
                 if goal_type_len > max_goal_types_width {
                     max_goal_types_width = goal_type_len;
                     tracing::debug!(
@@ -1188,9 +1188,10 @@ impl ColumnLayoutManager {
 
         for game in games {
             for event in &game.goal_events {
-                max_player_name_width = max_player_name_width.max(event.scorer_name.len());
+                max_player_name_width =
+                    max_player_name_width.max(event.scorer_name.chars().count());
                 let goal_type_display = event.get_goal_type_display();
-                max_goal_types_width = max_goal_types_width.max(goal_type_display.len());
+                max_goal_types_width = max_goal_types_width.max(goal_type_display.chars().count());
             }
         }
 
@@ -1223,9 +1224,10 @@ impl ColumnLayoutManager {
 
         for game in games {
             for event in &game.goal_events {
-                max_player_name_width = max_player_name_width.max(event.scorer_name.len());
+                max_player_name_width =
+                    max_player_name_width.max(event.scorer_name.chars().count());
                 let goal_type_display = event.get_goal_type_display();
-                max_goal_types_width = max_goal_types_width.max(goal_type_display.len());
+                max_goal_types_width = max_goal_types_width.max(goal_type_display.chars().count());
             }
         }
 
@@ -1803,6 +1805,61 @@ mod tests {
 
         assert!(layout.max_player_name_width >= 1);
         assert!(layout.max_player_name_width < 42);
+    }
+
+    #[test]
+    fn test_layout_measures_names_by_display_width_not_bytes() {
+        // "Hämäläinen Ma." is 14 columns but 17 bytes. Counting bytes made the
+        // name column 3 wider and pushed the time and score right with it.
+        let layout_for = |scorer: &str| {
+            let mut manager = ColumnLayoutManager::new(80, 2);
+            let goal_events = vec![create_test_goal_event(
+                scorer,
+                vec!["YV".to_string(), "TM".to_string()],
+            )];
+            manager.calculate_layout(&[create_test_game_data("HIFK", "TPS", goal_events)])
+        };
+
+        let finnish = layout_for("Hämäläinen Ma.");
+        let ascii = layout_for("Hamalainen Ma.");
+
+        assert_eq!(finnish.max_player_name_width, ascii.max_player_name_width);
+        assert_eq!(finnish.time_column, ascii.time_column);
+        assert_eq!(finnish.score_column, ascii.score_column);
+    }
+
+    #[test]
+    fn test_fallback_analysis_measures_names_by_display_width_not_bytes() {
+        // Narrow terminals size the name column in the fallback analyses.
+        // "Hämäläinen" is 10 columns but 13 bytes.
+        let games_with = |scorer: &str| {
+            let goal_events = vec![create_test_goal_event(scorer, vec!["YV".to_string()])];
+            vec![create_test_game_data("HIFK", "TPS", goal_events)]
+        };
+        let finnish = games_with("Hämäläinen");
+        let ascii = games_with("Hamalainen");
+
+        for width in [45, 50, 55, 60, 70] {
+            let manager = ColumnLayoutManager::new(width, 2);
+            assert_eq!(
+                manager
+                    .analyze_content_for_fallback(&finnish)
+                    .max_player_name_width,
+                manager
+                    .analyze_content_for_fallback(&ascii)
+                    .max_player_name_width,
+                "width {width}"
+            );
+            assert_eq!(
+                manager
+                    .analyze_content_for_fallback_with_truncation(&finnish)
+                    .max_player_name_width,
+                manager
+                    .analyze_content_for_fallback_with_truncation(&ascii)
+                    .max_player_name_width,
+                "width {width}"
+            );
+        }
     }
 
     #[test]
