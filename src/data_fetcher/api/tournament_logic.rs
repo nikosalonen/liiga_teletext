@@ -109,47 +109,57 @@ pub(super) async fn clear_unavailable_tournaments_cache() {
     UNAVAILABLE_TOURNAMENTS.write().await.clear();
 }
 
-/// Determines which tournaments to check based on the month
+/// The tournaments to check for a month, in priority order: preseason,
+/// regular season, playoffs, playout, qualifications. The windows are wide
+/// on purpose (preseason covers May-September), so a list may include a
+/// tournament that has no games that month.
+/// The live, historical and date search lists all come from here.
 pub fn determine_tournaments_for_month(month: u32) -> Vec<TournamentType> {
-    let tournaments = if (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month) {
-        // Spring months (March-June): check playoffs, playout, qualifications, and runkosarja
-        info!(
-            "Spring month {} detected, checking all tournament types",
-            month
-        );
-        vec![
-            TournamentType::Runkosarja,
+    let mut tournaments = Vec::new();
+    if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&month) {
+        tournaments.push(TournamentType::ValmistavatOttelut);
+    }
+    tournaments.push(TournamentType::Runkosarja);
+    if (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month) {
+        tournaments.extend([
             TournamentType::Playoffs,
             TournamentType::Playout,
             TournamentType::Qualifications,
-        ]
-    } else if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&month) {
-        // Preseason months (May-September): check valmistavat_ottelut and runkosarja
-        info!(
-            "Preseason month {} detected, checking valmistavat_ottelut and runkosarja",
-            month
-        );
-        vec![
-            TournamentType::Runkosarja,
-            TournamentType::ValmistavatOttelut,
-        ]
-    } else {
-        // Regular season months: only check runkosarja
-        info!(
-            "Regular season month {} detected, checking only runkosarja",
-            month
-        );
-        vec![TournamentType::Runkosarja]
-    };
-
-    info!(
-        "Tournaments to check: {:?}",
-        tournaments
-            .iter()
-            .map(TournamentType::as_str)
-            .collect::<Vec<_>>()
-    );
+        ]);
+    }
     tournaments
+}
+
+/// Tournaments whose season schedules to fetch for a historical date.
+///
+/// Same as [`determine_tournaments_for_month`], minus preseason in May and
+/// June. A spring date maps to the season that started the previous autumn,
+/// so that season's practice games can never fall on the date, and fetching
+/// the whole schedule would only cost a request.
+pub fn historical_tournaments_for_month(month: u32) -> Vec<TournamentType> {
+    let in_playoff_window = (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month);
+    determine_tournaments_for_month(month)
+        .into_iter()
+        .filter(|tournament| {
+            !(in_playoff_window && *tournament == TournamentType::ValmistavatOttelut)
+        })
+        .collect()
+}
+
+/// Same as [`determine_tournaments_for_month`], as API names.
+fn tournament_names_for_month(month: u32) -> Vec<&'static str> {
+    determine_tournaments_for_month(month)
+        .iter()
+        .map(TournamentType::as_str)
+        .collect()
+}
+
+/// Month of a `YYYY-MM-DD` date, or the current month if the date can't be read.
+fn month_of_date(date: &str) -> u32 {
+    date.split('-')
+        .nth(1)
+        .and_then(|month| month.parse().ok())
+        .unwrap_or_else(|| Utc::now().month())
 }
 
 /// Fetches games from all relevant tournaments for a given season
@@ -262,50 +272,9 @@ pub async fn fetch_tournament_games(
     Ok(all_schedule_games)
 }
 
-/// Fallback tournament selection based on calendar months when API data is not available.
-/// This is the old logic preserved as a fallback.
+/// Tournament candidates for a date, based on the calendar month only.
 pub fn build_tournament_list_fallback(date: &str) -> Vec<&'static str> {
-    // Parse the date to get the month
-    let date_parts: Vec<&str> = date.split('-').collect();
-    let month = if date_parts.len() >= 2 {
-        date_parts[1].parse::<u32>().unwrap_or(0)
-    } else {
-        // Default to current month if date parsing fails
-        // Use UTC for consistency
-        Utc::now().month()
-    };
-
-    let mut tournaments = Vec::new();
-
-    // Only include valmistavat_ottelut during preseason (May-September)
-    if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&month) {
-        info!(
-            "Including valmistavat_ottelut (month is {} - May<->Sep)",
-            month
-        );
-        tournaments.push("valmistavat_ottelut");
-    }
-
-    // Always include runkosarja
-    tournaments.push("runkosarja");
-
-    // Only include playoffs, playout, and qualifications during playoff season (March-June)
-    if (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month) {
-        info!(
-            "Including playoffs, playout, and qualifications (month is {} >= 3)",
-            month
-        );
-        tournaments.push("playoffs");
-        tournaments.push("playout");
-        tournaments.push("qualifications");
-    } else {
-        info!(
-            "Excluding playoffs, playout, and qualifications (month is {} < 3)",
-            month
-        );
-    }
-
-    tournaments
+    tournament_names_for_month(month_of_date(date))
 }
 
 /// Fetches one tournament's day response, applying the per-tournament retry
@@ -366,46 +335,9 @@ pub async fn determine_active_tournaments(
         date
     );
 
-    // Parse the date to get the month for tournament filtering
-    let date_parts: Vec<&str> = date.split('-').collect();
-    let month = if date_parts.len() >= 2 {
-        date_parts[1].parse::<u32>().unwrap_or(0)
-    } else {
-        // Default to current month if date parsing fails
-        Utc::now().month()
-    };
-
-    // Filter tournament candidates based on season (avoid unnecessary API calls)
-    // Maintain original priority order: preseason -> regular -> playoffs -> playout -> qualifications
-    let mut tournament_candidates = Vec::new();
-
-    // Only include preseason during May-September
-    if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&month) {
-        info!(
-            "Including valmistavat_ottelut (month {} is in preseason period)",
-            month
-        );
-        tournament_candidates.push("valmistavat_ottelut");
-    }
-
-    // Always include regular season
-    tournament_candidates.push("runkosarja");
-
-    // Only include playoffs/playout/qualifications during March-June
-    if (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month) {
-        info!(
-            "Including playoffs, playout, and qualifications (month {} is in playoff period)",
-            month
-        );
-        tournament_candidates.push("playoffs");
-        tournament_candidates.push("playout");
-        tournament_candidates.push("qualifications");
-    } else {
-        info!(
-            "Skipping playoffs, playout, and qualifications (month {} is outside playoff period)",
-            month
-        );
-    }
+    // Only ask for tournaments that can have games this month
+    let month = month_of_date(date);
+    let tournament_candidates = tournament_names_for_month(month);
 
     info!(
         "Tournament candidates for month {}: {:?}",
@@ -590,6 +522,50 @@ mod tests {
             assert!(
                 tournaments.contains(&TournamentType::Runkosarja),
                 "month {month} must include runkosarja"
+            );
+        }
+    }
+
+    #[test]
+    fn test_tournament_lists_for_every_month() {
+        use TournamentType::{
+            Playoffs as PO, Playout as PT, Qualifications as Q, Runkosarja as R,
+            ValmistavatOttelut as V,
+        };
+
+        // (month, live list, historical list), in priority order
+        let expected = [
+            (1, vec![R], vec![R]),
+            (2, vec![R], vec![R]),
+            (3, vec![R, PO, PT, Q], vec![R, PO, PT, Q]),
+            (4, vec![R, PO, PT, Q], vec![R, PO, PT, Q]),
+            (5, vec![V, R, PO, PT, Q], vec![R, PO, PT, Q]),
+            (6, vec![V, R, PO, PT, Q], vec![R, PO, PT, Q]),
+            (7, vec![V, R], vec![V, R]),
+            (8, vec![V, R], vec![V, R]),
+            (9, vec![V, R], vec![V, R]),
+            (10, vec![R], vec![R]),
+            (11, vec![R], vec![R]),
+            (12, vec![R], vec![R]),
+        ];
+
+        for (month, live, historical) in expected {
+            assert_eq!(
+                determine_tournaments_for_month(month),
+                live,
+                "month {month}"
+            );
+            assert_eq!(
+                historical_tournaments_for_month(month),
+                historical,
+                "historical, month {month}"
+            );
+
+            let live_names: Vec<&str> = live.iter().map(TournamentType::as_str).collect();
+            assert_eq!(
+                build_tournament_list_fallback(&format!("2026-{month:02}-15")),
+                live_names,
+                "fallback, month {month}"
             );
         }
     }

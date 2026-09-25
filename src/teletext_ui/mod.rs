@@ -14,7 +14,6 @@ pub mod rendering;
 pub mod season_utils;
 pub mod standings_display;
 pub mod validation;
-pub mod wide_mode;
 
 // Re-export all public types and functions for backward compatibility
 pub use core::*;
