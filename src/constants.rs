@@ -104,6 +104,10 @@ pub mod retry {
     /// tournament is published, so aggressive retries only waste requests
     /// and risk rate limiting.
     pub const SECONDARY_TOURNAMENT_MAX_ATTEMPTS: u32 = 1;
+
+    /// Longest wait we honor from a `Retry-After` header (seconds). A server
+    /// asking for more would otherwise freeze the refresh for that long.
+    pub const MAX_RETRY_AFTER_SECONDS: u64 = 10;
 }
 
 /// Playoff bracket visibility configuration

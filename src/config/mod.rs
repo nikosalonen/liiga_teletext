@@ -109,6 +109,23 @@ impl Config {
         Ok(config)
     }
 
+    /// Loads only what is saved in the config file, without environment
+    /// overrides and without prompting. Returns `None` when there is no file.
+    ///
+    /// Use this before saving, so that `LIIGA_*` values set for one run
+    /// don't end up in the config file.
+    pub async fn load_saved() -> Result<Option<Self>, AppError> {
+        Self::load_saved_from_path(&get_config_path()).await
+    }
+
+    pub async fn load_saved_from_path(path: &str) -> Result<Option<Self>, AppError> {
+        if !Path::new(path).exists() {
+            return Ok(None);
+        }
+        let content = fs::read_to_string(path).await?;
+        Ok(Some(toml::from_str(&content)?))
+    }
+
     /// Validates the configuration settings
     ///
     /// # Returns
@@ -388,6 +405,39 @@ log_file_path = "/custom/log/path"
 
         assert_eq!(config.api_domain, "https://api.example.com");
         assert_eq!(config.log_file_path, Some("/custom/log/path".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_load_saved_returns_none_without_config_file() {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let saved = Config::load_saved_from_path(&config_path.to_string_lossy())
+            .await
+            .unwrap();
+
+        assert!(saved.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_load_saved_returns_file_values_only() {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        tokio::fs::write(
+            &config_path,
+            "api_domain = \"https://api.example.com\"\nhttp_timeout_seconds = 12\n",
+        )
+        .await
+        .unwrap();
+
+        let saved = Config::load_saved_from_path(&config_path.to_string_lossy())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(saved.api_domain, "https://api.example.com");
+        assert_eq!(saved.http_timeout_seconds, 12);
+        assert_eq!(saved.log_file_path, None);
     }
 
     #[tokio::test]

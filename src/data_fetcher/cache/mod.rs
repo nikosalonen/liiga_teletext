@@ -135,6 +135,14 @@ pub async fn clear_http_response_cache() {
     HTTP_RESPONSE_CACHE.clear().await;
 }
 
+/// Drops cached API responses so the next fetch goes to the API.
+/// Used by manual refresh. Rosters and player names are kept, because
+/// they don't change during a game.
+pub async fn clear_response_caches() {
+    clear_http_response_cache().await;
+    clear_tournament_cache().await;
+}
+
 // --- Detailed game cache (backed by generic TtlCache) ---
 
 pub(crate) static DETAILED_GAME_CACHE: LazyLock<TtlCache<String, DetailedGameResponse>> =

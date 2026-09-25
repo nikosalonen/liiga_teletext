@@ -1906,6 +1906,35 @@ mod tests {
     }
 
     #[test]
+    fn test_compact_display_shows_error_messages() {
+        let page = TeletextPage::new(
+            221,
+            "TEST".to_string(),
+            "TEST".to_string(),
+            false,
+            true,
+            false,
+            true,
+            false,
+        );
+        let config = CompactDisplayConfig::default();
+        let rows = [TeletextRow::ErrorMessage(
+            "Ei otteluita tälle päivälle\nSeuraava ottelupäivä 26.09.".to_string(),
+        )];
+        let row_refs: Vec<&TeletextRow> = rows.iter().collect();
+
+        let lines = page.group_games_for_compact_display(&row_refs, &config, 80);
+
+        assert_eq!(
+            lines.len(),
+            2,
+            "one screen line per message line: {lines:?}"
+        );
+        assert!(lines[0].contains("Ei otteluita tälle päivälle"));
+        assert!(lines[1].contains("Seuraava ottelupäivä 26.09."));
+    }
+
+    #[test]
     fn test_terminal_width_adaptation() {
         let page = TeletextPage::new(
             221,

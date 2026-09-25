@@ -63,14 +63,11 @@ pub(super) async fn fetch_with_retries<T: DeserializeOwned>(
             Ok(resp) => {
                 let status = resp.status();
                 if (status.as_u16() == 429 || status.is_server_error()) && attempt < max_retries {
-                    // Respect Retry-After if provided
                     let retry_after = resp
                         .headers()
                         .get(reqwest::header::RETRY_AFTER)
-                        .and_then(|h| h.to_str().ok())
-                        .and_then(|s| s.parse::<u64>().ok())
-                        .map(Duration::from_secs);
-                    let wait = retry_after.unwrap_or(backoff);
+                        .and_then(|h| h.to_str().ok());
+                    let wait = retry_wait(retry_after, backoff);
                     warn!(
                         "Transient {} from {}. Retrying in {:?} (attempt {}/{})",
                         status,
@@ -224,6 +221,18 @@ fn http_cache_ttl(url: &str, response_text: &str, now: chrono::DateTime<chrono::
     }
 }
 
+/// How long to wait before retrying. Follows the `Retry-After` header when it
+/// holds a number of seconds, up to `MAX_RETRY_AFTER_SECONDS`, and uses the
+/// exponential backoff otherwise.
+fn retry_wait(retry_after: Option<&str>, backoff: Duration) -> Duration {
+    match retry_after.and_then(|s| s.trim().parse::<u64>().ok()) {
+        Some(seconds) => {
+            Duration::from_secs(seconds.min(crate::constants::retry::MAX_RETRY_AFTER_SECONDS))
+        }
+        None => backoff,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,5 +288,31 @@ mod tests {
         let evening = Utc.with_ymd_and_hms(2026, 10, 1, 20, 0, 0).unwrap();
         let ttl = http_cache_ttl(TOURNAMENT_URL, &schedule_body(true, true), evening);
         assert_eq!(ttl, 600);
+    }
+}
+
+#[cfg(test)]
+mod retry_wait_tests {
+    use super::*;
+
+    const BACKOFF: Duration = Duration::from_millis(250);
+
+    #[test]
+    fn uses_backoff_without_retry_after() {
+        assert_eq!(retry_wait(None, BACKOFF), BACKOFF);
+        assert_eq!(retry_wait(Some("soon"), BACKOFF), BACKOFF);
+    }
+
+    #[test]
+    fn follows_short_retry_after() {
+        assert_eq!(retry_wait(Some("3"), BACKOFF), Duration::from_secs(3));
+    }
+
+    #[test]
+    fn caps_long_retry_after() {
+        assert_eq!(
+            retry_wait(Some("3600"), BACKOFF),
+            Duration::from_secs(crate::constants::retry::MAX_RETRY_AFTER_SECONDS)
+        );
     }
 }

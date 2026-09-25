@@ -81,8 +81,11 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
     use crate::constants::colors::*;
     use crossterm::style::{Print, ResetColor, SetForegroundColor};
 
-    let mut config = match Config::load().await {
-        Ok(cfg) => cfg,
+    // Start from the saved file, not Config::load(), so LIIGA_* environment
+    // overrides for this run are not written into the config file.
+    let mut config = match Config::load_saved().await {
+        Ok(Some(cfg)) => cfg,
+        Ok(None) => Config::default(),
         Err(e) => {
             tracing::warn!("Failed to load config: {e}, using default configuration");
             Config::default()
@@ -126,6 +129,11 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
             Print("  Custom log file path cleared. Using default location.\n"),
             ResetColor
         );
+    }
+
+    // No config file yet: ask for the domain, as the first normal run would
+    if config.api_domain.is_empty() {
+        config.api_domain = prompt_for_api_domain().await?;
     }
 
     config.validate()?;
