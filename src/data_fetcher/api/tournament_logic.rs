@@ -109,9 +109,11 @@ pub(super) async fn clear_unavailable_tournaments_cache() {
     UNAVAILABLE_TOURNAMENTS.write().await.clear();
 }
 
-/// The tournaments that can have games in a month, in priority order:
-/// preseason, regular season, playoffs, playout, qualifications.
-/// Every tournament list (live, historical and date search) comes from here.
+/// The tournaments to check for a month, in priority order: preseason,
+/// regular season, playoffs, playout, qualifications. The windows are wide
+/// on purpose (preseason covers May-September), so a list may include a
+/// tournament that has no games that month.
+/// The live, historical and date search lists all come from here.
 pub fn determine_tournaments_for_month(month: u32) -> Vec<TournamentType> {
     let mut tournaments = Vec::new();
     if (PRESEASON_START_MONTH..=PRESEASON_END_MONTH).contains(&month) {
@@ -126,6 +128,22 @@ pub fn determine_tournaments_for_month(month: u32) -> Vec<TournamentType> {
         ]);
     }
     tournaments
+}
+
+/// Tournaments whose season schedules to fetch for a historical date.
+///
+/// Same as [`determine_tournaments_for_month`], minus preseason in May and
+/// June. A spring date maps to the season that started the previous autumn,
+/// so that season's practice games can never fall on the date, and fetching
+/// the whole schedule would only cost a request.
+pub fn historical_tournaments_for_month(month: u32) -> Vec<TournamentType> {
+    let in_playoff_window = (PLAYOFFS_START_MONTH..=PLAYOFFS_END_MONTH).contains(&month);
+    determine_tournaments_for_month(month)
+        .into_iter()
+        .filter(|tournament| {
+            !(in_playoff_window && *tournament == TournamentType::ValmistavatOttelut)
+        })
+        .collect()
 }
 
 /// Same as [`determine_tournaments_for_month`], as API names.
@@ -509,14 +527,46 @@ mod tests {
     }
 
     #[test]
-    fn test_live_and_historical_tournament_lists_agree() {
-        for month in 1..=12 {
-            let historical: Vec<&str> = determine_tournaments_for_month(month)
-                .iter()
-                .map(TournamentType::as_str)
-                .collect();
-            let live = build_tournament_list_fallback(&format!("2026-{month:02}-15"));
-            assert_eq!(historical, live, "month {month}");
+    fn test_tournament_lists_for_every_month() {
+        use TournamentType::{
+            Playoffs as PO, Playout as PT, Qualifications as Q, Runkosarja as R,
+            ValmistavatOttelut as V,
+        };
+
+        // (month, live list, historical list), in priority order
+        let expected = [
+            (1, vec![R], vec![R]),
+            (2, vec![R], vec![R]),
+            (3, vec![R, PO, PT, Q], vec![R, PO, PT, Q]),
+            (4, vec![R, PO, PT, Q], vec![R, PO, PT, Q]),
+            (5, vec![V, R, PO, PT, Q], vec![R, PO, PT, Q]),
+            (6, vec![V, R, PO, PT, Q], vec![R, PO, PT, Q]),
+            (7, vec![V, R], vec![V, R]),
+            (8, vec![V, R], vec![V, R]),
+            (9, vec![V, R], vec![V, R]),
+            (10, vec![R], vec![R]),
+            (11, vec![R], vec![R]),
+            (12, vec![R], vec![R]),
+        ];
+
+        for (month, live, historical) in expected {
+            assert_eq!(
+                determine_tournaments_for_month(month),
+                live,
+                "month {month}"
+            );
+            assert_eq!(
+                historical_tournaments_for_month(month),
+                historical,
+                "historical, month {month}"
+            );
+
+            let live_names: Vec<&str> = live.iter().map(TournamentType::as_str).collect();
+            assert_eq!(
+                build_tournament_list_fallback(&format!("2026-{month:02}-15")),
+                live_names,
+                "fallback, month {month}"
+            );
         }
     }
 

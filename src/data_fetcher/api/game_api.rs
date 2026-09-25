@@ -28,7 +28,7 @@ use tracing::{debug, error, info, warn};
 use super::date_logic::parse_date_and_season;
 use super::fetch_utils::fetch;
 use super::tournament_logic::{
-    TournamentType, determine_tournaments_for_month, fetch_tournament_games,
+    TournamentType, fetch_tournament_games, historical_tournaments_for_month,
 };
 use super::urls::build_game_url;
 
@@ -815,7 +815,7 @@ pub(super) async fn fetch_historical_games(
     let (_, month, season) = parse_date_and_season(date);
 
     // Determine which tournaments to check based on the month
-    let tournaments = determine_tournaments_for_month(month);
+    let tournaments = historical_tournaments_for_month(month);
 
     // Fetch games from all relevant tournaments
     let all_schedule_games = fetch_tournament_games(client, config, &tournaments, season).await?;
