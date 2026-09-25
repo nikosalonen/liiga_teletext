@@ -9,7 +9,8 @@ pub mod standings;
 // Re-export all public types for backward compatibility
 pub use common::{GameData, HasGoalEvents, HasTeams, PlayoffSeriesScore};
 pub use detailed::{DetailedGame, DetailedGameResponse};
-// Outside tests, only the library uses this; the binary build would flag it as unused.
+// Only tests use this inside the crate. The library exports it as public API,
+// but the binary (which has private modules) would flag it as unused.
 #[allow(unused_imports)]
 pub use detailed::DetailedTeam;
 pub use goals::{GoalEvent, GoalEventData};

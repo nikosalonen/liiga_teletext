@@ -95,7 +95,7 @@ loop {
 }
 ```
 
-Auto-refresh intervals: 15 seconds during live games, 30 seconds from 5 min before to 10 min after a scheduled start, 60 seconds otherwise (completed games served from 1-hour cache). A failed refresh keeps the last good games on screen with an error warning and is retried with backoff (2 → 4 → 8 → 10s), even when those games are all scheduled for later. Polling rate adapts to idle time (50ms → 200ms → 500ms).
+Auto-refresh intervals: 15 seconds during live games, 30 seconds from 5 min before to 10 min after a scheduled start, 60 seconds otherwise (completed games served from 1-hour cache). A failed refresh keeps the last good games on screen with an error warning and is retried with backoff (2 → 4 → 8 → 10s), even when those games are all scheduled for later or the date is historical. With nothing on screen yet (or only the loading screen), a failed fetch shows an error page instead; a failed fetch never brings a loading page. `fetch_day_data` and `fetch_tournament_games` treat a failed `runkosarja` fetch, or a day where nothing answered, as an error rather than "no games". Polling rate adapts to idle time (50ms → 200ms → 500ms).
 
 ### Caching Strategy
 

@@ -154,12 +154,16 @@ pub fn determine_tournaments_for_month(month: u32) -> Vec<TournamentType> {
 
 /// Fetches games from all relevant tournaments for a given season
 /// Implements connection pooling and parallel requests for better performance
+///
+/// Returns an error if `runkosarja` (the main data source) failed, or if no
+/// tournament returned a response and at least one fetch failed. A tournament
+/// that is not found just has no games, so its failure is not an error here.
 pub async fn fetch_tournament_games(
     client: &Client,
     config: &Config,
     tournaments: &[TournamentType],
     season: i32,
-) -> Vec<ScheduleApiGame> {
+) -> Result<Vec<ScheduleApiGame>, AppError> {
     // Import fetch function from core module
     use super::fetch_utils::fetch;
 
@@ -203,7 +207,7 @@ pub async fn fetch_tournament_games(
                             "Failed to fetch {} schedule for season {}: {}",
                             tournament_name, season, e
                         );
-                        Err(e)
+                        Err((*tournament == TournamentType::Runkosarja, e))
                     }
                 }
             }
@@ -217,6 +221,8 @@ pub async fn fetch_tournament_games(
     let mut all_schedule_games: Vec<ScheduleApiGame> = Vec::new();
     let mut successful_fetches = 0;
     let mut failed_fetches = 0;
+    let mut primary_fetch_error = None;
+    let mut secondary_fetch_error = None;
 
     for result in results {
         match result {
@@ -224,8 +230,16 @@ pub async fn fetch_tournament_games(
                 all_schedule_games.extend(games);
                 successful_fetches += 1;
             }
-            Err(_) => {
+            Err((is_primary, e)) => {
                 failed_fetches += 1;
+                if !e.is_not_found() {
+                    let slot = if is_primary {
+                        &mut primary_fetch_error
+                    } else {
+                        &mut secondary_fetch_error
+                    };
+                    slot.get_or_insert(e);
+                }
             }
         }
     }
@@ -237,7 +251,15 @@ pub async fn fetch_tournament_games(
         all_schedule_games.len()
     );
 
-    all_schedule_games
+    if let Some(error) = primary_fetch_error {
+        return Err(error);
+    }
+    if successful_fetches == 0
+        && let Some(error) = secondary_fetch_error
+    {
+        return Err(error);
+    }
+    Ok(all_schedule_games)
 }
 
 /// Fallback tournament selection based on calendar months when API data is not available.

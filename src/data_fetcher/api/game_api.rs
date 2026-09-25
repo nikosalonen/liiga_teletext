@@ -715,11 +715,11 @@ async fn convert_api_game_to_schedule_game(
     config: &Config,
     api_game: ScheduleApiGame,
     season: i32,
-) -> Result<ScheduleGame, AppError> {
+) -> ScheduleGame {
     let start_time = api_game.start.clone();
 
     // 1. Fetch detailed game data. If that fails, keep the score the schedule
-    // already gave us and show the game without scorers, rather than 0-0.
+    // already gave us rather than 0-0. The goals then get unknown scorers.
     let Some(detailed_game_data) =
         fetch_detailed_game_data_for_historical_game(client, config, season, api_game.id).await
     else {
@@ -735,7 +735,7 @@ async fn convert_api_game_to_schedule_game(
             start_time.clone(),
             Vec::new(),
         );
-        return Ok(schedule_game_from_api_game(api_game, home_team, away_team));
+        return schedule_game_from_api_game(api_game, home_team, away_team);
     };
 
     // 2. Create a player name mapping from the resolved goal events to preserve player names
@@ -778,10 +778,11 @@ async fn convert_api_game_to_schedule_game(
         away_goal_events,
     );
 
-    Ok(schedule_game_from_api_game(api_game, home_team, away_team))
+    schedule_game_from_api_game(api_game, home_team, away_team)
 }
 
-/// Builds a ScheduleGame from a schedule API game and its two teams.
+/// Builds a ScheduleGame from a schedule API game and its two teams. Shared by
+/// the normal path and the fallback used when the detail fetch fails.
 fn schedule_game_from_api_game(
     api_game: ScheduleApiGame,
     home_team: ScheduleTeam,
@@ -823,7 +824,7 @@ pub(super) async fn fetch_historical_games(
     let tournaments = determine_tournaments_for_month(month);
 
     // Fetch games from all relevant tournaments
-    let all_schedule_games = fetch_tournament_games(client, config, &tournaments, season).await;
+    let all_schedule_games = fetch_tournament_games(client, config, &tournaments, season).await?;
 
     if all_schedule_games.is_empty() {
         debug!("No games found in any tournament for season {season}");
@@ -852,22 +853,7 @@ pub(super) async fn fetch_historical_games(
     let conversion_futures = matching_games
         .into_iter()
         .map(|api_game| convert_api_game_to_schedule_game(client, config, api_game, season));
-    let results = join_all(conversion_futures).await;
-
-    let mut schedule_games = Vec::new();
-    let mut failed_games = 0;
-    for result in results {
-        match result {
-            Ok(game) => schedule_games.push(game),
-            Err(e) => {
-                failed_games += 1;
-                warn!("Failed to convert historical game: {e}");
-            }
-        }
-    }
-    if failed_games > 0 {
-        warn!("{} games failed to convert and were skipped", failed_games);
-    }
+    let schedule_games = join_all(conversion_futures).await;
 
     // Create a ScheduleResponse with the filtered games
     let schedule_response = ScheduleResponse {
@@ -895,15 +881,24 @@ pub(super) async fn fetch_historical_games(
 ///
 /// That endpoint carries no series standings, so this counts wins from the
 /// season schedule of the tournaments that are played as series. Does nothing
-/// when no game is a playoff game. Historical dates get their series scores in
+/// when no game is a playoff game. Dates served by the schedule endpoint (past
+/// seasons and past playoffs) get their series scores in
 /// [`fetch_historical_games`], which already has the full schedule.
+///
+/// The scores are optional: if the schedule cannot be fetched in time, the
+/// games are shown without them.
 pub(super) async fn add_series_scores(
     client: &Client,
     config: &Config,
     games: &mut [GameData],
     date: &str,
 ) {
-    if !games.iter().any(|g| g.play_off_phase.is_some()) {
+    // The games endpoint sends phase 0 for regular-season games; real playoff
+    // phases start at 1.
+    if !games
+        .iter()
+        .any(|g| g.play_off_phase.is_some_and(|p| p > 0))
+    {
         return;
     }
 
@@ -913,14 +908,59 @@ pub(super) async fn add_series_scores(
         TournamentType::Playout,
         TournamentType::Qualifications,
     ];
-    let schedule = fetch_tournament_games(client, config, &series_tournaments, season).await;
+    let time_limit =
+        std::time::Duration::from_secs(crate::constants::SERIES_SCORE_FETCH_TIMEOUT_SECONDS);
+    let mut schedule = match tokio::time::timeout(
+        time_limit,
+        fetch_tournament_games(client, config, &series_tournaments, season),
+    )
+    .await
+    {
+        Ok(Ok(schedule)) => schedule,
+        Ok(Err(e)) => {
+            warn!("Playoff schedule fetch failed: {e}; series scores are not shown");
+            return;
+        }
+        Err(_) => {
+            warn!("Playoff schedule fetch took over {time_limit:?}; series scores are not shown");
+            return;
+        }
+    };
     if schedule.is_empty() {
         warn!("No playoff schedule for season {season}; series scores are not shown");
         return;
     }
 
+    apply_final_results_to_schedule(&mut schedule, games);
+
     use crate::data_fetcher::processors::playoff_series::calculate_series_scores;
     calculate_series_scores(&schedule, games, date);
+}
+
+/// Copies the results of finished games onto their schedule entries.
+///
+/// The schedule is cached much longer than the games, so a game that just
+/// ended may still be unfinished there. Without this, the series score would
+/// not count that game until the schedule cache expires.
+fn apply_final_results_to_schedule(schedule: &mut [ScheduleApiGame], games: &[GameData]) {
+    for game in games.iter().filter(|g| g.score_type == ScoreType::Final) {
+        let Some((home_goals, away_goals)) = game
+            .result
+            .split_once('-')
+            .and_then(|(home, away)| Some((home.trim().parse().ok()?, away.trim().parse().ok()?)))
+        else {
+            continue;
+        };
+        if let Some(entry) = schedule
+            .iter_mut()
+            .find(|s| s.home_team_name == game.home_team && s.start == game.start)
+        {
+            entry.started = true;
+            entry.ended = true;
+            entry.home_team_goals = home_goals;
+            entry.away_team_goals = away_goals;
+        }
+    }
 }
 
 /// Fetches detailed game data for a historical game to get actual scores and goal events.
@@ -952,7 +992,7 @@ async fn fetch_detailed_game_data_for_historical_game(
         }
         Err(e) => {
             warn!(
-                "Failed to fetch detailed game data for game ID {game_id}: {e}. Using the schedule's score without scorers."
+                "Failed to fetch detailed game data for game ID {game_id}: {e}. Using the schedule's score with unknown scorers."
             );
             None
         }

@@ -52,7 +52,11 @@ pub async fn fetch_playoff_bracket(config: &Config) -> Result<PlayoffBracket, Ap
 
     info!("Fetching playoff bracket for season {season}");
 
-    let games = fetch_tournament_games(&client, config, &[TournamentType::Playoffs], season).await;
+    // A failed fetch hides the bracket, like a season without playoffs; the
+    // failure is logged by fetch_tournament_games.
+    let games = fetch_tournament_games(&client, config, &[TournamentType::Playoffs], season)
+        .await
+        .unwrap_or_default();
 
     let playoff_count = games.iter().filter(|g| g.play_off_phase.is_some()).count();
     info!(

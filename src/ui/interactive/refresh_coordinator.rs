@@ -87,18 +87,21 @@ impl Default for CacheMonitoringConfig {
     }
 }
 
-/// Returns a page to show when a games refresh would otherwise leave the screen
-/// blank: nothing is on screen yet, and the result either brings no page or
-/// failed (its page would only be the loading screen).
+/// Returns a page to show when a games refresh brings no page and the screen
+/// has nothing useful on it: no page yet, or only the loading screen.
 ///
-/// This happens on the first fetch with `--date`: a day without games returns
-/// another date's games, which are discarded, and a failed fetch brings no page.
+/// A failed fetch never brings a page, so a failed first fetch (with or without
+/// `--date`) gets an error page here. A `--date` without games also ends up
+/// here: the fetcher returns another date's games, which are discarded.
 fn page_for_blank_screen(
     state: &InteractiveState,
     result: &RefreshResult,
     config: &RefreshCycleConfig,
 ) -> Option<TeletextPage> {
-    if state.current_page().is_some() || (result.new_page.is_some() && !result.had_error) {
+    let screen_is_blank = state
+        .current_page()
+        .is_none_or(|page| page.is_loading_page());
+    if !screen_is_blank || result.new_page.is_some() {
         return None;
     }
 
@@ -357,12 +360,13 @@ impl RefreshCoordinator {
         let (should_show_loading, _) =
             determine_indicator_states(params.current_date, params.last_games);
 
-        // Initialize page state
+        // Initialize page state. A failed fetch brings no loading page: it would
+        // cover the error page or the last good games until the next success.
         let mut current_page: Option<TeletextPage> = None;
         let mut needs_render = navigation_manager::manage_loading_indicators(
             &mut current_page,
             LoadingIndicatorConfig {
-                should_show_loading,
+                should_show_loading: should_show_loading && !had_error,
                 current_date: params.current_date,
                 disable_links: params.disable_links,
                 compact_mode: params.compact_mode,
@@ -1610,7 +1614,7 @@ mod tests {
     #[test]
     fn test_blank_screen_gets_no_games_page_for_requested_date() {
         // --date on a day without games: the fetched next-game-day result is
-        // discarded, and without this nothing was ever drawn.
+        // discarded. Without this page, nothing is drawn.
         let state = InteractiveState::new(Some("2026-09-28".to_string()));
 
         let page = page_for_blank_screen(&state, &empty_result(false), &blank_screen_test_config())
@@ -1646,6 +1650,89 @@ mod tests {
         assert!(
             page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
                 .is_none()
+        );
+    }
+
+    fn blank_screen_test_page() -> TeletextPage {
+        TeletextPage::new(
+            221,
+            "JÄÄKIEKKO".to_string(),
+            "SM-LIIGA".to_string(),
+            false,
+            true,
+            false,
+            false,
+            false,
+        )
+    }
+
+    #[test]
+    fn test_successful_first_fetch_keeps_its_own_page() {
+        let state = InteractiveState::new(None);
+        let mut result = empty_result(false);
+        result.new_page = Some(blank_screen_test_page());
+
+        assert!(
+            page_for_blank_screen(&state, &result, &blank_screen_test_config()).is_none(),
+            "a fetch that brings a page must not have it replaced"
+        );
+    }
+
+    #[test]
+    fn test_loading_screen_gets_error_page_when_fetch_failed() {
+        // Moving to a historical date shows the loading screen; if that fetch
+        // fails, the loading screen must not stay up.
+        let mut state = InteractiveState::new(Some("2024-01-15".to_string()));
+        let mut loading = blank_screen_test_page();
+        loading.set_is_loading_page(true);
+        state.set_current_page(loading);
+
+        let page = page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
+            .expect("a loading screen should be replaced after a failed fetch");
+
+        assert!(page.has_error_message("Otteluiden haku epäonnistui"));
+    }
+
+    #[tokio::test]
+    async fn test_failed_fetch_brings_no_loading_page() {
+        // Without a date (first launch) and for historical dates, a fetch
+        // normally brings a loading page. After a failure it would cover the
+        // error page shown by the previous failed attempt.
+        for current_date in [None, Some("2024-01-15".to_string())] {
+            let mut coordinator = RefreshCoordinator::new();
+            let params = DataFetchParams {
+                current_date: &current_date,
+                last_games: &[],
+                disable_links: true,
+                compact_mode: false,
+                wide_mode: false,
+                preserved_page_for_restoration: None,
+                is_date_change: false,
+            };
+
+            let result = coordinator
+                .process_fetched_data(params, vec![], true, String::new(), true)
+                .await
+                .unwrap();
+
+            assert!(
+                result.new_page.is_none(),
+                "failed fetch for {current_date:?} must not bring a page"
+            );
+        }
+    }
+
+    #[test]
+    fn test_error_page_survives_a_second_failed_fetch() {
+        let mut state = InteractiveState::new(None);
+        let first = page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
+            .expect("first failure shows the error page");
+        state.set_current_page(first);
+
+        assert!(
+            page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
+                .is_none(),
+            "the error page is kept, not rebuilt or replaced"
         );
     }
 

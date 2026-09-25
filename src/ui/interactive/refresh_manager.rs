@@ -121,6 +121,14 @@ pub(super) fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool
         return false;
     }
 
+    // A failed refresh keeps the last good games on screen. Retry it even when
+    // those games are all scheduled for later, or for a historical date (whose
+    // data never changes, but has not been fetched yet), or it would never run.
+    if params.retry_pending {
+        tracing::debug!("Auto-refresh triggered: retrying a failed refresh");
+        return true;
+    }
+
     // Don't auto-refresh for historical dates
     if let Some(date) = params.current_date.as_deref()
         && is_historical_date(date)
@@ -132,13 +140,6 @@ pub(super) fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool
     // After respecting timing/backoff/historical checks, recover from empty state
     if params.games.is_empty() {
         tracing::debug!("Auto-refresh triggered: games list empty (after guards)");
-        return true;
-    }
-
-    // A failed refresh keeps the last good games on screen. Retry it even when
-    // those games are all scheduled for later, or the retry would never run.
-    if params.retry_pending {
-        tracing::debug!("Auto-refresh triggered: retrying a failed refresh");
         return true;
     }
 
@@ -213,6 +214,24 @@ mod tests {
         let games = [game_later_today()];
         let mut params = params_for(&games, true);
         params.last_rate_limit_hit = Instant::now();
+        assert!(!should_trigger_auto_refresh(params));
+    }
+
+    #[test]
+    fn failed_fetch_of_historical_date_is_retried() {
+        // The error page promises an automatic retry, so a historical date
+        // whose first fetch failed must be retried too.
+        let historical_date = Some("2024-01-15".to_string());
+        let mut params = params_for(&[], true);
+        params.current_date = &historical_date;
+        assert!(should_trigger_auto_refresh(params));
+    }
+
+    #[test]
+    fn historical_date_is_not_auto_refreshed_after_success() {
+        let historical_date = Some("2024-01-15".to_string());
+        let mut params = params_for(&[], false);
+        params.current_date = &historical_date;
         assert!(!should_trigger_auto_refresh(params));
     }
 }
