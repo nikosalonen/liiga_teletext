@@ -620,6 +620,7 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
 
                 if params.last_manual_refresh.elapsed() >= Duration::from_secs(15) {
                     tracing::info!("Manual refresh requested");
+                    crate::data_fetcher::cache::clear_response_caches().await;
                     *params.needs_refresh = true;
                     *params.last_manual_refresh = Instant::now();
                 }
@@ -941,5 +942,46 @@ mod tests {
         handle_key_event(state.params(&key_event)).await.unwrap();
 
         assert_eq!(state.page_input, "22");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_manual_refresh_skips_cached_responses() {
+        use crate::data_fetcher::cache::{
+            cache_http_response, cache_tournament_data, get_cached_http_response,
+            get_cached_tournament_data,
+        };
+        use crate::data_fetcher::models::ScheduleResponse;
+
+        let url = "https://example.test/api/v2/games?tournament=runkosarja&date=2026-09-25";
+        cache_http_response(url.to_string(), "{}".to_string(), 1800).await;
+        // The tournament cache is read before any HTTP request, so on a day
+        // without live games it is what would serve stale data on refresh
+        let tournament_key = "runkosarja-2026-09-25";
+        cache_tournament_data(
+            tournament_key.to_string(),
+            ScheduleResponse {
+                games: Vec::new(),
+                previous_game_date: None,
+                next_game_date: None,
+            },
+        )
+        .await;
+
+        let mut state = KeyEventState::new();
+        state.last_manual_refresh = Instant::now() - Duration::from_secs(20);
+
+        let key_event = event::KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE);
+        handle_key_event(state.params(&key_event)).await.unwrap();
+
+        assert!(state.needs_refresh);
+        assert!(
+            get_cached_http_response(url).await.is_none(),
+            "manual refresh must fetch fresh data, not reuse the cached response"
+        );
+        assert!(
+            get_cached_tournament_data(tournament_key).await.is_none(),
+            "manual refresh must not reuse cached tournament data"
+        );
     }
 }

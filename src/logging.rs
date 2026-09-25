@@ -2,10 +2,12 @@ use crate::cli::Args;
 use crate::config::Config;
 use crate::error::AppError;
 use std::io::stdout;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+
+const DEFAULT_LOG_FILE_NAME: &str = "liiga_teletext.log";
 
 /// Sets up logging configuration for the application.
 ///
@@ -16,8 +18,9 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 /// - Creates log directory if it doesn't exist
 /// - Uses daily rolling file appender
 ///
-/// Returns the path to the log file and the guard that must be kept alive
-/// for the duration of the program to ensure proper log flushing.
+/// Returns the log file name pattern (`<path>.YYYY-MM-DD`) and the guard
+/// that must be kept alive for the duration of the program to ensure proper
+/// log flushing.
 pub async fn setup_logging(args: &Args) -> Result<(String, WorkerGuard), AppError> {
     // Try to load config to get log file path if specified
     let config_log_path = Config::load()
@@ -25,23 +28,11 @@ pub async fn setup_logging(args: &Args) -> Result<(String, WorkerGuard), AppErro
         .ok()
         .and_then(|config| config.log_file_path);
 
-    // Set up logging to both console and file
-    let custom_log_path = args.log_file.as_ref().or(config_log_path.as_ref());
-    let (log_dir, log_file_name) = match custom_log_path {
-        Some(custom_path) => {
-            let path = Path::new(custom_path);
-            let parent = path.parent().unwrap_or(Path::new("."));
-            let file_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("liiga_teletext.log");
-            (parent.to_string_lossy().to_string(), file_name.to_string())
-        }
-        None => (Config::get_log_dir_path(), "liiga_teletext.log".to_string()),
-    };
+    let custom_log_path = args.log_file.as_deref().or(config_log_path.as_deref());
+    let (log_dir, log_file_name) = log_location(custom_log_path, &Config::get_log_dir_path());
 
     // Create log directory if it doesn't exist
-    if !Path::new(&log_dir).exists() {
+    if !log_dir.exists() {
         tokio::fs::create_dir_all(&log_dir).await.map_err(|e| {
             AppError::log_setup_error(format!("Failed to create log directory: {e}"))
         })?;
@@ -111,7 +102,73 @@ pub async fn setup_logging(args: &Args) -> Result<(String, WorkerGuard), AppErro
             .init();
     }
 
-    // Return the log file path and guard
-    let log_file_path = format!("{log_dir}/{log_file_name}");
-    Ok((log_file_path, guard))
+    Ok((describe_log_path(&log_dir, &log_file_name), guard))
+}
+
+/// Splits a custom log path into its directory and file name.
+/// A bare file name like `app.log` has an empty parent, which means the
+/// current directory, not the filesystem root. With no custom path, returns
+/// `default_dir` and `liiga_teletext.log`.
+fn log_location(custom_path: Option<&str>, default_dir: &str) -> (PathBuf, String) {
+    let Some(custom_path) = custom_path else {
+        return (
+            PathBuf::from(default_dir),
+            DEFAULT_LOG_FILE_NAME.to_string(),
+        );
+    };
+    let path = Path::new(custom_path);
+    let dir = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    let file_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(DEFAULT_LOG_FILE_NAME);
+    (dir, file_name.to_string())
+}
+
+/// The daily rolling appender adds a date suffix to the file name,
+/// so the reported path shows that pattern.
+fn describe_log_path(log_dir: &Path, log_file_name: &str) -> String {
+    format!("{}.YYYY-MM-DD", log_dir.join(log_file_name).display())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bare_file_name_logs_to_current_directory() {
+        let (dir, file_name) = log_location(Some("test12"), "/default/logs");
+        assert_eq!(dir, PathBuf::from("."));
+        assert_eq!(file_name, "test12");
+    }
+
+    #[test]
+    fn custom_path_keeps_its_directory() {
+        let (dir, file_name) = log_location(Some("/var/log/liiga/app.log"), "/default/logs");
+        assert_eq!(dir, PathBuf::from("/var/log/liiga"));
+        assert_eq!(file_name, "app.log");
+    }
+
+    #[test]
+    fn no_custom_path_uses_default_directory() {
+        let (dir, file_name) = log_location(None, "/default/logs");
+        assert_eq!(dir, PathBuf::from("/default/logs"));
+        assert_eq!(file_name, "liiga_teletext.log");
+    }
+
+    #[test]
+    fn reported_path_names_the_daily_file_pattern() {
+        let reported = describe_log_path(&PathBuf::from("/var/log/liiga"), "app.log");
+        assert_eq!(
+            reported,
+            // Built with join, like the code, so the separator matches on Windows
+            format!(
+                "{}.YYYY-MM-DD",
+                Path::new("/var/log/liiga").join("app.log").display()
+            )
+        );
+    }
 }

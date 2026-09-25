@@ -4,7 +4,8 @@ use super::date_logic::determine_fetch_date_with_time;
 #[cfg(test)]
 use super::game_api::{
     add_series_scores, fetch_game_data, fetch_historical_games, get_team_name, has_actual_goals,
-    process_goal_events_for_historical_game_with_players, should_fetch_detailed_data,
+    process_goal_events_for_historical_game_with_players, process_response_games,
+    should_fetch_detailed_data,
 };
 #[cfg(test)]
 use super::http_client::create_test_http_client;
@@ -3149,5 +3150,51 @@ mod tests {
                 .await
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_roster_fetches_are_not_delayed() {
+        clear_all_caches_for_test().await;
+        let mock_server = MockServer::start().await;
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+
+        let template = create_mock_detailed_game_response();
+        let mut games = Vec::new();
+        for id in [7001, 7002] {
+            let mut game = create_mock_schedule_response().games.remove(0);
+            game.id = id;
+            game.ended = false;
+            game.home_team.goal_events = template.game.home_team.goal_events.clone();
+
+            let mut detailed = template.clone();
+            detailed.game.id = id;
+            Mock::given(method("GET"))
+                .and(path(format!("/games/2024/{id}")))
+                .respond_with(ResponseTemplate::new(200).set_body_json(&detailed))
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+            games.push(game);
+        }
+        let response = ScheduleResponse {
+            games,
+            previous_game_date: None,
+            next_game_date: None,
+        };
+
+        let started = std::time::Instant::now();
+        let games = process_response_games(&create_test_http_client(), &config, &response, 0)
+            .await
+            .unwrap();
+
+        assert_eq!(games.len(), 2);
+        assert!(
+            started.elapsed() < Duration::from_millis(800),
+            "two roster fetches took {:?}",
+            started.elapsed()
+        );
+        clear_all_caches_for_test().await;
     }
 }

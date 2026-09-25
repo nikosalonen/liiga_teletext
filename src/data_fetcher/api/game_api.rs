@@ -332,15 +332,9 @@ async fn resolve_goal_events_with_roster(
     let should_fetch_roster = !matches!(score_type, ScoreType::Scheduled)
         && (!game.home_team.goal_events.is_empty() || !game.away_team.goal_events.is_empty());
 
+    // No delay between roster fetches: process_response_games runs at most
+    // 3 games at once, and fetch() backs off on 429
     if should_fetch_roster {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static ROSTER_FETCH_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-        let fetch_number = ROSTER_FETCH_COUNT.fetch_add(1, Ordering::SeqCst);
-        if fetch_number > 0 {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        }
-
         let game_url = build_game_url(&config.api_domain, game.season, game.id);
 
         match fetch::<DetailedGameResponse>(client, &game_url).await {

@@ -109,6 +109,37 @@ impl Config {
         Ok(config)
     }
 
+    /// Loads only what is saved in the config file, without environment
+    /// overrides, prompting or validation. Returns `None` when there is no file.
+    ///
+    /// Use this before saving, so that `LIIGA_*` values set for one run
+    /// don't end up in the config file. A file that exists but can't be read
+    /// or parsed is an error, so the caller never saves over it.
+    pub async fn load_saved() -> Result<Option<Self>, AppError> {
+        Self::load_saved_from_path(&get_config_path()).await
+    }
+
+    /// Same as [`Config::load_saved`], for a given path.
+    pub async fn load_saved_from_path(path: &str) -> Result<Option<Self>, AppError> {
+        // Only NotFound means "no file". Path::exists() also returns false
+        // when the directory can't be read, which would hide the real error.
+        let content = match fs::read_to_string(path).await {
+            Ok(content) => content,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => {
+                return Err(AppError::config_error(format!(
+                    "Cannot read config file {path}: {e}"
+                )));
+            }
+        };
+        let config = toml::from_str(&content).map_err(|e| {
+            AppError::config_error(format!(
+                "Invalid config file {path}: {e}\nFix or delete the file, then run the command again."
+            ))
+        })?;
+        Ok(Some(config))
+    }
+
     /// Validates the configuration settings
     ///
     /// # Returns
@@ -388,6 +419,59 @@ log_file_path = "/custom/log/path"
 
         assert_eq!(config.api_domain, "https://api.example.com");
         assert_eq!(config.log_file_path, Some("/custom/log/path".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_load_saved_returns_none_without_config_file() {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let saved = Config::load_saved_from_path(&config_path.to_string_lossy())
+            .await
+            .unwrap();
+
+        assert!(saved.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_load_saved_returns_file_values_only() {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        tokio::fs::write(
+            &config_path,
+            "api_domain = \"https://api.example.com\"\nhttp_timeout_seconds = 12\n",
+        )
+        .await
+        .unwrap();
+
+        let saved = Config::load_saved_from_path(&config_path.to_string_lossy())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(saved.api_domain, "https://api.example.com");
+        assert_eq!(saved.http_timeout_seconds, 12);
+        assert_eq!(saved.log_file_path, None);
+    }
+
+    #[tokio::test]
+    async fn test_load_saved_rejects_invalid_file() {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        tokio::fs::write(&config_path, "api_domain = \"unterminated\n")
+            .await
+            .unwrap();
+        let config_path_str = config_path.to_string_lossy();
+
+        let err = Config::load_saved_from_path(&config_path_str)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::Config(_)));
+        assert!(
+            err.to_string().contains(config_path_str.as_ref()),
+            "error should name the file: {err}"
+        );
     }
 
     #[tokio::test]

@@ -162,10 +162,9 @@ The configuration can be manually edited at any time by modifying this file. You
 
 The application includes comprehensive logging that can be configured:
 
-- **Default location**: `~/.config/liiga_teletext/logs/liiga_teletext.log`
-- **Custom location**: Can be set via `--set-log-file` or `--log-file`
+- **Default location**: `logs/liiga_teletext.log.YYYY-MM-DD`, next to the `config.toml` listed above (one file per day, named by the UTC date)
+- **Custom location**: Can be set via `--set-log-file` or `--log-file`. The date suffix is added to that name too
 - **Debug mode**: Logs are written to file instead of terminal display
-- **Log rotation**: Logs are automatically rotated by date
 
 ## Tournament Support
 
