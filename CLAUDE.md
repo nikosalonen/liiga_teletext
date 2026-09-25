@@ -111,7 +111,7 @@ Stores **raw** `{first, last}` names, never pre-formatted ones. Disambiguation i
 
 **Tournament negative cache** (`data_fetcher/api/tournament_logic.rs`) — secondary tournament endpoints (e.g. unannounced `valmistavat_ottelut`) that fail with 502/503/404 are skipped for 15 minutes, with a reduced retry budget (1 instead of 3). `runkosarja` is exempt and always re-checked.
 
-**Playoff bracket visibility** (`data_fetcher/api/bracket_api.rs`) — the bracket (`p` / page 223) is hidden once every playoff game concluded more than 14 days ago (`LIIGA_BRACKET_GRACE_DAYS` overrides). The bracket renders as a full side-by-side path with connectors on terminals ≥ ~80x24 (`teletext_ui/bracket_display.rs::render_full_path`), falling back to sequential tree and stacked layouts on smaller terminals.
+**Playoff bracket visibility** (`data_fetcher/api/bracket_api.rs`) — the bracket (`p` / page 223) is hidden once every playoff game concluded more than 14 days ago (`LIIGA_BRACKET_GRACE_DAYS` overrides). The bracket renders as a full side-by-side path with connectors on terminals ≥ ~80x24 (`teletext_ui/bracket_display.rs::render_full_path`), falling back to sequential tree and stacked layouts on smaller terminals. The layout is chosen when the page is built, so a resize rebuilds the page from the bracket stored in `ChangeDetectionState` (`state_manager.rs::rebuild_bracket_page`) instead of refetching. A failed bracket refresh keeps the bracket on screen with the footer warning; only a playoffs schedule that isn't published yet (404) counts as "no bracket".
 
 ### Configuration
 

@@ -56,6 +56,9 @@ pub struct TeletextPage {
     pub(super) has_bracket_data: bool,        // Whether bracket data is available
     pub(super) initial_fetched_date: Option<String>, // The date originally fetched on startup
     pub(super) page_input_display: Option<String>, // Digits typed for teletext-style page entry, shown in header
+    /// Terminal width to lay out for instead of the live one. Tests set it so
+    /// wide and compact pagination can run at a known width.
+    pub(super) terminal_width_override: Option<u16>,
 }
 
 #[derive(Debug)]
@@ -186,6 +189,7 @@ impl TeletextPage {
             has_bracket_data: false,
             initial_fetched_date: None,
             page_input_display: None,
+            terminal_width_override: None,
         }
     }
 
@@ -316,7 +320,7 @@ impl TeletextPage {
         self.layout_manager = ColumnLayoutManager::new(width as usize, CONTENT_MARGIN);
 
         // Clamp against the canonical pagination so forced bracket page
-        // breaks and wide-mode effective heights are respected.
+        // breaks and the wide/compact page packing are respected.
         self.current_page = self.current_page.min(self.total_pages().saturating_sub(1));
 
         tracing::debug!(
@@ -327,8 +331,9 @@ impl TeletextPage {
         );
     }
 
-    /// Distributes games between left and right columns for wide mode display.
-    /// Uses left-column-first filling logic similar to pagination.
+    /// Splits the current page's rows into the left and right wide-mode
+    /// columns so the taller column is as short as possible
+    /// (see `pagination::balanced_split_index`).
     ///
     /// # Returns
     /// * `(Vec<&TeletextRow>, Vec<&TeletextRow>)` - Left and right column games
@@ -353,14 +358,7 @@ impl TeletextPage {
             .collect();
         let is_header: Vec<bool> = visible_rows
             .iter()
-            .map(|row| {
-                matches!(
-                    row,
-                    TeletextRow::FutureGamesHeader(_)
-                        | TeletextRow::PlayoffPhaseHeader(_)
-                        | TeletextRow::SeriesHeader(_)
-                )
-            })
+            .map(|row| Self::is_section_header(row))
             .collect();
         let split = super::pagination::balanced_split_index(&heights, &is_header);
 
@@ -740,15 +738,28 @@ impl TeletextPage {
             return false;
         }
 
-        let terminal_width = if self.ignore_height_limit {
-            if self.wide_mode { 136 } else { 80 }
-        } else {
-            crossterm::terminal::size()
-                .map(|(width, _)| width as usize)
-                .unwrap_or(80)
-        };
+        self.layout_width() >= 128
+    }
 
-        terminal_width >= 128
+    /// Terminal width that layout decisions are made for: fixed in
+    /// non-interactive mode, the live terminal width otherwise. Pagination and
+    /// rendering both read this, so they can't pick different layouts.
+    pub(super) fn layout_width(&self) -> u16 {
+        if self.ignore_height_limit {
+            return if self.wide_mode { 136 } else { 80 };
+        }
+        if let Some(width) = self.terminal_width_override {
+            return width;
+        }
+        crossterm::terminal::size()
+            .map(|(width, _)| width)
+            .unwrap_or(80)
+    }
+
+    /// Lays the page out for `width` columns instead of the live terminal width.
+    #[cfg(test)]
+    pub(crate) fn set_terminal_width(&mut self, width: u16) {
+        self.terminal_width_override = Some(width);
     }
 
     /// Checks if this page contains any error messages.
@@ -2635,8 +2646,7 @@ mod tests {
 
         let (left_games, right_games) = page.distribute_games_for_wide_display();
 
-        // With 3 games, balanced distribution should put 2 in left, 1 in right
-        // (left column gets the extra game if odd number)
+        // Three games of equal height: 2 left, 1 right (ties go to the left column)
         assert_eq!(left_games.len(), 2, "Left column should have 2 games");
         assert_eq!(right_games.len(), 1, "Right column should have 1 game");
         assert_eq!(

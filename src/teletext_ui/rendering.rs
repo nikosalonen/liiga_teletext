@@ -94,55 +94,100 @@ impl TeletextPage {
         // Shared ANSI position-code cache for both columns (requirement 4.3)
         let mut layout_manager = super::layout::ColumnLayoutManager::new(80, CONTENT_MARGIN);
 
-        // Render left column
-        let mut left_line = *current_line;
-
-        for (game_index, game) in left_games.iter().enumerate() {
-            let formatted_game =
-                self.format_game_for_wide_column(game, column_width, &wide_layout_config);
-
-            let mut line_count = 0;
-            for (line_index, line) in formatted_game.lines().enumerate() {
-                let position_code =
-                    layout_manager.get_position_code(left_line + line_index, left_column_start);
-                buffer.push_str(position_code);
-                buffer.push_str(line);
-                line_count = line_index + 1;
-            }
-            left_line += line_count;
-
-            // Add spacing between games (except after the last game)
-            if game_index < left_games.len() - 1 {
-                left_line += 1; // Extra blank line between games
-            }
-        }
-
-        // Render right column
         let right_column_start = left_column_start + column_width + gap_between_columns;
-        let mut right_line = *current_line;
-
-        for (game_index, game) in right_games.iter().enumerate() {
-            let formatted_game =
-                self.format_game_for_wide_column(game, column_width, &wide_layout_config);
-
-            let mut line_count = 0;
-            for (line_index, line) in formatted_game.lines().enumerate() {
-                let position_code =
-                    layout_manager.get_position_code(right_line + line_index, right_column_start);
-                buffer.push_str(position_code);
-                buffer.push_str(line);
-                line_count = line_index + 1;
-            }
-            right_line += line_count;
-
-            // Add spacing between games (except after the last game)
-            if game_index < right_games.len() - 1 {
-                right_line += 1; // Extra blank line between games
-            }
+        let columns = [
+            (&left_games, left_column_start),
+            (&right_games, right_column_start),
+        ];
+        let mut bottom_line = *current_line;
+        for (rows, column_start) in columns {
+            let column_end = self.render_wide_column(
+                buffer,
+                &mut layout_manager,
+                rows,
+                *current_line,
+                column_start,
+                column_width,
+                &wide_layout_config,
+            );
+            bottom_line = bottom_line.max(column_end);
         }
 
         // Update current line to the maximum of left and right column heights
-        *current_line = left_line.max(right_line);
+        *current_line = bottom_line;
+    }
+
+    /// Draws one wide-mode column from `start_line` down and returns the line
+    /// below the last one drawn.
+    ///
+    /// Pagination gives a game taller than the whole column a column of its
+    /// own, so stop above the loading line and footer and use the last line
+    /// that fits to say how many goals are not shown.
+    #[allow(clippy::too_many_arguments)]
+    fn render_wide_column(
+        &self,
+        buffer: &mut String,
+        layout_manager: &mut super::layout::ColumnLayoutManager,
+        rows: &[&TeletextRow],
+        start_line: usize,
+        column_start: usize,
+        column_width: usize,
+        layout_config: &super::layout::LayoutConfig,
+    ) -> usize {
+        let last_content_line = self.last_content_line();
+        let mut line = start_line;
+
+        for (row_index, row) in rows.iter().enumerate() {
+            if line > last_content_line {
+                break;
+            }
+            let formatted = self.format_game_for_wide_column(row, column_width, layout_config);
+            let row_lines: Vec<&str> = formatted.lines().collect();
+
+            let room = (last_content_line - line).saturating_add(1);
+            let clipped = row_lines.len() > room;
+            // The result line comes first, then scorer lines. With room for
+            // only the result line there is no room for the marker either.
+            let shown_lines = if clipped && room >= 2 {
+                room - 1
+            } else {
+                row_lines.len().min(room)
+            };
+
+            for row_line in &row_lines[..shown_lines] {
+                buffer.push_str(layout_manager.get_position_code(line, column_start));
+                buffer.push_str(row_line);
+                line += 1;
+            }
+
+            if clipped && room >= 2 {
+                let shown_scorer_lines = shown_lines - 1;
+                let hidden_goals = match row {
+                    TeletextRow::GameResult { goal_events, .. } => {
+                        let home = goal_events.iter().filter(|e| e.is_home_team).count();
+                        let away = goal_events.len() - home;
+                        goal_events.len()
+                            - home.min(shown_scorer_lines)
+                            - away.min(shown_scorer_lines)
+                    }
+                    _ => 0,
+                };
+                let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
+                buffer.push_str(layout_manager.get_position_code(line, column_start));
+                buffer.push_str(&format!(
+                    "\x1b[38;5;{goal_type_fg_code}m{}\x1b[0m",
+                    super::game_display::hidden_goals_text(hidden_goals)
+                ));
+                line += 1;
+            }
+
+            // Blank line between rows (not after the last one)
+            if row_index + 1 < rows.len() {
+                line += 1;
+            }
+        }
+
+        line
     }
 
     /// Renders content in normal mode (fallback for wide mode when width insufficient).
@@ -483,7 +528,8 @@ impl TeletextPage {
     }
 }
 
-/// Truncates team names gracefully, preferring word boundaries when possible.
+/// Truncates team names gracefully: cuts at the first space or hyphen within
+/// the limit, or at the limit itself when there is none.
 ///
 /// # Arguments
 /// * `team_name` - Original team name
@@ -496,8 +542,7 @@ pub fn truncate_team_name_gracefully(team_name: &str, max_length: usize) -> Stri
         return team_name.to_string();
     }
 
-    // Try to find a good truncation point (space or hyphen). Count characters,
-    // not bytes, so names with Ä/Ö cut at the right place.
+    // Count characters, not bytes, so names with Ä/Ö cut at the right place.
     let best_pos = team_name
         .chars()
         .take(max_length)
@@ -520,6 +565,10 @@ mod tests {
 
     #[test]
     fn truncation_keeps_names_that_fit_by_display_width() {
-        assert_eq!(truncate_team_name_gracefully("Ässät", 5), "Ässät");
+        // 11 columns but 13 bytes: measuring bytes cut a name that fits.
+        assert_eq!(
+            truncate_team_name_gracefully("Kärpät Oulu", 11),
+            "Kärpät Oulu"
+        );
     }
 }

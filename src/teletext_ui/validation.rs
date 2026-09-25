@@ -46,9 +46,6 @@ impl TeletextPage {
         let issues: Vec<String> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
 
-        // Error messages are now properly handled in compact mode
-        // No need for warning anymore
-
         // Loading indicators and auto-refresh indicators work fine in compact mode
         // No need for warnings anymore
 

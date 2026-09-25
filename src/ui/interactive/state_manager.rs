@@ -5,6 +5,7 @@
 //! clean interfaces for state operations.
 
 use crate::data_fetcher::GameData;
+use crate::data_fetcher::models::bracket::PlayoffBracket;
 use crate::teletext_ui::TeletextPage;
 use std::time::{Duration, Instant};
 
@@ -234,6 +235,9 @@ pub struct ChangeDetectionState {
     pub last_games: Vec<GameData>,
     last_standings_hash: Option<u64>,
     last_bracket_hash: Option<u64>,
+    /// The bracket on screen, kept so a resize can rebuild its page without
+    /// fetching it again.
+    last_bracket: Option<PlayoffBracket>,
 }
 
 impl ChangeDetectionState {
@@ -244,6 +248,7 @@ impl ChangeDetectionState {
             last_games: Vec::new(),
             last_standings_hash: None,
             last_bracket_hash: None,
+            last_bracket: None,
         }
     }
 
@@ -292,18 +297,26 @@ impl ChangeDetectionState {
         self.last_bracket_hash
     }
 
-    /// Update bracket hash after a successful fetch.
-    /// Returns true if the hash differs from the previously stored value,
-    /// or if no previous hash exists (first fetch).
-    pub fn update_bracket_hash(&mut self, new_hash: u64) -> bool {
+    /// Stores a bracket after a successful fetch, laid out for `terminal_size`.
+    /// Returns true if it differs from the stored one (bracket data or terminal
+    /// size), or if none is stored yet (first fetch).
+    pub fn update_bracket(&mut self, bracket: &PlayoffBracket, terminal_size: (u16, u16)) -> bool {
+        let new_hash = super::change_detection::calculate_bracket_hash(bracket, terminal_size);
         let changed = self.last_bracket_hash != Some(new_hash);
         self.last_bracket_hash = Some(new_hash);
+        self.last_bracket = Some(bracket.clone());
         changed
     }
 
-    /// Reset bracket hash (e.g., when switching away from bracket view)
+    /// The last bracket fetched, if the bracket view has one.
+    pub fn last_bracket(&self) -> Option<&PlayoffBracket> {
+        self.last_bracket.as_ref()
+    }
+
+    /// Forget the stored bracket (e.g., when switching away from bracket view)
     pub fn reset_bracket_hash(&mut self) {
         self.last_bracket_hash = None;
+        self.last_bracket = None;
     }
 }
 
@@ -467,12 +480,44 @@ impl InteractiveState {
     pub fn handle_resize(&mut self) {
         self.ui.handle_resize();
 
-        // The bracket page is laid out for the terminal size it was built at.
-        // Refresh so it is rebuilt for the new size (the bracket response is
-        // cached, so this does not wait on the network).
         if self.navigation.current_view == ViewMode::Bracket {
-            self.request_refresh();
+            let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
+            self.rebuild_bracket_page(width, height);
         }
+    }
+
+    /// Rebuilds the bracket page for a new terminal size from the stored
+    /// bracket. The layout (full path, tree or stacked) is chosen when the page
+    /// is built, so a resize needs a new page, but not a new fetch: a failed
+    /// fetch would replace a good bracket on screen.
+    fn rebuild_bracket_page(&mut self, width: u16, height: u16) {
+        let Some(page) = self.ui.current_page() else {
+            return;
+        };
+        // Loading and error pages have no bracket to lay out.
+        if !page.is_bracket_page() {
+            return;
+        }
+        let Some(bracket) = self.change_detection.last_bracket().cloned() else {
+            return;
+        };
+
+        let mut new_page = super::navigation_manager::create_bracket_page(
+            &bracket,
+            page.video_links_disabled(),
+            width,
+            height,
+        );
+        new_page.set_current_page(page.get_current_page());
+        if page.is_error_warning_active() {
+            new_page.show_error_warning();
+        }
+        new_page.set_has_bracket_data(self.navigation.has_bracket_data);
+        new_page.set_initial_fetched_date(self.navigation.initial_fetched_date.clone());
+
+        self.change_detection
+            .update_bracket(&bracket, (width, height));
+        self.ui.set_current_page(new_page);
     }
 
     /// Set current date (delegates to navigation state)
@@ -551,17 +596,108 @@ impl InteractiveState {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_resize_in_bracket_view_requests_refresh() {
-        // The bracket page is laid out for the terminal size it was built at;
-        // a refresh rebuilds it for the new size.
+    fn sample_bracket() -> PlayoffBracket {
+        use crate::data_fetcher::models::bracket::{BracketMatchup, BracketPhase};
+        PlayoffBracket {
+            season: "2025-2026".to_string(),
+            phases: vec![BracketPhase {
+                phase_number: 1,
+                name: "PUOLIVÄLIERÄT".to_string(),
+                matchups: vec![BracketMatchup {
+                    phase: 1,
+                    pair: 1,
+                    serie: 1,
+                    team1: "Kärpät".to_string(),
+                    team2: "Ässät".to_string(),
+                    team1_wins: 2,
+                    team2_wins: 1,
+                    req_wins: 4,
+                    is_decided: false,
+                    has_live_game: false,
+                    winner: None,
+                }],
+            }],
+            has_data: true,
+        }
+    }
+
+    /// A state showing `sample_bracket` laid out for a 100x30 terminal.
+    fn state_showing_bracket() -> InteractiveState {
         let mut state = InteractiveState::new(None);
         state.clear_refresh_flag();
         state.navigation.current_view = ViewMode::Bracket;
+        let bracket = sample_bracket();
+        state.change_detection.update_bracket(&bracket, (100, 30));
+        state.set_current_page(super::super::navigation_manager::create_bracket_page(
+            &bracket, true, 100, 30,
+        ));
+        state
+    }
+
+    #[test]
+    fn test_resize_in_bracket_view_rebuilds_page_without_fetch() {
+        // The bracket layout is chosen when the page is built, so a resize
+        // needs a new page. A fetch for it could fail and replace the good
+        // bracket, so the page is rebuilt from the stored bracket instead.
+        let mut state = state_showing_bracket();
+
+        state.rebuild_bracket_page(60, 20);
+
+        assert!(
+            !state.needs_refresh(),
+            "a resize must not fetch the bracket"
+        );
+        let page = state.current_page().expect("bracket page");
+        assert!(page.is_bracket_page());
+        assert!(
+            !state
+                .change_detection
+                .update_bracket(&sample_bracket(), (60, 20)),
+            "the stored layout size must follow the rebuilt page"
+        );
+    }
+
+    #[test]
+    fn test_resize_in_bracket_view_keeps_error_warning() {
+        let mut state = state_showing_bracket();
+        state.current_page_mut().unwrap().show_error_warning();
+
+        state.rebuild_bracket_page(60, 20);
+
+        assert!(state.current_page().unwrap().is_error_warning_active());
+    }
+
+    #[test]
+    fn test_resize_on_bracket_error_page_keeps_it() {
+        // An error page has no bracket to lay out; rebuilding would hide the error.
+        let mut state = state_showing_bracket();
+        let mut error_page = TeletextPage::new(
+            223,
+            "JÄÄKIEKKO".to_string(),
+            "PUDOTUSPELIT".to_string(),
+            true,
+            true,
+            false,
+            false,
+            false,
+        );
+        error_page.add_error_message("Pudotuspelien lataus epäonnistui.");
+        state.set_current_page(error_page);
+
+        state.rebuild_bracket_page(60, 20);
+
+        let page = state.current_page().unwrap();
+        assert!(!page.is_bracket_page());
+        assert!(page.has_error_messages());
+    }
+
+    #[test]
+    fn test_resize_in_bracket_view_does_not_refetch() {
+        let mut state = state_showing_bracket();
 
         state.handle_resize();
 
-        assert!(state.needs_refresh());
+        assert!(!state.needs_refresh());
     }
 
     #[test]

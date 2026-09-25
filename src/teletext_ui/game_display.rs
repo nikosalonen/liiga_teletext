@@ -13,7 +13,27 @@ pub(crate) fn format_team_series_indicator(wins: u8, req_wins: u8) -> String {
     format!("{filled}{empty}")
 }
 
+/// Line shown in place of scorer lines cut off at the bottom of the page.
+pub(super) fn hidden_goals_text(hidden_goals: usize) -> String {
+    if hidden_goals == 1 {
+        "+1 maali".to_string()
+    } else {
+        format!("+{hidden_goals} maalia")
+    }
+}
+
 impl TeletextPage {
+    /// Last screen row game content may use. The two rows below it hold the
+    /// loading line and the footer. Unlimited in non-interactive mode, where
+    /// the page grows to fit its content.
+    pub(super) fn last_content_line(&self) -> usize {
+        if self.ignore_height_limit {
+            usize::MAX
+        } else {
+            self.screen_height.saturating_sub(2) as usize
+        }
+    }
+
     /// Extracts GameData from TeletextRows for layout calculation
     pub(crate) fn extract_games_for_layout(&self, visible_rows: &[&TeletextRow]) -> Vec<GameData> {
         visible_rows
@@ -78,13 +98,7 @@ impl TeletextPage {
     ) {
         // Calculate layout configuration based on game content
         let games_for_layout = self.extract_games_for_layout(visible_rows);
-        let terminal_width = if self.ignore_height_limit {
-            if self.wide_mode { 136 } else { 80 }
-        } else {
-            crossterm::terminal::size()
-                .map(|(w, _)| w as usize)
-                .unwrap_or(80)
-        };
+        let terminal_width = self.layout_width() as usize;
 
         let mut layout_manager = ColumnLayoutManager::new(terminal_width, CONTENT_MARGIN);
         let layout_config = if self.wide_mode && self.can_fit_two_pages() {
@@ -401,15 +415,25 @@ impl TeletextPage {
         let max_scorers = home_scorers.len().max(away_scorers.len());
 
         // Pagination places a game taller than the whole page on its own page;
-        // drop the scorer lines that would run into the loading line and footer.
-        let last_content_line = if self.ignore_height_limit {
-            usize::MAX
-        } else {
-            self.screen_height.saturating_sub(2) as usize
-        };
+        // stop above the loading line and footer, and use the last line that
+        // fits to say how many goals are not shown.
+        let last_content_line = self.last_content_line();
 
         for i in 0..max_scorers {
             if *current_line > last_content_line {
+                break;
+            }
+            if *current_line == last_content_line && i + 1 < max_scorers {
+                let hidden_goals =
+                    home_scorers.len().saturating_sub(i) + away_scorers.len().saturating_sub(i);
+                buffer.push_str(&format!(
+                    "\x1b[{};{}H\x1b[38;5;{}m{}\x1b[0m",
+                    *current_line,
+                    CONTENT_MARGIN + 1,
+                    goal_type_fg_code,
+                    hidden_goals_text(hidden_goals)
+                ));
+                *current_line += 1;
                 break;
             }
             // Home team scorer
@@ -821,18 +845,21 @@ mod tests {
     use super::*;
     use crate::data_fetcher::GoalEventData;
 
-    /// Renders one finished playoff game (with series dots and a scorer) the
-    /// way the normal-mode page draws it, at a fixed 80-column width.
-    fn render_playoff_game(home_team: &str, scorer: &str) -> String {
+    /// Renders one finished playoff game (with series dots and a scorer for
+    /// each team) the way the normal-mode page draws it, at a fixed 80-column
+    /// width.
+    fn render_playoff_game(home_team: &str, away_team: &str, scorer: &str) -> String {
         use crate::data_fetcher::models::PlayoffSeriesScore;
         use crate::teletext_ui::GameResultData;
 
-        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game(home_team, "TPS");
+        let mut game =
+            crate::testing_utils::TestDataBuilder::create_basic_game(home_team, away_team);
         game.score_type = ScoreType::Final;
-        game.result = "1-0".to_string();
-        game.goal_events = vec![crate::testing_utils::TestDataBuilder::create_goal_event(
-            scorer, 12, 1, 0, true,
-        )];
+        game.result = "1-1".to_string();
+        game.goal_events = vec![
+            crate::testing_utils::TestDataBuilder::create_goal_event(scorer, 12, 1, 0, true),
+            crate::testing_utils::TestDataBuilder::create_goal_event(scorer, 40, 1, 1, false),
+        ];
         game.play_off_phase = Some(1);
         game.play_off_pair = Some(1);
         game.play_off_req_wins = Some(4);
@@ -865,12 +892,13 @@ mod tests {
     fn test_finnish_names_are_positioned_by_display_width() {
         // Ä/Ö are one column wide but two bytes. Positions computed from byte
         // length put the series dots after "Kärpät" two columns too far right.
-        let finnish = render_playoff_game("Kärpät", "Hämäläinen");
-        let ascii = render_playoff_game("Karpat", "Hamalainen");
+        let finnish = render_playoff_game("Kärpät", "Ässät", "Hämäläinen");
+        let ascii = render_playoff_game("Karpat", "Assat", "Hamalainen");
 
         assert_eq!(
             finnish
                 .replace("Kärpät", "Karpat")
+                .replace("Ässät", "Assat")
                 .replace("Hämäläinen", "Hamalainen"),
             ascii
         );

@@ -96,6 +96,22 @@ impl TeletextPage {
         let mut games_in_current_line = 0;
 
         for row in rows.iter() {
+            // Error and loading messages get lines of their own, like in normal mode.
+            if let TeletextRow::ErrorMessage(message) = row {
+                if !current_line.is_empty() {
+                    lines.push(std::mem::take(&mut current_line));
+                    games_in_current_line = 0;
+                }
+                let text_fg_code =
+                    super::core::get_ansi_code(crate::ui::teletext::colors::text_fg(), 231);
+                lines.extend(
+                    message
+                        .lines()
+                        .map(|line| format!("\x1b[38;5;{text_fg_code}m{line}\x1b[0m")),
+                );
+                continue;
+            }
+
             let row_str = self.format_compact_game(row, config);
 
             // Skip empty strings (unsupported row types)

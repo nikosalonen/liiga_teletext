@@ -1809,8 +1809,8 @@ mod tests {
 
     #[test]
     fn test_layout_measures_names_by_display_width_not_bytes() {
-        // "Hämäläinen" is 10 columns but 13 bytes. Counting bytes pushed the
-        // score to column 80 on an 80-column terminal, where it wrapped.
+        // "Hämäläinen Ma." is 14 columns but 17 bytes. Counting bytes made the
+        // name column 3 wider and pushed the time and score right with it.
         let layout_for = |scorer: &str| {
             let mut manager = ColumnLayoutManager::new(80, 2);
             let goal_events = vec![create_test_goal_event(
@@ -1826,6 +1826,40 @@ mod tests {
         assert_eq!(finnish.max_player_name_width, ascii.max_player_name_width);
         assert_eq!(finnish.time_column, ascii.time_column);
         assert_eq!(finnish.score_column, ascii.score_column);
+    }
+
+    #[test]
+    fn test_fallback_analysis_measures_names_by_display_width_not_bytes() {
+        // Narrow terminals size the name column in the fallback analyses.
+        // "Hämäläinen" is 10 columns but 13 bytes.
+        let games_with = |scorer: &str| {
+            let goal_events = vec![create_test_goal_event(scorer, vec!["YV".to_string()])];
+            vec![create_test_game_data("HIFK", "TPS", goal_events)]
+        };
+        let finnish = games_with("Hämäläinen");
+        let ascii = games_with("Hamalainen");
+
+        for width in [45, 50, 55, 60, 70] {
+            let manager = ColumnLayoutManager::new(width, 2);
+            assert_eq!(
+                manager
+                    .analyze_content_for_fallback(&finnish)
+                    .max_player_name_width,
+                manager
+                    .analyze_content_for_fallback(&ascii)
+                    .max_player_name_width,
+                "width {width}"
+            );
+            assert_eq!(
+                manager
+                    .analyze_content_for_fallback_with_truncation(&finnish)
+                    .max_player_name_width,
+                manager
+                    .analyze_content_for_fallback_with_truncation(&ascii)
+                    .max_player_name_width,
+                "width {width}"
+            );
+        }
     }
 
     #[test]

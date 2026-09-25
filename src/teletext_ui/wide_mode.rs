@@ -2,11 +2,9 @@
 //!
 //! This module handles wide-screen display functionality, including:
 //! - Two-column layout management
-//! - Game distribution across columns
 //! - Wide terminal detection and validation
 //! - Column-based content rendering
 
-use crate::teletext_ui::core::TeletextRow;
 use crossterm::terminal;
 
 /// Minimum terminal width required for wide mode display
@@ -95,48 +93,6 @@ impl WideModeManager {
         }
 
         terminal_width >= self.config.min_terminal_width
-    }
-
-    /// Distribute games between left and right columns for wide mode display
-    /// Uses left-column-first filling logic similar to pagination.
-    ///
-    /// # Arguments
-    /// * `visible_rows` - The visible game rows to distribute
-    /// * `ignore_height_limit` - Whether to ignore terminal height limits
-    ///
-    /// # Returns
-    /// * `(Vec<&TeletextRow>, Vec<&TeletextRow>)` - Left and right column games
-    pub fn distribute_games_for_wide_display<'a>(
-        &self,
-        visible_rows: &'a [&TeletextRow],
-        ignore_height_limit: bool,
-    ) -> (Vec<&'a TeletextRow>, Vec<&'a TeletextRow>) {
-        if !self.config.enabled || !self.can_fit_two_pages(ignore_height_limit) {
-            // If not in wide mode or can't fit two columns, return all games in left column
-            return (visible_rows.to_vec(), Vec::new());
-        }
-
-        if visible_rows.is_empty() {
-            return (Vec::new(), Vec::new());
-        }
-
-        // Split games roughly evenly between columns using balanced distribution
-        // Left column gets the extra game if there's an odd number
-        let total_games = visible_rows.len();
-        let games_per_column = total_games.div_ceil(2);
-
-        let mut left_games: Vec<&TeletextRow> = Vec::new();
-        let mut right_games: Vec<&TeletextRow> = Vec::new();
-
-        for (i, game) in visible_rows.iter().enumerate() {
-            if i < games_per_column {
-                left_games.push(game);
-            } else {
-                right_games.push(game);
-            }
-        }
-
-        (left_games, right_games)
     }
 
     /// Calculate the starting column position for the right column
@@ -264,23 +220,6 @@ pub enum WideModeValidation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::teletext::game_result::ScoreType;
-
-    fn create_test_game_row(home: &str, away: &str) -> TeletextRow {
-        TeletextRow::GameResult {
-            home_team: home.to_string(),
-            away_team: away.to_string(),
-            time: "18:30".to_string(),
-            result: "1-0".to_string(),
-            score_type: ScoreType::Final,
-            is_overtime: false,
-            is_shootout: false,
-            goal_events: vec![],
-            played_time: 3600,
-            series_score: None,
-        }
-    }
-
     #[test]
     fn test_wide_mode_manager_creation() {
         let config = WideModeConfig {
@@ -322,66 +261,6 @@ mod tests {
 
         // Narrow terminal (80 columns) should not fit
         assert!(!manager.can_fit_two_pages_with_width(80));
-    }
-
-    #[test]
-    fn test_distribute_games_disabled() {
-        let config = WideModeConfig {
-            enabled: false,
-            ..WideModeConfig::default()
-        };
-        let manager = WideModeManager::new(config);
-
-        let game1 = create_test_game_row("Team1", "Team2");
-        let game2 = create_test_game_row("Team3", "Team4");
-        let games = vec![&game1, &game2];
-
-        let (left, right) = manager.distribute_games_for_wide_display(&games, true);
-
-        // When disabled, all games should go to left column
-        assert_eq!(left.len(), 2);
-        assert_eq!(right.len(), 0);
-    }
-
-    #[test]
-    fn test_distribute_games_enabled_even_number() {
-        let config = WideModeConfig {
-            enabled: true,
-            ..WideModeConfig::default()
-        };
-        let manager = WideModeManager::new(config);
-
-        let game1 = create_test_game_row("Team1", "Team2");
-        let game2 = create_test_game_row("Team3", "Team4");
-        let game3 = create_test_game_row("Team5", "Team6");
-        let game4 = create_test_game_row("Team7", "Team8");
-        let games = vec![&game1, &game2, &game3, &game4];
-
-        let (left, right) = manager.distribute_games_for_wide_display(&games, true);
-
-        // With 4 games, should distribute 2-2
-        assert_eq!(left.len(), 2);
-        assert_eq!(right.len(), 2);
-    }
-
-    #[test]
-    fn test_distribute_games_enabled_odd_number() {
-        let config = WideModeConfig {
-            enabled: true,
-            ..WideModeConfig::default()
-        };
-        let manager = WideModeManager::new(config);
-
-        let game1 = create_test_game_row("Team1", "Team2");
-        let game2 = create_test_game_row("Team3", "Team4");
-        let game3 = create_test_game_row("Team5", "Team6");
-        let games = vec![&game1, &game2, &game3];
-
-        let (left, right) = manager.distribute_games_for_wide_display(&games, true);
-
-        // With 3 games, left column should get the extra (2-1)
-        assert_eq!(left.len(), 2);
-        assert_eq!(right.len(), 1);
     }
 
     #[test]

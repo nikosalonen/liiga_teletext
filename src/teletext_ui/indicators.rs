@@ -145,6 +145,16 @@ impl TeletextPage {
         self.is_bracket_page = is_bracket;
     }
 
+    /// Returns whether this page is a bracket display page.
+    pub fn is_bracket_page(&self) -> bool {
+        self.is_bracket_page
+    }
+
+    /// Returns whether clickable video links are turned off for this page.
+    pub fn video_links_disabled(&self) -> bool {
+        self.disable_video_links
+    }
+
     /// Sets whether bracket data is available.
     pub fn set_has_bracket_data(&mut self, has_data: bool) {
         self.has_bracket_data = has_data;
