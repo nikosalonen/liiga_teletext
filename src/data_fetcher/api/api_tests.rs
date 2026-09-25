@@ -3,7 +3,7 @@
 use super::date_logic::determine_fetch_date_with_time;
 #[cfg(test)]
 use super::game_api::{
-    fetch_game_data, get_team_name, has_actual_goals,
+    add_series_scores, fetch_game_data, fetch_historical_games, get_team_name, has_actual_goals,
     process_goal_events_for_historical_game_with_players, should_fetch_detailed_data,
 };
 #[cfg(test)]
@@ -50,8 +50,10 @@ use std::time::Duration;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_fetcher::api::create_tournament_key;
     use crate::data_fetcher::models::detailed::Period;
-    use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GoalEvent, Player};
+    use crate::data_fetcher::models::{DetailedGame, DetailedTeam, GameData, GoalEvent, Player};
+    use crate::teletext_ui::ScoreType;
     use serial_test::serial;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
@@ -418,6 +420,173 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fetch_day_data_returns_error_when_every_fetch_fails() {
+        clear_all_caches_for_test().await;
+
+        let mock_server = MockServer::start().await;
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+        let client = create_test_http_client();
+
+        // The API is down: without an error the user would see "no games".
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&mock_server)
+            .await;
+
+        let result = fetch_day_data(
+            &client,
+            &config,
+            &["runkosarja"],
+            "2024-01-15",
+            &[],
+            &HashMap::new(),
+        )
+        .await;
+
+        let error = result.expect_err("a day where every fetch failed must be an error");
+        assert!(!error.is_not_found());
+
+        clear_all_caches_for_test().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_day_data_treats_missing_tournament_as_no_games() {
+        clear_all_caches_for_test().await;
+
+        let mock_server = MockServer::start().await;
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+        let client = create_test_http_client();
+
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        let result = fetch_day_data(
+            &client,
+            &config,
+            &["runkosarja"],
+            "2024-01-15",
+            &[],
+            &HashMap::new(),
+        )
+        .await;
+
+        let (responses, _) = result.expect("a missing tournament is not a fetch failure");
+        assert!(responses.is_none());
+
+        clear_all_caches_for_test().await;
+    }
+
+    /// Mounts a `/games` response for one tournament.
+    async fn mount_tournament_games(
+        mock_server: &MockServer,
+        tournament: &str,
+        response: ResponseTemplate,
+    ) {
+        Mock::given(method("GET"))
+            .and(path("/games"))
+            .and(query_param("tournament", tournament))
+            .respond_with(response)
+            .mount(mock_server)
+            .await;
+    }
+
+    async fn fetch_regular_season_and_playoffs(
+        mock_server: &MockServer,
+    ) -> Result<
+        (
+            Option<Vec<ScheduleResponse>>,
+            HashMap<String, ScheduleResponse>,
+        ),
+        AppError,
+    > {
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+        fetch_day_data(
+            &create_test_http_client(),
+            &config,
+            &["runkosarja", "playoffs"],
+            "2024-04-12",
+            &[],
+            &HashMap::new(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_fetch_day_data_returns_error_when_runkosarja_fails() {
+        // runkosarja is the main data source. If it failed, an empty answer
+        // from another tournament does not mean the day has no games.
+        clear_all_caches_for_test().await;
+        let mock_server = MockServer::start().await;
+        mount_tournament_games(&mock_server, "runkosarja", ResponseTemplate::new(503)).await;
+        mount_tournament_games(
+            &mock_server,
+            "playoffs",
+            ResponseTemplate::new(200).set_body_json(create_mock_empty_schedule_response()),
+        )
+        .await;
+
+        let result = fetch_regular_season_and_playoffs(&mock_server).await;
+
+        assert!(
+            result.is_err(),
+            "a failed runkosarja fetch must be an error"
+        );
+        clear_all_caches_for_test().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_day_data_ignores_failed_secondary_tournament_on_empty_day() {
+        // Secondary tournaments often fail while they are unannounced. When
+        // runkosarja answered, the day really has no games.
+        clear_all_caches_for_test().await;
+        let mock_server = MockServer::start().await;
+        mount_tournament_games(
+            &mock_server,
+            "runkosarja",
+            ResponseTemplate::new(200).set_body_json(create_mock_empty_schedule_response()),
+        )
+        .await;
+        mount_tournament_games(&mock_server, "playoffs", ResponseTemplate::new(503)).await;
+
+        let (responses, tournament_responses) = fetch_regular_season_and_playoffs(&mock_server)
+            .await
+            .expect("a failed secondary tournament is not a day error");
+
+        assert!(responses.is_none());
+        assert!(
+            tournament_responses.contains_key(&create_tournament_key("runkosarja", "2024-04-12"))
+        );
+        clear_all_caches_for_test().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_day_data_returns_games_despite_a_failed_tournament() {
+        clear_all_caches_for_test().await;
+        let mock_server = MockServer::start().await;
+        mount_tournament_games(
+            &mock_server,
+            "runkosarja",
+            ResponseTemplate::new(200).set_body_json(create_mock_schedule_response()),
+        )
+        .await;
+        mount_tournament_games(&mock_server, "playoffs", ResponseTemplate::new(503)).await;
+
+        let (responses, _) = fetch_regular_season_and_playoffs(&mock_server)
+            .await
+            .expect("games that were fetched must be shown");
+
+        assert!(responses.is_some_and(|r| !r.is_empty()));
+        clear_all_caches_for_test().await;
+    }
+
+    #[tokio::test]
     async fn test_fetch_game_data_success() {
         let mock_server = MockServer::start().await;
         let config = create_mock_config();
@@ -646,6 +815,203 @@ mod tests {
         assert!(result.is_ok());
         let start_date = result.unwrap();
         assert_eq!(start_date, Some("2024-09-15T18:30:00Z".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_historical_game_keeps_schedule_score_when_detail_fetch_fails() {
+        let mock_server = MockServer::start().await;
+        let client = create_test_http_client();
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+
+        let finished_game = vec![ScheduleApiGame {
+            id: 4242,
+            season: 2024,
+            start: "2024-01-15T17:30:00Z".to_string(),
+            home_team_name: "HIFK".to_string(),
+            away_team_name: "Tappara".to_string(),
+            serie: 1,
+            finished_type: Some("ENDED_TYPE_NORMAL".to_string()),
+            started: true,
+            ended: true,
+            game_time: Some(3600),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            home_team_goals: 4,
+            away_team_goals: 2,
+        }];
+
+        Mock::given(method("GET"))
+            .and(path("/schedule"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&finished_game))
+            .mount(&mock_server)
+            .await;
+        // The detail endpoint is down; 404 avoids slow retries in the test.
+        Mock::given(method("GET"))
+            .and(path("/games/2024/4242"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&mock_server)
+            .await;
+
+        let games = fetch_historical_games(&client, &config, "2024-01-15")
+            .await
+            .expect("historical fetch should succeed");
+
+        assert_eq!(games.len(), 1);
+        assert_eq!(
+            games[0].result, "4-2",
+            "the schedule score must survive a failed detail fetch"
+        );
+        assert_eq!(games[0].score_type, ScoreType::Final);
+        // The scorers are unknown, so each goal gets a placeholder scorer.
+        assert_eq!(games[0].goal_events.len(), 6);
+        assert!(
+            games[0]
+                .goal_events
+                .iter()
+                .all(|goal| goal.scorer_name == "Tuntematon pelaaja")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_historical_date_returns_error_when_schedule_fetch_fails() {
+        // Without an error, a past date whose schedule could not be fetched
+        // would be shown as a day without games.
+        let mock_server = MockServer::start().await;
+        let client = create_test_http_client();
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+        Mock::given(method("GET"))
+            .and(path("/schedule"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&mock_server)
+            .await;
+
+        let result = fetch_historical_games(&client, &config, "2024-01-15").await;
+
+        assert!(result.is_err(), "a failed schedule fetch must be an error");
+    }
+
+    fn playoff_schedule_game(
+        id: i32,
+        home: &str,
+        away: &str,
+        start: &str,
+        goals: (i32, i32),
+        ended: bool,
+    ) -> ScheduleApiGame {
+        ScheduleApiGame {
+            id,
+            season: 2024,
+            start: start.to_string(),
+            home_team_name: home.to_string(),
+            away_team_name: away.to_string(),
+            serie: 2,
+            finished_type: ended.then(|| "ENDED_TYPE_NORMAL".to_string()),
+            started: ended,
+            ended,
+            game_time: None,
+            play_off_phase: Some(1),
+            play_off_pair: Some(1),
+            play_off_req_wins: Some(4),
+            home_team_goals: goals.0,
+            away_team_goals: goals.1,
+        }
+    }
+
+    /// Mounts a playoff schedule where HIFK won the first two games against
+    /// TPS, and game 3 (2024-04-12) has not ended yet.
+    async fn mount_playoff_schedule(mock_server: &MockServer) {
+        let schedule = vec![
+            playoff_schedule_game(1, "HIFK", "TPS", "2024-04-08T15:30:00Z", (3, 1), true),
+            playoff_schedule_game(2, "TPS", "HIFK", "2024-04-10T15:30:00Z", (0, 2), true),
+            playoff_schedule_game(3, "HIFK", "TPS", "2024-04-12T15:30:00Z", (1, 1), false),
+        ];
+        Mock::given(method("GET"))
+            .and(path("/schedule"))
+            .and(query_param("tournament", "playoffs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&schedule))
+            .mount(mock_server)
+            .await;
+    }
+
+    /// Game 3 of the series in [`mount_playoff_schedule`], as the games endpoint sends it.
+    fn playoff_game_three(score_type: ScoreType, result: &str) -> GameData {
+        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("HIFK", "TPS");
+        game.start = "2024-04-12T15:30:00Z".to_string();
+        game.play_off_phase = Some(1);
+        game.play_off_pair = Some(1);
+        game.play_off_req_wins = Some(4);
+        game.score_type = score_type;
+        game.result = result.to_string();
+        game
+    }
+
+    #[tokio::test]
+    async fn test_live_playoff_game_gets_series_score_from_schedule() {
+        let mock_server = MockServer::start().await;
+        let client = create_test_http_client();
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+        mount_playoff_schedule(&mock_server).await;
+
+        let mut games = vec![playoff_game_three(ScoreType::Ongoing, "1-1")];
+        add_series_scores(&client, &config, &mut games, "2024-04-12").await;
+
+        let score = games[0]
+            .series_score
+            .as_ref()
+            .expect("live playoff game should have a series score");
+        assert_eq!(score.home_team_wins, 2);
+        assert_eq!(score.away_team_wins, 0);
+        assert_eq!(score.req_wins, 4);
+    }
+
+    #[tokio::test]
+    async fn test_just_ended_playoff_game_counts_before_schedule_updates() {
+        // The schedule is cached for much longer than the games, so it still
+        // shows game 3 as unfinished. The final result must count anyway.
+        let mock_server = MockServer::start().await;
+        let client = create_test_http_client();
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+        mount_playoff_schedule(&mock_server).await;
+
+        let mut games = vec![playoff_game_three(ScoreType::Final, "3-2")];
+        add_series_scores(&client, &config, &mut games, "2024-04-12").await;
+
+        let score = games[0]
+            .series_score
+            .as_ref()
+            .expect("finished playoff game should have a series score");
+        assert_eq!(score.home_team_wins, 3);
+        assert_eq!(score.away_team_wins, 0);
+    }
+
+    #[tokio::test]
+    async fn test_regular_season_games_skip_series_score_fetch() {
+        // The games endpoint sends phase 0 for regular-season games. They must
+        // not trigger a playoff schedule fetch on every refresh.
+        let mock_server = MockServer::start().await;
+        let client = create_test_http_client();
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+        Mock::given(method("GET"))
+            .and(path("/schedule"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(Vec::<ScheduleApiGame>::new()))
+            .expect(0)
+            .mount(&mock_server)
+            .await;
+
+        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("HIFK", "TPS");
+        game.play_off_phase = Some(0);
+        game.play_off_pair = Some(0);
+        game.play_off_req_wins = Some(0);
+        let mut games = vec![game];
+        add_series_scores(&client, &config, &mut games, "2024-01-15").await;
+
+        assert!(games[0].series_score.is_none());
     }
 
     #[tokio::test]

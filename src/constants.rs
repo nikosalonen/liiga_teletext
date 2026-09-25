@@ -10,6 +10,11 @@ pub const DEFAULT_HTTP_TIMEOUT_SECONDS: u64 = 10;
 /// Shorter than the overall request timeout to quickly detect unreachable hosts.
 pub const DEFAULT_HTTP_CONNECT_TIMEOUT_SECONDS: u64 = 5;
 
+/// Time limit for fetching the season schedule that playoff series scores are
+/// counted from. The scores are optional, so a slow schedule endpoint must not
+/// use up the outer timeout of the games fetch they are added to.
+pub const SERIES_SCORE_FETCH_TIMEOUT_SECONDS: u64 = 3;
+
 /// Safety margin added on top of the configured HTTP client timeout by outer
 /// fetch timeouts, so the HTTP layer reports the actual error before the
 /// outer timeout fires.

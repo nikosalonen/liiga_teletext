@@ -187,10 +187,12 @@ pub(super) async fn fetch_tournament_data_with_cache_check(
             Ok(response)
         }
         Err(e) => {
-            error!(
-                "Failed to fetch tournament data for {} on {}: {}",
-                tournament, date, e
-            );
+            // A tournament that is not published for this date is expected.
+            if e.is_not_found() {
+                debug!("No {tournament} data for {date}: {e}");
+            } else {
+                warn!("Failed to fetch {tournament} data for {date}: {e}");
+            }
 
             // Transform API not found errors to tournament-specific errors
             match &e {
@@ -205,6 +207,10 @@ pub(super) async fn fetch_tournament_data_with_cache_check(
 
 /// Fetches game data for multiple tournaments on a specific date.
 /// Returns responses for tournaments that have games and a map of all tournament responses.
+///
+/// When no games were found, returns an error if `runkosarja` (the main data
+/// source) failed, or if no tournament returned a response and at least one
+/// fetch failed. A tournament that is not found (404) just has no games.
 #[allow(clippy::type_complexity)]
 pub(super) async fn fetch_day_data(
     client: &Client,
@@ -223,6 +229,8 @@ pub(super) async fn fetch_day_data(
     let mut responses = Vec::new();
     let mut found_games = false;
     let mut tournament_responses = HashMap::new();
+    let mut primary_fetch_error = None;
+    let mut secondary_fetch_error = None;
 
     // Process tournaments sequentially to respect priority order
     for tournament in tournaments {
@@ -246,7 +254,20 @@ pub(super) async fn fetch_day_data(
             .await
             {
                 Ok(resp) => resp,
-                Err(_) => continue, // Skip this tournament if fetch fails
+                Err(e) => {
+                    // A missing tournament (404) just has no games. Other
+                    // errors are kept, so a day whose data could not be
+                    // fetched is not shown as "no games".
+                    if !e.is_not_found() {
+                        let slot = if *tournament == "runkosarja" {
+                            &mut primary_fetch_error
+                        } else {
+                            &mut secondary_fetch_error
+                        };
+                        slot.get_or_insert(e);
+                    }
+                    continue;
+                }
             }
         };
 
@@ -261,10 +282,19 @@ pub(super) async fn fetch_day_data(
     }
 
     if found_games {
-        Ok((Some(responses), tournament_responses))
-    } else {
-        Ok((None, tournament_responses))
+        return Ok((Some(responses), tournament_responses));
     }
+    // Secondary tournaments often fail while they are unannounced, so their
+    // failure alone does not turn a day other tournaments answered into an error.
+    if let Some(error) = primary_fetch_error {
+        return Err(error);
+    }
+    if tournament_responses.is_empty()
+        && let Some(error) = secondary_fetch_error
+    {
+        return Err(error);
+    }
+    Ok((None, tournament_responses))
 }
 
 /// Processes next game dates when no games are found for the current date.
