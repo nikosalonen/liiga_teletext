@@ -44,17 +44,26 @@ pub async fn fetch_latest_version(crates_io_base: &str) -> Result<Version, AppEr
     Ok(Version::parse(latest)?)
 }
 
-/// Checks for the latest version of this crate on crates.io.
-///
-/// Returns `Some(version_string)` on success, or `None` if the check failed
-/// (the error is printed to stderr).
-pub async fn check_latest_version() -> Option<String> {
-    match fetch_latest_version(CRATES_IO_BASE).await {
-        Ok(latest) => Some(latest.to_string()),
-        Err(e) => {
+/// Handle to the background crates.io version check.
+pub type VersionCheck = tokio::task::JoinHandle<Result<Version, AppError>>;
+
+/// Starts the crates.io version check in the background, so it runs while the
+/// app shows games. Pass the handle to `report_version_check` afterwards.
+pub fn spawn_version_check() -> VersionCheck {
+    tokio::spawn(fetch_latest_version(CRATES_IO_BASE))
+}
+
+/// Prints the update notice, or why the check failed. Call this only once the
+/// terminal is back to normal: anything printed while the interactive UI owns
+/// the screen is lost.
+pub async fn report_version_check(version_check: VersionCheck) {
+    match version_check.await {
+        Ok(Ok(latest)) => print_version_info(&latest),
+        Ok(Err(e)) => {
+            tracing::warn!("Failed to check for updates: {e}");
             eprintln!("Failed to check for updates: {e}");
-            None
         }
+        Err(e) => tracing::warn!("Version check task failed: {e}"),
     }
 }
 
@@ -127,24 +136,10 @@ pub fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
     execute!(stdout(), Print(format!("{bottom}\n")), ResetColor).ok();
 }
 
-pub fn print_version_info(latest_version: &str) {
-    let current = match Version::parse(CURRENT_VERSION) {
-        Ok(v) => v,
-        Err(_) => {
-            // If we can't parse the current version, just show a generic message
-            println!("Update available! Latest version: {latest_version}");
-            return;
-        }
-    };
-    let latest = match Version::parse(latest_version) {
-        Ok(v) => v,
-        Err(_) => {
-            // If we can't parse the latest version, don't show anything
-            return;
-        }
-    };
-
-    if latest > current {
+/// Prints a box with the update command when `latest` is newer than this
+/// binary. Prints nothing otherwise.
+pub fn print_version_info(latest: &Version) {
+    if *latest > current_version() {
         println!();
         print_version_status_box(vec![
             ("Liiga Teletext Status".to_string(), None),
@@ -154,7 +149,7 @@ pub fn print_version_info(latest_version: &str) {
                 Some(Color::AnsiValue(231)), // Authentic teletext white
             ),
             (
-                format!("Latest Version:  {latest_version}"),
+                format!("Latest Version:  {latest}"),
                 Some(Color::AnsiValue(51)), // Authentic teletext cyan
             ),
             ("".to_string(), None),

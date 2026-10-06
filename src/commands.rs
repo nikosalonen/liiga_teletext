@@ -47,14 +47,9 @@ pub async fn handle_version_command() -> Result<(), AppError> {
     version::print_logo();
 
     // Check for updates and show version info
-    if let Some(latest_version) = version::check_latest_version().await {
-        let current =
-            semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(AppError::VersionParse)?;
-        let latest = semver::Version::parse(&latest_version).map_err(AppError::VersionParse)?;
-
-        if latest > current {
-            version::print_version_info(&latest_version);
-        } else {
+    match version::fetch_latest_version(version::CRATES_IO_BASE).await {
+        Ok(latest) if latest > version::current_version() => version::print_version_info(&latest),
+        Ok(_) => {
             println!();
             version::print_version_status_box(vec![
                 ("Liiga Teletext Status".to_string(), None),
@@ -66,6 +61,7 @@ pub async fn handle_version_command() -> Result<(), AppError> {
                 ("You're running the latest version!".to_string(), None),
             ]);
         }
+        Err(e) => eprintln!("Failed to check for updates: {e}"),
     }
 
     Ok(())
@@ -182,7 +178,7 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
 /// Shows version info after display if update is available.
 pub async fn handle_once_command(
     args: &Args,
-    version_check: tokio::task::JoinHandle<Option<String>>,
+    version_check: version::VersionCheck,
 ) -> Result<(), AppError> {
     // In --once mode, don't show loading messages (only show in interactive mode)
 
@@ -286,9 +282,7 @@ pub async fn handle_once_command(
     println!(); // Add a newline at the end
 
     // Show version info after display if update is available
-    if let Ok(Some(latest_version)) = version_check.await {
-        version::print_version_info(&latest_version);
-    }
+    version::report_version_check(version_check).await;
 
     Ok(())
 }

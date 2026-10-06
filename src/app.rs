@@ -45,7 +45,7 @@ impl Drop for TerminalGuard {
 /// UI would be wiped when the alternate screen opens or closes.
 pub async fn run_interactive(
     args: &Args,
-    version_check: tokio::task::JoinHandle<Option<String>>,
+    version_check: version::VersionCheck,
     timezone_problem: Option<crate::timezone_check::TimezoneProblem>,
 ) -> Result<(), AppError> {
     // Interactive mode
@@ -84,9 +84,7 @@ pub async fn run_interactive(
     }
 
     // Show version info after UI closes if update is available
-    if let Ok(Some(latest_version)) = version_check.await {
-        version::print_version_info(&latest_version);
-    }
+    version::report_version_check(version_check).await;
 
     result
 }

@@ -73,7 +73,7 @@ async fn main() -> Result<(), AppError> {
     }
 
     // Check for new version in the background for non-config operations
-    let version_check = tokio::spawn(version::check_latest_version());
+    let version_check = version::spawn_version_check();
 
     // Load config first to fail early if there's an issue
     let _config = Config::load().await?;
