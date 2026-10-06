@@ -8,7 +8,7 @@ A Rust terminal application that displays Finnish Liiga hockey results in authen
 ## Features
 
 - **Authentic teletext interface** - YLE Teksti-TV channel 221 appearance
-- **Real-time updates** - Automatic refresh (every 15 seconds for live games, every minute otherwise)
+- **Real-time updates** - Automatic refresh (every 15 seconds for live games, every 30 seconds around a game's start, every minute otherwise)
 - **Tournament support** - Regular season, playoffs, playout, qualifications, practice games
 - **Interactive navigation** - Arrow keys for page navigation, automatic date navigation
 - **Detailed game info** - Scores, goal scorers with timestamps, video links with play icons
@@ -22,8 +22,8 @@ A Rust terminal application that displays Finnish Liiga hockey results in authen
 
 ## Requirements
 
-- **Rust 1.93.1 or newer** - This project uses the 2024 edition and let chains, and its test dependencies need 1.93.1
 - Terminal with Unicode support for best display experience
+- **Rust 1.93.1 or newer**, only if you install with cargo or build from source. The prebuilt binaries need no Rust toolchain. This project uses the 2024 edition and let chains, and its test dependencies need 1.93.1
 
 You can check your Rust version with:
 
@@ -133,7 +133,7 @@ cargo run --release
   - Outside the playoff season the view is hidden; set `LIIGA_BRACKET_GRACE_DAYS=400` to view the previous season's bracket
 - Press `l` to toggle live mode in standings
 - Press `t` to jump back to today's view
-- Press `r` to manually refresh data
+- Press `r` to manually refresh data (at most once every 15 seconds)
 - Type a three-digit page number to jump directly to a view, just like real teletext:
   - `221` - Games
   - `222` - Standings
@@ -141,6 +141,7 @@ cargo run --release
   - Any other number shows an authentic "SIVUA EI LÖYDY" (page not found) page
 - Data refreshes automatically:
   - Every 15 seconds for live games
+  - Every 30 seconds from 5 minutes before to 10 minutes after a game's scheduled start
   - Every 60 seconds otherwise (completed games served from 1-hour cache)
 
 ### Command Line Options
@@ -157,7 +158,6 @@ cargo run --release
 #### Configuration
 
 - `--config [DOMAIN]` - Update API domain in config (prompts if not provided)
-  - **Breaking Change**: The `-c` short flag has been removed to avoid conflict with `--compact`. Use the full `--config` flag instead.
 - `--set-log-file <PATH>` - Set a persistent custom log file location
 - `--clear-log-file` - Clear custom log file path and revert to default location
 - `--reset-cache` - Clear cached player names and start fresh
@@ -171,6 +171,7 @@ cargo run --release
 #### Info
 
 - `-V, --version` - Show version information
+- `--update` - Update to the latest version (see [Updating](#updating))
 
 ### Display Modes
 
@@ -206,6 +207,22 @@ The configuration can be manually edited at any time by modifying this file. You
 
 - Update the API domain
 - Set a custom log file path
+
+### Environment Variables
+
+These override the config file for a single run:
+
+- `LIIGA_API_DOMAIN` - API domain. When set, the first-run prompt is skipped
+- `LIIGA_LOG_FILE` - Log file path
+- `LIIGA_HTTP_TIMEOUT` - HTTP request timeout in seconds (default: 10)
+- `LIIGA_API_FETCH_TIMEOUT` - Timeout in seconds for fetching missing player names (default: 5, allowed range 1-30)
+- `LIIGA_BRACKET_GRACE_DAYS` - How many days the playoff bracket stays visible after the last playoff game (default: 14). Set to `400` to view the previous season's bracket in the off-season
+
+`--list-config` marks values that come from the environment with "(from env)".
+
+### Timezone
+
+Game times are shown in your local timezone. On macOS and Linux, the app checks at startup that it found your real timezone. If `TZ` forces UTC, or the timezone data can't be read, every start time would be off by your UTC offset, so the app prints a warning. In interactive mode the warning appears after you quit.
 
 ### Logging
 
@@ -247,7 +264,7 @@ cargo fmt
 cargo clippy --all-features --all-targets -- -D warnings
 ```
 
-Uses Rust 2024 edition with modular architecture: CLI/main, data fetcher, teletext UI, config, and performance modules.
+Uses the Rust 2024 edition. The main modules are the CLI and commands, the data fetcher (API client, caching, processing), the teletext UI (page layout and rendering), the interactive UI (event loop and input), config, and the self-updater.
 
 ## Contributing
 
