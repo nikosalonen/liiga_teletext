@@ -4,8 +4,12 @@
 //! `cargo install` when no binary is published for this platform yet.
 
 use crate::error::AppError;
+use semver::Version;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 
 /// Name of the release asset built for `os`/`arch` (values of
 /// `std::env::consts::{OS, ARCH}`), or `None` when no binary is built for it.
@@ -82,6 +86,153 @@ pub fn cargo_fallback_allowed(exe: &Path) -> bool {
         return false;
     }
     cargo_bin_dir().is_some_and(|bin| is_inside_cargo_bin(exe, &bin)) && cargo_on_path()
+}
+
+/// Release files are fetched by direct URL, not the GitHub REST API, which
+/// limits clients that aren't logged in to 60 requests per hour.
+pub const RELEASE_DOWNLOAD_BASE: &str =
+    "https://github.com/nikosalonen/liiga_teletext/releases/download";
+pub const RELEASES_PAGE: &str = "https://github.com/nikosalonen/liiga_teletext/releases/latest";
+
+/// HTTP client for release downloads. The binary is several MB, so the
+/// timeout is longer than the 10 s used for JSON requests.
+pub fn download_client() -> Result<reqwest::Client, AppError> {
+    Ok(reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .user_agent(concat!(
+            env!("CARGO_PKG_NAME"),
+            "/",
+            env!("CARGO_PKG_VERSION")
+        ))
+        .build()?)
+}
+
+/// Fetches `<asset>.sha256` for `version`. `Ok(None)` means the release has
+/// no binary for this asset (404).
+pub async fn fetch_checksum(
+    client: &reqwest::Client,
+    release_base: &str,
+    version: &Version,
+    asset: &str,
+) -> Result<Option<[u8; 32]>, AppError> {
+    let url = format!("{release_base}/v{version}/{asset}.sha256");
+    let response = client.get(&url).send().await?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    let body = response.error_for_status()?.text().await?;
+    parse_checksum(&body).map(Some)
+}
+
+/// Turns a permission error into a message that names the folder, so the user
+/// knows which folder needs write access.
+fn io_error_in(err: std::io::Error, dir: &Path) -> AppError {
+    if err.kind() == std::io::ErrorKind::PermissionDenied {
+        AppError::SelfUpdate(format!(
+            "no permission to write to {}. Re-run with write access to that folder.",
+            dir.display()
+        ))
+    } else {
+        AppError::Io(err)
+    }
+}
+
+/// Streams `url` into a temp file in `dest_dir` and checks its SHA-256.
+/// On any error the temp file is removed. The temp file is in the same folder
+/// as the binary it will replace, so the final swap is a same-disk rename.
+pub async fn download_and_verify(
+    client: &reqwest::Client,
+    url: &str,
+    expected: &[u8; 32],
+    dest_dir: &Path,
+) -> Result<PathBuf, AppError> {
+    let temp_path = dest_dir.join(format!(".liiga_teletext-update-{}", std::process::id()));
+    let result = write_verified(client, url, expected, &temp_path, dest_dir).await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+    }
+    result.map(|()| temp_path)
+}
+
+async fn write_verified(
+    client: &reqwest::Client,
+    url: &str,
+    expected: &[u8; 32],
+    temp_path: &Path,
+    dest_dir: &Path,
+) -> Result<(), AppError> {
+    let mut response = client.get(url).send().await?.error_for_status()?;
+    let mut file = tokio::fs::File::create(temp_path)
+        .await
+        .map_err(|e| io_error_in(e, dest_dir))?;
+    let mut hasher = Sha256::new();
+    while let Some(chunk) = response.chunk().await? {
+        hasher.update(&chunk);
+        file.write_all(&chunk).await?;
+    }
+    file.sync_all().await?;
+    drop(file);
+
+    let actual = hasher.finalize();
+    if actual.as_slice() != expected.as_slice() {
+        return Err(AppError::SelfUpdate(format!(
+            "checksum mismatch for {url}: expected {}, got {}",
+            to_hex(expected),
+            to_hex(actual.as_slice())
+        )));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(temp_path, std::fs::Permissions::from_mode(0o755)).await?;
+    }
+    Ok(())
+}
+
+/// Result of looking for a prebuilt binary.
+pub enum Prebuilt {
+    /// Downloaded and verified; ready to swap in.
+    Ready(PathBuf),
+    /// Not usable for an expected reason (not published yet, network down).
+    /// The caller may fall back to cargo. The string says why.
+    Unavailable(String),
+}
+
+/// Downloads and verifies the prebuilt binary for `version`.
+///
+/// Network failures and a missing release give `Unavailable`. A checksum
+/// mismatch, a bad checksum file or a disk error is an `Err`: those mean
+/// something is wrong, and falling back would hide it.
+pub async fn try_prebuilt(
+    client: &reqwest::Client,
+    release_base: &str,
+    version: &Version,
+    asset: &str,
+    dest_dir: &Path,
+) -> Result<Prebuilt, AppError> {
+    let expected = match fetch_checksum(client, release_base, version, asset).await {
+        Ok(Some(digest)) => digest,
+        Ok(None) => {
+            return Ok(Prebuilt::Unavailable(format!(
+                "Binaries for {version} are not published yet"
+            )));
+        }
+        Err(AppError::ApiFetch(e)) => {
+            return Ok(Prebuilt::Unavailable(format!(
+                "Could not reach GitHub releases: {e}"
+            )));
+        }
+        Err(e) => return Err(e),
+    };
+
+    println!("Downloading {asset} ...");
+    let url = format!("{release_base}/v{version}/{asset}");
+    match download_and_verify(client, &url, &expected, dest_dir).await {
+        Ok(path) => Ok(Prebuilt::Ready(path)),
+        Err(AppError::ApiFetch(e)) => Ok(Prebuilt::Unavailable(format!("Download failed: {e}"))),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(test)]
@@ -186,5 +337,194 @@ mod tests {
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
         assert!(is_inside_cargo_bin(&link, &bin));
+    }
+
+    use semver::Version;
+    use sha2::{Digest, Sha256};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const ASSET: &str = "liiga_teletext-aarch64-apple-darwin";
+    const NEW_BINARY: &[u8] = b"pretend this is a new binary";
+
+    fn digest_of(bytes: &[u8]) -> [u8; 32] {
+        <[u8; 32]>::try_from(Sha256::digest(bytes).as_slice()).unwrap()
+    }
+
+    async fn release_server(checksum: ResponseTemplate, binary: ResponseTemplate) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(format!("/v1.2.3/{ASSET}.sha256")))
+            .respond_with(checksum)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/v1.2.3/{ASSET}")))
+            .respond_with(binary)
+            .mount(&server)
+            .await;
+        server
+    }
+
+    fn sha256sum_line(bytes: &[u8]) -> String {
+        format!("{}  {ASSET}\n", to_hex(&digest_of(bytes)))
+    }
+
+    fn files_in(dir: &Path) -> usize {
+        std::fs::read_dir(dir).unwrap().count()
+    }
+
+    #[tokio::test]
+    async fn fetch_checksum_reads_digest() {
+        let server = release_server(
+            ResponseTemplate::new(200).set_body_string(sha256sum_line(NEW_BINARY)),
+            ResponseTemplate::new(404),
+        )
+        .await;
+        let client = download_client().unwrap();
+
+        let digest = fetch_checksum(&client, &server.uri(), &Version::new(1, 2, 3), ASSET)
+            .await
+            .unwrap();
+        assert_eq!(digest, Some(digest_of(NEW_BINARY)));
+    }
+
+    #[tokio::test]
+    async fn fetch_checksum_server_error_is_an_error() {
+        let server = release_server(ResponseTemplate::new(500), ResponseTemplate::new(404)).await;
+        let client = download_client().unwrap();
+
+        let result = fetch_checksum(&client, &server.uri(), &Version::new(1, 2, 3), ASSET).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn prebuilt_ready_writes_verified_binary() {
+        let server = release_server(
+            ResponseTemplate::new(200).set_body_string(sha256sum_line(NEW_BINARY)),
+            ResponseTemplate::new(200).set_body_bytes(NEW_BINARY.to_vec()),
+        )
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let client = download_client().unwrap();
+
+        let outcome = try_prebuilt(
+            &client,
+            &server.uri(),
+            &Version::new(1, 2, 3),
+            ASSET,
+            dir.path(),
+        )
+        .await
+        .unwrap();
+        let Prebuilt::Ready(new_binary) = outcome else {
+            panic!("expected Ready");
+        };
+        assert_eq!(std::fs::read(&new_binary).unwrap(), NEW_BINARY);
+        assert_eq!(new_binary.parent(), Some(dir.path()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&new_binary).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o755);
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_checksum_means_unavailable() {
+        // crates.io shows the new version before the binaries finish uploading.
+        let server = release_server(ResponseTemplate::new(404), ResponseTemplate::new(404)).await;
+        let dir = tempfile::tempdir().unwrap();
+        let client = download_client().unwrap();
+
+        let outcome = try_prebuilt(
+            &client,
+            &server.uri(),
+            &Version::new(1, 2, 3),
+            ASSET,
+            dir.path(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(outcome, Prebuilt::Unavailable(_)));
+        assert_eq!(files_in(dir.path()), 0);
+    }
+
+    #[tokio::test]
+    async fn unreachable_github_means_unavailable() {
+        let dir = tempfile::tempdir().unwrap();
+        let client = download_client().unwrap();
+
+        // Port 1 on localhost refuses connections.
+        let outcome = try_prebuilt(
+            &client,
+            "http://127.0.0.1:1",
+            &Version::new(1, 2, 3),
+            ASSET,
+            dir.path(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(outcome, Prebuilt::Unavailable(_)));
+    }
+
+    #[tokio::test]
+    async fn checksum_mismatch_is_an_error_and_removes_temp_file() {
+        let server = release_server(
+            ResponseTemplate::new(200).set_body_string(sha256sum_line(b"something else")),
+            ResponseTemplate::new(200).set_body_bytes(NEW_BINARY.to_vec()),
+        )
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let client = download_client().unwrap();
+
+        let result = try_prebuilt(
+            &client,
+            &server.uri(),
+            &Version::new(1, 2, 3),
+            ASSET,
+            dir.path(),
+        )
+        .await;
+        let err = result
+            .err()
+            .expect("mismatch must be an error, not Unavailable");
+        assert!(err.to_string().contains("checksum mismatch"), "{err}");
+        assert_eq!(files_in(dir.path()), 0);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unwritable_folder_names_the_folder() {
+        use std::os::unix::fs::PermissionsExt;
+        let server = release_server(
+            ResponseTemplate::new(200).set_body_string(sha256sum_line(NEW_BINARY)),
+            ResponseTemplate::new(200).set_body_bytes(NEW_BINARY.to_vec()),
+        )
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+        if std::fs::File::create(locked.join("probe")).is_ok() {
+            return; // Running as root: permissions are not enforced.
+        }
+        let client = download_client().unwrap();
+
+        let result = try_prebuilt(
+            &client,
+            &server.uri(),
+            &Version::new(1, 2, 3),
+            ASSET,
+            &locked,
+        )
+        .await;
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = result.err().expect("unwritable folder must be an error");
+        assert!(
+            err.to_string().contains(&locked.display().to_string()),
+            "{err}"
+        );
     }
 }
