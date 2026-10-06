@@ -9,8 +9,8 @@ use crate::ui::format_date_for_display;
 use crate::ui::interactive::navigation_manager;
 use crate::version;
 use chrono::{Local, Utc};
-use crossterm::{execute, style::Color, terminal::SetTitle};
-use std::io::stdout;
+use crossterm::{execute, terminal::SetTitle};
+use std::io::{IsTerminal, stdout};
 
 /// Validates command line argument combinations.
 ///
@@ -38,30 +38,23 @@ pub fn validate_args(args: &Args) -> Result<(), AppError> {
 
 /// Handles the --version command.
 ///
-/// Displays version information, logo, and checks for updates.
-/// Sets appropriate terminal title and handles version comparison logic.
+/// In a terminal, shows the logo and a box with the version, platform and
+/// update status. Otherwise prints only `liiga_teletext <version>`.
 pub async fn handle_version_command() -> Result<(), AppError> {
-    // Set terminal title for version display
-    execute!(stdout(), SetTitle("SM-LIIGA 221"))?;
+    // Piped or captured by a script: one plain line, no escape codes and no
+    // network call
+    if !stdout().is_terminal() {
+        println!("{}", version::plain_version());
+        return Ok(());
+    }
 
+    execute!(stdout(), SetTitle("SM-LIIGA 221"))?;
     version::print_logo();
 
-    // Check for updates and show version info
-    match version::fetch_latest_version(version::CRATES_IO_BASE).await {
-        Ok(latest) if latest > version::current_version() => version::print_version_info(&latest),
-        Ok(_) => {
-            println!();
-            version::print_version_status_box(vec![
-                ("Liiga Teletext Status".to_string(), None),
-                ("".to_string(), None),
-                (
-                    format!("Version: {}", env!("CARGO_PKG_VERSION")),
-                    Some(Color::AnsiValue(231)),
-                ), // Authentic teletext white
-                ("You're running the latest version!".to_string(), None),
-            ]);
-        }
-        Err(e) => eprintln!("Failed to check for updates: {e}"),
+    let latest = version::fetch_latest_version(version::CRATES_IO_BASE).await;
+    version::print_version_box(latest.as_ref().ok());
+    if let Err(e) = latest {
+        eprintln!("Failed to check for updates: {e}");
     }
 
     Ok(())

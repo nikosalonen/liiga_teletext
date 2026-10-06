@@ -1,10 +1,11 @@
+use crate::constants::colors::{TELETEXT_CYAN, TELETEXT_WHITE, TELETEXT_YELLOW};
 use crate::error::AppError;
 use crossterm::{
     execute,
-    style::{Color, Print, ResetColor, SetForegroundColor},
+    style::{Color, Print, ResetColor, SetForegroundColor, Stylize},
 };
 use semver::Version;
-use std::io::stdout;
+use std::io::{Write, stdout};
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
@@ -67,98 +68,161 @@ pub async fn report_version_check(version_check: VersionCheck) {
     }
 }
 
-/// Helper to print a dynamic-width version status box with optional color highlights
-pub fn print_version_status_box(lines: Vec<(String, Option<Color>)>) {
-    // Compute max content width
-    let max_content_width = lines
-        .iter()
-        .map(|(l, _)| l.chars().count())
-        .max()
-        .unwrap_or(0);
-    let box_width = max_content_width + 4; // 2 for borders, 2 for padding
-    let border = format!("╔{:═<width$}╗", "", width = box_width - 2);
-    let sep = format!("╠{:═<width$}╣", "", width = box_width - 2);
-    let bottom = format!("╚{:═<width$}╝", "", width = box_width - 2);
-    // Print top border
-    execute!(
-        stdout(),
-        SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
-        Print(format!("{border}\n"))
-    )
-    .ok();
-    // Print lines
-    for (i, (line, color)) in lines.iter().enumerate() {
-        let padded = format!("║ {line:<max_content_width$} ║");
-        match color {
-            Some(c) => {
-                // Print up to the colored part, then color, then reset
-                if let Some((pre, col)) = line.split_once(':') {
-                    let pre = format!("║ {pre}:");
-                    let col = col.trim_start();
-                    let pad = max_content_width - (pre.chars().count() - 2 + col.chars().count());
-                    execute!(
-                        stdout(),
-                        SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
-                        Print(pre),
-                        SetForegroundColor(*c),
-                        Print(col),
-                        SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
-                        Print(format!("{:pad$} ║\n", "", pad = pad)),
-                    )
-                    .ok();
-                } else {
-                    execute!(
-                        stdout(),
-                        SetForegroundColor(*c),
-                        Print(padded),
-                        SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
-                        Print("\n")
-                    )
-                    .ok();
-                }
-            }
-            None => {
-                execute!(
-                    stdout(),
-                    SetForegroundColor(Color::AnsiValue(231)), // Authentic teletext white
-                    Print(padded),
-                    Print("\n")
-                )
-                .ok();
-            }
-        }
-        // Separator after first or second line if needed
-        if i == 0 && lines.len() > 2 {
-            execute!(stdout(), Print(format!("{sep}\n"))).ok();
-        }
-    }
-    // Print bottom border
-    execute!(stdout(), Print(format!("{bottom}\n")), ResetColor).ok();
+/// One line of a version box.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoxLine {
+    /// Text in teletext white.
+    Text(String),
+    /// A whole line in one color.
+    Colored(String, Color),
+    /// `label:` in white and a value in `color`. Values in one box line up.
+    Field {
+        label: &'static str,
+        value: String,
+        color: Color,
+    },
 }
 
-/// Prints a box with the update command when `latest` is newer than this
-/// binary. Prints nothing otherwise.
+impl BoxLine {
+    pub fn blank() -> Self {
+        BoxLine::Text(String::new())
+    }
+}
+
+/// Draws `lines` in a double-line box sized to the longest line. The first
+/// line is a header with a rule under it when more lines follow. Without
+/// `use_color` the box has no escape codes, which keeps tests readable.
+pub fn render_box(lines: &[BoxLine], use_color: bool) -> String {
+    // "Label:" plus one space after the longest label
+    let label_width = lines
+        .iter()
+        .filter_map(|line| match line {
+            BoxLine::Field { label, .. } => Some(label.chars().count() + 2),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    let label_cell = |label: &str| format!("{:<label_width$}", format!("{label}:"));
+
+    let plain: Vec<String> = lines
+        .iter()
+        .map(|line| match line {
+            BoxLine::Text(text) | BoxLine::Colored(text, _) => text.clone(),
+            BoxLine::Field { label, value, .. } => format!("{}{value}", label_cell(label)),
+        })
+        .collect();
+    let width = plain.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+
+    let paint = |text: &str, color: Color| {
+        if use_color {
+            text.with(color).to_string()
+        } else {
+            text.to_string()
+        }
+    };
+    let rule = "═".repeat(width + 2);
+    let border = |left: char, right: char| paint(&format!("{left}{rule}{right}\n"), TELETEXT_WHITE);
+
+    let mut out = border('╔', '╗');
+    for (i, (line, text)) in lines.iter().zip(&plain).enumerate() {
+        let content = match line {
+            BoxLine::Text(text) => paint(text, TELETEXT_WHITE),
+            BoxLine::Colored(text, color) => paint(text, *color),
+            BoxLine::Field {
+                label,
+                value,
+                color,
+            } => format!(
+                "{}{}",
+                paint(&label_cell(label), TELETEXT_WHITE),
+                paint(value, *color)
+            ),
+        };
+        let padding = " ".repeat(width - text.chars().count());
+        out.push_str(&paint("║ ", TELETEXT_WHITE));
+        out.push_str(&content);
+        out.push_str(&paint(&format!("{padding} ║\n"), TELETEXT_WHITE));
+        if i == 0 && lines.len() > 1 {
+            out.push_str(&border('╠', '╣'));
+        }
+    }
+    out.push_str(&border('╚', '╝'));
+    out
+}
+
+/// OS and CPU of the running binary, e.g. `macos aarch64`. This is the real
+/// platform, not the release asset name: a cargo build on glibc Linux would
+/// otherwise show the musl asset that `--update` downloads.
+pub fn platform() -> String {
+    format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// One-line version for when stdout is not a terminal, like `cargo --version`.
+pub fn plain_version() -> String {
+    format!("{CRATE_NAME} {CURRENT_VERSION}")
+}
+
+/// Lines of the version box. `latest` is the crates.io version, or `None`
+/// when the check failed.
+pub fn version_box(latest: Option<&Version>) -> Vec<BoxLine> {
+    let mut lines = vec![
+        BoxLine::Text("Liiga Teletext Status".to_string()),
+        BoxLine::blank(),
+        BoxLine::Field {
+            label: "Version",
+            value: CURRENT_VERSION.to_string(),
+            color: TELETEXT_WHITE,
+        },
+    ];
+    let update_available = latest.filter(|latest| **latest > current_version());
+    if let Some(latest) = update_available {
+        lines.push(BoxLine::Field {
+            label: "Latest",
+            value: latest.to_string(),
+            color: TELETEXT_CYAN,
+        });
+    }
+    lines.push(BoxLine::Field {
+        label: "Platform",
+        value: platform(),
+        color: TELETEXT_WHITE,
+    });
+    lines.push(BoxLine::blank());
+
+    match (latest, update_available) {
+        (_, Some(_)) => {
+            lines.push(BoxLine::Text("Update available! Run:".to_string()));
+            lines.push(BoxLine::Colored(
+                "liiga_teletext --update".to_string(),
+                TELETEXT_CYAN,
+            ));
+        }
+        (Some(_), None) => {
+            lines.push(BoxLine::Text(
+                "You're running the latest version!".to_string(),
+            ));
+        }
+        (None, _) => {
+            lines.push(BoxLine::Colored(
+                "Couldn't check for updates.".to_string(),
+                TELETEXT_YELLOW,
+            ));
+        }
+    }
+    lines
+}
+
+/// Prints the version box with a blank line before it.
+pub fn print_version_box(latest: Option<&Version>) {
+    print!("\n{}", render_box(&version_box(latest), true));
+    stdout().flush().ok();
+}
+
+/// Prints the update box when `latest` is newer than this binary. Prints
+/// nothing otherwise.
 pub fn print_version_info(latest: &Version) {
     if *latest > current_version() {
-        println!();
-        print_version_status_box(vec![
-            ("Liiga Teletext Status".to_string(), None),
-            ("".to_string(), None),
-            (
-                format!("Current Version: {CURRENT_VERSION}"),
-                Some(Color::AnsiValue(231)), // Authentic teletext white
-            ),
-            (
-                format!("Latest Version:  {latest}"),
-                Some(Color::AnsiValue(51)), // Authentic teletext cyan
-            ),
-            ("".to_string(), None),
-            ("Update available! Run:".to_string(), None),
-            (
-                "liiga_teletext --update".to_string(),
-                Some(Color::AnsiValue(51)), // Authentic teletext cyan
-            ),
-        ]);
+        print_version_box(Some(latest));
     }
 }
 
@@ -216,6 +280,98 @@ mod tests {
             .await;
 
         assert!(fetch_latest_version(&server.uri()).await.is_err());
+    }
+
+    fn render_plain(lines: &[BoxLine]) -> String {
+        render_box(lines, false)
+    }
+
+    fn field(label: &'static str, value: &str) -> BoxLine {
+        BoxLine::Field {
+            label,
+            value: value.to_string(),
+            color: TELETEXT_CYAN,
+        }
+    }
+
+    #[test]
+    fn box_lines_up_field_values_with_one_space_after_the_longest_label() {
+        let lines = [
+            BoxLine::Text("Status".to_string()),
+            BoxLine::blank(),
+            field("Version", "1.2.3"),
+            field("Platform", "macos aarch64"),
+        ];
+        assert_eq!(
+            render_plain(&lines),
+            "╔═════════════════════════╗\n\
+             ║ Status                  ║\n\
+             ╠═════════════════════════╣\n\
+             ║                         ║\n\
+             ║ Version:  1.2.3         ║\n\
+             ║ Platform: macos aarch64 ║\n\
+             ╚═════════════════════════╝\n"
+        );
+    }
+
+    #[test]
+    fn box_without_fields_has_no_label_padding() {
+        let lines = [BoxLine::Colored(
+            "liiga_teletext --update".to_string(),
+            TELETEXT_CYAN,
+        )];
+        assert_eq!(
+            render_plain(&lines),
+            "╔═════════════════════════╗\n\
+             ║ liiga_teletext --update ║\n\
+             ╚═════════════════════════╝\n"
+        );
+    }
+
+    #[test]
+    fn box_colors_only_when_asked() {
+        let lines = [field("Version", "1.2.3")];
+        assert!(!render_box(&lines, false).contains('\x1b'));
+        let colored = render_box(&lines, true);
+        assert!(
+            colored.contains("\x1b[38;5;51m1.2.3"),
+            "value in cyan: {colored:?}"
+        );
+    }
+
+    fn rendered_version_box(latest: Option<&Version>) -> String {
+        render_plain(&version_box(latest))
+    }
+
+    #[test]
+    fn up_to_date_box_shows_version_and_platform() {
+        let output = rendered_version_box(Some(&current_version()));
+        assert!(output.contains(&format!("Version:  {CURRENT_VERSION} ")));
+        assert!(output.contains(&format!("Platform: {} ", platform())));
+        assert!(output.contains("You're running the latest version!"));
+        assert!(!output.contains("--update"));
+    }
+
+    #[test]
+    fn update_box_shows_both_versions_and_the_update_command() {
+        let newer = Version::new(current_version().major + 1, 0, 0);
+        let output = rendered_version_box(Some(&newer));
+        assert!(output.contains(&format!("Version:  {CURRENT_VERSION} ")));
+        assert!(output.contains(&format!("Latest:   {newer} ")));
+        assert!(output.contains("liiga_teletext --update"));
+    }
+
+    #[test]
+    fn failed_check_still_shows_the_version() {
+        let output = rendered_version_box(None);
+        assert!(output.contains(&format!("Version:  {CURRENT_VERSION} ")));
+        assert!(output.contains("Couldn't check for updates."));
+        assert!(!output.contains("latest version"));
+    }
+
+    #[test]
+    fn plain_version_is_name_and_version() {
+        assert_eq!(plain_version(), format!("liiga_teletext {CURRENT_VERSION}"));
     }
 
     #[tokio::test]

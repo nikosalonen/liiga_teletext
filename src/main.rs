@@ -29,14 +29,15 @@ async fn main() -> Result<(), AppError> {
     // Validate argument combinations
     commands::validate_args(&args)?;
 
-    // Set up logging configuration
-    let (log_file_path, _guard) = logging::setup_logging(&args).await?;
-    tracing::info!("Logs are being written to: {log_file_path}");
-
-    // Handle version flag first
+    // Before logging setup: that loads the config, which prompts for the API
+    // domain on a fresh install, and logs a line `--version` doesn't need
     if args.version {
         return commands::handle_version_command().await;
     }
+
+    // Set up logging configuration
+    let (log_file_path, _guard) = logging::setup_logging(&args).await?;
+    tracing::info!("Logs are being written to: {log_file_path}");
 
     if args.update {
         // Returning the error from `main` would print its Debug form

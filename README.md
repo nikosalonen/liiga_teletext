@@ -170,7 +170,7 @@ cargo run --release
 
 #### Info
 
-- `-V, --version` - Show version information
+- `-V, --version` - Show the version, platform and whether an update is available. When the output is piped, it prints only `liiga_teletext <version>`
 - `--update` - Update to the latest version (see [Updating](#updating))
 
 ### Display Modes
