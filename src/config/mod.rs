@@ -21,7 +21,7 @@ pub struct Config {
     /// Path to the log file. If not specified, logs will be written to a default location.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log_file_path: Option<String>,
-    /// HTTP timeout in seconds for API requests. Defaults to 30 seconds if not specified.
+    /// HTTP timeout in seconds for API requests. Defaults to 10 seconds if not specified.
     #[serde(default = "default_http_timeout")]
     pub http_timeout_seconds: u64,
 }
@@ -49,7 +49,7 @@ impl Config {
     /// # Environment Variables
     /// - `LIIGA_API_DOMAIN` - Override API domain
     /// - `LIIGA_LOG_FILE` - Override log file path
-    /// - `LIIGA_HTTP_TIMEOUT` - Override HTTP timeout in seconds (default: 30)
+    /// - `LIIGA_HTTP_TIMEOUT` - Override HTTP timeout in seconds (default: 10)
     ///
     /// # Returns
     /// * `Ok(Config)` - Successfully loaded or created configuration
@@ -87,26 +87,30 @@ impl Config {
             }
         };
 
-        // Override with environment variables if present
-        if let Ok(api_domain) = std::env::var("LIIGA_API_DOMAIN") {
-            config.api_domain = api_domain;
-        }
-
-        if let Ok(log_file_path) = std::env::var("LIIGA_LOG_FILE") {
-            config.log_file_path = Some(log_file_path);
-        }
-
-        if let Some(timeout) = std::env::var("LIIGA_HTTP_TIMEOUT")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-        {
-            config.http_timeout_seconds = timeout;
-        }
+        config.apply_env_overrides(|name| std::env::var(name).ok());
 
         // Validate configuration
         config.validate()?;
 
         Ok(config)
+    }
+
+    /// Replaces file values with the `LIIGA_*` overrides that `lookup` finds.
+    /// `load` passes `std::env::var`. Tests pass a map instead, because
+    /// setting process env vars in one test leaks into tests running in
+    /// parallel.
+    fn apply_env_overrides(&mut self, lookup: impl Fn(&str) -> Option<String>) {
+        if let Some(api_domain) = lookup("LIIGA_API_DOMAIN") {
+            self.api_domain = api_domain;
+        }
+
+        if let Some(log_file_path) = lookup("LIIGA_LOG_FILE") {
+            self.log_file_path = Some(log_file_path);
+        }
+
+        if let Some(timeout) = lookup("LIIGA_HTTP_TIMEOUT").and_then(|s| s.parse::<u64>().ok()) {
+            self.http_timeout_seconds = timeout;
+        }
     }
 
     /// Loads only what is saved in the config file, without environment
@@ -725,16 +729,6 @@ invalid_field = [1, 2, 3, "unclosed_string
     }
 
     #[tokio::test]
-    async fn test_config_save_to_readonly_directory() {
-        // This test is platform-dependent and may not work on all systems
-        // but it tests the error handling for directory creation failures
-        let result = Config::load().await;
-        // We can't easily test this without elevated permissions, so we just
-        // ensure the function exists and can be called
-        assert!(result.is_ok() || result.is_err()); // Either is valid
-    }
-
-    #[tokio::test]
     async fn test_config_malformed_toml_file() {
         // Create a malformed TOML file
         let temp_dir = tempdir().unwrap();
@@ -1049,40 +1043,45 @@ another_extra = 123
         }
     }
 
-    #[tokio::test]
-    async fn test_environment_variable_override() {
-        // Set environment variables
-        unsafe {
-            std::env::set_var("LIIGA_API_DOMAIN", "https://env.example.com");
-            std::env::set_var("LIIGA_LOG_FILE", "/env/log/path.log");
+    fn file_config() -> Config {
+        Config {
+            api_domain: "https://file.example.com".to_string(),
+            log_file_path: Some("/file/log/path.log".to_string()),
+            http_timeout_seconds: default_http_timeout(),
         }
+    }
 
-        // Create a temporary config file with different values
-        let temp_dir = tempdir().unwrap();
-        let config_path = temp_dir.path().join("config.toml");
-        let config_path_str = config_path.to_string_lossy();
+    #[test]
+    fn test_env_overrides_replace_file_values() {
+        let env = std::collections::HashMap::from([
+            ("LIIGA_API_DOMAIN", "https://env.example.com"),
+            ("LIIGA_LOG_FILE", "/env/log/path.log"),
+            ("LIIGA_HTTP_TIMEOUT", "25"),
+        ]);
+        let mut config = file_config();
+        config.apply_env_overrides(|name| env.get(name).map(|value| value.to_string()));
 
-        let config_content = r#"
-api_domain = "https://file.example.com"
-log_file_path = "/file/log/path.log"
-"#;
-        tokio::fs::write(&config_path, config_content)
-            .await
-            .unwrap();
+        assert_eq!(config.api_domain, "https://env.example.com");
+        assert_eq!(config.log_file_path, Some("/env/log/path.log".to_string()));
+        assert_eq!(config.http_timeout_seconds, 25);
+    }
 
-        // Load config using load_from_path (which doesn't check env vars)
-        let file_config = Config::load_from_path(&config_path_str).await.unwrap();
-        assert_eq!(file_config.api_domain, "https://file.example.com");
-        assert_eq!(
-            file_config.log_file_path,
-            Some("/file/log/path.log".to_string())
-        );
+    #[test]
+    fn test_env_overrides_keep_file_values_when_unset() {
+        let mut config = file_config();
+        config.apply_env_overrides(|_| None);
 
-        // Clean up environment variables
-        unsafe {
-            std::env::remove_var("LIIGA_API_DOMAIN");
-            std::env::remove_var("LIIGA_LOG_FILE");
-            std::env::remove_var("LIIGA_HTTP_TIMEOUT");
-        }
+        assert_eq!(config.api_domain, "https://file.example.com");
+        assert_eq!(config.log_file_path, Some("/file/log/path.log".to_string()));
+        assert_eq!(config.http_timeout_seconds, default_http_timeout());
+    }
+
+    #[test]
+    fn test_env_override_ignores_unparseable_timeout() {
+        let mut config = file_config();
+        config
+            .apply_env_overrides(|name| (name == "LIIGA_HTTP_TIMEOUT").then(|| "soon".to_string()));
+
+        assert_eq!(config.http_timeout_seconds, default_http_timeout());
     }
 }
