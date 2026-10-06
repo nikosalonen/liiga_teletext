@@ -6,6 +6,7 @@
 //! - Deciding when to trigger auto-refresh
 //! - Rate limiting and backoff logic
 
+use crate::data_fetcher::cache::is_awaiting_start;
 use crate::data_fetcher::{GameData, has_live_games_from_game_data, is_historical_date};
 use crate::teletext_ui::ScoreType;
 use std::time::{Duration, Instant};
@@ -15,40 +16,10 @@ fn is_future_game(game: &GameData) -> bool {
     game.score_type == ScoreType::Scheduled
 }
 
-/// Checks if a game is scheduled to start within the next few minutes or has recently started
+/// Checks if a game is in its start window: due within 5 minutes, or past its
+/// scheduled start by up to 60 minutes while the API still says not started
 fn is_game_near_start_time(game: &GameData) -> bool {
-    use chrono::Utc;
-
-    if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
-        return false;
-    }
-
-    match chrono::DateTime::parse_from_rfc3339(&game.start) {
-        Ok(game_start) => {
-            let time_diff = Utc::now().signed_duration_since(game_start.with_timezone(&Utc));
-
-            // Extended window: Check if game should start within the next 5 minutes or started within the last 10 minutes
-            // This is more aggressive to catch games that should have started but haven't updated their status yet
-            let is_near_start = time_diff >= chrono::Duration::minutes(-5)
-                && time_diff <= chrono::Duration::minutes(10);
-
-            if is_near_start {
-                tracing::debug!(
-                    "Game near start time: {} vs {} - start: {}, time_diff: {:?}",
-                    game.home_team,
-                    game.away_team,
-                    game_start,
-                    time_diff
-                );
-            }
-
-            is_near_start
-        }
-        Err(e) => {
-            tracing::warn!("Failed to parse game start time '{}': {e}", game.start);
-            false
-        }
-    }
+    is_awaiting_start(game, chrono::Utc::now())
 }
 
 /// Calculate adaptive polling interval based on user activity
@@ -199,6 +170,38 @@ mod tests {
     fn all_scheduled_day_does_not_auto_refresh() {
         let games = [game_later_today()];
         assert!(!should_trigger_auto_refresh(params_for(&games, false)));
+    }
+
+    /// A game the API still lists as not started, `minutes_ago` after its
+    /// scheduled start.
+    fn unstarted_game_past_start(minutes_ago: i64) -> GameData {
+        let mut game = TestDataBuilder::create_basic_game("TPS", "HIFK");
+        game.score_type = ScoreType::Scheduled;
+        game.start = (chrono::Utc::now() - chrono::Duration::minutes(minutes_ago)).to_rfc3339();
+        game
+    }
+
+    #[test]
+    fn late_puck_drop_keeps_refreshing() {
+        // An opening ceremony can delay the start well past 10 minutes. The
+        // loop must keep polling, or the game never shows as started.
+        let games = [unstarted_game_past_start(15)];
+        assert!(should_trigger_auto_refresh(params_for(&games, false)));
+        assert_eq!(
+            calculate_auto_refresh_interval(&games),
+            Duration::from_secs(30)
+        );
+    }
+
+    #[test]
+    fn game_unstarted_long_after_start_stops_refreshing() {
+        // Past the late-start grace the game is likely postponed
+        let games = [unstarted_game_past_start(90)];
+        assert!(!should_trigger_auto_refresh(params_for(&games, false)));
+        assert_eq!(
+            calculate_auto_refresh_interval(&games),
+            Duration::from_secs(60)
+        );
     }
 
     #[test]

@@ -287,7 +287,7 @@ pub fn schedule_cache_ttl(
             continue;
         };
         let since_start = now.signed_duration_since(start);
-        if (-STARTING_SOON_LEAD..=LATE_START_GRACE).contains(&since_start) {
+        if in_start_window(since_start) {
             return cache_ttl::STARTING_GAMES_SECONDS;
         }
         // Window still ahead: expire the entry no later than when it opens
@@ -301,39 +301,48 @@ pub fn schedule_cache_ttl(
     ttl
 }
 
+/// Whether `since_start` (now minus a game's scheduled start) falls in the
+/// window where a game that has not started yet counts as "starting".
+fn in_start_window(since_start: chrono::TimeDelta) -> bool {
+    (-STARTING_SOON_LEAD..=LATE_START_GRACE).contains(&since_start)
+}
+
+/// Whether a game still shown as scheduled is in its start window: from 5
+/// minutes before its scheduled start to 60 minutes after it.
+///
+/// The refresh loop and the cache both use this, so the app keeps polling a
+/// late puck drop for as long as `schedule_cache_ttl` keeps that day's data
+/// short-lived. With a shorter refresh window, the loop stopped polling a game
+/// that started more than 10 minutes late, and it never showed as started.
+pub fn is_awaiting_start(game: &GameData, now: chrono::DateTime<chrono::Utc>) -> bool {
+    if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
+        return false;
+    }
+
+    match chrono::DateTime::parse_from_rfc3339(&game.start) {
+        Ok(start) => in_start_window(now.signed_duration_since(start)),
+        Err(e) => {
+            warn!(
+                "Failed to parse start time '{}' for {} vs {}: {e}",
+                game.start, game.home_team, game.away_team
+            );
+            false
+        }
+    }
+}
+
 /// Determines whether the cache should be completely bypassed for games near their start time.
 pub fn should_bypass_cache_for_starting_games(current_games: &[GameData]) -> bool {
+    let now = chrono::Utc::now();
     current_games.iter().any(|game| {
-        if game.score_type != ScoreType::Scheduled || game.start.is_empty() {
-            return false;
+        let awaiting_start = is_awaiting_start(game, now);
+        if awaiting_start {
+            info!(
+                "Cache bypass for game near start: {} vs {} (start: {})",
+                game.home_team, game.away_team, game.start
+            );
         }
-
-        match chrono::DateTime::parse_from_rfc3339(&game.start) {
-            Ok(game_start) => {
-                let now = chrono::Utc::now();
-                let time_diff = now.signed_duration_since(game_start);
-
-                // Extended window: game should start within 5 min or started within last 10 min
-                let is_near_start = time_diff >= chrono::Duration::minutes(-5)
-                    && time_diff <= chrono::Duration::minutes(10);
-
-                if is_near_start {
-                    info!(
-                        "Cache bypass for game near start: {} vs {} (time_diff: {time_diff:?})",
-                        game.home_team, game.away_team
-                    );
-                }
-
-                is_near_start
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to parse start time '{}' for {} vs {}: {e}",
-                    game.start, game.home_team, game.away_team
-                );
-                false
-            }
-        }
+        awaiting_start
     })
 }
 
@@ -374,7 +383,7 @@ pub async fn get_cached_tournament_data_with_start_check(
     key: &str,
     current_games: &[GameData],
 ) -> Option<ScheduleResponse> {
-    // Only treat games from 5 min before to 10 min after their start as
+    // Only treat games from 5 min before to 60 min after their start as
     // "starting", not every scheduled game with a start time
     let has_starting = should_bypass_cache_for_starting_games(current_games);
 
@@ -580,6 +589,42 @@ mod schedule_ttl_tests {
             tournament_cache_ttl(&response, at(15, 15, 0)),
             Duration::from_secs(10 * 60)
         );
+    }
+
+    fn scheduled_game(start: &str) -> GameData {
+        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        game.score_type = ScoreType::Scheduled;
+        game.start = start.to_string();
+        game
+    }
+
+    #[test]
+    fn awaiting_start_uses_the_schedule_ttl_window() {
+        let game = scheduled_game(START);
+        assert!(!is_awaiting_start(&game, at(15, 24, 59)));
+        assert!(is_awaiting_start(&game, at(15, 25, 0)));
+        assert!(is_awaiting_start(&game, at(15, 50, 0)), "late puck drop");
+        assert!(is_awaiting_start(&game, at(16, 30, 0)));
+        assert!(
+            !is_awaiting_start(&game, at(16, 30, 1)),
+            "past the grace the game is likely postponed"
+        );
+    }
+
+    #[test]
+    fn started_game_is_not_awaiting_start() {
+        let mut game = scheduled_game(START);
+        game.score_type = ScoreType::Ongoing;
+        assert!(!is_awaiting_start(&game, at(15, 31, 0)));
+    }
+
+    #[test]
+    fn game_without_valid_start_time_is_not_awaiting_start() {
+        assert!(!is_awaiting_start(&scheduled_game(""), at(15, 30, 0)));
+        assert!(!is_awaiting_start(
+            &scheduled_game("2026-10-01 15:30"),
+            at(15, 30, 0)
+        ));
     }
 
     #[test]

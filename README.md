@@ -141,7 +141,7 @@ cargo run --release
   - Any other number shows an authentic "SIVUA EI LÖYDY" (page not found) page
 - Data refreshes automatically:
   - Every 15 seconds for live games
-  - Every 30 seconds from 5 minutes before to 10 minutes after a game's scheduled start
+  - Every 30 seconds from 5 minutes before a game's scheduled start until it starts (for up to 60 minutes, to cover a late puck drop)
   - Every 60 seconds otherwise (completed games served from 1-hour cache)
 
 ### Command Line Options
