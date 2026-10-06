@@ -84,6 +84,9 @@ pub enum AppError {
     #[error("Log setup error: {0}")]
     LogSetup(String),
 
+    #[error("Update failed: {0}")]
+    SelfUpdate(String),
+
     #[error("{0}")]
     #[allow(dead_code)] // Kept for backward compatibility and future use
     Custom(String),
