@@ -81,7 +81,7 @@ Rendering:
 - **`constants.rs`** — Cache TTLs, polling intervals, timeouts
 - **`logging.rs`** — Tracing setup with daily rolling file appender
 - **`version.rs`** — Crates.io version check
-- **`self_update.rs`** — `--update`. Downloads `liiga_teletext-<target>` and its `.sha256` from the GitHub release for the crates.io latest version, verifies it, and swaps it in (Unix: `std::fs::rename` onto the canonicalized exe, because self-replace 1.5 follows only one symlink level; Windows: `self-replace`). A missing release (404) or network error falls back to `cargo install`, but only when the running binary (symlinks resolved) is in cargo's bin folder and never on Windows. A checksum mismatch is an error and never falls back
+- **`self_update.rs`** — `--update`. Downloads `liiga_teletext-<target>` and its `.sha256` from the GitHub release for the crates.io latest version, verifies it, and swaps it in (Unix: `std::fs::rename` onto the canonicalized exe, because self-replace 1.5 follows only one symlink level; Windows: `self-replace`). No asset for the platform, a 404, or a network failure falls back to `cargo install`, but only when the running binary (symlinks resolved) is `liiga_teletext` directly in cargo's bin folder, `cargo` is on PATH, and never on Windows. An HTTP error status from GitHub (403, 429, 5xx), a checksum mismatch, a bad checksum file or a disk error stops the update and never falls back (`unavailable_or_error`). When the update can't finish, the error suggests `cargo install` only to cargo installs; everyone else gets the release page link. `run_update` is a thin wrapper around `Updater`, which tests point at wiremock and a fake `Cargo`
 - **`timezone_check.rs`** — Startup check that `chrono::Local` resolved a real zone. `chrono` falls back to UTC silently when zone resolution fails, which shifts every game time by the local UTC offset with no visible error. Compares against the zone named by the `/etc/localtime` symlink, **not** `iana_time_zone::get_timezone()` — the latter honors `TZ` and so hides exactly the `TZ=UTC` override this is meant to catch. Stays quiet for genuine UTC+00:00 zones (Europe/London in winter)
 
 ### Interactive Mode Event Loop (`ui/interactive/core.rs`)
@@ -122,7 +122,7 @@ Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTT
 
 ### Releases
 
-Creating a `vX.Y.Z` release triggers two workflows. `publish.yml` publishes to crates.io. `release-binaries.yml` builds the 5 prebuilt targets and attaches them with `.sha256` files to the GitHub release. Asset names must match `self_update.rs::asset_name_for`. `release-binaries.yml` also runs as a build-only dry run on PRs that touch it or `Cargo.lock`.
+Pushing a `vX.Y.Z` tag triggers two workflows (publishing a release in the GitHub UI creates the tag). `publish.yml` publishes to crates.io. `release-binaries.yml` builds the 5 prebuilt targets and attaches them with `.sha256` files to the GitHub release, creating the release if it doesn't exist yet. Asset names must match `self_update.rs::asset_name_for`. `release-binaries.yml` also runs as a build-only dry run on PRs that touch it or `Cargo.lock`.
 
 ## Critical Requirements
 

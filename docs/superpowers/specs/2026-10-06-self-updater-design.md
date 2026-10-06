@@ -36,13 +36,13 @@ A separate workflow, `.github/workflows/release-binaries.yml`, runs on `v*.*.*` 
 
 Matrix:
 
-| Target                       | Runner             | Extra setup        |
-| ---------------------------- | ------------------ | ------------------ |
-| `aarch64-apple-darwin`       | `macos-latest`     | none               |
-| `x86_64-apple-darwin`        | `macos-latest`     | add rustup target  |
-| `x86_64-unknown-linux-musl`  | `ubuntu-latest`    | `musl-tools`       |
-| `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` | `musl-tools`       |
-| `x86_64-pc-windows-msvc`     | `windows-latest`   | none               |
+| Target                       | Runner             | Extra setup                   |
+| ---------------------------- | ------------------ | ----------------------------- |
+| `aarch64-apple-darwin`       | `macos-latest`     | none                          |
+| `x86_64-apple-darwin`        | `macos-latest`     | add rustup target             |
+| `x86_64-unknown-linux-musl`  | `ubuntu-latest`    | `musl-tools`, `CC_*=musl-gcc` |
+| `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` | `musl-tools`, `CC_*=musl-gcc` |
+| `x86_64-pc-windows-msvc`     | `windows-latest`   | NASM                          |
 
 Each matrix entry:
 
@@ -52,11 +52,12 @@ Each matrix entry:
 
 Assets are plain binaries, not archives, so the updater needs no tar or zip code.
 
-**Risk to check in the first run:** `reqwest` uses rustls with `aws-lc-sys`,
-which compiles C code. The musl targets need `musl-tools` (for `musl-gcc`). If
-`aws-lc-sys` still fails on musl, the fallback is to build those two targets
-with `cargo-zigbuild`. Test this with a `workflow_dispatch` dry run before the
-next real release.
+**Resolved in the PR dry run:** `reqwest` uses rustls with `aws-lc-sys`,
+which compiles C code. The musl targets need `musl-tools` (for `musl-gcc`).
+On the arm runner the `cc` crate treats aarch64 musl as a cross-compile and
+looks for `aarch64-linux-musl-gcc`, which `musl-tools` does not ship, so the
+build sets `CC_<target>=musl-gcc` for both musl targets. Windows needs NASM for
+`aws-lc-sys`. `cargo-zigbuild` was not needed.
 
 ## App changes
 
@@ -93,9 +94,9 @@ Plain functions, with base URLs passed in so tests can point them at wiremock:
 - `download_and_verify(client, url, expected, dest_dir) -> Result<PathBuf, AppError>`:
   streams the asset into a temp file in `dest_dir`, computes SHA-256 while
   writing, and fails if the digest doesn't match. On Unix it sets mode `0o755`.
-- `cargo_fallback_allowed(current_exe) -> bool`: true only when `cargo` is on
-  PATH **and** the running binary is inside cargo's bin folder
-  (`$CARGO_HOME/bin`, else `~/.cargo/bin`). Without the second check,
+- Cargo fallback check (inside `Updater::run`): allowed only when `cargo` is
+  on PATH **and** the running binary is `liiga_teletext` directly in cargo's
+  bin folder (`$CARGO_HOME/bin`, else `~/.cargo/bin`). Without the second check,
   `cargo install` would put a new copy in `~/.cargo/bin` and leave the running
   one, for example in `/usr/local/bin`, unchanged. Always false on Windows,
   because `cargo install` cannot overwrite the running `.exe`.
@@ -126,20 +127,23 @@ asset_name() is Some?
                                     canonicalized exe; Windows: self_replace)
                                     print "updated X → Y", exit 0
           None (404)  → go to fallback ("binaries for Y are not published yet")
-          network err → go to fallback
+          network err → go to fallback (could not connect, or the download broke off)
+          HTTP error status (403, 429, 5xx) → exit with error, NO fallback
   no  → go to fallback ("no prebuilt binary for this platform")
 
 fallback:
-  cargo_fallback_allowed → run `cargo install liiga_teletext --locked --version <latest>`
+  fallback allowed → run `cargo install liiga_teletext --locked --version <latest>`
                            stdout/stderr pass through to the terminal
                            exit code non-zero → error
-  otherwise              → print manual steps, exit with error:
-                           "download from <release page> or run
-                            cargo install liiga_teletext"
+  otherwise        → print manual steps, exit with error:
+                     no prebuilt for platform → "run cargo install liiga_teletext --locked"
+                     binary is cargo's copy   → "try again later, or run cargo install ..."
+                     anything else            → "try again later, or download it from
+                                                 <release page>/tag/v<latest>"
 ```
 
-Permission errors (for example a root-owned `/usr/local/bin`) surface as an
-error that names the binary's path and suggests re-running with the needed
+Disk errors (for example a root-owned `/usr/local/bin`) surface as an
+error that names the binary's folder and, for permission errors, suggests re-running with the needed
 permissions. The updater never calls `sudo` itself.
 
 A checksum mismatch never falls back to cargo. A wrong checksum means a broken
@@ -148,8 +152,10 @@ or tampered download, so the user should see it.
 ### Errors (`src/error.rs`)
 
 Add one variant: `SelfUpdate(String)` with message `"Update failed: {0}"`.
-Network and I/O errors keep using the existing `ApiFetch` and `Io` variants
-through `?`.
+Network errors keep using the existing `ApiFetch` variant through `?`, and
+`unavailable_or_error` sorts them into "fall back" (no HTTP status) or "stop"
+(an HTTP error status). Disk errors in the update become `SelfUpdate` with the
+folder named.
 
 ### Output
 
@@ -172,19 +178,23 @@ Unit tests in `src/self_update.rs`:
   any host.
 - Checksum parsing: plain digest, `sha256sum` format, uppercase hex, bad length,
   non-hex input.
-- `cargo_fallback_allowed` path check, using a helper that takes the exe path
-  and cargo bin folder as arguments (no PATH or env changes in tests).
+- Cargo-bin path check (`is_inside_cargo_bin`), using a helper that takes the
+  exe path and cargo bin folder as arguments (no PATH or env changes in tests).
 
 Integration-style tests with `wiremock` and `tempfile`:
 
-- `fetch_checksum`: 200 → digest, 404 → `None`, 500 → error.
+- `fetch_checksum`: 200 → digest. `try_prebuilt`: 404 → `Unavailable`;
+  403/429/5xx, a bad checksum file or a mismatch → error, no file left behind.
+- `Updater::run` (the `run_update` flow) against wiremock with a fake `Cargo`:
+  up to date, crates.io failure, mismatch and HTTP errors never run cargo,
+  404 falls back only for cargo installs, the release page link otherwise, and
+  a symlinked binary replaces the real file.
 - `download_and_verify`: matching digest → file written with correct bytes;
   mismatch → error and no file left behind.
 - `fetch_latest_version` parses a crates.io response and errors on a bad body.
 
 The Unix swap (`replace_binary`) is unit-tested, including through a symlink. The Windows swap (`self_replace`) is not unit-tested. It is checked by hand
-on macOS once the first release with binaries is out, and in the CI dry run's
-artifacts on Windows if available.
+on Windows once the first release with binaries is out.
 
 ## Docs
 
