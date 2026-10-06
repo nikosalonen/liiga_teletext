@@ -23,8 +23,9 @@ still work where no prebuilt binary exists.
   - `aarch64-unknown-linux-musl`
   - `x86_64-pc-windows-msvc`
 - **Implementation:** hand-rolled on the existing `reqwest` client, plus two new
-  dependencies: `sha2` (checksum) and `self-replace` (swap the running binary,
-  including on Windows). Rejected: the `self_update` crate (adds a second
+  dependencies: `sha2` (checksum) and `self-replace` (swaps the running
+  binary on Windows only; Unix uses `std::fs::rename` onto the canonicalized
+  exe, because self-replace 1.5 follows only one symlink level). Rejected: the `self_update` crate (adds a second
   reqwest version, has no SHA-256 check, and makes the cargo fallback awkward)
   and cargo-dist + axoupdater (only updates installs that have a cargo-dist
   receipt, which existing `cargo install` users don't have).
@@ -107,7 +108,7 @@ Plain functions, with base URLs passed in so tests can point them at wiremock:
 Release downloads use the direct URL
 `https://github.com/nikosalonen/liiga_teletext/releases/download/v<version>/<asset>`.
 This avoids the GitHub REST API and its 60-requests-per-hour limit for clients
-that aren't logged in. The download client uses a 120-second timeout. The
+that aren't logged in. The download client uses a 10-second connect timeout and a 30-second read timeout, with no limit on the whole request, so a slow but steady download keeps going while a stalled one still fails. The
 existing 10-second timeout is for small JSON requests.
 
 ### Flow
@@ -121,7 +122,8 @@ asset_name() is Some?
   yes → fetch_checksum
           Some(hash) → download_and_verify into the exe's folder
                          mismatch → abort with error, temp file removed, NO fallback
-                         ok       → self_replace::self_replace(temp), remove temp
+                         ok       → swap in temp, remove temp (Unix: std::fs::rename onto the
+                                    canonicalized exe; Windows: self_replace)
                                     print "updated X → Y", exit 0
           None (404)  → go to fallback ("binaries for Y are not published yet")
           network err → go to fallback
@@ -180,7 +182,7 @@ Integration-style tests with `wiremock` and `tempfile`:
   mismatch → error and no file left behind.
 - `fetch_latest_version` parses a crates.io response and errors on a bad body.
 
-The actual binary swap (`self_replace`) is not unit-tested. It is checked by hand
+The Unix swap (`replace_binary`) is unit-tested, including through a symlink. The Windows swap (`self_replace`) is not unit-tested. It is checked by hand
 on macOS once the first release with binaries is out, and in the CI dry run's
 artifacts on Windows if available.
 

@@ -81,7 +81,7 @@ Rendering:
 - **`constants.rs`** — Cache TTLs, polling intervals, timeouts
 - **`logging.rs`** — Tracing setup with daily rolling file appender
 - **`version.rs`** — Crates.io version check
-- **`self_update.rs`** — `--update`. Downloads `liiga_teletext-<target>` and its `.sha256` from the GitHub release for the crates.io latest version, verifies it, and swaps it in with `self-replace`. A missing release (404) or network error falls back to `cargo install`, but only when the running binary (symlinks resolved) is in cargo's bin folder and never on Windows. A checksum mismatch is an error and never falls back
+- **`self_update.rs`** — `--update`. Downloads `liiga_teletext-<target>` and its `.sha256` from the GitHub release for the crates.io latest version, verifies it, and swaps it in (Unix: `std::fs::rename` onto the canonicalized exe, because self-replace 1.5 follows only one symlink level; Windows: `self-replace`). A missing release (404) or network error falls back to `cargo install`, but only when the running binary (symlinks resolved) is in cargo's bin folder and never on Windows. A checksum mismatch is an error and never falls back
 - **`timezone_check.rs`** — Startup check that `chrono::Local` resolved a real zone. `chrono` falls back to UTC silently when zone resolution fails, which shifts every game time by the local UTC offset with no visible error. Compares against the zone named by the `/etc/localtime` symlink, **not** `iana_time_zone::get_timezone()` — the latter honors `TZ` and so hides exactly the `TZ=UTC` override this is meant to catch. Stays quiet for genuine UTC+00:00 zones (Europe/London in winter)
 
 ### Interactive Mode Event Loop (`ui/interactive/core.rs`)

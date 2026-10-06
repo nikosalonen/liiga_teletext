@@ -50,6 +50,22 @@ and Windows (x86_64). On macOS and Linux, make it executable:
 chmod +x liiga_teletext-*
 ```
 
+On macOS, a file downloaded in a browser is quarantined, and Gatekeeper blocks
+the unsigned binary. Remove the quarantine flag:
+
+```bash
+xattr -d com.apple.quarantine liiga_teletext-*-apple-darwin
+```
+
+Then rename the file and move it to a folder on your `PATH`:
+
+```bash
+sudo mv liiga_teletext-<target> /usr/local/bin/liiga_teletext # sudo only if the folder needs it
+```
+
+On Windows, rename the file to `liiga_teletext.exe` and put it in a folder on
+your `PATH`.
+
 ### Install from crates.io
 
 ```bash
@@ -71,6 +87,10 @@ liiga_teletext --update
 This downloads the prebuilt binary for your platform and checks its SHA-256
 checksum before replacing the current one. If no prebuilt binary is available
 and you installed with cargo, it runs `cargo install` for you instead.
+
+On Windows the cargo fallback is never used. If no prebuilt binary exists yet,
+`--update` prints manual steps. After a prebuilt update, `cargo install --list`
+still shows the old version, because cargo's own records are not updated.
 
 ### Install from source
 
