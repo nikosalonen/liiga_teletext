@@ -32,7 +32,7 @@ still work where no prebuilt binary exists.
 
 ## Release pipeline
 
-A separate workflow, `.github/workflows/release-binaries.yml`, runs on `v*.*.*` tags and as a build-only dry run on PRs that touch it or `Cargo.lock`. A matrix `build` job uploads each binary as an artifact. A single `release` job then writes the `.sha256` files with `sha256sum` and uploads everything with the `gh` CLI, creating the release if it doesn't exist yet. Using one job means the matrix jobs don't race to create the release. No third-party action runs with the write token, and the third-party actions in the build job are pinned to commit SHAs.
+A separate workflow, `.github/workflows/release-binaries.yml`, runs on `v*.*.*` tags and as a build-only dry run on PRs that touch it or `Cargo.lock`. A matrix `build` job uploads each binary as an artifact. A single `release` job then writes the `.sha256` files with `sha256sum` and uploads everything with the `gh` CLI, creating the release if it doesn't exist yet. Using one job means the matrix jobs don't race to create the release. No third-party action runs with the write token, and the third-party actions are pinned to commit SHAs. A final `publish` job then runs `cargo publish`, after the upload and the tests. crates.io is where `--update` finds new versions, so publishing last means a version never shows up before its binaries do.
 
 Matrix:
 
