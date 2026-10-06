@@ -188,8 +188,8 @@ artifacts on Windows if available.
 
 - README "Installation": add a "Prebuilt binaries" subsection pointing to the
   GitHub releases page, and an "Updating" subsection for `liiga_teletext --update`.
-- CLAUDE.md: add `self_update.rs` to Module Responsibilities and note the
-  `binaries` job in the release flow.
+- CLAUDE.md: add `self_update.rs` to Module Responsibilities and a "Releases" note
+  about the `release-binaries.yml` workflow.
 
 ## Out of scope
 
