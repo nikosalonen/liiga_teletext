@@ -39,6 +39,34 @@ rustup update
 
 ## Installation
 
+### Prebuilt binaries
+
+Download the binary for your platform from the
+[latest release](https://github.com/nikosalonen/liiga_teletext/releases/latest).
+Builds are available for macOS (Apple Silicon and Intel), Linux (x86_64 and arm64)
+and Windows (x86_64). On macOS and Linux, make it executable:
+
+```bash
+chmod +x liiga_teletext-*
+```
+
+On macOS, a file downloaded in a browser is quarantined, and Gatekeeper blocks
+the unsigned binary. Remove the quarantine flag:
+
+```bash
+xattr -d com.apple.quarantine liiga_teletext-*-apple-darwin
+```
+
+Then rename the file and move it to a folder on your `PATH`:
+
+```bash
+# Use the file name you downloaded. sudo only if the folder needs it.
+sudo mv liiga_teletext-aarch64-apple-darwin /usr/local/bin/liiga_teletext
+```
+
+On Windows, rename the file to `liiga_teletext.exe` and put it in a folder on
+your `PATH`.
+
 ### Install from crates.io
 
 ```bash
@@ -50,6 +78,27 @@ You can create a symlink to the binary to make it available from anywhere:
 ```bash
 sudo ln -s ~/.cargo/bin/liiga_teletext /usr/local/bin/221 # 221 is the channel number of YLE Teksti-TV
 ```
+
+### Updating
+
+```bash
+liiga_teletext --update
+```
+
+This downloads the prebuilt binary for your platform and checks its SHA-256
+checksum before replacing the current one. If the binary is not published yet
+or GitHub can't be reached, and you installed with cargo, it runs
+`cargo install` for you instead. Otherwise it tells you where to download the
+binary by hand.
+
+If the binary is in a folder your user can't write to, such as
+`/usr/local/bin`, run `sudo liiga_teletext --update`.
+
+On Windows the cargo fallback is never used. If no prebuilt binary exists yet,
+`--update` prints manual steps.
+
+After a prebuilt update, `cargo install --list` still shows the old version,
+because cargo's own records are not updated.
 
 ### Install from source
 

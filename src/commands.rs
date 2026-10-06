@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::config::user_prompts::{prompt_for_api_domain, test_api_with_animation};
 use crate::data_fetcher::{fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
+use crate::self_update::{self, UpdateOutcome};
 use crate::teletext_ui::TeletextPage;
 use crate::ui::format_date_for_display;
 use crate::ui::interactive::navigation_manager;
@@ -20,6 +21,18 @@ pub fn validate_args(args: &Args) -> Result<(), AppError> {
             "Cannot use both compact (-c) and wide (-w) modes simultaneously",
         ));
     }
+    let other_command = args.once
+        || args.version
+        || args.list_config
+        || args.reset_cache
+        || args.new_api_domain.is_some()
+        || args.new_log_file_path.is_some()
+        || args.clear_log_file_path;
+    if args.update && other_command {
+        return Err(AppError::config_error(
+            "--update cannot be combined with other commands",
+        ));
+    }
     Ok(())
 }
 
@@ -34,14 +47,9 @@ pub async fn handle_version_command() -> Result<(), AppError> {
     version::print_logo();
 
     // Check for updates and show version info
-    if let Some(latest_version) = version::check_latest_version().await {
-        let current =
-            semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(AppError::VersionParse)?;
-        let latest = semver::Version::parse(&latest_version).map_err(AppError::VersionParse)?;
-
-        if latest > current {
-            version::print_version_info(&latest_version);
-        } else {
+    match version::fetch_latest_version(version::CRATES_IO_BASE).await {
+        Ok(latest) if latest > version::current_version() => version::print_version_info(&latest),
+        Ok(_) => {
             println!();
             version::print_version_status_box(vec![
                 ("Liiga Teletext Status".to_string(), None),
@@ -53,8 +61,19 @@ pub async fn handle_version_command() -> Result<(), AppError> {
                 ("You're running the latest version!".to_string(), None),
             ]);
         }
+        Err(e) => eprintln!("Failed to check for updates: {e}"),
     }
 
+    Ok(())
+}
+
+/// Handles the --update command.
+pub async fn handle_update_command() -> Result<(), AppError> {
+    match self_update::run_update().await? {
+        UpdateOutcome::AlreadyLatest(current) => println!("Already up to date ({current})"),
+        UpdateOutcome::Replaced { from, to } => println!("Updated {from} → {to}"),
+        UpdateOutcome::InstalledWithCargo { to } => println!("Installed {to} with cargo"),
+    }
     Ok(())
 }
 
@@ -159,7 +178,7 @@ pub async fn handle_config_update_command(args: &Args) -> Result<(), AppError> {
 /// Shows version info after display if update is available.
 pub async fn handle_once_command(
     args: &Args,
-    version_check: tokio::task::JoinHandle<Option<String>>,
+    version_check: version::VersionCheck,
 ) -> Result<(), AppError> {
     // In --once mode, don't show loading messages (only show in interactive mode)
 
@@ -263,9 +282,33 @@ pub async fn handle_once_command(
     println!(); // Add a newline at the end
 
     // Show version info after display if update is available
-    if let Ok(Some(latest_version)) = version_check.await {
-        version::print_version_info(&latest_version);
-    }
+    version::report_version_check(version_check).await;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn parse(flags: &[&str]) -> Args {
+        Args::parse_from(std::iter::once("liiga_teletext").chain(flags.iter().copied()))
+    }
+
+    #[test]
+    fn update_alone_is_valid() {
+        assert!(validate_args(&parse(&["--update"])).is_ok());
+    }
+
+    #[test]
+    fn update_cannot_be_combined_with_other_commands() {
+        for other in [
+            ["--update", "--once"],
+            ["--update", "--version"],
+            ["--update", "--list-config"],
+        ] {
+            assert!(validate_args(&parse(&other)).is_err(), "{other:?}");
+        }
+    }
 }

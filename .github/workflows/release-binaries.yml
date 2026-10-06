@@ -1,0 +1,143 @@
+---
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  # Dry run: build every target without uploading anything.
+  pull_request:
+    paths:
+      - '.github/workflows/release-binaries.yml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: ${{ matrix.target }}
+
+      # aws-lc-sys (rustls crypto) compiles C code and needs musl-gcc.
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install NASM
+        if: runner.os == 'Windows'
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1
+
+      - name: Build
+        # On the arm runner `cc` treats aarch64 musl as a cross-compile and
+        # looks for aarch64-linux-musl-gcc, which musl-tools does not ship.
+        env:
+          CC_aarch64_unknown_linux_musl: musl-gcc
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Stage binary
+        shell: bash
+        run: |
+          mkdir dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/liiga_teletext.exe" \
+               "dist/liiga_teletext-${{ matrix.target }}.exe"
+          else
+            cp "target/${{ matrix.target }}/release/liiga_teletext" \
+               "dist/liiga_teletext-${{ matrix.target }}"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: liiga_teletext-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  verify-tag:
+    name: Verify tag matches Cargo.toml version
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 \
+              | jq -r '.packages[0].version')
+
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            printf "Tag version (%s) doesn't match Cargo.toml version (%s)\n" \
+                "$TAG_VERSION" "$CARGO_VERSION"
+            exit 1
+          fi
+
+          echo "Tag version matches Cargo.toml version: $TAG_VERSION"
+
+  release:
+    name: Upload to GitHub release
+    needs: [build, verify-tag]
+    # Run even if one build target failed, so the other targets still get
+    # uploaded. A missing asset is a 404 and the updater falls back safely.
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.verify-tag.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write checksums
+        working-directory: dist
+        run: |
+          for f in liiga_teletext-*; do
+            sha256sum "$f" > "$f.sha256"
+          done
+          ls -l
+
+      # gh CLI instead of a third-party action: this job holds a write token.
+      # Creates the release if the tag was pushed without one; otherwise
+      # adds the files to the release made in the GitHub UI.
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber

@@ -7,6 +7,7 @@ mod constants;
 mod data_fetcher;
 mod error;
 mod logging;
+mod self_update;
 mod teletext_ui;
 mod timezone_check;
 mod ui;
@@ -37,6 +38,20 @@ async fn main() -> Result<(), AppError> {
         return commands::handle_version_command().await;
     }
 
+    if args.update {
+        // Returning the error from `main` would print its Debug form
+        // (`Error: SelfUpdate("...")`). Print the readable message instead.
+        // Drop the log guard first, because `exit` skips destructors.
+        return match commands::handle_update_command().await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                eprintln!("{e}");
+                drop(_guard);
+                std::process::exit(1);
+            }
+        };
+    }
+
     // Handle configuration operations without version check
     if args.list_config {
         return commands::handle_list_config_command().await;
@@ -58,7 +73,7 @@ async fn main() -> Result<(), AppError> {
     }
 
     // Check for new version in the background for non-config operations
-    let version_check = tokio::spawn(version::check_latest_version());
+    let version_check = version::spawn_version_check();
 
     // Load config first to fail early if there's an issue
     let _config = Config::load().await?;
