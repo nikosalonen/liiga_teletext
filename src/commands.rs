@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::config::user_prompts::{prompt_for_api_domain, test_api_with_animation};
 use crate::data_fetcher::{fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
+use crate::self_update::{self, UpdateOutcome};
 use crate::teletext_ui::TeletextPage;
 use crate::ui::format_date_for_display;
 use crate::ui::interactive::navigation_manager;
@@ -18,6 +19,18 @@ pub fn validate_args(args: &Args) -> Result<(), AppError> {
     if args.compact && args.wide {
         return Err(AppError::config_error(
             "Cannot use both compact (-c) and wide (-w) modes simultaneously",
+        ));
+    }
+    let other_command = args.once
+        || args.version
+        || args.list_config
+        || args.reset_cache
+        || args.new_api_domain.is_some()
+        || args.new_log_file_path.is_some()
+        || args.clear_log_file_path;
+    if args.update && other_command {
+        return Err(AppError::config_error(
+            "--update cannot be combined with other commands",
         ));
     }
     Ok(())
@@ -55,6 +68,16 @@ pub async fn handle_version_command() -> Result<(), AppError> {
         }
     }
 
+    Ok(())
+}
+
+/// Handles the --update command.
+pub async fn handle_update_command() -> Result<(), AppError> {
+    match self_update::run_update().await? {
+        UpdateOutcome::AlreadyLatest(current) => println!("Already up to date ({current})"),
+        UpdateOutcome::Replaced { from, to } => println!("Updated {from} → {to}"),
+        UpdateOutcome::InstalledWithCargo { to } => println!("Installed {to} with cargo"),
+    }
     Ok(())
 }
 
@@ -268,4 +291,30 @@ pub async fn handle_once_command(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn parse(flags: &[&str]) -> Args {
+        Args::parse_from(std::iter::once("liiga_teletext").chain(flags.iter().copied()))
+    }
+
+    #[test]
+    fn update_alone_is_valid() {
+        assert!(validate_args(&parse(&["--update"])).is_ok());
+    }
+
+    #[test]
+    fn update_cannot_be_combined_with_other_commands() {
+        for other in [
+            ["--update", "--once"],
+            ["--update", "--version"],
+            ["--update", "--list-config"],
+        ] {
+            assert!(validate_args(&parse(&other)).is_err(), "{other:?}");
+        }
+    }
 }

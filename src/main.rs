@@ -7,7 +7,6 @@ mod constants;
 mod data_fetcher;
 mod error;
 mod logging;
-#[allow(dead_code)] // Wired up to --update in a later commit; remove then.
 mod self_update;
 mod teletext_ui;
 mod timezone_check;
@@ -37,6 +36,10 @@ async fn main() -> Result<(), AppError> {
     // Handle version flag first
     if args.version {
         return commands::handle_version_command().await;
+    }
+
+    if args.update {
+        return commands::handle_update_command().await;
     }
 
     // Handle configuration operations without version check

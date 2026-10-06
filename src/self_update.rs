@@ -4,6 +4,7 @@
 //! `cargo install` when no binary is published for this platform yet.
 
 use crate::error::AppError;
+use crate::version;
 use semver::Version;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -233,6 +234,93 @@ pub async fn try_prebuilt(
         Err(AppError::ApiFetch(e)) => Ok(Prebuilt::Unavailable(format!("Download failed: {e}"))),
         Err(e) => Err(e),
     }
+}
+
+/// What `run_update` did.
+pub enum UpdateOutcome {
+    AlreadyLatest(Version),
+    Replaced { from: Version, to: Version },
+    InstalledWithCargo { to: Version },
+}
+
+fn run_cargo_install(version: &Version) -> Result<(), AppError> {
+    let version = version.to_string();
+    // Output goes straight to the terminal so the user sees cargo's progress.
+    let status = Command::new("cargo")
+        .args([
+            "install",
+            env!("CARGO_PKG_NAME"),
+            "--locked",
+            "--version",
+            &version,
+        ])
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(AppError::SelfUpdate(format!(
+            "cargo install exited with {status}"
+        )))
+    }
+}
+
+/// Updates the running binary to the latest version on crates.io.
+pub async fn run_update() -> Result<UpdateOutcome, AppError> {
+    let current = version::current_version();
+    let latest = version::fetch_latest_version(version::CRATES_IO_BASE)
+        .await
+        .map_err(|e| AppError::SelfUpdate(format!("could not check for updates: {e}")))?;
+    println!("Current version: {current}");
+    println!("Latest version:  {latest}");
+    if latest <= current {
+        return Ok(UpdateOutcome::AlreadyLatest(current));
+    }
+
+    let exe = std::env::current_exe()?;
+    // Resolve symlinks (e.g. /usr/local/bin/221) so we replace the real file.
+    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let exe_dir = exe.parent().ok_or_else(|| {
+        AppError::SelfUpdate("cannot find the folder of the running binary".to_string())
+    })?;
+
+    let reason = match asset_name() {
+        Some(asset) => {
+            let client = download_client()?;
+            match try_prebuilt(&client, RELEASE_DOWNLOAD_BASE, &latest, asset, exe_dir).await? {
+                Prebuilt::Ready(new_binary) => {
+                    println!("Checksum OK");
+                    // self_replace only follows one symlink level on Unix, so
+                    // rename over the already-resolved path instead.
+                    #[cfg(unix)]
+                    let replaced =
+                        std::fs::rename(&new_binary, &exe).map_err(|e| io_error_in(e, exe_dir));
+                    #[cfg(windows)]
+                    let replaced = self_replace::self_replace(&new_binary)
+                        .map_err(|e| io_error_in(e, exe_dir));
+                    let _ = std::fs::remove_file(&new_binary);
+                    replaced?;
+                    return Ok(UpdateOutcome::Replaced {
+                        from: current,
+                        to: latest,
+                    });
+                }
+                Prebuilt::Unavailable(reason) => reason,
+            }
+        }
+        None => "No prebuilt binary for this platform".to_string(),
+    };
+
+    println!("{reason}");
+    if cargo_fallback_allowed(&exe) {
+        println!("Installing with cargo instead ...");
+        run_cargo_install(&latest)?;
+        return Ok(UpdateOutcome::InstalledWithCargo { to: latest });
+    }
+
+    Err(AppError::SelfUpdate(format!(
+        "{reason}. Download it from {RELEASES_PAGE} or run: cargo install {} --locked",
+        env!("CARGO_PKG_NAME")
+    )))
 }
 
 #[cfg(test)]

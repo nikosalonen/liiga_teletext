@@ -17,6 +17,7 @@ fn get_styles() -> Styles {
 /// - --once flag is set (run once and exit)
 /// - config operations are requested
 /// - --version flag is set
+/// - --update flag is set
 ///
 /// `--compact`, `--wide` and `--debug` still open the interactive UI, so they
 /// do not count. `logging::setup_logging` uses this: interactive runs log only
@@ -28,6 +29,7 @@ pub fn is_noninteractive_mode(args: &Args) -> bool {
         || args.clear_log_file_path
         || args.list_config
         || args.version
+        || args.update
 }
 
 /// Finnish Hockey League (Liiga) Teletext Viewer
@@ -112,6 +114,10 @@ pub struct Args {
     #[arg(short = 'V', long = "version", help_heading = "Info")]
     pub version: bool,
 
+    /// Update liiga_teletext to the latest version
+    #[arg(long = "update", help_heading = "Info")]
+    pub update: bool,
+
     /// Enable debug mode which doesn't clear the terminal before drawing the UI.
     /// In this mode, info logs are written to the log file instead of being displayed in the terminal.
     /// The log file is created if it doesn't exist.
@@ -149,6 +155,7 @@ mod tests {
         assert!(is_noninteractive_mode(&parse(&["--once"])));
         assert!(is_noninteractive_mode(&parse(&["--once", "--compact"])));
         assert!(is_noninteractive_mode(&parse(&["--version"])));
+        assert!(is_noninteractive_mode(&parse(&["--update"])));
         assert!(is_noninteractive_mode(&parse(&["--list-config"])));
         assert!(is_noninteractive_mode(&parse(&["--clear-log-file"])));
     }

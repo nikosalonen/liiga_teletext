@@ -12,6 +12,11 @@ const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
 /// Base URL of crates.io. Tests pass a wiremock URL instead.
 pub const CRATES_IO_BASE: &str = "https://crates.io";
 
+/// Version of the running binary.
+pub fn current_version() -> Version {
+    Version::parse(CURRENT_VERSION).expect("CARGO_PKG_VERSION is valid semver")
+}
+
 /// Fetches the newest stable version of this crate from crates.io.
 pub async fn fetch_latest_version(crates_io_base: &str) -> Result<Version, AppError> {
     let url = format!("{crates_io_base}/api/v1/crates/{CRATE_NAME}");
