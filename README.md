@@ -39,6 +39,17 @@ rustup update
 
 ## Installation
 
+### Prebuilt binaries
+
+Download the binary for your platform from the
+[latest release](https://github.com/nikosalonen/liiga_teletext/releases/latest).
+Builds are available for macOS (Apple Silicon and Intel), Linux (x86_64 and arm64)
+and Windows (x86_64). On macOS and Linux, make it executable:
+
+```bash
+chmod +x liiga_teletext-*
+```
+
 ### Install from crates.io
 
 ```bash
@@ -50,6 +61,16 @@ You can create a symlink to the binary to make it available from anywhere:
 ```bash
 sudo ln -s ~/.cargo/bin/liiga_teletext /usr/local/bin/221 # 221 is the channel number of YLE Teksti-TV
 ```
+
+### Updating
+
+```bash
+liiga_teletext --update
+```
+
+This downloads the prebuilt binary for your platform and checks its SHA-256
+checksum before replacing the current one. If no prebuilt binary is available
+and you installed with cargo, it runs `cargo install` for you instead.
 
 ### Install from source
 

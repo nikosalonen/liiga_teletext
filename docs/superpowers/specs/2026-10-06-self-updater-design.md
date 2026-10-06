@@ -31,8 +31,7 @@ still work where no prebuilt binary exists.
 
 ## Release pipeline
 
-A new `binaries` job in `.github/workflows/publish.yml` runs on the same `v*.*.*`
-tag. It `needs: [verify-tag, test]`, so it runs alongside `publish`.
+A separate workflow, `.github/workflows/release-binaries.yml`, runs on `v*.*.*` tags and as a build-only dry run on PRs that touch it or `Cargo.lock`. A matrix `build` job uploads each binary as an artifact. A single `release` job then writes the `.sha256` files with `sha256sum` and uploads everything with the `gh` CLI, creating the release if it doesn't exist yet. Using one job means the matrix jobs don't race to create the release. No third-party action runs with the write token, and the third-party actions in the build job are pinned to commit SHAs.
 
 Matrix:
 
@@ -48,15 +47,7 @@ Each matrix entry:
 
 1. Runs `cargo build --release --locked --target <target>`.
 2. Copies the binary to `liiga_teletext-<target>` (`.exe` suffix on Windows).
-3. Writes `liiga_teletext-<target>[.exe].sha256`. The file holds the lowercase hex
-   SHA-256 digest, optionally followed by whitespace and a file name (the
-   `sha256sum` output format). The updater reads only the first field.
-4. Uploads both files to the release for the tag with
-   `softprops/action-gh-release`. That action creates the release if it doesn't
-   exist yet, or adds to it if it does. This matters because releases are
-   usually created by hand in the GitHub UI, which also creates the tag.
-
-The job needs `permissions: contents: write`.
+3. Uploads the binary as a workflow artifact.
 
 Assets are plain binaries, not archives, so the updater needs no tar or zip code.
 
@@ -137,7 +128,7 @@ asset_name() is Some?
   no  → go to fallback ("no prebuilt binary for this platform")
 
 fallback:
-  cargo_fallback_allowed → run `cargo install liiga_teletext --locked`
+  cargo_fallback_allowed → run `cargo install liiga_teletext --locked --version <latest>`
                            stdout/stderr pass through to the terminal
                            exit code non-zero → error
   otherwise              → print manual steps, exit with error:
@@ -160,8 +151,7 @@ through `?`.
 
 ### Output
 
-Plain lines on stdout, using the same teletext colours as `--version` (white
-text, cyan for versions). No full-screen UI. Example:
+Plain text on stdout. No full-screen UI. Example:
 
 ```
 Current version: 0.27.0
