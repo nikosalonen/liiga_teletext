@@ -51,16 +51,16 @@ jobs:
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Install NASM
-        if: runner.os == 'Windows'
-        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1
-
       - name: Build
         # On the arm runner `cc` treats aarch64 musl as a cross-compile and
         # looks for aarch64-linux-musl-gcc, which musl-tools does not ship.
+        # AWS_LC_SYS_PREBUILT_NASM: on Windows x86_64, aws-lc-sys uses the
+        # NASM objects that ship in the crate instead of needing NASM
+        # installed. No other target reads it.
         env:
           CC_aarch64_unknown_linux_musl: musl-gcc
           CC_x86_64_unknown_linux_musl: musl-gcc
+          AWS_LC_SYS_PREBUILT_NASM: 1
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Stage binary
@@ -75,7 +75,7 @@ jobs:
                "dist/liiga_teletext-${{ matrix.target }}"
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: liiga_teletext-${{ matrix.target }}
           path: dist/*
@@ -117,7 +117,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true

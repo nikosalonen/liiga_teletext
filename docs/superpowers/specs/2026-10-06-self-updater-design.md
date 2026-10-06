@@ -42,7 +42,7 @@ Matrix:
 | `x86_64-apple-darwin`        | `macos-latest`     | add rustup target             |
 | `x86_64-unknown-linux-musl`  | `ubuntu-latest`    | `musl-tools`, `CC_*=musl-gcc` |
 | `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` | `musl-tools`, `CC_*=musl-gcc` |
-| `x86_64-pc-windows-msvc`     | `windows-latest`   | NASM                          |
+| `x86_64-pc-windows-msvc`     | `windows-latest`   | `AWS_LC_SYS_PREBUILT_NASM=1`  |
 
 Each matrix entry:
 
@@ -57,7 +57,9 @@ which compiles C code. The musl targets need `musl-tools` (for `musl-gcc`).
 On the arm runner the `cc` crate treats aarch64 musl as a cross-compile and
 looks for `aarch64-linux-musl-gcc`, which `musl-tools` does not ship, so the
 build sets `CC_<target>=musl-gcc` for both musl targets. Windows needs NASM for
-`aws-lc-sys`. `cargo-zigbuild` was not needed.
+`aws-lc-sys`. The build sets `AWS_LC_SYS_PREBUILT_NASM=1`, so `aws-lc-sys` uses
+the NASM objects that ship in the crate. (It first used `ilammy/setup-nasm`,
+which has no Node 24 release.) `cargo-zigbuild` was not needed.
 
 ## App changes
 
