@@ -54,11 +54,17 @@ fn to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// True when `exe` (after resolving symlinks) sits directly in `cargo_bin`.
+/// True when `exe` (after resolving symlinks) is the cargo-installed binary:
+/// it sits directly in `cargo_bin` and has the name `cargo install` uses. A
+/// renamed copy there would be left unchanged by `cargo install`.
 pub fn is_inside_cargo_bin(exe: &Path, cargo_bin: &Path) -> bool {
     let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
     let cargo_bin = std::fs::canonicalize(cargo_bin).unwrap_or_else(|_| cargo_bin.to_path_buf());
+    let installed_name = format!("{}{}", env!("CARGO_PKG_NAME"), std::env::consts::EXE_SUFFIX);
     exe.parent() == Some(cargo_bin.as_path())
+        && exe
+            .file_name()
+            .is_some_and(|name| name == installed_name.as_str())
 }
 
 fn cargo_bin_dir() -> Option<PathBuf> {
@@ -93,13 +99,14 @@ pub fn cargo_fallback_allowed(exe: &Path) -> bool {
 /// limits clients that aren't logged in to 60 requests per hour.
 pub const RELEASE_DOWNLOAD_BASE: &str =
     "https://github.com/nikosalonen/liiga_teletext/releases/download";
-pub const RELEASES_PAGE: &str = "https://github.com/nikosalonen/liiga_teletext/releases/latest";
 
-/// HTTP client for release downloads. The binary is several MB, so the
-/// timeout is longer than the 10 s used for JSON requests.
+/// HTTP client for release downloads. The binary is several MB, so there is no
+/// limit on the whole request: a slow but steady download keeps going. A
+/// connect timeout and a per-read timeout still fail a stalled one.
 pub fn download_client() -> Result<reqwest::Client, AppError> {
     Ok(reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(Duration::from_secs(30))
         .user_agent(concat!(
             env!("CARGO_PKG_NAME"),
             "/",
@@ -236,6 +243,22 @@ pub async fn try_prebuilt(
     }
 }
 
+/// Swaps `new_binary` in for the running `exe` (already canonicalized) and
+/// removes `new_binary` afterwards, whether or not the swap worked.
+///
+/// Unix renames over the resolved path: `self_replace` follows only one
+/// symlink level. Windows cannot overwrite a running `.exe`, so it uses
+/// `self_replace`.
+fn replace_binary(new_binary: &Path, exe: &Path) -> Result<(), AppError> {
+    let exe_dir = exe.parent().unwrap_or(exe);
+    #[cfg(unix)]
+    let replaced = std::fs::rename(new_binary, exe);
+    #[cfg(not(unix))]
+    let replaced = self_replace::self_replace(new_binary);
+    let _ = std::fs::remove_file(new_binary);
+    replaced.map_err(|e| io_error_in(e, exe_dir))
+}
+
 /// What `run_update` did.
 pub enum UpdateOutcome {
     AlreadyLatest(Version),
@@ -278,7 +301,12 @@ pub async fn run_update() -> Result<UpdateOutcome, AppError> {
 
     let exe = std::env::current_exe()?;
     // Resolve symlinks (e.g. /usr/local/bin/221) so we replace the real file.
-    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let exe = std::fs::canonicalize(&exe).map_err(|e| {
+        AppError::SelfUpdate(format!(
+            "cannot resolve the path of the running binary {}: {e}",
+            exe.display()
+        ))
+    })?;
     let exe_dir = exe.parent().ok_or_else(|| {
         AppError::SelfUpdate("cannot find the folder of the running binary".to_string())
     })?;
@@ -289,16 +317,7 @@ pub async fn run_update() -> Result<UpdateOutcome, AppError> {
             match try_prebuilt(&client, RELEASE_DOWNLOAD_BASE, &latest, asset, exe_dir).await? {
                 Prebuilt::Ready(new_binary) => {
                     println!("Checksum OK");
-                    // self_replace only follows one symlink level on Unix, so
-                    // rename over the already-resolved path instead.
-                    #[cfg(unix)]
-                    let replaced =
-                        std::fs::rename(&new_binary, &exe).map_err(|e| io_error_in(e, exe_dir));
-                    #[cfg(windows)]
-                    let replaced = self_replace::self_replace(&new_binary)
-                        .map_err(|e| io_error_in(e, exe_dir));
-                    let _ = std::fs::remove_file(&new_binary);
-                    replaced?;
+                    replace_binary(&new_binary, &exe)?;
                     return Ok(UpdateOutcome::Replaced {
                         from: current,
                         to: latest,
@@ -310,15 +329,20 @@ pub async fn run_update() -> Result<UpdateOutcome, AppError> {
         None => "No prebuilt binary for this platform".to_string(),
     };
 
-    println!("{reason}");
     if cargo_fallback_allowed(&exe) {
+        println!("{reason}");
         println!("Installing with cargo instead ...");
         run_cargo_install(&latest)?;
         return Ok(UpdateOutcome::InstalledWithCargo { to: latest });
     }
 
+    let advice = if asset_name().is_some() {
+        "Try again in a few minutes, or run:"
+    } else {
+        "Run:"
+    };
     Err(AppError::SelfUpdate(format!(
-        "{reason}. Download it from {RELEASES_PAGE} or run: cargo install {} --locked",
+        "{reason}. {advice} cargo install {} --locked",
         env!("CARGO_PKG_NAME")
     )))
 }
@@ -425,6 +449,65 @@ mod tests {
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
         assert!(is_inside_cargo_bin(&link, &bin));
+    }
+
+    #[test]
+    fn renamed_binary_in_cargo_bin_is_not_inside() {
+        // `cargo install` would write `liiga_teletext` next to a renamed copy
+        // and leave the running file unchanged.
+        let home = tempfile::tempdir().unwrap();
+        let bin = home.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let exe = bin.join("liiga_teletext-aarch64-apple-darwin");
+        std::fs::write(&exe, b"").unwrap();
+
+        assert!(!is_inside_cargo_bin(&exe, &bin));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replace_binary_updates_symlink_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        let link = dir.path().join("221");
+        let new = dir.path().join("new");
+        std::fs::write(&real, "old").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        std::fs::write(&new, "new").unwrap();
+        let canonical = std::fs::canonicalize(&link).unwrap();
+
+        replace_binary(&new, &canonical).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "new");
+        assert!(std::fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "new");
+        assert!(!new.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replace_binary_failure_removes_new_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        let staging = dir.path().join("staging");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::create_dir(&staging).unwrap();
+        let target = locked.join("liiga_teletext");
+        let new = staging.join("new");
+        std::fs::write(&target, "old").unwrap();
+        std::fs::write(&new, "new").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+        if std::fs::File::create(locked.join("probe")).is_ok() {
+            return; // Running as root: permissions are not enforced.
+        }
+
+        let result = replace_binary(&new, &target);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(result.is_err());
+        assert!(!new.exists());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "old");
     }
 
     use semver::Version;

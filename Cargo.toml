@@ -38,12 +38,15 @@ futures = "0.3"
 clap = { version = "4.6.0", features = ["derive"] }
 semver = "1.0.22"
 sha2 = "0.11"
-self-replace = "1.5"
 thiserror = "2.0.18"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 lru = "0.18.0"
+
+# Unix swaps the binary with std::fs::rename; only Windows needs this.
+[target.'cfg(windows)'.dependencies]
+self-replace = "1.5"
 
 [profile.release]
 lto = "thin"

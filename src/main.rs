@@ -39,7 +39,17 @@ async fn main() -> Result<(), AppError> {
     }
 
     if args.update {
-        return commands::handle_update_command().await;
+        // Returning the error from `main` would print its Debug form
+        // (`Error: SelfUpdate("...")`). Print the readable message instead.
+        // Drop the log guard first, because `exit` skips destructors.
+        return match commands::handle_update_command().await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                eprintln!("{e}");
+                drop(_guard);
+                std::process::exit(1);
+            }
+        };
     }
 
     // Handle configuration operations without version check
