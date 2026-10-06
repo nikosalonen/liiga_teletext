@@ -60,7 +60,8 @@ xattr -d com.apple.quarantine liiga_teletext-*-apple-darwin
 Then rename the file and move it to a folder on your `PATH`:
 
 ```bash
-sudo mv liiga_teletext-<target> /usr/local/bin/liiga_teletext # sudo only if the folder needs it
+# Use the file name you downloaded. sudo only if the folder needs it.
+sudo mv liiga_teletext-aarch64-apple-darwin /usr/local/bin/liiga_teletext
 ```
 
 On Windows, rename the file to `liiga_teletext.exe` and put it in a folder on
