@@ -118,7 +118,7 @@ Stores **raw** `{first, last}` names, never pre-formatted ones. Disambiguation i
 
 TOML config at platform-specific paths (Linux: `~/.config/liiga_teletext/`, macOS: `~/Library/Application Support/liiga_teletext/`, Windows: `%APPDATA%\liiga_teletext/`).
 
-Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTTP_TIMEOUT`, `LIIGA_API_FETCH_TIMEOUT`, `LIIGA_BRACKET_GRACE_DAYS` (extends playoff bracket visibility, e.g. `400` to view last season's bracket in the off-season).
+Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTTP_TIMEOUT`, `LIIGA_BRACKET_GRACE_DAYS` (extends playoff bracket visibility, e.g. `400` to view last season's bracket in the off-season).
 
 ### Releases
 

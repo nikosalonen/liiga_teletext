@@ -176,7 +176,6 @@ impl Config {
     /// # Notes
     /// - Uses platform-specific config directory (e.g., ~/.config on Linux)
     /// - Falls back to current directory if config directory is unavailable
-    #[allow(dead_code)]
     pub fn get_config_path() -> String {
         paths::get_config_path()
     }
@@ -390,7 +389,7 @@ impl Config {
     }
 
     /// Loads configuration from a custom file path (for testing).
-    #[allow(dead_code)] // Used in tests
+    #[cfg(test)]
     pub async fn load_from_path(path: &str) -> Result<Self, AppError> {
         let content = fs::read_to_string(path).await?;
         let config: Config = toml::from_str(&content)?;

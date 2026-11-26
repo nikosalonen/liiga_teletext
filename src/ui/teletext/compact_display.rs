@@ -44,7 +44,7 @@ impl CompactDisplayConfig {
     ///
     /// # Returns
     /// * `CompactDisplayConfig` - New configuration instance
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)] // Used by integration tests
     pub fn new(
         max_games_per_line: usize,
         team_name_width: usize,
@@ -110,7 +110,7 @@ impl CompactDisplayConfig {
     ///
     /// # Returns
     /// * `bool` - True if terminal is wide enough for compact mode
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)] // Used by integration tests
     pub fn is_terminal_width_sufficient(&self, terminal_width: usize) -> bool {
         terminal_width >= self.get_minimum_terminal_width()
     }
@@ -131,11 +131,7 @@ impl CompactDisplayConfig {
                 shortfall: min_width - terminal_width,
             }
         } else {
-            TerminalWidthValidation::Sufficient {
-                current_width: terminal_width,
-                required_width: min_width,
-                excess: terminal_width - min_width,
-            }
+            TerminalWidthValidation::Sufficient
         }
     }
 }
@@ -144,14 +140,7 @@ impl CompactDisplayConfig {
 #[derive(Debug, Clone)]
 pub enum TerminalWidthValidation {
     /// Terminal width is sufficient for compact mode
-    Sufficient {
-        #[allow(dead_code)] // Used in tests for validation
-        current_width: usize,
-        #[allow(dead_code)] // Used in tests for validation
-        required_width: usize,
-        #[allow(dead_code)] // Used in tests for validation
-        excess: usize,
-    },
+    Sufficient,
     /// Terminal width is insufficient for compact mode
     Insufficient {
         current_width: usize,
@@ -167,7 +156,4 @@ pub enum CompactModeValidation {
     Compatible,
     /// Compact mode is compatible but with warnings
     CompatibleWithWarnings { warnings: Vec<String> },
-    /// Compact mode is incompatible
-    #[allow(dead_code)] // For future compatibility validation
-    Incompatible { issues: Vec<String> },
 }

@@ -215,7 +215,6 @@ These override the config file for a single run:
 - `LIIGA_API_DOMAIN` - API domain. When set, the first-run prompt is skipped
 - `LIIGA_LOG_FILE` - Log file path
 - `LIIGA_HTTP_TIMEOUT` - HTTP request timeout in seconds (default: 10)
-- `LIIGA_API_FETCH_TIMEOUT` - Timeout in seconds for fetching missing player names (default: 5, allowed range 1-30)
 - `LIIGA_BRACKET_GRACE_DAYS` - How many days the playoff bracket stays visible after the last playoff game (default: 14). Set to `400` to view the previous season's bracket in the off-season
 
 `--list-config` marks values that come from the environment with "(from env)".

@@ -347,7 +347,7 @@ impl GameDataValidator {
             );
         }
 
-        // Validate goal types with enhanced safe fallbacks (requirement 4.1)
+        // Validate goal types with enhanced safe fallbacks
         let valid_goal_types = ["EV", "YV", "YV2", "IM", "VT", "AV", "TM", "VL", "MV", "RV"];
         let mut sanitized_goal_types = Vec::new();
 
@@ -493,7 +493,7 @@ impl IntelligentTruncator {
     }
 
     /// Intelligently truncates a player name to fit within available space
-    /// Only uses ellipsis as a last resort (Requirement 3.2)
+    /// Only uses ellipsis as a last resort
     ///
     /// Disambiguated names ("Westerholm Po.") keep their distinguishing
     /// suffix: the surname is abbreviated with a period instead
@@ -572,7 +572,7 @@ impl IntelligentTruncator {
             }
         }
 
-        // Standard truncation with ellipsis (last resort per requirement 3.2)
+        // Standard truncation with ellipsis (last resort)
         let truncate_to = max_width.saturating_sub(3); // Reserve 3 chars for "..."
         let truncated: String = player_name.chars().take(truncate_to).collect();
 
@@ -600,7 +600,7 @@ impl IntelligentTruncator {
     }
 
     /// Validates that goal types can be displayed without truncation
-    /// Goal types should never be truncated (Requirement 3.4)
+    /// Goal types should never be truncated
     ///
     /// # Arguments
     /// * `goal_types` - The goal types string to validate
@@ -613,7 +613,7 @@ impl IntelligentTruncator {
 
         if !fits {
             tracing::error!(
-                "Goal types validation failed: '{}' (length: {}) exceeds available_width: {}. Goal types should never be truncated per requirement 3.4",
+                "Goal types validation failed: '{}' (length: {}) exceeds available_width: {}. Goal types should never be truncated",
                 goal_types,
                 goal_types.len(),
                 available_width

@@ -228,7 +228,7 @@ impl TeletextPage {
     ///
     /// # Errors
     /// Returns an error if both compact_mode and wide_mode are enabled in the configuration.
-    #[allow(dead_code)] // Used in tests
+    #[allow(dead_code)] // Only tests use this so far; meant to replace the 8-argument `new`
     pub fn from_config(config: TeletextPageConfig) -> Result<Self, AppError> {
         // Validate mode exclusivity before creating the page
         if let Err(msg) = config.validate_mode_exclusivity() {
@@ -247,26 +247,6 @@ impl TeletextPage {
             config.compact_mode,
             config.wide_mode,
         ))
-    }
-
-    /// Gets a reference to the layout manager for rendering operations.
-    /// This allows rendering methods to access layout calculations and positioning.
-    ///
-    /// # Returns
-    /// * `&ColumnLayoutManager` - Reference to the layout manager
-    #[allow(dead_code)]
-    pub fn layout_manager(&self) -> &ColumnLayoutManager {
-        &self.layout_manager
-    }
-
-    /// Gets a mutable reference to the layout manager for cache management and optimization.
-    /// This allows clearing caches and updating layout calculations.
-    ///
-    /// # Returns
-    /// * `&mut ColumnLayoutManager` - Mutable reference to the layout manager
-    #[allow(dead_code)]
-    pub fn layout_manager_mut(&mut self) -> &mut ColumnLayoutManager {
-        &mut self.layout_manager
     }
 
     /// Updates the page layout when terminal size changes.
@@ -301,7 +281,6 @@ impl TeletextPage {
     /// }
     /// # Ok::<(), liiga_teletext::AppError>(())
     /// ```
-    #[allow(dead_code)]
     pub fn handle_resize(&mut self) {
         if let Ok((width, height)) = crossterm::terminal::size() {
             self.apply_resize(width, height);
@@ -520,7 +499,7 @@ impl TeletextPage {
             format!("SM-LIIGA {page_str} {clock}")
         };
 
-        // Use optimized ANSI code generation for headers (requirement 4.3)
+        // Use optimized ANSI code generation for headers
         let title_bg_code = get_ansi_code(title_bg(), 46);
         let header_fg_code = get_ansi_code(header_fg(), 21);
         let header_bg_code = get_ansi_code(header_bg(), 21);
@@ -529,7 +508,7 @@ impl TeletextPage {
         // Pre-calculate header width for better performance
         let header_width = (width as usize).saturating_sub(20);
 
-        // Batch header ANSI code generation (requirement 4.3)
+        // Batch header ANSI code generation
         let mut header_buffer = String::with_capacity(200); // Pre-allocate for performance
 
         // Build header line
@@ -686,17 +665,17 @@ impl TeletextPage {
         Ok(())
     }
 
-    // --- Mode utility methods (moved from mode_utils.rs) ---
+    // --- Mode utility methods ---
 
     /// Returns whether compact mode is enabled.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used by integration tests
     pub fn is_compact_mode(&self) -> bool {
         self.compact_mode
     }
 
     /// Sets the compact mode state.
     /// Compact mode and wide mode are mutually exclusive.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used by integration tests
     pub fn set_compact_mode(&mut self, compact: bool) -> Result<(), &'static str> {
         if compact && self.wide_mode {
             self.wide_mode = false;
@@ -706,14 +685,14 @@ impl TeletextPage {
     }
 
     /// Returns whether wide mode is enabled.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used by integration tests
     pub fn is_wide_mode(&self) -> bool {
         self.wide_mode
     }
 
     /// Sets the wide mode state.
     /// Compact mode and wide mode are mutually exclusive.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn set_wide_mode(&mut self, wide: bool) -> Result<(), &'static str> {
         if wide && self.compact_mode {
             self.compact_mode = false;
@@ -723,7 +702,7 @@ impl TeletextPage {
     }
 
     /// Validates that compact mode and wide mode are not both enabled.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn validate_mode_exclusivity(&self) -> Result<(), &'static str> {
         if self.compact_mode && self.wide_mode {
             Err("compact_mode and wide_mode cannot be enabled simultaneously")
@@ -764,7 +743,7 @@ impl TeletextPage {
 
     /// Checks if this page contains any error messages.
     /// Used in integration tests to verify error/loading pages.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used by integration tests
     pub fn has_error_messages(&self) -> bool {
         self.content_rows
             .iter()
@@ -784,7 +763,7 @@ impl TeletextPage {
     }
 
     /// Test-friendly accessor to check if the page contains an error message with specific text.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used by integration tests
     pub fn has_error_message(&self, message: &str) -> bool {
         self.content_rows.iter().any(|row| match row {
             TeletextRow::ErrorMessage(msg) => msg.contains(message),
@@ -997,12 +976,6 @@ mod tests {
         if let Some(ref indicator) = page.loading_indicator {
             assert_eq!(indicator.message(), "Etsitään otteluita...");
             assert_eq!(indicator.current_frame(), "⠋"); // First frame
-        }
-
-        // Test updating animation
-        page.update_loading_animation();
-        if let Some(ref indicator) = page.loading_indicator {
-            assert_eq!(indicator.current_frame(), "⠙"); // Second frame
         }
 
         // Test hiding loading indicator
@@ -1971,18 +1944,10 @@ mod tests {
 
         // Test sufficient width
         let validation = config.validate_terminal_width(80);
-        match validation {
-            TerminalWidthValidation::Sufficient {
-                current_width,
-                required_width,
-                excess,
-            } => {
-                assert_eq!(current_width, 80);
-                assert_eq!(required_width, 18); // team_name_width + score_width + margins
-                assert_eq!(excess, 62);
-            }
-            _ => panic!("Expected sufficient validation"),
-        }
+        assert!(
+            matches!(validation, TerminalWidthValidation::Sufficient),
+            "Expected sufficient validation"
+        );
 
         // Test insufficient width
         let validation = config.validate_terminal_width(10);
@@ -2032,9 +1997,6 @@ mod tests {
             CompactModeValidation::CompatibleWithWarnings { warnings } => {
                 // If there are warnings, they should be about other things, not error messages
                 assert!(!warnings.iter().any(|w| w.contains("error messages")));
-            }
-            CompactModeValidation::Incompatible { .. } => {
-                panic!("Unexpected incompatible validation for page with error messages");
             }
         }
 

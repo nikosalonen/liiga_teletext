@@ -13,7 +13,8 @@ mod tournament_api;
 pub mod tournament_logic;
 pub mod urls;
 
-// Re-export URL utilities
+// Re-export URL utilities (the doc examples import them from here)
+#[allow(unused_imports)]
 pub use urls::*;
 // Re-export HTTP client utilities
 #[allow(unused_imports)]

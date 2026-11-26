@@ -80,10 +80,6 @@ pub mod colors {
 
 /// Environment variable names
 pub mod env_vars {
-    /// Environment variable for API fetch timeout in seconds (default: 5)
-    /// Used for fallback player name fetching when cached names are missing
-    pub const API_FETCH_TIMEOUT: &str = "LIIGA_API_FETCH_TIMEOUT";
-
     /// Environment variable overriding the playoff bracket visibility grace
     /// period in days (default: `bracket::VISIBILITY_GRACE_DAYS`). Useful
     /// for testing the bracket view outside the playoff season, e.g.
@@ -122,8 +118,7 @@ pub mod bracket {
 }
 
 /// Maximum length for player names
-// Used by integration tests (tests/disambiguation_display_tests.rs)
-#[allow(dead_code)]
+#[allow(dead_code)] // Used by integration tests (tests/disambiguation_display_tests.rs)
 pub const MAX_PLAYER_NAME_LENGTH: usize = 100;
 
 #[cfg(test)]
@@ -158,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_env_var_names_are_not_empty() {
-        assert!(!env_vars::API_FETCH_TIMEOUT.is_empty());
+        assert!(!env_vars::BRACKET_GRACE_DAYS.is_empty());
     }
 
     #[test]

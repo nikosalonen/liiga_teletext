@@ -65,12 +65,6 @@ impl TerminalManager {
         }
         Ok(())
     }
-
-    /// Get the terminal configuration
-    #[allow(dead_code)]
-    pub fn config(&self) -> &TerminalConfig {
-        &self.config
-    }
 }
 
 impl Default for TerminalManager {
@@ -82,25 +76,6 @@ impl Default for TerminalManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_terminal_manager_creation() {
-        let manager = TerminalManager::new();
-        assert!(!manager.config().debug_mode);
-    }
-
-    #[test]
-    fn test_terminal_manager_default() {
-        let manager = TerminalManager::default();
-        assert!(!manager.config().debug_mode);
-    }
-
-    #[test]
-    fn test_terminal_manager_with_config() {
-        let config = TerminalConfig { debug_mode: true };
-        let manager = TerminalManager::with_config(config);
-        assert!(manager.config().debug_mode);
-    }
 
     #[test]
     fn test_terminal_config_default() {

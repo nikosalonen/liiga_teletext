@@ -84,26 +84,6 @@ fn is_placeholder_name(name: &str) -> bool {
     saw_alpha && saw_digit
 }
 
-/// Determines if a game has actual goals (excluding RL0 goal types).
-#[allow(dead_code)]
-pub(super) fn has_actual_goals(game: &ScheduleGame) -> bool {
-    game.home_team
-        .goal_events
-        .iter()
-        .any(|g| !g.goal_types.contains(&"RL0".to_string()))
-        || game
-            .away_team
-            .goal_events
-            .iter()
-            .any(|g| !g.goal_types.contains(&"RL0".to_string()))
-}
-
-/// Determines if detailed game data should be fetched based on game state.
-#[allow(dead_code)]
-pub(super) fn should_fetch_detailed_data(_game: &ScheduleGame) -> bool {
-    false
-}
-
 /// Processes a single game and returns GameData.
 pub(super) async fn process_single_game(
     client: &Client,

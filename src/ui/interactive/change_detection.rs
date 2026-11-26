@@ -77,11 +77,6 @@ pub(super) fn calculate_bracket_hash(bracket: &PlayoffBracket, terminal_size: (u
     hasher.finish()
 }
 
-/// Helper function to check if a game is in the future
-fn is_future_game(game: &GameData) -> bool {
-    game.score_type == ScoreType::Scheduled
-}
-
 /// Performs change detection and logs detailed information about changes
 pub(super) fn detect_and_log_changes(games: &[GameData], last_games: &[GameData]) -> bool {
     let games_hash = calculate_games_hash(games);
@@ -136,7 +131,7 @@ pub(super) fn detect_and_log_changes(games: &[GameData], last_games: &[GameData]
 
         // Check if all games are scheduled (future games) - only relevant if no ongoing games
         let has_ongoing_games = has_live_games_from_game_data(games);
-        let all_scheduled = !games.is_empty() && games.iter().all(is_future_game);
+        let all_scheduled = !games.is_empty() && games.iter().all(GameData::is_scheduled);
 
         if all_scheduled && !has_ongoing_games {
             tracing::info!("All games are scheduled - auto-refresh disabled");

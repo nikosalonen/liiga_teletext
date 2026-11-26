@@ -51,13 +51,6 @@ pub struct StandingsEntry {
     pub live_game_active: bool,
 }
 
-impl StandingsEntry {
-    #[allow(dead_code)]
-    pub fn goal_difference(&self) -> i16 {
-        self.goals_for as i16 - self.goals_against as i16
-    }
-}
-
 impl From<&ApiStandingsTeam> for StandingsEntry {
     fn from(api: &ApiStandingsTeam) -> Self {
         let live_game_active = api.live_goals != api.goals
@@ -196,14 +189,6 @@ mod tests {
         let entry = StandingsEntry::from(&api);
 
         assert_eq!(entry.live_position_change, Some(-2)); // negative = moved down
-    }
-
-    #[test]
-    fn test_goal_difference() {
-        let api = make_api_team(60, 60, 1, 1);
-        let entry = StandingsEntry::from(&api);
-
-        assert_eq!(entry.goal_difference(), 20); // 100 - 80
     }
 
     #[test]

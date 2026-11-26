@@ -168,7 +168,7 @@ impl AlignmentCalculator {
     }
 
     /// Calculates play icon positions for consistent vertical alignment
-    /// Uses caching to optimize repeated calculations (requirement 4.3)
+    /// Uses caching to optimize repeated calculations
     ///
     /// # Arguments
     /// * `games` - Slice of game data containing goal events
@@ -181,7 +181,7 @@ impl AlignmentCalculator {
         games: &[GameData],
         layout: &LayoutConfig,
     ) -> Vec<PlayIconPosition> {
-        // Check cache first (requirement 4.3)
+        // Check cache first
         let content_signature = generate_content_signature(games);
         let cache_key = PlayIconCacheKey {
             content_signature,
@@ -245,7 +245,7 @@ impl AlignmentCalculator {
     }
 
     /// Calculates goal type positions ensuring no overflow into away team area
-    /// Uses caching to optimize repeated calculations (requirement 4.3)
+    /// Uses caching to optimize repeated calculations
     ///
     /// # Arguments
     /// * `events` - Slice of goal event data
@@ -258,7 +258,7 @@ impl AlignmentCalculator {
         events: &[GoalEventData],
         layout: &LayoutConfig,
     ) -> Vec<GoalTypePosition> {
-        // Check cache first (requirement 4.3)
+        // Check cache first
         let events_signature = generate_events_signature(events);
         let layout_signature = generate_layout_signature(layout);
         let cache_key = GoalTypeCacheKey {

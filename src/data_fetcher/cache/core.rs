@@ -1,6 +1,9 @@
 // Import cache items from parent module
 use super::{
     DETAILED_GAME_CACHE, GOAL_EVENTS_CACHE, HTTP_RESPONSE_CACHE, PLAYER_CACHE, TOURNAMENT_CACHE,
+};
+#[cfg(test)]
+use super::{
     clear_cache, clear_detailed_game_cache, clear_goal_events_cache, clear_http_response_cache,
     clear_tournament_cache,
 };
@@ -58,8 +61,8 @@ pub struct CacheStats {
     pub http_response_cache: CacheInfo,
 }
 
-/// Clears all caches (useful for testing and debugging)
-#[allow(dead_code)]
+/// Clears all caches so tests start from a clean state
+#[cfg(test)]
 pub async fn clear_all_caches() {
     clear_cache().await;
     clear_tournament_cache().await;
@@ -95,30 +98,6 @@ pub async fn get_detailed_cache_debug_info() -> String {
     ));
 
     debug_info
-}
-
-/// Resets all caches and returns confirmation - demonstrates clear_all_caches usage
-#[allow(dead_code)]
-pub async fn reset_all_caches_with_confirmation() -> String {
-    let stats_before = get_all_cache_stats().await;
-    let total_before = stats_before.player_cache.size
-        + stats_before.tournament_cache.size
-        + stats_before.detailed_game_cache.size
-        + stats_before.goal_events_cache.size
-        + stats_before.http_response_cache.size;
-
-    clear_all_caches().await;
-
-    let stats_after = get_all_cache_stats().await;
-    let total_after = stats_after.player_cache.size
-        + stats_after.tournament_cache.size
-        + stats_after.detailed_game_cache.size
-        + stats_after.goal_events_cache.size
-        + stats_after.http_response_cache.size;
-
-    format!(
-        "Cache reset completed. Entries before: {total_before}, after: {total_after}. All caches cleared successfully."
-    )
 }
 
 #[cfg(test)]
@@ -1636,10 +1615,7 @@ mod tests {
         assert!(debug_info.contains("Player Cache:"));
         assert!(debug_info.contains("Goal Events Cache:"));
 
-        // Test cache reset with confirmation
-        let reset_confirmation = reset_all_caches_with_confirmation().await;
-        assert!(reset_confirmation.contains("Cache reset completed"));
-        assert!(reset_confirmation.contains("All caches cleared successfully"));
+        clear_all_caches().await;
 
         // Verify caches are actually cleared
         let stats_after_reset = get_all_cache_stats().await;

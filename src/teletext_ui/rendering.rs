@@ -36,7 +36,7 @@ impl TeletextPage {
                 "Terminal too narrow for wide mode ({current_width} chars, need {required_width} chars, short {shortfall} chars)"
             );
 
-            // Use optimized ANSI code generation for warning messages (requirement 4.3)
+            // Use optimized ANSI code generation for warning messages
             let mut layout_manager = super::layout::ColumnLayoutManager::new(80, CONTENT_MARGIN);
 
             let warning_line = layout_manager.format_time_score(
@@ -91,7 +91,7 @@ impl TeletextPage {
         let games_for_layout = self.extract_games_for_layout(visible_rows);
         let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games_for_layout);
 
-        // Shared ANSI position-code cache for both columns (requirement 4.3)
+        // Shared ANSI position-code cache for both columns
         let mut layout_manager = super::layout::ColumnLayoutManager::new(80, CONTENT_MARGIN);
 
         let right_column_start = left_column_start + column_width + gap_between_columns;

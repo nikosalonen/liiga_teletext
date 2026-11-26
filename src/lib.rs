@@ -60,8 +60,7 @@ pub use ui::teletext::CompactDisplayConfig;
 
 // Re-export cache debugging and monitoring functions for external tools
 pub use data_fetcher::cache::{
-    CacheInfo, CacheStats, clear_all_caches, get_all_cache_stats, get_detailed_cache_debug_info,
-    reset_all_caches_with_confirmation,
+    CacheInfo, CacheStats, get_all_cache_stats, get_detailed_cache_debug_info,
 };
 
 /// Current version of the library

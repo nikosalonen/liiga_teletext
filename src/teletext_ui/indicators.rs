@@ -14,14 +14,6 @@ impl TeletextPage {
         self.loading_indicator = None;
     }
 
-    /// Updates the loading indicator animation frame
-    #[allow(dead_code)] // Used in tests and future UI updates
-    pub fn update_loading_animation(&mut self) {
-        if let Some(ref mut indicator) = self.loading_indicator {
-            indicator.next_frame();
-        }
-    }
-
     /// Shows a subtle auto-refresh indicator in the footer
     pub fn show_auto_refresh_indicator(&mut self) {
         self.auto_refresh_indicator = Some(LoadingIndicator::new("Päivitetään...".to_string()));
@@ -129,7 +121,7 @@ impl TeletextPage {
 
     /// Sets the screen height for testing purposes.
     /// This method is primarily used in tests to avoid terminal size detection issues.
-    #[allow(dead_code)] // Used in integration tests
+    #[allow(dead_code)] // Used by integration tests
     pub fn set_screen_height(&mut self, height: u16) {
         self.screen_height = height;
     }

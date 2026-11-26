@@ -118,7 +118,7 @@ impl ColumnLayoutManager {
     }
 
     /// Pre-calculates ANSI positioning codes for optimal performance
-    /// This should be called after layout calculation to optimize rendering (requirement 4.3)
+    /// This should be called after layout calculation to optimize rendering
     ///
     /// # Arguments
     /// * `layout_config` - The layout configuration to pre-calculate codes for
@@ -133,7 +133,7 @@ impl ColumnLayoutManager {
     }
 
     /// Gets an optimized positioning code for the given line and column
-    /// Uses pre-calculated codes when available (requirement 4.3)
+    /// Uses pre-calculated codes when available
     ///
     /// # Arguments
     /// * `line` - Line number (1-based for ANSI)
@@ -146,7 +146,7 @@ impl ColumnLayoutManager {
     }
 
     /// Gets an optimized positioning code with color for the given line, column, and color
-    /// Uses pre-calculated codes when available (requirement 4.3)
+    /// Uses pre-calculated codes when available
     ///
     /// # Arguments
     /// * `line` - Line number (1-based for ANSI)
@@ -160,7 +160,7 @@ impl ColumnLayoutManager {
     }
 
     /// Generates optimized ANSI codes for team name display
-    /// Batches positioning, color, and formatting operations (requirement 4.3)
+    /// Batches positioning, color, and formatting operations
     ///
     /// # Arguments
     /// * `line` - Line number
@@ -189,7 +189,7 @@ impl ColumnLayoutManager {
     }
 
     /// Generates optimized ANSI codes for separator display
-    /// Pre-formats common separator patterns (requirement 4.3)
+    /// Pre-formats common separator patterns
     ///
     /// # Arguments
     /// * `line` - Line number
@@ -204,7 +204,7 @@ impl ColumnLayoutManager {
     }
 
     /// Generates optimized ANSI codes for time/score display
-    /// Batches positioning and color operations (requirement 4.3)
+    /// Batches positioning and color operations
     ///
     /// # Arguments
     /// * `line` - Line number
@@ -226,7 +226,7 @@ impl ColumnLayoutManager {
     }
 
     /// Generates optimized ANSI codes for goal type display
-    /// Uses cached formatting for common goal type combinations (requirement 4.3)
+    /// Uses cached formatting for common goal type combinations
     ///
     /// # Arguments
     /// * `line` - Line number
@@ -248,7 +248,7 @@ impl ColumnLayoutManager {
     }
 
     /// Batch generates multiple ANSI codes for a complete game line
-    /// Optimizes the most common rendering pattern (requirement 4.3)
+    /// Optimizes the most common rendering pattern
     ///
     /// # Arguments
     /// * `line` - Line number
@@ -349,8 +349,8 @@ impl ColumnLayoutManager {
     }
 
     /// Calculates optimal layout configuration based on game content
-    /// Includes safe fallbacks for missing or corrupted data (requirement 4.1)
-    /// Uses caching to optimize repeated calculations (requirement 4.3)
+    /// Includes safe fallbacks for missing or corrupted data
+    /// Uses caching to optimize repeated calculations
     ///
     /// # Arguments
     /// * `games` - Slice of game data to analyze for content requirements
@@ -364,13 +364,13 @@ impl ColumnLayoutManager {
             self.terminal_width
         );
 
-        // Handle empty games list safely (requirement 4.1)
+        // Handle empty games list safely
         if games.is_empty() {
             tracing::info!("No games provided for layout calculation, using default configuration");
             return LayoutConfig::default();
         }
 
-        // Check cache first to avoid repeated calculations (requirement 4.3)
+        // Check cache first to avoid repeated calculations
         let content_signature = generate_content_signature(games);
         let cache_key = LayoutCacheKey {
             terminal_width: self.terminal_width,
@@ -392,7 +392,7 @@ impl ColumnLayoutManager {
             content_signature
         );
 
-        // Validate and sanitize game data before layout calculations (requirement 4.1)
+        // Validate and sanitize game data before layout calculations
         let sanitized_games = GameDataValidator::sanitize_games(games);
 
         // Handle case where all games were filtered out due to validation issues
@@ -517,7 +517,7 @@ impl ColumnLayoutManager {
             config.score_column
         );
 
-        // Cache the calculated layout for future use (requirement 4.3)
+        // Cache the calculated layout for future use
         self.layout_cache.insert(cache_key, config.clone());
 
         // Limit cache size to prevent unbounded memory growth
@@ -535,7 +535,7 @@ impl ColumnLayoutManager {
 
     /// Calculates layout configuration optimized for wide mode columns
     /// Maintains proportional spacing while adapting to reduced column width
-    /// Uses caching to optimize repeated calculations (requirement 4.3)
+    /// Uses caching to optimize repeated calculations
     ///
     /// # Arguments
     /// * `games` - Slice of game data to analyze for content requirements
@@ -549,7 +549,7 @@ impl ColumnLayoutManager {
             self.terminal_width
         );
 
-        // Check cache first for wide mode layouts (requirement 4.3)
+        // Check cache first for wide mode layouts
         let content_signature = generate_content_signature(games);
         let cache_key = LayoutCacheKey {
             terminal_width: self.terminal_width,
@@ -571,7 +571,7 @@ impl ColumnLayoutManager {
             content_signature
         );
 
-        // Validate and sanitize game data before layout calculations (requirement 4.1)
+        // Validate and sanitize game data before layout calculations
         let sanitized_games = GameDataValidator::sanitize_games(games);
 
         if sanitized_games.len() != games.len() {
@@ -691,14 +691,14 @@ impl ColumnLayoutManager {
             config.score_column
         );
 
-        // Cache the calculated wide mode layout for future use (requirement 4.3)
+        // Cache the calculated wide mode layout for future use
         self.layout_cache.insert(cache_key, config.clone());
 
         config
     }
 
     /// Analyzes game content to determine space requirements
-    /// Includes safe fallbacks for corrupted or missing data (requirement 4.1)
+    /// Includes safe fallbacks for corrupted or missing data
     ///
     /// # Arguments
     /// * `games` - Slice of game data to analyze
@@ -1101,7 +1101,7 @@ impl ColumnLayoutManager {
                     // Calculate maximum available space for play area
                     let max_play_area = config.time_column.saturating_sub(config.play_icon_column);
 
-                    // Preserve goal types at all costs (requirement 3.4), truncate player names aggressively
+                    // Preserve goal types at all costs, truncate player names aggressively
                     if max_play_area >= config.max_goal_types_width + 3 {
                         // 3 for minimum player name
                         let new_player_width = max_play_area
@@ -1116,10 +1116,10 @@ impl ColumnLayoutManager {
 
                         config.max_player_name_width = new_player_width;
                     } else {
-                        // Extreme case: very limited space - preserve goal types at all costs (requirement 3.4)
+                        // Extreme case: very limited space - preserve goal types at all costs
                         let original_goal_types_width = config.max_goal_types_width;
                         config.max_player_name_width = 3; // Minimum viable
-                        // Never reduce goal_types_width below 2 (requirement 3.4)
+                        // Never reduce goal_types_width below 2
                         config.max_goal_types_width = config
                             .max_goal_types_width
                             .min(max_play_area.saturating_sub(4))
@@ -1252,7 +1252,7 @@ impl ColumnLayoutManager {
             }
         };
 
-        // Goal types should never be truncated (requirement 3.4), but we can limit space allocation
+        // Goal types should never be truncated, but we can limit space allocation
         max_goal_types_width = match strategy {
             TruncationStrategy::NoTruncation => max_goal_types_width.clamp(2, 8),
             TruncationStrategy::ReduceSpacing => max_goal_types_width.clamp(2, 6),

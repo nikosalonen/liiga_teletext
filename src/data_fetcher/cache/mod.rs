@@ -107,7 +107,7 @@ pub async fn get_cache_size() -> usize {
 }
 
 /// Clears all entries from the player cache.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn clear_cache() {
     PLAYER_CACHE.clear().await;
 }
@@ -193,7 +193,7 @@ pub async fn get_detailed_game_cache_size() -> usize {
 }
 
 /// Clears all detailed game cache entries.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn clear_detailed_game_cache() {
     DETAILED_GAME_CACHE.clear().await;
 }
@@ -234,7 +234,7 @@ pub async fn get_goal_events_cache_size() -> usize {
 }
 
 /// Clears all goal events cache entries.
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn clear_goal_events_cache() {
     GOAL_EVENTS_CACHE.clear().await;
 }

@@ -23,7 +23,7 @@ impl AnsiCodeCache {
     }
 
     /// Pre-calculates positioning codes for common positions
-    /// This optimizes repeated ANSI code generation (requirement 4.3)
+    /// This optimizes repeated ANSI code generation
     pub fn pre_calculate_positions(&mut self, layout_config: &LayoutConfig, max_lines: usize) {
         // Pre-calculate common positioning codes
         let common_columns = vec![

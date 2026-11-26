@@ -138,7 +138,7 @@ pub fn render_footer_with_view(
     if let Some(countdown) = ctx.season_countdown {
         let countdown_y = ctx.footer_y.saturating_sub(1);
 
-        // Use optimized ANSI code generation for countdown (requirement 4.3)
+        // Use optimized ANSI code generation for countdown
         // Convert 0-based countdown_y to 1-based for ANSI cursor positioning
         let countdown_code = format!(
             "\x1b[{};1H\x1b[38;5;{}m{:^width$}\x1b[0m",
