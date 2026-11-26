@@ -4,5 +4,3 @@ log.*
 .claude/
 .idea/
 .worktrees/
-# Added by code-review-graph
-.code-review-graph/
