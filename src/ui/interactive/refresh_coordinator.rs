@@ -946,8 +946,7 @@ impl RefreshCoordinator {
             state,
             is_auto_refresh,
             outcome,
-            // A failed standings refresh always shows the error page
-            |_| false,
+            TeletextPage::is_standings_page,
             || {
                 let mut page = TeletextPage::new(
                     STANDINGS_FETCH.page_number,
