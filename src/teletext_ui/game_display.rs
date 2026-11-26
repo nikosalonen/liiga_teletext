@@ -14,6 +14,25 @@ pub(crate) fn format_team_series_indicator(wins: u8, req_wins: u8) -> String {
     format!("{filled}{empty}")
 }
 
+/// Web player for goal clips, served from `pages/play.html` on GitHub Pages.
+/// Liiga's clips are HLS streams, which Firefox and other browsers without
+/// built-in HLS support download instead of playing. The page plays them with hls.js.
+const VIDEO_PLAYER_URL: &str = "https://nikosalonen.github.io/liiga_teletext/play.html";
+/// Only clips under this prefix go through the player page. Keep it in sync
+/// with `ALLOWED_HOST` in `pages/play.html`, which rejects every other host.
+const LIIGA_VIDEO_PREFIX: &str = "https://videos.liiga.fi/";
+
+/// The URL a goal's video link opens. Liiga clips go through the player page,
+/// with the clip URL after the `#` so it is never sent to the page's server.
+/// Other URLs stay as they are, because the page only plays Liiga clips.
+fn video_link_url(clip_url: &str) -> String {
+    if clip_url.starts_with(LIIGA_VIDEO_PREFIX) {
+        format!("{VIDEO_PLAYER_URL}#{clip_url}")
+    } else {
+        clip_url.to_string()
+    }
+}
+
 /// Line shown in place of scorer lines cut off at the bottom of the page.
 pub(super) fn hidden_goals_text(hidden_goals: usize) -> String {
     if hidden_goals == 1 {
@@ -699,7 +718,9 @@ impl TeletextPage {
                     // Wrap the player name in a clickable link while preserving colors
                     format!(
                         "\x1b[38;5;{}m\x1b]8;;{}\x07{}\x1b]8;;\x07",
-                        scorer_color, validated_url, padded_player_name
+                        scorer_color,
+                        video_link_url(&validated_url),
+                        padded_player_name
                     )
                 } else {
                     format!("\x1b[38;5;{}m{}", scorer_color, padded_player_name)
@@ -874,6 +895,50 @@ mod tests {
         let mut current_line = 4;
         page.render_normal_mode_content(&mut buffer, &rows, &mut current_line, 231, 46, 46);
         buffer
+    }
+
+    #[test]
+    fn liiga_clip_links_open_the_player_page() {
+        assert_eq!(
+            video_link_url("https://videos.liiga.fi/videos/abc/playlist.m3u8"),
+            "https://nikosalonen.github.io/liiga_teletext/play.html#https://videos.liiga.fi/videos/abc/playlist.m3u8"
+        );
+    }
+
+    #[test]
+    fn other_video_links_stay_unchanged() {
+        // The player page only plays clips from Liiga's own video host over https.
+        for url in [
+            "https://example.com/video.mp4",
+            "https://videos.liiga.fi.example.com/videos/abc/playlist.m3u8",
+            "http://videos.liiga.fi/videos/abc/playlist.m3u8",
+        ] {
+            assert_eq!(video_link_url(url), url);
+        }
+    }
+
+    #[test]
+    fn scorer_link_opens_the_player_page() {
+        let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("Tappara", "HIFK");
+        game.score_type = ScoreType::Final;
+        game.result = "1-0".to_string();
+        let mut goal =
+            crate::testing_utils::TestDataBuilder::create_goal_event("Puutio", 3, 1, 0, true);
+        goal.video_clip_url = Some("https://videos.liiga.fi/videos/abc/playlist.m3u8".to_string());
+        game.goal_events = vec![goal];
+
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+            .with_footer(false)
+            .with_ignore_height_limit(true);
+        page.add_game_result(crate::teletext_ui::GameResultData::new(&game));
+        let (rows, _) = page.get_page_content();
+        let mut buffer = String::new();
+        let mut current_line = 4;
+        page.render_normal_mode_content(&mut buffer, &rows, &mut current_line, 231, 46, 46);
+
+        assert!(buffer.contains(
+            "\x1b]8;;https://nikosalonen.github.io/liiga_teletext/play.html#https://videos.liiga.fi/videos/abc/playlist.m3u8\x07"
+        ));
     }
 
     #[test]

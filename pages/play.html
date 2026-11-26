@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Liiga 221 maalivideo</title>
+<link rel="icon" href="data:,">
+<!--
+  Goal video player for liiga_teletext. The app links goal scorers to
+  play.html#<clip URL>. Liiga's clips are HLS streams, which browsers without
+  built-in HLS support (such as Firefox) download instead of playing.
+  This page plays them with hls.js, or with the browser's own HLS support.
+-->
+<style>
+  :root { --bg: #000; --fg: #fff; --accent: #0ff; --warn: #ff0; --panel: #111; --line: #444; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.4 monospace; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 18px; color: var(--accent); margin: 0 0 12px; }
+  video { display: block; width: 100%; aspect-ratio: 16 / 9; background: var(--panel); }
+  form { display: flex; gap: 8px; margin: 12px 0; }
+  input { flex: 1; min-width: 0; background: var(--panel); color: var(--fg); border: 1px solid var(--line); padding: 6px; font: inherit; }
+  button { background: var(--accent); color: #000; border: 0; padding: 6px 12px; font: inherit; cursor: pointer; }
+  a { color: var(--accent); word-break: break-all; }
+  #status { color: var(--warn); min-height: 1.4em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>221 LIIGA - MAALIVIDEO</h1>
+  <video id="video" controls playsinline></video>
+  <p id="status"></p>
+  <form id="form">
+    <input id="clip" type="url" placeholder="https://videos.liiga.fi/videos/.../playlist.m3u8" aria-label="Videon osoite">
+    <button type="submit">Toista</button>
+  </form>
+  <p id="raw-line" hidden>Alkuperäinen video (esim. mpv tai VLC): <a id="raw" rel="noreferrer"></a></p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"
+        integrity="sha384-p9vgU/7IYJWd3I4STrtqxqR/2cAQlhIX7D/HrTnIMEjjcUox165b7se7sxmm3zDg"
+        crossorigin="anonymous"></script>
+<script>
+  const ALLOWED_HOST = "videos.liiga.fi";
+  const OPEN_RAW_HINT = "Avaa alla oleva linkki esim. mpv:llä tai VLC:llä.";
+
+  const video = document.getElementById("video");
+  const clipInput = document.getElementById("clip");
+  const statusLine = document.getElementById("status");
+  const rawLine = document.getElementById("raw-line");
+  const rawLink = document.getElementById("raw");
+  let hls = null;
+
+  function showStatus(text) {
+    statusLine.textContent = text;
+  }
+
+  // Accept only https clips from Liiga's video server, so the page can't be
+  // used to play arbitrary URLs. Returns null for anything else.
+  // The text is used as is, not %-decoded, so escapes inside the clip URL survive.
+  function parseClip(text) {
+    try {
+      const url = new URL(text);
+      if (url.protocol === "https:" && url.hostname === ALLOWED_HOST) return url.href;
+    } catch (_) {
+      // Not a URL.
+    }
+    return null;
+  }
+
+  function startPlayback() {
+    video.play().catch((error) => {
+      // AbortError: another clip replaced this one before it started.
+      if (error.name === "AbortError") return;
+      // NotAllowedError: the browser blocks autoplay until the user clicks play.
+      if (error.name === "NotAllowedError") showStatus("Paina toistopainiketta.");
+      else showStatus("Videota ei voitu toistaa. " + OPEN_RAW_HINT);
+    });
+  }
+
+  function play(clip) {
+    clipInput.value = clip;
+    rawLink.href = clip;
+    rawLink.textContent = clip;
+    rawLine.hidden = false;
+    showStatus("");
+    if (hls) {
+      hls.destroy();
+      hls = null;
+    }
+
+    if (window.Hls && Hls.isSupported()) {
+      hls = new Hls();
+      hls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) showStatus("Videota ei voitu ladata (" + data.details + ").");
+      });
+      hls.loadSource(clip);
+      hls.attachMedia(video);
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = clip;
+      startPlayback();
+    } else if (!window.Hls) {
+      // jsDelivr is down or blocked, or the file failed its SRI check.
+      showStatus("Soitinta (hls.js) ei voitu ladata. " + OPEN_RAW_HINT);
+    } else {
+      showStatus("Tämä selain ei osaa toistaa videota. " + OPEN_RAW_HINT);
+    }
+  }
+
+  // Native HLS (Safari) reports a clip that fails to load only on the video
+  // element. hls.js reports its own errors through Hls.Events.ERROR.
+  video.addEventListener("error", () => {
+    if (!hls) showStatus("Videota ei voitu ladata. " + OPEN_RAW_HINT);
+  });
+  // Clears "Paina toistopainiketta." once the user starts the clip.
+  video.addEventListener("playing", () => showStatus(""));
+
+  function playFromHash() {
+    const hash = location.hash.slice(1);
+    if (!hash) {
+      showStatus("Ei videota. Liitä videon osoite alle.");
+      return;
+    }
+    const clip = parseClip(hash);
+    if (clip) play(clip);
+    else showStatus("Vain " + ALLOWED_HOST + " -videot toimivat.");
+  }
+
+  document.getElementById("form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const clip = parseClip(clipInput.value.trim());
+    if (!clip) {
+      showStatus("Vain " + ALLOWED_HOST + " -videot toimivat.");
+    } else if (parseClip(location.hash.slice(1)) === clip) {
+      play(clip); // Same hash: no hashchange event, so restart it here.
+    } else {
+      location.hash = clip; // hashchange starts playback
+    }
+  });
+
+  // A new goal link opened in the same tab only changes the hash.
+  window.addEventListener("hashchange", playFromHash);
+  playFromHash();
+</script>
+</body>
+</html>
