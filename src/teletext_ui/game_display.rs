@@ -2,7 +2,7 @@
 
 use super::core::get_ansi_code;
 use super::core::{TeletextPage, TeletextRow};
-use super::layout::{ColumnLayoutManager, IntelligentTruncator, LayoutConfig};
+use super::layout::{ColumnLayoutManager, IntelligentTruncator, LayoutConfig, ansi};
 use crate::data_fetcher::models::GameData;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
@@ -100,20 +100,15 @@ impl TeletextPage {
         let games_for_layout = self.extract_games_for_layout(visible_rows);
         let terminal_width = self.layout_width() as usize;
 
-        let mut layout_manager = ColumnLayoutManager::new(terminal_width, CONTENT_MARGIN);
         let layout_config = if self.wide_mode && self.can_fit_two_pages() {
             // In wide mode, calculate layout for individual columns (approximately 60 chars each)
             let wide_column_width = 60; // Typical wide mode column width
-            let mut wide_layout_manager =
-                ColumnLayoutManager::new_for_wide_mode_column(wide_column_width, CONTENT_MARGIN);
-            wide_layout_manager.calculate_wide_mode_layout(&games_for_layout)
+            ColumnLayoutManager::new_for_wide_mode_column(wide_column_width, CONTENT_MARGIN)
+                .calculate_wide_mode_layout(&games_for_layout)
         } else {
-            layout_manager.calculate_layout(&games_for_layout)
+            ColumnLayoutManager::new(terminal_width, CONTENT_MARGIN)
+                .calculate_layout(&games_for_layout)
         };
-
-        // Pre-calculate ANSI positioning codes for optimal performance
-        let estimated_lines = visible_rows.len() * 3; // Estimate 3 lines per game (game + goals + spacing)
-        layout_manager.pre_calculate_ansi_codes(&layout_config, estimated_lines);
 
         for row in visible_rows {
             match row {
@@ -272,54 +267,40 @@ impl TeletextPage {
             ScoreType::Ongoing => text_fg_code,
         };
 
-        // Use optimized ANSI code generation for better performance
-        let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN); // Use default for ANSI generation
-
         if !time_display.is_empty() && !score_display.is_empty() {
             // For ongoing games: show time on the left, score aligned with finished games on the right
-            // Use batch ANSI code generation for optimal performance
+            let line = *current_line;
             let home_pos = CONTENT_MARGIN + 1;
             let separator_pos = home_pos + layout_config.home_team_width;
             let away_pos = separator_pos + layout_config.separator_width;
-            let time_pos = layout_config.time_column;
-            let score_pos = layout_config.score_column;
 
-            // Batch string operations to reduce allocations
-            let mut game_line = String::with_capacity(200); // Pre-allocate for better performance
-
-            game_line.push_str(&layout_manager.format_team_name(
-                *current_line,
+            buffer.push_str(&ansi::padded_text_at(
+                line,
                 home_pos,
                 text_fg_code,
                 home_team,
                 layout_config.home_team_width,
             ));
-            game_line.push_str(&layout_manager.format_separator(
-                *current_line,
-                separator_pos,
-                text_fg_code,
-            ));
-            game_line.push_str(&layout_manager.format_team_name(
-                *current_line,
+            buffer.push_str(&ansi::separator_at(line, separator_pos, text_fg_code));
+            buffer.push_str(&ansi::padded_text_at(
+                line,
                 away_pos,
                 text_fg_code,
                 away_team,
                 layout_config.away_team_width,
             ));
-            game_line.push_str(&layout_manager.format_time_score(
-                *current_line,
-                time_pos,
+            buffer.push_str(&ansi::text_at(
+                line,
+                layout_config.time_column,
                 text_fg_code,
                 &time_display,
             ));
-            game_line.push_str(&layout_manager.format_time_score(
-                *current_line,
-                score_pos,
+            buffer.push_str(&ansi::text_at(
+                line,
+                layout_config.score_column,
                 result_color,
                 &score_display,
             ));
-
-            buffer.push_str(&game_line);
         } else {
             // For scheduled/final games: show time or score on the right
             let display_text = if !time_display.is_empty() {
@@ -328,8 +309,7 @@ impl TeletextPage {
                 score_display
             };
 
-            // Use optimized complete game line formatting
-            let formatted_line = layout_manager.format_complete_game_line(
+            buffer.push_str(&ansi::game_line_at(
                 *current_line,
                 layout_config,
                 home_team,
@@ -337,8 +317,7 @@ impl TeletextPage {
                 &display_text,
                 text_fg_code,
                 result_color,
-            );
-            buffer.push_str(&formatted_line);
+            ));
         }
 
         // Render series win indicators after each team name
@@ -351,7 +330,7 @@ impl TeletextPage {
             // Home team indicator: after home team name
             let home_indicator = format_team_series_indicator(score.home_team_wins, score.req_wins);
             let home_indicator_pos = home_pos + home_team.chars().count() + 1;
-            let home_code = layout_manager.get_position_code(*current_line, home_indicator_pos);
+            let home_code = ansi::position_code(*current_line, home_indicator_pos);
             buffer.push_str(&format!(
                 "{home_code}\x1b[38;5;{goal_type_fg_code}m{home_indicator}\x1b[0m"
             ));
@@ -361,7 +340,7 @@ impl TeletextPage {
             let separator_pos = home_pos + layout_config.home_team_width;
             let away_pos = separator_pos + layout_config.separator_width;
             let away_indicator_pos = away_pos + away_team.chars().count() + 1;
-            let away_code = layout_manager.get_position_code(*current_line, away_indicator_pos);
+            let away_code = ansi::position_code(*current_line, away_indicator_pos);
             buffer.push_str(&format!(
                 "{away_code}\x1b[38;5;{goal_type_fg_code}m{away_indicator}\x1b[0m"
             ));
@@ -586,14 +565,10 @@ impl TeletextPage {
             event.minute
         };
 
-        // Use optimized ANSI code generation for goal minute
-        let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-        let minute_code =
-            layout_manager.get_color_position_code(current_line, column_offset, scorer_color);
-        buffer.push_str(&format!("{}{:2} ", minute_code, safe_minute));
+        let minute_code = ansi::color_position_code(current_line, column_offset, scorer_color);
+        buffer.push_str(&format!("{minute_code}{safe_minute:2} "));
 
         // Calculate dynamic spacing for player name to maintain play icon alignment
-        // Note: We create separate layout managers for each operation to avoid borrowing issues
 
         // Handle missing or corrupted player names safely
         let safe_player_name = if event.scorer_name.trim().is_empty() {
@@ -760,14 +735,8 @@ impl TeletextPage {
                 let safe_position =
                     boundary_column.saturating_sub(goal_type.len().min(boundary_column));
 
-                // Use optimized goal type formatting
-                let mut goal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-                let formatted_goal_type = goal_layout_manager.format_goal_types(
-                    current_line,
-                    safe_position,
-                    goal_type_fg_code,
-                    &goal_type,
-                );
+                let formatted_goal_type =
+                    ansi::text_at(current_line, safe_position, goal_type_fg_code, &goal_type);
                 buffer.push_str(&formatted_goal_type);
                 tracing::debug!(
                     "Repositioned goal types '{}' to column {} to prevent overflow (boundary: {})",
@@ -798,17 +767,13 @@ impl TeletextPage {
         current_line: &mut usize,
         text_fg_code: u8,
     ) {
-        // Use optimized ANSI code generation for error messages
-        let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-
         for line in message.lines() {
-            let formatted_line = layout_manager.format_time_score(
+            buffer.push_str(&ansi::text_at(
                 *current_line,
                 CONTENT_MARGIN + 1,
                 text_fg_code,
                 line,
-            );
-            buffer.push_str(&formatted_line);
+            ));
             *current_line += 1;
         }
     }
@@ -827,15 +792,12 @@ impl TeletextPage {
         current_line: &mut usize,
         subheader_fg_code: u8,
     ) {
-        // Use optimized ANSI code generation for headers
-        let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-        let formatted_header = layout_manager.format_time_score(
+        buffer.push_str(&ansi::text_at(
             *current_line,
             CONTENT_MARGIN + 1,
             subheader_fg_code,
             header_text,
-        );
-        buffer.push_str(&formatted_header);
+        ));
         *current_line += 1;
     }
 }

@@ -455,6 +455,69 @@ fn handle_page_number_input(params: &mut KeyEventParams<'_>, digit: char) {
     }
 }
 
+/// Direction of a Shift+arrow date search.
+#[derive(Debug, Clone, Copy)]
+enum DateDirection {
+    Previous,
+    Next,
+}
+
+/// Moves to the nearest date with games in `direction` (Shift + Left/Right).
+///
+/// The search runs in a background task; a loading spinner appears, and
+/// animates, only if it outlasts the grace period. Presses closer together
+/// than 250 ms are ignored.
+async fn navigate_to_date_with_games(params: &mut KeyEventParams<'_>, direction: DateDirection) {
+    if params.last_date_navigation.elapsed() < Duration::from_millis(250) {
+        return;
+    }
+
+    let (label, search_message) = match direction {
+        DateDirection::Previous => ("previous", "Etsitään edellisiä otteluita..."),
+        DateDirection::Next => ("next", "Etsitään seuraavia otteluita..."),
+    };
+    tracing::debug!("Current date state: {:?}", params.current_date);
+    let target_date = get_target_date_for_navigation(params.current_date);
+    tracing::info!("Searching for {label} date with games from: {target_date}");
+
+    let search_handle = tokio::task::spawn(async move {
+        match direction {
+            DateDirection::Previous => find_previous_date_with_games(&target_date).await,
+            DateDirection::Next => find_next_date_with_games(&target_date).await,
+        }
+    });
+    let result = super::indicators::animate_page_during_task_with_grace(
+        params.current_page,
+        search_handle,
+        Some(search_message),
+        super::indicators::SEARCH_LOADING_GRACE,
+    )
+    .await
+    .unwrap_or_else(|join_error| {
+        tracing::error!("Date search task failed: {join_error}");
+        None
+    });
+
+    // The search awaited every fetch it made, so their cache writes are done
+    // and the refresh can start right away.
+    if let Some(date) = result {
+        tracing::info!("Navigated to {label} date: {date}");
+        *params.current_date = Some(date);
+        *params.needs_refresh = true;
+    } else {
+        tracing::warn!("No {label} date with games found");
+    }
+
+    // Hide the loading indicator and repaint to erase it, if it was shown
+    if let Some(page) = params.current_page.as_mut()
+        && page.is_loading_indicator_active()
+    {
+        page.hide_loading();
+        *params.needs_render = true;
+    }
+    *params.last_date_navigation = Instant::now();
+}
+
 /// Handle keyboard events
 pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<bool, AppError> {
     // Only handle key press events, ignore Release/Repeat to prevent double-toggling on Windows
@@ -487,108 +550,9 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
 
     // Check for date navigation first (Shift + Arrow keys)
     if !is_non_game_view && is_date_navigation_key(params.key_event, true) {
-        // Shift + Left: Previous date with games
-        if params.last_date_navigation.elapsed() >= Duration::from_millis(250) {
-            tracing::info!("Previous date navigation requested");
-            tracing::debug!("Current date state: {:?}", params.current_date);
-            let target_date = get_target_date_for_navigation(params.current_date);
-
-            tracing::info!(
-                "Searching for previous date with games from: {}",
-                target_date
-            );
-
-            // Search in a background task; a loading spinner appears (and
-            // animates) only if the search outlasts the grace period
-            let search_handle =
-                tokio::task::spawn(
-                    async move { find_previous_date_with_games(&target_date).await },
-                );
-            let result = super::indicators::animate_page_during_task_with_grace(
-                params.current_page,
-                search_handle,
-                Some("Etsitään edellisiä otteluita..."),
-                super::indicators::SEARCH_LOADING_GRACE,
-            )
-            .await
-            .unwrap_or_else(|join_error| {
-                tracing::error!("Date search task failed: {join_error}");
-                None
-            });
-
-            if let Some(prev_date) = result {
-                *params.current_date = Some(prev_date.clone());
-
-                // Small delay to ensure all cache writes (especially roster data from concurrent fetches)
-                // are fully committed to the cache before triggering the refresh that renders the page.
-                // This prevents "Pelaaja <number>" from appearing for games whose rosters haven't
-                // been fully cached yet from the concurrent fetch operations (3 games at a time).
-                tokio::time::sleep(Duration::from_millis(100)).await;
-
-                *params.needs_refresh = true;
-                tracing::info!("Navigated to previous date: {prev_date}");
-            } else {
-                tracing::warn!("No previous date with games found");
-            }
-
-            // Hide the loading indicator and repaint to erase it, if it was shown
-            if let Some(page) = params.current_page.as_mut()
-                && page.is_loading_indicator_active()
-            {
-                page.hide_loading();
-                *params.needs_render = true;
-            }
-            *params.last_date_navigation = Instant::now();
-        }
+        navigate_to_date_with_games(&mut params, DateDirection::Previous).await;
     } else if !is_non_game_view && is_date_navigation_key(params.key_event, false) {
-        // Shift + Right: Next date with games
-        if params.last_date_navigation.elapsed() >= Duration::from_millis(250) {
-            tracing::info!("Next date navigation requested");
-            tracing::debug!("Current date state: {:?}", params.current_date);
-            let target_date = get_target_date_for_navigation(params.current_date);
-
-            tracing::info!("Searching for next date with games from: {target_date}");
-
-            // Search in a background task; a loading spinner appears (and
-            // animates) only if the search outlasts the grace period
-            let search_handle =
-                tokio::task::spawn(async move { find_next_date_with_games(&target_date).await });
-            let result = super::indicators::animate_page_during_task_with_grace(
-                params.current_page,
-                search_handle,
-                Some("Etsitään seuraavia otteluita..."),
-                super::indicators::SEARCH_LOADING_GRACE,
-            )
-            .await
-            .unwrap_or_else(|join_error| {
-                tracing::error!("Date search task failed: {join_error}");
-                None
-            });
-
-            if let Some(next_date) = result {
-                *params.current_date = Some(next_date.clone());
-
-                // Small delay to ensure all cache writes (especially roster data from concurrent fetches)
-                // are fully committed to the cache before triggering the refresh that renders the page.
-                // This prevents "Pelaaja <number>" from appearing for games whose rosters haven't
-                // been fully cached yet from the concurrent fetch operations (3 games at a time).
-                tokio::time::sleep(Duration::from_millis(100)).await;
-
-                *params.needs_refresh = true;
-                tracing::info!("Navigated to next date: {next_date}");
-            } else {
-                tracing::warn!("No next date with games found");
-            }
-
-            // Hide the loading indicator and repaint to erase it, if it was shown
-            if let Some(page) = params.current_page.as_mut()
-                && page.is_loading_indicator_active()
-            {
-                page.hide_loading();
-                *params.needs_render = true;
-            }
-            *params.last_date_navigation = Instant::now();
-        }
+        navigate_to_date_with_games(&mut params, DateDirection::Next).await;
     } else {
         // Handle regular key events (without modifiers)
         match params.key_event.code {
