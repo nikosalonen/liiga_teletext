@@ -37,25 +37,10 @@ impl TeletextPage {
     ///     CompactModeValidation::CompatibleWithWarnings { warnings } => {
     ///         println!("Compact mode works but with warnings: {:?}", warnings);
     ///     }
-    ///     CompactModeValidation::Incompatible { issues } => {
-    ///         println!("Compact mode not compatible: {:?}", issues);
-    ///     }
     /// }
     /// ```
     pub fn validate_compact_mode_compatibility(&self) -> CompactModeValidation {
-        let issues: Vec<String> = Vec::new();
-        let mut warnings: Vec<String> = Vec::new();
-
-        // Loading indicators and auto-refresh indicators work fine in compact mode
-        // No need for warnings anymore
-
-        // Season countdown is now properly handled - suppressed when compact mode is enabled
-        // No need for warning anymore
-
-        // Future games headers are now properly supported in compact mode
-        // No need for warning anymore
-
-        // Check if we have many games (compact mode might be crowded)
+        // Many games can make compact mode crowded
         let game_count = self
             .content_rows
             .iter()
@@ -63,13 +48,11 @@ impl TeletextPage {
             .count();
 
         if game_count > 20 {
-            warnings.push("Many games detected - compact mode may be crowded".to_string());
-        }
-
-        if issues.is_empty() && warnings.is_empty() {
-            CompactModeValidation::Compatible
+            CompactModeValidation::CompatibleWithWarnings {
+                warnings: vec!["Many games detected - compact mode may be crowded".to_string()],
+            }
         } else {
-            CompactModeValidation::CompatibleWithWarnings { warnings }
+            CompactModeValidation::Compatible
         }
     }
 

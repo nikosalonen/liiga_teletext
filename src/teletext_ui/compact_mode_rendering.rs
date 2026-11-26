@@ -28,11 +28,7 @@ impl TeletextPage {
         let validation = config.validate_terminal_width(width);
 
         match validation {
-            TerminalWidthValidation::Sufficient {
-                current_width: _,
-                required_width: _,
-                excess: _,
-            } => {
+            TerminalWidthValidation::Sufficient => {
                 // Terminal is wide enough for compact mode
                 let compact_lines =
                     self.group_games_for_compact_display(visible_rows, &config, width);

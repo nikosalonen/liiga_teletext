@@ -32,12 +32,7 @@ pub async fn run_interactive_ui(
     // Initialize all state through the state manager
     let mut state = InteractiveState::new(date);
 
-    // Create event handler with appropriate configuration
-    let event_handler = if debug_mode {
-        EventHandler::for_debug()
-    } else {
-        EventHandler::new()
-    };
+    let event_handler = EventHandler::new();
 
     // Create refresh coordinator
     let mut refresh_coordinator = RefreshCoordinator::new();

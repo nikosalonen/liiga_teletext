@@ -615,18 +615,10 @@ async fn test_compact_mode_terminal_width_constraints() {
 
     // Test sufficient width
     let validation = config.validate_terminal_width(80);
-    match validation {
-        TerminalWidthValidation::Sufficient {
-            current_width,
-            required_width,
-            excess,
-        } => {
-            assert_eq!(current_width, 80);
-            assert_eq!(required_width, 18);
-            assert_eq!(excess, 62);
-        }
-        _ => panic!("Expected sufficient validation"),
-    }
+    assert!(
+        matches!(validation, TerminalWidthValidation::Sufficient),
+        "Expected sufficient validation"
+    );
 
     // Test insufficient width
     let validation = config.validate_terminal_width(10);
@@ -645,18 +637,10 @@ async fn test_compact_mode_terminal_width_constraints() {
 
     // Test minimum width exactly
     let validation = config.validate_terminal_width(18);
-    match validation {
-        TerminalWidthValidation::Sufficient {
-            current_width,
-            required_width,
-            excess,
-        } => {
-            assert_eq!(current_width, 18);
-            assert_eq!(required_width, 18);
-            assert_eq!(excess, 0);
-        }
-        _ => panic!("Expected sufficient validation at minimum width"),
-    }
+    assert!(
+        matches!(validation, TerminalWidthValidation::Sufficient),
+        "Expected sufficient validation at minimum width"
+    );
 }
 
 /// Test compact mode preserves teletext styling

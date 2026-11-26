@@ -40,7 +40,6 @@ pub struct RefreshResult {
     pub fetched_date: String,
     pub should_retry: bool,
     pub new_page: Option<TeletextPage>,
-    #[allow(dead_code)]
     pub needs_render: bool,
     /// True when `process_refresh_results` should skip change detection.
     /// Set for date-mismatch discards (to avoid clearing game state),
@@ -254,16 +253,6 @@ impl RefreshCoordinator {
     pub fn new() -> Self {
         Self {
             cache_config: CacheMonitoringConfig::default(),
-            consecutive_transient_empty: 0,
-            bracket_checked: false,
-        }
-    }
-
-    /// Create a refresh coordinator with custom cache monitoring configuration
-    #[allow(dead_code)]
-    pub fn with_cache_config(cache_config: CacheMonitoringConfig) -> Self {
-        Self {
-            cache_config,
             consecutive_transient_empty: 0,
             bracket_checked: false,
         }
@@ -1368,18 +1357,6 @@ mod tests {
         assert_eq!(
             coordinator.cache_config.cache_monitor_interval,
             Duration::from_secs(300)
-        );
-    }
-
-    #[test]
-    fn test_refresh_coordinator_with_cache_config() {
-        let custom_config = CacheMonitoringConfig {
-            cache_monitor_interval: Duration::from_secs(600),
-        };
-        let coordinator = RefreshCoordinator::with_cache_config(custom_config);
-        assert_eq!(
-            coordinator.cache_config.cache_monitor_interval,
-            Duration::from_secs(600)
         );
     }
 
