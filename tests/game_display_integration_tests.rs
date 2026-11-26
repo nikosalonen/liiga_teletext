@@ -12,7 +12,7 @@
 use liiga_teletext::data_fetcher::GoalEventData;
 use liiga_teletext::data_fetcher::models::GameData;
 use liiga_teletext::teletext_ui::CONTENT_MARGIN;
-use liiga_teletext::teletext_ui::layout::{AlignmentCalculator, ColumnLayoutManager};
+use liiga_teletext::teletext_ui::layout::ColumnLayoutManager;
 use liiga_teletext::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use liiga_teletext::testing_utils::TestDataBuilder;
 #[allow(unused_imports)]
@@ -99,38 +99,6 @@ async fn test_complete_game_display_with_layout_calculation() {
     assert!(layout_config.max_player_name_width >= 10); // Should accommodate content
     assert!(layout_config.max_goal_types_width >= 2); // Should accommodate goal types
 
-    // Test alignment calculator with the layout
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let play_icon_positions =
-        alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-
-    // Verify play icon positions are consistent
-    assert_eq!(play_icon_positions.len(), 4); // 3 + 0 + 1 goal events
-    for position in &play_icon_positions {
-        assert_eq!(
-            position.column_position, layout_config.play_icon_column,
-            "All play icons should be aligned to the same column"
-        );
-    }
-
-    // Test goal type positioning
-    let all_events: Vec<_> = games.iter().flat_map(|g| &g.goal_events).cloned().collect();
-    let goal_type_positions =
-        alignment_calculator.calculate_goal_type_positions(&all_events, &layout_config);
-
-    // Verify no overflow into away team area (column 44+)
-    for position in &goal_type_positions {
-        let end_position = position.column_position + position.goal_types.len();
-        assert!(
-            end_position <= 43,
-            "Goal type '{}' at position {} would end at {} (overflow past column 43)",
-            position.goal_types,
-            position.column_position,
-            end_position
-        );
-        assert!(alignment_calculator.validate_no_overflow(position, &layout_config));
-    }
-
     println!("✓ Complete game display with layout calculation works correctly");
 }
 
@@ -172,30 +140,6 @@ async fn test_ansi_positioning_code_correctness() {
         expected_away_position + 20
     );
 
-    // Test alignment calculator positioning
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let play_icon_positions =
-        alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-
-    assert_eq!(play_icon_positions.len(), 1);
-    assert_eq!(
-        play_icon_positions[0].column_position, layout_config.play_icon_column,
-        "Play icon should be positioned at calculated column"
-    );
-
-    // Test goal type positioning to ensure no overflow
-    let goal_type_positions =
-        alignment_calculator.calculate_goal_type_positions(&games[0].goal_events, &layout_config);
-
-    assert_eq!(goal_type_positions.len(), 1);
-    let goal_type_end =
-        goal_type_positions[0].column_position + goal_type_positions[0].goal_types.len();
-    assert!(
-        goal_type_end <= 43,
-        "Goal type should not overflow past column 43 (ends at {})",
-        goal_type_end
-    );
-
     // Verify time and score columns are within terminal bounds
     assert!(
         layout_config.time_column < 80,
@@ -209,171 +153,6 @@ async fn test_ansi_positioning_code_correctness() {
     );
 
     println!("✓ ANSI positioning calculations are correct for layout system");
-}
-
-/// Test play icon alignment consistency across multiple games
-#[tokio::test]
-async fn test_play_icon_alignment_consistency() {
-    // Create games with different player name lengths to test alignment
-    let games = vec![
-        create_test_game_data(
-            "HIFK",
-            "Tappara",
-            vec![
-                create_test_goal_event(
-                    "X", // Very short name
-                    vec!["YV".to_string()],
-                    true,
-                    Some("https://example.com/video1.mp4".to_string()),
-                ),
-                create_test_goal_event(
-                    "Very Long Player Name Here", // Long name
-                    vec!["IM".to_string()],
-                    true,
-                    Some("https://example.com/video2.mp4".to_string()),
-                ),
-            ],
-            ScoreType::Final,
-        ),
-        create_test_game_data(
-            "Kärpät",
-            "Lukko",
-            vec![create_test_goal_event(
-                "Medium Name", // Medium length name
-                vec!["TM".to_string()],
-                true,
-                Some("https://example.com/video3.mp4".to_string()),
-            )],
-            ScoreType::Final,
-        ),
-    ];
-
-    // Test layout calculation and alignment
-    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-    let layout_config = layout_manager.calculate_layout(&games);
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let play_icon_positions =
-        alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-
-    // Verify all play icons are aligned to the same column
-    assert_eq!(play_icon_positions.len(), 3);
-    let expected_column = layout_config.play_icon_column;
-
-    for (i, position) in play_icon_positions.iter().enumerate() {
-        assert_eq!(
-            position.column_position, expected_column,
-            "Play icon {} should be at column {} but was at {}",
-            i, expected_column, position.column_position
-        );
-        assert!(
-            position.has_video_link,
-            "All test events should have video links"
-        );
-    }
-
-    // Test dynamic spacing calculation
-    let short_name_spacing = layout_manager.calculate_dynamic_spacing(1, &layout_config); // "X"
-    let long_name_spacing = layout_manager.calculate_dynamic_spacing(25, &layout_config); // "Very Long Player Name Here"
-    let medium_name_spacing = layout_manager.calculate_dynamic_spacing(11, &layout_config); // "Medium Name"
-
-    // Short names should get more spacing, long names should get minimum spacing
-    assert!(
-        short_name_spacing > long_name_spacing,
-        "Short names should get more spacing ({}) than long names ({})",
-        short_name_spacing,
-        long_name_spacing
-    );
-    assert!(
-        medium_name_spacing > long_name_spacing,
-        "Medium names should get more spacing ({}) than long names ({})",
-        medium_name_spacing,
-        long_name_spacing
-    );
-    assert!(
-        long_name_spacing >= 1,
-        "Long names should still get minimum spacing ({})",
-        long_name_spacing
-    );
-
-    println!("✓ Play icon alignment consistency maintained across different name lengths");
-}
-
-/// Test goal type positioning and overflow prevention
-#[tokio::test]
-async fn test_goal_type_positioning_and_overflow_prevention() {
-    // Create goal events with various goal type combinations
-    let goal_events = vec![
-        create_test_goal_event("Player A", vec!["YV".to_string()], true, None), // 2 chars
-        create_test_goal_event(
-            "Player B",
-            vec!["YV".to_string(), "IM".to_string()],
-            true,
-            None,
-        ), // 5 chars
-        create_test_goal_event(
-            "Player C",
-            vec!["YV".to_string(), "IM".to_string(), "TM".to_string()],
-            true,
-            None,
-        ), // 8 chars
-        create_test_goal_event("Very Long Player Name", vec!["VT".to_string()], true, None), // Long name + goal type
-        create_test_goal_event(
-            "Another Long Name Here",
-            vec!["YV".to_string(), "IM".to_string()],
-            true,
-            None,
-        ), // Long name + multiple types
-    ];
-
-    let game = create_test_game_data("HIFK", "Tappara", goal_events.clone(), ScoreType::Final);
-    let games = vec![game];
-
-    // Test layout and positioning
-    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-    let layout_config = layout_manager.calculate_layout(&games);
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let goal_type_positions =
-        alignment_calculator.calculate_goal_type_positions(&goal_events, &layout_config);
-
-    // Verify no overflow past column 43 (away team starts at 44)
-    for (i, position) in goal_type_positions.iter().enumerate() {
-        let end_position = position.column_position + position.goal_types.len();
-        assert!(
-            end_position <= 43,
-            "Goal type {} '{}' at position {} ends at {} (overflow past column 43)",
-            i,
-            position.goal_types,
-            position.column_position,
-            end_position
-        );
-
-        // Verify overflow validation works
-        assert!(
-            alignment_calculator.validate_no_overflow(position, &layout_config),
-            "Goal type {} should pass overflow validation",
-            i
-        );
-
-        // Verify goal types are not empty (except for events with no goal types)
-        if !goal_events[position.event_index].goal_types.is_empty() {
-            assert!(
-                !position.goal_types.is_empty(),
-                "Goal type {} should not be empty when source event has goal types",
-                i
-            );
-        }
-    }
-
-    // Test goal type validation
-    for goal_type_pos in &goal_type_positions {
-        assert!(
-            layout_manager.validate_goal_types_fit(&goal_type_pos.goal_types, &layout_config),
-            "Goal type '{}' should fit within allocated space",
-            goal_type_pos.goal_types
-        );
-    }
-
-    println!("✓ Goal type positioning prevents overflow and validates correctly");
 }
 
 /// Test complete game display scenarios through layout validation
@@ -470,38 +249,6 @@ async fn test_complete_game_display_scenarios_normal_mode() {
             scenario_name
         );
 
-        // Test alignment calculations
-        let mut alignment_calculator = AlignmentCalculator::new();
-        let play_icon_positions =
-            alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-        let goal_type_positions = alignment_calculator
-            .calculate_goal_type_positions(&game_data.goal_events, &layout_config);
-
-        // Verify play icon alignment
-        for position in &play_icon_positions {
-            assert_eq!(
-                position.column_position, layout_config.play_icon_column,
-                "Play icons should be aligned consistently for scenario: {}",
-                scenario_name
-            );
-        }
-
-        // Verify goal type positioning prevents overflow
-        for position in &goal_type_positions {
-            let end_position = position.column_position + position.goal_types.len();
-            assert!(
-                end_position <= 43,
-                "Goal types should not overflow for scenario: {} (ends at {})",
-                scenario_name,
-                end_position
-            );
-            assert!(
-                alignment_calculator.validate_no_overflow(position, &layout_config),
-                "Goal type overflow validation should pass for scenario: {}",
-                scenario_name
-            );
-        }
-
         // Create page and verify it can be created successfully
         let mut page = TeletextPage::new(
             221,
@@ -581,30 +328,6 @@ async fn test_complete_game_display_scenarios_wide_mode() {
         layout_config.score_column > layout_config.time_column,
         "Score column should be after time column in wide mode"
     );
-
-    // Test alignment calculations for wide mode
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let play_icon_positions =
-        alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-    let all_goal_events: Vec<_> = games.iter().flat_map(|g| &g.goal_events).cloned().collect();
-    let goal_type_positions =
-        alignment_calculator.calculate_goal_type_positions(&all_goal_events, &layout_config);
-
-    // Verify play icon alignment consistency in wide mode
-    for position in &play_icon_positions {
-        assert_eq!(
-            position.column_position, layout_config.play_icon_column,
-            "Play icons should be aligned consistently in wide mode"
-        );
-    }
-
-    // Verify goal type positioning in wide mode
-    for position in &goal_type_positions {
-        assert!(
-            alignment_calculator.validate_no_overflow(position, &layout_config),
-            "Goal types should not overflow in wide mode"
-        );
-    }
 
     // Create wide mode page
     let mut page = TeletextPage::new(
@@ -732,23 +455,6 @@ async fn test_layout_system_integration_different_widths() {
             width
         );
 
-        // Test alignment calculator with this layout
-        let mut alignment_calculator = AlignmentCalculator::new();
-        let play_icon_positions =
-            alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-        let goal_type_positions = alignment_calculator
-            .calculate_goal_type_positions(&games[0].goal_events, &layout_config);
-
-        // Verify positioning is valid
-        assert_eq!(play_icon_positions.len(), 1);
-        assert_eq!(
-            play_icon_positions[0].column_position,
-            layout_config.play_icon_column
-        );
-
-        assert_eq!(goal_type_positions.len(), 1);
-        assert!(alignment_calculator.validate_no_overflow(&goal_type_positions[0], &layout_config));
-
         println!(
             "✓ Layout system works correctly with terminal width {}",
             width
@@ -871,30 +577,6 @@ async fn test_wide_mode_rendering_with_layout_system() {
         "Separator width should be 3 or 5 (got {})",
         wide_layout_config.separator_width
     );
-
-    // Test alignment calculations for wide mode
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let play_icon_positions =
-        alignment_calculator.calculate_play_icon_positions(&games, &wide_layout_config);
-    let all_goal_events: Vec<_> = games.iter().flat_map(|g| &g.goal_events).cloned().collect();
-    let goal_type_positions =
-        alignment_calculator.calculate_goal_type_positions(&all_goal_events, &wide_layout_config);
-
-    // Verify play icon alignment consistency in wide mode
-    for position in &play_icon_positions {
-        assert_eq!(
-            position.column_position, wide_layout_config.play_icon_column,
-            "Play icons should be aligned consistently in wide mode"
-        );
-    }
-
-    // Verify goal type positioning doesn't overflow in wide mode
-    for position in &goal_type_positions {
-        assert!(
-            alignment_calculator.validate_no_overflow(position, &wide_layout_config),
-            "Goal types should not overflow in wide mode"
-        );
-    }
 
     // Test that the page can be created and configured correctly for wide mode rendering
     // The actual rendering is tested through the layout system components above
@@ -1036,22 +718,6 @@ async fn test_wide_mode_backward_compatibility() {
         wide_layout.play_icon_column > 39,
         "Wide layout should position play icons correctly"
     ); // Adjusted for narrower columns
-
-    // Test alignment calculations work for both modes
-    let mut alignment_calculator = AlignmentCalculator::new();
-
-    let normal_play_positions =
-        alignment_calculator.calculate_play_icon_positions(&legacy_scenarios, &normal_layout);
-    let wide_play_positions =
-        alignment_calculator.calculate_play_icon_positions(&legacy_scenarios, &wide_layout);
-
-    // Both should produce consistent alignment within their respective modes
-    for position in &normal_play_positions {
-        assert_eq!(position.column_position, normal_layout.play_icon_column);
-    }
-    for position in &wide_play_positions {
-        assert_eq!(position.column_position, wide_layout.play_icon_column);
-    }
 
     // Test that color schemes and visual standards are preserved
     // (This is implicit in the layout calculations - if they work, colors should work too)
@@ -1207,44 +873,6 @@ async fn test_wide_mode_layout_integration_different_game_types() {
         wide_layout_config.max_goal_types_width
     );
 
-    // Test alignment calculations with diverse content
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let play_icon_positions =
-        alignment_calculator.calculate_play_icon_positions(&games, &wide_layout_config);
-    let all_goal_events: Vec<_> = games.iter().flat_map(|g| &g.goal_events).cloned().collect();
-    let goal_type_positions =
-        alignment_calculator.calculate_goal_type_positions(&all_goal_events, &wide_layout_config);
-
-    // Verify consistent alignment across different game types
-    for position in &play_icon_positions {
-        assert_eq!(
-            position.column_position, wide_layout_config.play_icon_column,
-            "Play icons should be consistently aligned across different game types"
-        );
-    }
-
-    // Verify goal type positioning handles different content lengths
-    for position in &goal_type_positions {
-        assert!(
-            alignment_calculator.validate_no_overflow(position, &wide_layout_config),
-            "Goal types should not overflow regardless of content complexity"
-        );
-
-        // Verify goal types are properly formatted
-        if !position.goal_types.is_empty() {
-            // Note: Some goal type combinations may exceed the allocated width,
-            // but the overflow prevention should handle this gracefully
-            if position.goal_types.len() > wide_layout_config.max_goal_types_width {
-                println!(
-                    "Goal types '{}' ({} chars) exceed allocated width {} - overflow prevention should handle this",
-                    position.goal_types,
-                    position.goal_types.len(),
-                    wide_layout_config.max_goal_types_width
-                );
-            }
-        }
-    }
-
     // Test page creation and game distribution with diverse content
     let mut page = TeletextPage::new(
         221,
@@ -1332,52 +960,9 @@ async fn test_wide_mode_play_icon_alignment() {
     // Test normal mode layout and alignment
     let normal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let normal_layout_config = normal_layout_manager.calculate_layout(&games);
-    let mut normal_alignment_calculator = AlignmentCalculator::new();
-    let normal_play_icon_positions =
-        normal_alignment_calculator.calculate_play_icon_positions(&games, &normal_layout_config);
-
     // Test wide mode layout and alignment using wide mode column width (60 chars)
     let wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
     let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games);
-    let mut wide_alignment_calculator = AlignmentCalculator::new();
-    let wide_play_icon_positions =
-        wide_alignment_calculator.calculate_play_icon_positions(&games, &wide_layout_config);
-
-    // Verify play icon alignment consistency within normal mode
-    let normal_expected_column = normal_layout_config.play_icon_column;
-    for (i, position) in normal_play_icon_positions.iter().enumerate() {
-        assert_eq!(
-            position.column_position, normal_expected_column,
-            "Normal mode: Play icon {} should be at column {} but was at {}",
-            i, normal_expected_column, position.column_position
-        );
-        assert!(
-            position.has_video_link,
-            "All test events should have video links"
-        );
-    }
-
-    // Verify play icon alignment consistency within wide mode
-    let wide_expected_column = wide_layout_config.play_icon_column;
-    for (i, position) in wide_play_icon_positions.iter().enumerate() {
-        assert_eq!(
-            position.column_position, wide_expected_column,
-            "Wide mode: Play icon {} should be at column {} but was at {}",
-            i, wide_expected_column, position.column_position
-        );
-        assert!(
-            position.has_video_link,
-            "All test events should have video links"
-        );
-    }
-
-    // Verify both modes have the same number of play icons
-    assert_eq!(
-        normal_play_icon_positions.len(),
-        wide_play_icon_positions.len(),
-        "Both modes should have the same number of play icons"
-    );
-
     // Test that wide mode uses appropriate column positioning for narrower columns
     // Wide mode columns are narrower, so play icon column should be positioned differently
     assert!(
@@ -1386,30 +971,6 @@ async fn test_wide_mode_play_icon_alignment() {
         wide_layout_config.play_icon_column,
         normal_layout_config.play_icon_column
     );
-
-    // Test goal type positioning consistency in both modes
-    let all_goal_events: Vec<_> = games.iter().flat_map(|g| &g.goal_events).cloned().collect();
-    let normal_goal_type_positions = normal_alignment_calculator
-        .calculate_goal_type_positions(&all_goal_events, &normal_layout_config);
-    let wide_goal_type_positions = wide_alignment_calculator
-        .calculate_goal_type_positions(&all_goal_events, &wide_layout_config);
-
-    // Verify no overflow in either mode
-    for position in &normal_goal_type_positions {
-        assert!(
-            normal_alignment_calculator.validate_no_overflow(position, &normal_layout_config),
-            "Normal mode: Goal type '{}' should not overflow",
-            position.goal_types
-        );
-    }
-
-    for position in &wide_goal_type_positions {
-        assert!(
-            wide_alignment_calculator.validate_no_overflow(position, &wide_layout_config),
-            "Wide mode: Goal type '{}' should not overflow",
-            position.goal_types
-        );
-    }
 
     println!("✓ Play icon alignment is consistent in both normal and wide modes");
 }
@@ -1451,20 +1012,6 @@ async fn test_wide_mode_play_icon_alignment_different_column_widths() {
 
         let layout_manager = ColumnLayoutManager::new_for_wide_mode_column(width, CONTENT_MARGIN);
         let layout_config = layout_manager.calculate_wide_mode_layout(&games);
-        let mut alignment_calculator = AlignmentCalculator::new();
-        let play_icon_positions =
-            alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-
-        // Verify all play icons are aligned consistently within this column width
-        let expected_column = layout_config.play_icon_column;
-        for (i, position) in play_icon_positions.iter().enumerate() {
-            assert_eq!(
-                position.column_position, expected_column,
-                "Width {}: Play icon {} should be at column {} but was at {}",
-                width, i, expected_column, position.column_position
-            );
-        }
-
         // Verify play icon column is positioned reasonably within the column width
         assert!(
             layout_config.play_icon_column < width,
@@ -1493,191 +1040,6 @@ async fn test_wide_mode_play_icon_alignment_different_column_widths() {
     }
 
     println!("✓ Play icon alignment is consistent across different wide mode column widths");
-}
-
-/// Test wide mode vs normal mode play icon alignment comparison
-/// Requirements: 1.4 - Ensure play icons align correctly in wide mode and maintain consistency with normal mode principles
-#[tokio::test]
-async fn test_wide_mode_vs_normal_mode_play_icon_consistency() {
-    // Create games with diverse content to test alignment robustness
-    let games = vec![
-        create_test_game_data(
-            "HIFK",
-            "Tappara",
-            vec![
-                create_test_goal_event(
-                    "A", // Very short name
-                    vec!["YV".to_string()],
-                    true,
-                    Some("https://example.com/video1.mp4".to_string()),
-                ),
-                create_test_goal_event(
-                    "Extremely Long Player Name That Tests Limits", // Very long name
-                    vec!["YV".to_string(), "IM".to_string(), "TM".to_string()],
-                    true,
-                    Some("https://example.com/video2.mp4".to_string()),
-                ),
-            ],
-            ScoreType::Final,
-        ),
-        create_test_game_data(
-            "Kärpät",
-            "Lukko",
-            vec![create_test_goal_event(
-                "Regular Name", // Regular length name
-                vec!["AV".to_string()],
-                false,
-                Some("https://example.com/video3.mp4".to_string()),
-            )],
-            ScoreType::Ongoing,
-        ),
-        create_test_game_data("JYP", "Ilves", vec![], ScoreType::Scheduled), // No goals
-    ];
-
-    // Test normal mode (80 char terminal)
-    let normal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-    let normal_layout_config = normal_layout_manager.calculate_layout(&games);
-    let mut normal_alignment_calculator = AlignmentCalculator::new();
-    let normal_play_icon_positions =
-        normal_alignment_calculator.calculate_play_icon_positions(&games, &normal_layout_config);
-
-    // Test wide mode (60 char column)
-    let wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
-    let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games);
-    let mut wide_alignment_calculator = AlignmentCalculator::new();
-    let wide_play_icon_positions =
-        wide_alignment_calculator.calculate_play_icon_positions(&games, &wide_layout_config);
-
-    // Both modes should have the same number of play icons (3 goal events)
-    assert_eq!(
-        normal_play_icon_positions.len(),
-        3,
-        "Normal mode should have 3 play icon positions"
-    );
-    assert_eq!(
-        wide_play_icon_positions.len(),
-        3,
-        "Wide mode should have 3 play icon positions"
-    );
-
-    // Verify internal consistency within each mode
-    let normal_column = normal_layout_config.play_icon_column;
-    for position in &normal_play_icon_positions {
-        assert_eq!(
-            position.column_position, normal_column,
-            "Normal mode: All play icons should be at column {}",
-            normal_column
-        );
-    }
-
-    let wide_column = wide_layout_config.play_icon_column;
-    for position in &wide_play_icon_positions {
-        assert_eq!(
-            position.column_position, wide_column,
-            "Wide mode: All play icons should be at column {}",
-            wide_column
-        );
-    }
-
-    // Verify that both modes handle the same game/event indices correctly
-    for i in 0..3 {
-        assert_eq!(
-            normal_play_icon_positions[i].game_index, wide_play_icon_positions[i].game_index,
-            "Position {}: Both modes should reference the same game index",
-            i
-        );
-        assert_eq!(
-            normal_play_icon_positions[i].event_index, wide_play_icon_positions[i].event_index,
-            "Position {}: Both modes should reference the same event index",
-            i
-        );
-        assert_eq!(
-            normal_play_icon_positions[i].has_video_link,
-            wide_play_icon_positions[i].has_video_link,
-            "Position {}: Both modes should have the same video link status",
-            i
-        );
-    }
-
-    // Test dynamic spacing calculations for both modes
-    let short_name_length = 1; // "A"
-    let long_name_length = 42; // "Extremely Long Player Name That Tests Limits"
-    let regular_name_length = 12; // "Regular Name"
-
-    let normal_short_spacing =
-        normal_layout_manager.calculate_dynamic_spacing(short_name_length, &normal_layout_config);
-    let normal_long_spacing =
-        normal_layout_manager.calculate_dynamic_spacing(long_name_length, &normal_layout_config);
-    let normal_regular_spacing =
-        normal_layout_manager.calculate_dynamic_spacing(regular_name_length, &normal_layout_config);
-
-    let wide_short_spacing =
-        wide_layout_manager.calculate_dynamic_spacing(short_name_length, &wide_layout_config);
-    let wide_long_spacing =
-        wide_layout_manager.calculate_dynamic_spacing(long_name_length, &wide_layout_config);
-    let wide_regular_spacing =
-        wide_layout_manager.calculate_dynamic_spacing(regular_name_length, &wide_layout_config);
-
-    // Both modes should provide minimum spacing for long names
-    assert_eq!(
-        normal_long_spacing, 1,
-        "Normal mode should provide minimum spacing for long names"
-    );
-    assert_eq!(
-        wide_long_spacing, 1,
-        "Wide mode should provide minimum spacing for long names"
-    );
-
-    // Both modes should provide more spacing for shorter names
-    assert!(
-        normal_short_spacing > normal_long_spacing,
-        "Normal mode should provide more spacing for short names"
-    );
-    assert!(
-        wide_short_spacing > wide_long_spacing,
-        "Wide mode should provide more spacing for short names"
-    );
-    assert!(
-        normal_regular_spacing > normal_long_spacing,
-        "Normal mode should provide more spacing for regular names"
-    );
-    assert!(
-        wide_regular_spacing > wide_long_spacing,
-        "Wide mode should provide more spacing for regular names"
-    );
-
-    // Test goal type positioning consistency
-    let all_goal_events: Vec<_> = games.iter().flat_map(|g| &g.goal_events).cloned().collect();
-    let normal_goal_type_positions = normal_alignment_calculator
-        .calculate_goal_type_positions(&all_goal_events, &normal_layout_config);
-    let wide_goal_type_positions = wide_alignment_calculator
-        .calculate_goal_type_positions(&all_goal_events, &wide_layout_config);
-
-    // Both modes should handle the same number of goal events
-    assert_eq!(
-        normal_goal_type_positions.len(),
-        wide_goal_type_positions.len(),
-        "Both modes should handle the same number of goal events"
-    );
-
-    // Both modes should prevent overflow
-    for position in &normal_goal_type_positions {
-        assert!(
-            normal_alignment_calculator.validate_no_overflow(position, &normal_layout_config),
-            "Normal mode: Goal type '{}' should not overflow",
-            position.goal_types
-        );
-    }
-
-    for position in &wide_goal_type_positions {
-        assert!(
-            wide_alignment_calculator.validate_no_overflow(position, &wide_layout_config),
-            "Wide mode: Goal type '{}' should not overflow",
-            position.goal_types
-        );
-    }
-
-    println!("✓ Wide mode and normal mode maintain consistent play icon alignment principles");
 }
 
 /// Test error handling in game display layout calculations
@@ -1769,36 +1131,6 @@ async fn test_game_display_error_handling() {
             i + 1
         );
 
-        // Test alignment calculations with edge case data
-        let mut alignment_calculator = AlignmentCalculator::new();
-        let play_icon_positions =
-            alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-        let goal_type_positions =
-            alignment_calculator.calculate_goal_type_positions(&game.goal_events, &layout_config);
-
-        // Alignment calculations should handle edge cases gracefully
-        assert_eq!(
-            play_icon_positions.len(),
-            game.goal_events.len(),
-            "Should have play icon position for each goal event in game {}",
-            i + 1
-        );
-        assert_eq!(
-            goal_type_positions.len(),
-            game.goal_events.len(),
-            "Should have goal type position for each goal event in game {}",
-            i + 1
-        );
-
-        // Verify overflow prevention still works with edge cases
-        for position in &goal_type_positions {
-            assert!(
-                alignment_calculator.validate_no_overflow(position, &layout_config),
-                "Overflow validation should pass even with edge case data for game {}",
-                i + 1
-            );
-        }
-
         // Test page creation with edge case data
         let mut page = TeletextPage::new(
             221,
@@ -1854,22 +1186,8 @@ async fn test_game_display_layout_performance() {
     // Test layout calculation performance
     let layout_start = Instant::now();
     let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
-    let layout_config = layout_manager.calculate_layout(&games);
+    let _layout_config = layout_manager.calculate_layout(&games);
     let layout_duration = layout_start.elapsed();
-
-    // Test alignment calculation performance
-    let alignment_start = Instant::now();
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let play_icon_positions =
-        alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-    let alignment_duration = alignment_start.elapsed();
-
-    // Test goal type positioning performance
-    let goal_type_start = Instant::now();
-    let all_goal_events: Vec<_> = games.iter().flat_map(|g| &g.goal_events).cloned().collect();
-    let goal_type_positions =
-        alignment_calculator.calculate_goal_type_positions(&all_goal_events, &layout_config);
-    let goal_type_duration = goal_type_start.elapsed();
 
     // Test page creation performance
     let page_start = Instant::now();
@@ -1891,30 +1209,10 @@ async fn test_game_display_layout_performance() {
 
     let total_duration = layout_start.elapsed();
 
-    // Verify results are correct
-    assert_eq!(
-        play_icon_positions.len(),
-        games.len() * 2, // 2 goal events per game
-        "Should have calculated positions for all goal events"
-    );
-    assert_eq!(
-        goal_type_positions.len(),
-        all_goal_events.len(),
-        "Should have calculated goal type positions for all events"
-    );
-
     // Performance assertions - should complete quickly even with many games
 
     println!("✓ Game display layout performance is acceptable");
     println!("  - Layout calculation: {} ms", layout_duration.as_millis());
-    println!(
-        "  - Alignment calculation: {} ms",
-        alignment_duration.as_millis()
-    );
-    println!(
-        "  - Goal type positioning: {} ms",
-        goal_type_duration.as_millis()
-    );
     println!("  - Page creation: {} ms", page_duration.as_millis());
     println!("  - Total time: {} ms", total_duration.as_millis());
 }

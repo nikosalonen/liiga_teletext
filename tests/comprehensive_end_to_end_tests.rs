@@ -9,7 +9,7 @@
 use liiga_teletext::data_fetcher::GoalEventData;
 use liiga_teletext::data_fetcher::models::{GameData, PlayoffSeriesScore};
 use liiga_teletext::teletext_ui::CONTENT_MARGIN;
-use liiga_teletext::teletext_ui::layout::{AlignmentCalculator, ColumnLayoutManager};
+use liiga_teletext::teletext_ui::layout::ColumnLayoutManager;
 use liiga_teletext::teletext_ui::{GameResultData, ScoreType, TeletextPage};
 use liiga_teletext::testing_utils::TestDataBuilder;
 use liiga_teletext::ui::teletext::CompactModeValidation;
@@ -265,34 +265,6 @@ async fn test_layout_system_all_game_scenarios() {
         "Should accommodate goal types"
     );
 
-    // Test alignment calculations for all scenarios
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let play_icon_positions =
-        alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-
-    // Verify play icon alignment consistency across all scenarios
-    let expected_column = layout_config.play_icon_column;
-    for position in &play_icon_positions {
-        assert_eq!(
-            position.column_position, expected_column,
-            "All play icons should be aligned to the same column"
-        );
-    }
-
-    // Test goal type positioning for all scenarios
-    let all_goal_events: Vec<_> = games.iter().flat_map(|g| &g.goal_events).cloned().collect();
-    let goal_type_positions =
-        alignment_calculator.calculate_goal_type_positions(&all_goal_events, &layout_config);
-
-    // Verify no overflow for any scenario
-    for position in &goal_type_positions {
-        assert!(
-            alignment_calculator.validate_no_overflow(position, &layout_config),
-            "Goal type '{}' should not overflow",
-            position.goal_types
-        );
-    }
-
     println!("✅ Layout system test passed for all game scenarios");
 }
 
@@ -354,31 +326,6 @@ async fn test_different_terminal_sizes_comprehensive() {
             assert!(
                 layout_config.score_column > layout_config.time_column,
                 "Score column should be after time column"
-            );
-        }
-
-        // Test alignment calculations for this terminal size
-        let mut alignment_calculator = AlignmentCalculator::new();
-        let play_icon_positions =
-            alignment_calculator.calculate_play_icon_positions(&games, &layout_config);
-        let all_goal_events: Vec<_> = games.iter().flat_map(|g| &g.goal_events).cloned().collect();
-        let goal_type_positions =
-            alignment_calculator.calculate_goal_type_positions(&all_goal_events, &layout_config);
-
-        // Verify positioning works for this terminal size
-        for position in &play_icon_positions {
-            assert_eq!(
-                position.column_position, layout_config.play_icon_column,
-                "Play icons should be aligned consistently for {} width",
-                width
-            );
-        }
-
-        for position in &goal_type_positions {
-            assert!(
-                alignment_calculator.validate_no_overflow(position, &layout_config),
-                "Goal types should not overflow for {} width",
-                width
             );
         }
 
@@ -621,13 +568,6 @@ async fn test_performance_comprehensive_scenarios() {
     let _layout_config = layout_manager.calculate_layout(&games);
     let layout_duration = layout_start.elapsed();
 
-    // Test alignment calculation performance
-    let alignment_start = std::time::Instant::now();
-    let mut alignment_calculator = AlignmentCalculator::new();
-    let _play_icon_positions =
-        alignment_calculator.calculate_play_icon_positions(&games, &_layout_config);
-    let alignment_duration = alignment_start.elapsed();
-
     // Test page creation performance
     let page_start = std::time::Instant::now();
     let mut page = TeletextPage::new(
@@ -650,10 +590,6 @@ async fn test_performance_comprehensive_scenarios() {
 
     println!("✅ Performance test passed:");
     println!("  - Layout calculation: {} ms", layout_duration.as_millis());
-    println!(
-        "  - Alignment calculation: {} ms",
-        alignment_duration.as_millis()
-    );
     println!("  - Page creation: {} ms", page_duration.as_millis());
 }
 

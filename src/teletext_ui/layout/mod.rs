@@ -1,11 +1,8 @@
 // src/teletext_ui/layout/mod.rs - Layout management infrastructure for dynamic column width calculations
 
 pub mod ansi;
-mod columns;
 mod config;
 
-#[allow(unused_imports)] // Used by integration tests
-pub use columns::AlignmentCalculator;
 pub use config::{IntelligentTruncator, LayoutConfig};
 
 use crate::data_fetcher::models::GameData;
@@ -436,94 +433,6 @@ impl ColumnLayoutManager {
         }
     }
 
-    /// Gets the calculated width for home team display area
-    ///
-    /// # Arguments
-    /// * `layout` - Layout configuration
-    ///
-    /// # Returns
-    /// * `usize` - Width allocated for home team
-    #[allow(dead_code)] // Used in tests
-    pub fn get_home_team_width(&self, layout: &LayoutConfig) -> usize {
-        layout.home_team_width
-    }
-
-    /// Gets the calculated width for away team display area
-    ///
-    /// # Arguments
-    /// * `layout` - Layout configuration
-    ///
-    /// # Returns
-    /// * `usize` - Width allocated for away team
-    #[allow(dead_code)] // Used in tests
-    pub fn get_away_team_width(&self, layout: &LayoutConfig) -> usize {
-        layout.away_team_width
-    }
-
-    /// Gets the calculated column position for play icon alignment
-    ///
-    /// # Arguments
-    /// * `layout` - Layout configuration
-    ///
-    /// # Returns
-    /// * `usize` - Column position for play icons
-    #[allow(dead_code)] // Used in tests
-    pub fn get_play_icon_column(&self, layout: &LayoutConfig) -> usize {
-        layout.play_icon_column
-    }
-
-    /// Calculates dynamic spacing after player names to maintain alignment
-    ///
-    /// # Arguments
-    /// * `player_name_length` - Length of the current player name
-    /// * `layout` - Layout configuration
-    ///
-    /// # Returns
-    /// * `usize` - Number of spaces to add after player name
-    #[allow(dead_code)] // Used in tests
-    pub fn calculate_dynamic_spacing(
-        &self,
-        player_name_length: usize,
-        layout: &LayoutConfig,
-    ) -> usize {
-        if player_name_length >= layout.max_player_name_width {
-            1 // Minimum spacing
-        } else {
-            layout.max_player_name_width - player_name_length + 1
-        }
-    }
-
-    /// Validates that goal types will fit within allocated space
-    ///
-    /// # Arguments
-    /// * `goal_types` - Goal type string to validate
-    /// * `layout` - Layout configuration
-    ///
-    /// # Returns
-    /// * `bool` - True if goal types fit within allocated space
-    #[allow(dead_code)] // Used in tests
-    pub fn validate_goal_types_fit(&self, goal_types: &str, layout: &LayoutConfig) -> bool {
-        let fits = goal_types.len() <= layout.max_goal_types_width;
-
-        if !fits {
-            tracing::warn!(
-                "Goal types '{}' (length: {}) exceed allocated width of {}. May cause layout issues.",
-                goal_types,
-                goal_types.len(),
-                layout.max_goal_types_width
-            );
-        } else {
-            tracing::debug!(
-                "Goal types '{}' (length: {}) fit within allocated width of {}",
-                goal_types,
-                goal_types.len(),
-                layout.max_goal_types_width
-            );
-        }
-
-        fits
-    }
-
     /// Validates if the terminal width is sufficient for proper layout
     ///
     /// # Returns
@@ -828,7 +737,6 @@ impl ColumnLayoutManager {
 
 #[cfg(test)]
 mod tests {
-    use super::columns::GoalTypePosition;
     use super::config::{
         GameDataValidator, TerminalWidthValidation, TruncationStrategy, ValidationIssueType,
     };
@@ -979,53 +887,6 @@ mod tests {
     }
 
     #[test]
-    fn test_dynamic_spacing_calculation() {
-        let manager = ColumnLayoutManager::new(80, 2);
-        let layout = LayoutConfig {
-            max_player_name_width: 15,
-            ..Default::default()
-        };
-
-        // Short name should get more spacing
-        assert_eq!(manager.calculate_dynamic_spacing(5, &layout), 11); // 15 - 5 + 1
-
-        // Name at max width should get minimum spacing
-        assert_eq!(manager.calculate_dynamic_spacing(15, &layout), 1);
-
-        // Name longer than max should get minimum spacing
-        assert_eq!(manager.calculate_dynamic_spacing(20, &layout), 1);
-    }
-
-    #[test]
-    fn test_goal_types_validation() {
-        let manager = ColumnLayoutManager::new(80, 2);
-        let layout = LayoutConfig {
-            max_goal_types_width: 6,
-            ..Default::default()
-        };
-
-        // Short goal types should fit
-        assert!(manager.validate_goal_types_fit("YV", &layout));
-        assert!(manager.validate_goal_types_fit("YV IM", &layout));
-
-        // Goal types at limit should fit
-        assert!(manager.validate_goal_types_fit("YV IM ", &layout)); // 6 chars
-
-        // Goal types exceeding limit should not fit
-        assert!(!manager.validate_goal_types_fit("YV IM TM", &layout)); // 8 chars
-    }
-
-    #[test]
-    fn test_layout_accessors() {
-        let manager = ColumnLayoutManager::new(80, 2);
-        let layout = LayoutConfig::default();
-
-        assert_eq!(manager.get_home_team_width(&layout), 20);
-        assert_eq!(manager.get_away_team_width(&layout), 20);
-        assert_eq!(manager.get_play_icon_column(&layout), 51);
-    }
-
-    #[test]
     fn test_narrow_terminal_layout() {
         let manager = ColumnLayoutManager::new(60, 2); // Narrow terminal
 
@@ -1061,32 +922,6 @@ mod tests {
         assert_eq!(layout.home_team_width, 18);
         assert_eq!(layout.away_team_width, 18);
         assert_eq!(layout.separator_width, 3);
-    }
-
-    #[test]
-    fn test_alignment_calculator_caching() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        let goal_events = vec![create_test_goal_event(
-            "Player Name",
-            vec!["YV".to_string()],
-        )];
-        let games = vec![create_test_game_data("HIFK", "TPS", goal_events.clone())];
-
-        // First calculation should populate cache
-        let positions1 = calculator.calculate_play_icon_positions(&games, &layout);
-        let stats1 = calculator.get_cache_stats();
-        assert_eq!(stats1.play_icon_cache_size, 1);
-
-        // Second calculation with same data should use cache
-        let positions2 = calculator.calculate_play_icon_positions(&games, &layout);
-        let stats2 = calculator.get_cache_stats();
-        assert_eq!(stats2.play_icon_cache_size, 1); // Should still be 1
-
-        // Results should be identical
-        assert_eq!(positions1.len(), positions2.len());
-        assert_eq!(positions1[0].column_position, positions2[0].column_position);
     }
 
     #[test]
@@ -1387,532 +1222,6 @@ mod tests {
     }
 
     #[test]
-    fn test_alignment_calculator_creation() {
-        let _calculator = AlignmentCalculator::new();
-        // Should create successfully (no specific state to verify)
-    }
-
-    #[test]
-    fn test_play_icon_positions_calculation() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        let goal_events = vec![
-            create_test_goal_event("Player One", vec!["YV".to_string()]),
-            create_test_goal_event("Player Two", vec!["IM".to_string()]),
-        ];
-
-        let games = vec![create_test_game_data("HIFK", "TPS", goal_events)];
-        let positions = calculator.calculate_play_icon_positions(&games, &layout);
-
-        assert_eq!(positions.len(), 2);
-
-        // All positions should use the same column for alignment
-        assert_eq!(positions[0].column_position, layout.play_icon_column);
-        assert_eq!(positions[1].column_position, layout.play_icon_column);
-
-        // Should track game and event indices correctly
-        assert_eq!(positions[0].game_index, 0);
-        assert_eq!(positions[0].event_index, 0);
-        assert_eq!(positions[1].game_index, 0);
-        assert_eq!(positions[1].event_index, 1);
-    }
-
-    #[test]
-    fn test_play_icon_positions_with_video_links() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        let mut goal_event_with_video = create_test_goal_event("Player", vec!["YV".to_string()]);
-        goal_event_with_video.video_clip_url = Some("http://example.com/video".to_string());
-
-        let goal_event_without_video = create_test_goal_event("Player", vec!["YV".to_string()]);
-
-        let games = vec![create_test_game_data(
-            "HIFK",
-            "TPS",
-            vec![goal_event_with_video, goal_event_without_video],
-        )];
-        let positions = calculator.calculate_play_icon_positions(&games, &layout);
-
-        assert_eq!(positions.len(), 2);
-        assert!(positions[0].has_video_link);
-        assert!(!positions[1].has_video_link);
-    }
-
-    #[test]
-    fn test_goal_type_positions_calculation() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        let events = vec![
-            create_test_goal_event("Player", vec!["YV".to_string()]),
-            create_test_goal_event("Player", vec!["YV".to_string(), "IM".to_string()]),
-        ];
-
-        let positions = calculator.calculate_goal_type_positions(&events, &layout);
-
-        assert_eq!(positions.len(), 2);
-        assert_eq!(positions[0].goal_types, "YV");
-        assert_eq!(positions[1].goal_types, "YV IM");
-
-        // Should have available width from layout
-        assert_eq!(positions[0].available_width, layout.max_goal_types_width);
-        assert_eq!(positions[1].available_width, layout.max_goal_types_width);
-    }
-
-    #[test]
-    fn test_goal_type_overflow_prevention() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig {
-            play_icon_column: 40, // Position close to overflow boundary
-            max_player_name_width: 10,
-            ..Default::default()
-        };
-
-        let events = vec![create_test_goal_event(
-            "Player",
-            vec!["YV".to_string(), "IM".to_string(), "TM".to_string()],
-        )];
-
-        let positions = calculator.calculate_goal_type_positions(&events, &layout);
-
-        assert_eq!(positions.len(), 1);
-
-        // Should prevent overflow past column 43
-        let end_position = positions[0].column_position + positions[0].goal_types.len();
-        assert!(
-            end_position <= 43,
-            "Goal type position {} + length {} = {} exceeds column 43",
-            positions[0].column_position,
-            positions[0].goal_types.len(),
-            end_position
-        );
-    }
-
-    #[test]
-    fn test_get_play_icon_column_position() {
-        let calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        assert_eq!(
-            calculator.get_play_icon_column_position(&layout),
-            layout.play_icon_column
-        );
-    }
-
-    #[test]
-    fn test_validate_no_overflow() {
-        let calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        // Position that fits within bounds
-        let safe_position = GoalTypePosition {
-            event_index: 0,
-            column_position: 40,
-            goal_types: "YV".to_string(), // 2 chars, ends at column 42
-            available_width: 6,
-        };
-
-        assert!(calculator.validate_no_overflow(&safe_position, &layout));
-
-        // Position that would overflow
-        let overflow_position = GoalTypePosition {
-            event_index: 0,
-            column_position: 42,
-            goal_types: "YV IM".to_string(), // 5 chars, ends at column 47 (overflow!)
-            available_width: 6,
-        };
-
-        assert!(!calculator.validate_no_overflow(&overflow_position, &layout));
-
-        // Position exactly at boundary
-        let boundary_position = GoalTypePosition {
-            event_index: 0,
-            column_position: 41,
-            goal_types: "YV".to_string(), // 2 chars, ends at column 43 (exactly at boundary)
-            available_width: 6,
-        };
-
-        assert!(calculator.validate_no_overflow(&boundary_position, &layout));
-    }
-
-    // Additional comprehensive AlignmentCalculator unit tests for task 5
-
-    #[test]
-    fn test_play_icon_alignment_consistency_multiple_games() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        // Create multiple games with different content lengths
-        let games = vec![
-            create_test_game_data(
-                "HIFK",
-                "TPS",
-                vec![
-                    create_test_goal_event("Short", vec!["YV".to_string()]),
-                    create_test_goal_event("Medium Name", vec!["IM".to_string()]),
-                ],
-            ),
-            create_test_game_data(
-                "Jokerit",
-                "Blues",
-                vec![create_test_goal_event(
-                    "Very Long Player Name",
-                    vec!["YV".to_string(), "IM".to_string()],
-                )],
-            ),
-            create_test_game_data(
-                "KalPa",
-                "Ilves",
-                vec![
-                    create_test_goal_event("X", vec!["TM".to_string()]),
-                    create_test_goal_event("Another Player", vec!["VT".to_string()]),
-                    create_test_goal_event("Third Player Name", vec!["AV".to_string()]),
-                ],
-            ),
-        ];
-
-        let positions = calculator.calculate_play_icon_positions(&games, &layout);
-
-        // Should have 6 total positions (2 + 1 + 3)
-        assert_eq!(positions.len(), 6);
-
-        // All play icons should be aligned to the same column regardless of content
-        let expected_column = layout.play_icon_column;
-        for position in &positions {
-            assert_eq!(
-                position.column_position,
-                expected_column,
-                "Play icon at game {} event {} should be at column {} but was at {}",
-                position.game_index,
-                position.event_index,
-                expected_column,
-                position.column_position
-            );
-        }
-
-        // Verify game and event indices are correctly tracked
-        assert_eq!(positions[0].game_index, 0);
-        assert_eq!(positions[0].event_index, 0);
-        assert_eq!(positions[1].game_index, 0);
-        assert_eq!(positions[1].event_index, 1);
-        assert_eq!(positions[2].game_index, 1);
-        assert_eq!(positions[2].event_index, 0);
-        assert_eq!(positions[3].game_index, 2);
-        assert_eq!(positions[3].event_index, 0);
-        assert_eq!(positions[4].game_index, 2);
-        assert_eq!(positions[4].event_index, 1);
-        assert_eq!(positions[5].game_index, 2);
-        assert_eq!(positions[5].event_index, 2);
-    }
-
-    #[test]
-    fn test_play_icon_alignment_consistency_empty_games() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        // Test with games that have no goal events
-        let games = vec![
-            create_test_game_data("HIFK", "TPS", vec![]),
-            create_test_game_data("Jokerit", "Blues", vec![]),
-        ];
-
-        let positions = calculator.calculate_play_icon_positions(&games, &layout);
-
-        // Should have no positions for games without goal events
-        assert_eq!(positions.len(), 0);
-    }
-
-    #[test]
-    fn test_play_icon_alignment_consistency_mixed_video_links() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        let mut event_with_video = create_test_goal_event("Player One", vec!["YV".to_string()]);
-        event_with_video.video_clip_url = Some("http://example.com/video1".to_string());
-
-        let event_without_video = create_test_goal_event("Player Two", vec!["IM".to_string()]);
-
-        let mut event_with_video2 = create_test_goal_event("Player Three", vec!["TM".to_string()]);
-        event_with_video2.video_clip_url = Some("http://example.com/video2".to_string());
-
-        let games = vec![create_test_game_data(
-            "HIFK",
-            "TPS",
-            vec![event_with_video, event_without_video, event_with_video2],
-        )];
-
-        let positions = calculator.calculate_play_icon_positions(&games, &layout);
-
-        assert_eq!(positions.len(), 3);
-
-        // All should use same column position regardless of video link presence
-        let expected_column = layout.play_icon_column;
-        for position in &positions {
-            assert_eq!(position.column_position, expected_column);
-        }
-
-        // Verify video link tracking
-        assert!(positions[0].has_video_link);
-        assert!(!positions[1].has_video_link);
-        assert!(positions[2].has_video_link);
-    }
-
-    #[test]
-    fn test_goal_type_positioning_accuracy_various_lengths() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        let events = vec![
-            create_test_goal_event("Player", vec!["YV".to_string()]), // 2 chars
-            create_test_goal_event("Player", vec!["YV".to_string(), "IM".to_string()]), // 5 chars
-            create_test_goal_event(
-                "Player",
-                vec!["YV".to_string(), "IM".to_string(), "TM".to_string()],
-            ), // 8 chars
-            create_test_goal_event("Player", vec!["VT".to_string()]), // 2 chars
-            create_test_goal_event("Player", vec![]),                 // 0 chars (empty)
-        ];
-
-        let positions = calculator.calculate_goal_type_positions(&events, &layout);
-
-        assert_eq!(positions.len(), 5);
-
-        // Verify goal type strings are correctly formatted
-        assert_eq!(positions[0].goal_types, "YV");
-        assert_eq!(positions[1].goal_types, "YV IM");
-        assert_eq!(positions[2].goal_types, "YV IM TM");
-        assert_eq!(positions[3].goal_types, "VT");
-        assert_eq!(positions[4].goal_types, "");
-
-        // All should have the same available width from layout
-        for position in &positions {
-            assert_eq!(position.available_width, layout.max_goal_types_width);
-        }
-
-        // Verify all positions are safe (no overflow)
-        for position in &positions {
-            assert!(
-                calculator.validate_no_overflow(position, &layout),
-                "Goal type '{}' at position {} should not overflow",
-                position.goal_types,
-                position.column_position
-            );
-        }
-    }
-
-    #[test]
-    fn test_goal_type_positioning_accuracy_with_custom_layout() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig {
-            play_icon_column: 30,
-            max_player_name_width: 15,
-            max_goal_types_width: 8,
-            ..Default::default()
-        };
-
-        let events = vec![create_test_goal_event(
-            "Player",
-            vec!["YV".to_string(), "IM".to_string()],
-        )];
-
-        let positions = calculator.calculate_goal_type_positions(&events, &layout);
-
-        assert_eq!(positions.len(), 1);
-
-        // Position should be calculated based on play_icon_column + max_player_name_width + 1
-        let expected_base_position = layout.play_icon_column + layout.max_player_name_width + 1;
-
-        // But should be adjusted to prevent overflow past column 43
-        let goal_types_length = positions[0].goal_types.len();
-        let max_allowed_position = 43_usize.saturating_sub(goal_types_length);
-        let expected_position = expected_base_position.min(max_allowed_position);
-
-        assert_eq!(positions[0].column_position, expected_position);
-        assert_eq!(positions[0].available_width, 8);
-    }
-
-    #[test]
-    fn test_overflow_prevention_edge_cases() {
-        let mut calculator = AlignmentCalculator::new();
-        // Test case 1: Layout that would cause overflow
-        let mut layout = LayoutConfig {
-            play_icon_column: 42,
-            max_player_name_width: 10,
-            ..Default::default()
-        };
-
-        let events = vec![
-            create_test_goal_event(
-                "Player",
-                vec!["YV".to_string(), "IM".to_string(), "TM".to_string()],
-            ), // "YV IM TM" = 8 chars
-        ];
-
-        let positions = calculator.calculate_goal_type_positions(&events, &layout);
-        assert_eq!(positions.len(), 1);
-
-        // Should prevent overflow by adjusting position
-        let end_position = positions[0].column_position + positions[0].goal_types.len();
-        assert!(
-            end_position <= 43,
-            "End position {} should not exceed column 43",
-            end_position
-        );
-
-        // Test case 2: Extreme overflow scenario
-        layout.play_icon_column = 50; // Way past safe zone
-        let positions2 = calculator.calculate_goal_type_positions(&events, &layout);
-        assert_eq!(positions2.len(), 1);
-
-        let end_position2 = positions2[0].column_position + positions2[0].goal_types.len();
-        assert!(
-            end_position2 <= 43,
-            "End position {} should not exceed column 43 even with extreme layout",
-            end_position2
-        );
-    }
-
-    #[test]
-    fn test_overflow_prevention_boundary_conditions() {
-        let calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig::default();
-
-        // Test positions that are exactly at the boundary
-        let boundary_cases = [
-            GoalTypePosition {
-                event_index: 0,
-                column_position: 43,
-                goal_types: "".to_string(), // Empty string at column 43 should be valid
-                available_width: 6,
-            },
-            GoalTypePosition {
-                event_index: 1,
-                column_position: 42,
-                goal_types: "Y".to_string(), // 1 char ending at column 43 should be valid
-                available_width: 6,
-            },
-            GoalTypePosition {
-                event_index: 2,
-                column_position: 41,
-                goal_types: "YV".to_string(), // 2 chars ending at column 43 should be valid
-                available_width: 6,
-            },
-            GoalTypePosition {
-                event_index: 3,
-                column_position: 44,
-                goal_types: "".to_string(), // Empty string past boundary should be invalid
-                available_width: 6,
-            },
-            GoalTypePosition {
-                event_index: 4,
-                column_position: 43,
-                goal_types: "Y".to_string(), // 1 char starting at column 43 should be invalid
-                available_width: 6,
-            },
-        ];
-
-        // Test each boundary case
-        assert!(calculator.validate_no_overflow(&boundary_cases[0], &layout)); // Empty at 43: valid
-        assert!(calculator.validate_no_overflow(&boundary_cases[1], &layout)); // "Y" at 42: valid (ends at 43)
-        assert!(calculator.validate_no_overflow(&boundary_cases[2], &layout)); // "YV" at 41: valid (ends at 43)
-        assert!(!calculator.validate_no_overflow(&boundary_cases[3], &layout)); // Empty at 44: invalid
-        assert!(!calculator.validate_no_overflow(&boundary_cases[4], &layout)); // "Y" at 43: invalid (ends at 44)
-    }
-
-    #[test]
-    fn test_overflow_prevention_with_long_goal_types() {
-        let mut calculator = AlignmentCalculator::new();
-        let layout = LayoutConfig {
-            play_icon_column: 35,
-            max_player_name_width: 5,
-            ..Default::default()
-        };
-
-        // Create events with progressively longer goal type combinations
-        let events = vec![
-            create_test_goal_event(
-                "Player",
-                vec![
-                    "YV".to_string(),
-                    "IM".to_string(),
-                    "TM".to_string(),
-                    "VT".to_string(),
-                ],
-            ), // Very long combination
-        ];
-
-        let positions = calculator.calculate_goal_type_positions(&events, &layout);
-        assert_eq!(positions.len(), 1);
-
-        // Even with very long goal types, should not overflow
-        let end_position = positions[0].column_position + positions[0].goal_types.len();
-        assert!(
-            end_position <= 43,
-            "Long goal types should not cause overflow: end position {}",
-            end_position
-        );
-
-        // Verify the goal types are still correctly formatted
-        assert_eq!(positions[0].goal_types, "YV IM VT TM");
-    }
-
-    #[test]
-    fn test_alignment_calculator_consistency_across_different_layouts() {
-        let mut calculator = AlignmentCalculator::new();
-
-        // Test with different layout configurations
-        let layouts = vec![
-            LayoutConfig {
-                play_icon_column: 30,
-                max_player_name_width: 10,
-                ..Default::default()
-            },
-            LayoutConfig {
-                play_icon_column: 40,
-                max_player_name_width: 15,
-                ..Default::default()
-            },
-            LayoutConfig {
-                play_icon_column: 50,
-                max_player_name_width: 20,
-                ..Default::default()
-            },
-        ];
-
-        let events = vec![
-            create_test_goal_event("Player", vec!["YV".to_string()]),
-            create_test_goal_event("Player", vec!["IM".to_string()]),
-        ];
-
-        for layout in &layouts {
-            let play_positions = calculator.calculate_play_icon_positions(
-                &[create_test_game_data("HIFK", "TPS", events.clone())],
-                layout,
-            );
-
-            let goal_positions = calculator.calculate_goal_type_positions(&events, layout);
-
-            // All play icons should use the layout's play_icon_column consistently
-            for position in &play_positions {
-                assert_eq!(position.column_position, layout.play_icon_column);
-            }
-
-            // All goal type positions should respect overflow prevention
-            for position in &goal_positions {
-                assert!(calculator.validate_no_overflow(position, layout));
-            }
-
-            // Play icon column should match the accessor method
-            assert_eq!(
-                calculator.get_play_icon_column_position(layout),
-                layout.play_icon_column
-            );
-        }
-    }
-
-    #[test]
     fn test_intelligent_truncator_player_name_truncation() {
         // Test normal case - name fits
         assert_eq!(
@@ -1998,39 +1307,6 @@ mod tests {
             "Very Long Goal Type",
             10
         ));
-    }
-
-    #[test]
-    fn test_intelligent_truncator_spacing_reduction() {
-        // Test content that fits with optimal spacing
-        let (spacing, needs_truncation) =
-            IntelligentTruncator::calculate_spacing_reduction(10, 20, None);
-        assert_eq!(spacing, 10);
-        assert!(!needs_truncation);
-
-        // Test content that fits with minimal spacing
-        let (spacing, needs_truncation) =
-            IntelligentTruncator::calculate_spacing_reduction(10, 11, None);
-        assert_eq!(spacing, 1);
-        assert!(!needs_truncation);
-
-        // Test content that doesn't fit
-        let (spacing, needs_truncation) =
-            IntelligentTruncator::calculate_spacing_reduction(15, 10, None);
-        assert_eq!(spacing, 1);
-        assert!(needs_truncation);
-
-        // Test with custom minimum spacing that fits
-        let (spacing, needs_truncation) =
-            IntelligentTruncator::calculate_spacing_reduction(6, 10, Some(3));
-        assert_eq!(spacing, 4); // available_width - content_length = 10 - 6 = 4
-        assert!(!needs_truncation);
-
-        // Test with custom minimum spacing that doesn't fit
-        let (spacing, needs_truncation) =
-            IntelligentTruncator::calculate_spacing_reduction(8, 10, Some(3));
-        assert_eq!(spacing, 3); // Should return min_spacing when truncation needed
-        assert!(needs_truncation);
     }
 
     #[test]
@@ -2120,7 +1396,7 @@ mod tests {
 
         let validation = GameDataValidator::validate_game(&game);
 
-        assert!(validation.is_valid);
+        assert!(validation.sanitized_game.is_some());
         assert!(validation.issues.is_empty());
         assert!(validation.sanitized_game.is_some());
     }
@@ -2131,7 +1407,7 @@ mod tests {
 
         let validation = GameDataValidator::validate_game(&game);
 
-        assert!(validation.is_valid); // Should be valid after auto-fix
+        assert!(validation.sanitized_game.is_some()); // Should be valid after auto-fix
         assert_eq!(validation.issues.len(), 2); // Two missing team name issues
 
         let sanitized = validation.sanitized_game.unwrap();
@@ -2155,7 +1431,7 @@ mod tests {
 
         let validation = GameDataValidator::validate_game(&game);
 
-        assert!(validation.is_valid);
+        assert!(validation.sanitized_game.is_some());
         let sanitized = validation.sanitized_game.unwrap();
 
         // First two events should have fallback names
@@ -2188,7 +1464,7 @@ mod tests {
 
         let validation = GameDataValidator::validate_game(&game);
 
-        assert!(validation.is_valid);
+        assert!(validation.sanitized_game.is_some());
         let sanitized = validation.sanitized_game.unwrap();
 
         // First event should keep valid goal types, remove invalid ones
@@ -2212,7 +1488,7 @@ mod tests {
 
         let validation = GameDataValidator::validate_game(&game);
 
-        assert!(validation.is_valid); // Should be valid after auto-fix
+        assert!(validation.sanitized_game.is_some()); // Should be valid after auto-fix
         let sanitized = validation.sanitized_game.unwrap();
         assert_eq!(sanitized.result, "0-0");
 
@@ -2230,7 +1506,7 @@ mod tests {
 
         let validation = GameDataValidator::validate_game(&game);
 
-        assert!(validation.is_valid); // Should be valid after auto-fix
+        assert!(validation.sanitized_game.is_some()); // Should be valid after auto-fix
         let sanitized = validation.sanitized_game.unwrap();
         assert_eq!(sanitized.time, "TBD");
 

@@ -65,22 +65,9 @@ pub(super) struct ContentAnalysis {
     pub(super) max_goal_types_width: usize,
 }
 
-/// Cache statistics for alignment calculations
-#[derive(Debug, Clone)]
-#[allow(dead_code)] // Used in tests
-pub struct AlignmentCacheStats {
-    /// Number of entries in play icon cache
-    pub play_icon_cache_size: usize,
-    /// Number of entries in goal type cache
-    pub goal_type_cache_size: usize,
-}
-
 /// Game data validation results
 #[derive(Debug, Clone)]
 pub struct GameDataValidation {
-    /// Whether the game data is valid for layout calculations
-    #[allow(dead_code)] // Read in tests
-    pub is_valid: bool,
     /// List of validation issues found
     pub issues: Vec<ValidationIssue>,
     /// Sanitized game data with fallbacks applied
@@ -92,9 +79,6 @@ pub struct GameDataValidation {
 pub struct ValidationIssue {
     /// Type of validation issue
     pub issue_type: ValidationIssueType,
-    /// Human-readable description of the issue
-    #[allow(dead_code)] // Read in tests
-    pub description: String,
     /// Whether this issue was automatically fixed
     pub auto_fixed: bool,
 }
@@ -136,7 +120,6 @@ impl GameDataValidator {
         if game.home_team.trim().is_empty() {
             issues.push(ValidationIssue {
                 issue_type: ValidationIssueType::MissingTeamName,
-                description: "Home team name is missing or empty".to_string(),
                 auto_fixed: true,
             });
             sanitized_game.home_team = "Unknown Team".to_string();
@@ -146,7 +129,6 @@ impl GameDataValidator {
         if game.away_team.trim().is_empty() {
             issues.push(ValidationIssue {
                 issue_type: ValidationIssueType::MissingTeamName,
-                description: "Away team name is missing or empty".to_string(),
                 auto_fixed: true,
             });
             sanitized_game.away_team = "Unknown Team".to_string();
@@ -157,7 +139,6 @@ impl GameDataValidator {
         if game.time.trim().is_empty() && game.result.trim().is_empty() {
             issues.push(ValidationIssue {
                 issue_type: ValidationIssueType::MissingTimeInfo,
-                description: "Both time and result are missing".to_string(),
                 auto_fixed: true,
             });
             sanitized_game.time = "TBD".to_string();
@@ -168,7 +149,6 @@ impl GameDataValidator {
         if !game.result.trim().is_empty() && !Self::is_valid_score_format(&game.result) {
             issues.push(ValidationIssue {
                 issue_type: ValidationIssueType::InvalidScore,
-                description: format!("Invalid score format: '{}'", game.result),
                 auto_fixed: true,
             });
             sanitized_game.result = "0-0".to_string();
@@ -201,7 +181,6 @@ impl GameDataValidator {
         }
 
         GameDataValidation {
-            is_valid,
             issues,
             sanitized_game: if is_valid { Some(sanitized_game) } else { None },
         }
@@ -282,7 +261,6 @@ impl GameDataValidator {
         if event.scorer_name.trim().is_empty() {
             issues.push(ValidationIssue {
                 issue_type: ValidationIssueType::MissingPlayerName,
-                description: format!("Goal event at index {} has missing player name", index),
                 auto_fixed: true,
             });
             sanitized_event.scorer_name = "Unknown Player".to_string();
@@ -297,10 +275,6 @@ impl GameDataValidator {
             // Allow up to 200 minutes for extreme overtime
             issues.push(ValidationIssue {
                 issue_type: ValidationIssueType::InvalidGoalEvent,
-                description: format!(
-                    "Goal event at index {} has invalid minute: {}",
-                    index, event.minute
-                ),
                 auto_fixed: true,
             });
             sanitized_event.minute = 0;
@@ -321,7 +295,6 @@ impl GameDataValidator {
             if goal_type_trimmed.is_empty() {
                 issues.push(ValidationIssue {
                     issue_type: ValidationIssueType::InvalidGoalTypes,
-                    description: format!("Goal event at index {} has empty goal type", index),
                     auto_fixed: true,
                 });
                 tracing::debug!(
@@ -340,10 +313,6 @@ impl GameDataValidator {
             } else {
                 issues.push(ValidationIssue {
                     issue_type: ValidationIssueType::InvalidGoalTypes,
-                    description: format!(
-                        "Goal event at index {} has invalid goal type: '{}'",
-                        index, goal_type_trimmed
-                    ),
                     auto_fixed: true,
                 });
                 tracing::debug!(
@@ -361,10 +330,6 @@ impl GameDataValidator {
         if event.home_team_score < 0 {
             issues.push(ValidationIssue {
                 issue_type: ValidationIssueType::InvalidGoalEvent,
-                description: format!(
-                    "Goal event at index {} has negative home team score: {}",
-                    index, event.home_team_score
-                ),
                 auto_fixed: true,
             });
             sanitized_event.home_team_score = 0;
@@ -377,10 +342,6 @@ impl GameDataValidator {
         if event.away_team_score < 0 {
             issues.push(ValidationIssue {
                 issue_type: ValidationIssueType::InvalidGoalEvent,
-                description: format!(
-                    "Goal event at index {} has negative away team score: {}",
-                    index, event.away_team_score
-                ),
                 auto_fixed: true,
             });
             sanitized_event.away_team_score = 0;
@@ -592,34 +553,6 @@ impl IntelligentTruncator {
         }
 
         fits
-    }
-
-    /// Calculates optimal spacing reduction to avoid truncation
-    /// Reduces spacing before resorting to truncation
-    ///
-    /// # Arguments
-    /// * `content_length` - Length of content that needs to fit
-    /// * `available_width` - Total available width
-    /// * `min_spacing` - Minimum spacing to maintain (default: 1)
-    ///
-    /// # Returns
-    /// * `(usize, bool)` - (optimal_spacing, needs_truncation)
-    #[allow(dead_code)] // Used in tests
-    pub fn calculate_spacing_reduction(
-        content_length: usize,
-        available_width: usize,
-        min_spacing: Option<usize>,
-    ) -> (usize, bool) {
-        let min_space = min_spacing.unwrap_or(1);
-
-        if content_length + min_space <= available_width {
-            // Content fits with minimum spacing
-            let optimal_spacing = available_width - content_length;
-            (optimal_spacing, false)
-        } else {
-            // Content doesn't fit even with minimum spacing - truncation needed
-            (min_space, true)
-        }
     }
 
     /// Handles extreme terminal width cases with intelligent fallbacks
