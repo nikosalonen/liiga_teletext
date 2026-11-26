@@ -20,7 +20,6 @@ pub use crate::ui::teletext::loading_indicator::LoadingIndicator;
 pub use crate::ui::teletext::page_config::TeletextPageConfig;
 
 // Import layout management components
-use super::layout::ColumnLayoutManager;
 
 pub const CONTENT_MARGIN: usize = 2; // Small margin for game content from terminal border
 
@@ -46,10 +45,9 @@ pub struct TeletextPage {
     pub(super) error_warning_active: bool,                       // Show footer warning when true
     pub(super) compact_mode: bool,                               // Enable compact display mode
     pub(super) wide_mode: bool,                                  // Enable wide display mode
-    pub(super) layout_manager: ColumnLayoutManager, // Layout management for dynamic column calculations
-    pub(super) is_standings_page: bool,             // Whether this is a standings page
-    pub(super) standings_live_mode: bool,           // Whether live mode is active in standings
-    pub(super) playoffs_lines: Vec<u16>, // Positions after which to draw playoff separator lines
+    pub(super) is_standings_page: bool,                          // Whether this is a standings page
+    pub(super) standings_live_mode: bool, // Whether live mode is active in standings
+    pub(super) playoffs_lines: Vec<u16>,  // Positions after which to draw playoff separator lines
     pub(super) skip_screen_clear: Cell<bool>, // Interior mutability needed because render_buffered takes &self. When true, skips screen clear to avoid flicker.
     pub(super) is_loading_page: bool,         // Whether this is a loading/fetching page
     pub(super) is_bracket_page: bool,         // Whether this is a bracket display page
@@ -145,21 +143,12 @@ impl TeletextPage {
         compact_mode: bool,
         wide_mode: bool,
     ) -> Self {
-        // Get terminal size, fallback to reasonable default if can't get size
-        let (terminal_width, screen_height) = if ignore_height_limit {
-            // Use reasonable defaults for non-interactive mode
-            let width = if wide_mode {
-                136u16 // Wide enough to accommodate wide mode (128+ required)
-            } else {
-                80u16 // Standard width for normal mode
-            };
-            (width, 24u16)
+        // Non-interactive mode uses a fixed height; otherwise ask the terminal
+        let screen_height = if ignore_height_limit {
+            24
         } else {
-            crossterm::terminal::size().unwrap_or((80, 24))
+            crossterm::terminal::size().map_or(24, |(_, height)| height)
         };
-
-        // Initialize ColumnLayoutManager with terminal width and content margin
-        let layout_manager = ColumnLayoutManager::new(terminal_width as usize, CONTENT_MARGIN);
 
         TeletextPage {
             page_number,
@@ -179,7 +168,6 @@ impl TeletextPage {
             error_warning_active: false,
             compact_mode,
             wide_mode,
-            layout_manager,
             is_standings_page: false,
             standings_live_mode: false,
             playoffs_lines: Vec::new(),
@@ -287,16 +275,11 @@ impl TeletextPage {
         }
     }
 
-    /// Applies new terminal dimensions: updates the layout manager and clamps
+    /// Applies new terminal dimensions: updates the screen height and clamps
     /// the current page so it stays within the recalculated page count.
+    /// Layout reads the live terminal width on every render.
     fn apply_resize(&mut self, width: u16, height: u16) {
         self.screen_height = height;
-
-        // Clear old layout manager caches before creating new one
-        self.layout_manager.clear_caches();
-
-        // Update layout manager with new terminal width
-        self.layout_manager = ColumnLayoutManager::new(width as usize, CONTENT_MARGIN);
 
         // Clamp against the canonical pagination so forced bracket page
         // breaks and the wide/compact page packing are respected.

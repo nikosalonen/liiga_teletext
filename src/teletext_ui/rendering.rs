@@ -2,6 +2,7 @@
 
 use super::core::get_ansi_code;
 use super::core::{TeletextPage, TeletextRow};
+use super::layout::ansi;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
 
@@ -36,30 +37,24 @@ impl TeletextPage {
                 "Terminal too narrow for wide mode ({current_width} chars, need {required_width} chars, short {shortfall} chars)"
             );
 
-            // Use optimized ANSI code generation for warning messages
-            let mut layout_manager = super::layout::ColumnLayoutManager::new(80, CONTENT_MARGIN);
-
-            let warning_line = layout_manager.format_time_score(
+            buffer.push_str(&ansi::text_at(
                 *current_line,
                 CONTENT_MARGIN + 1,
                 text_fg_code,
                 &warning_message,
-            );
-            buffer.push_str(&warning_line);
+            ));
             *current_line += 1;
 
             // Add suggestion for minimum terminal width
             let suggestion = format!(
-                "Resize terminal to at least {} characters wide for wide mode",
-                required_width
+                "Resize terminal to at least {required_width} characters wide for wide mode"
             );
-            let suggestion_line = layout_manager.format_time_score(
+            buffer.push_str(&ansi::text_at(
                 *current_line,
                 CONTENT_MARGIN + 1,
                 text_fg_code,
                 &suggestion,
-            );
-            buffer.push_str(&suggestion_line);
+            ));
             *current_line += 1;
 
             // Fallback to normal rendering
@@ -91,9 +86,6 @@ impl TeletextPage {
         let games_for_layout = self.extract_games_for_layout(visible_rows);
         let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games_for_layout);
 
-        // Shared ANSI position-code cache for both columns
-        let mut layout_manager = super::layout::ColumnLayoutManager::new(80, CONTENT_MARGIN);
-
         let right_column_start = left_column_start + column_width + gap_between_columns;
         let columns = [
             (&left_games, left_column_start),
@@ -103,7 +95,6 @@ impl TeletextPage {
         for (rows, column_start) in columns {
             let column_end = self.render_wide_column(
                 buffer,
-                &mut layout_manager,
                 rows,
                 *current_line,
                 column_start,
@@ -123,11 +114,9 @@ impl TeletextPage {
     /// Pagination gives a game taller than the whole column a column of its
     /// own, so stop above the loading line and footer and use the last line
     /// that fits to say how many goals are not shown.
-    #[allow(clippy::too_many_arguments)]
     fn render_wide_column(
         &self,
         buffer: &mut String,
-        layout_manager: &mut super::layout::ColumnLayoutManager,
         rows: &[&TeletextRow],
         start_line: usize,
         column_start: usize,
@@ -155,7 +144,7 @@ impl TeletextPage {
             };
 
             for row_line in &row_lines[..shown_lines] {
-                buffer.push_str(layout_manager.get_position_code(line, column_start));
+                buffer.push_str(&ansi::position_code(line, column_start));
                 buffer.push_str(row_line);
                 line += 1;
             }
@@ -173,7 +162,7 @@ impl TeletextPage {
                     _ => 0,
                 };
                 let goal_type_fg_code = get_ansi_code(goal_type_fg(), 226);
-                buffer.push_str(layout_manager.get_position_code(line, column_start));
+                buffer.push_str(&ansi::position_code(line, column_start));
                 buffer.push_str(&format!(
                     "\x1b[38;5;{goal_type_fg_code}m{}\x1b[0m",
                     super::game_display::hidden_goals_text(hidden_goals)

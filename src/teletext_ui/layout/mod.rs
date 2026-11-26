@@ -1,6 +1,6 @@
 // src/teletext_ui/layout/mod.rs - Layout management infrastructure for dynamic column width calculations
 
-mod ansi_cache;
+pub mod ansi;
 mod columns;
 mod config;
 
@@ -11,7 +11,6 @@ pub use config::{IntelligentTruncator, LayoutConfig};
 use crate::data_fetcher::models::GameData;
 use std::collections::HashMap;
 
-use ansi_cache::AnsiCodeCache;
 use columns::generate_content_signature;
 use config::{
     CacheStats, ContentAnalysis, ContentCacheKey, GameDataValidator, LayoutCacheKey,
@@ -31,8 +30,6 @@ pub struct ColumnLayoutManager {
     content_analysis_cache: HashMap<ContentCacheKey, ContentAnalysis>,
     /// Cache for string operations (goal type displays)
     string_cache: HashMap<Vec<String>, String>,
-    /// Cache for pre-calculated ANSI positioning codes
-    ansi_cache: AnsiCodeCache,
 }
 
 /// Minimum terminal width constants for layout validation
@@ -62,7 +59,6 @@ impl ColumnLayoutManager {
             layout_cache: HashMap::new(),
             content_analysis_cache: HashMap::new(),
             string_cache: HashMap::new(),
-            ansi_cache: AnsiCodeCache::new(),
         }
     }
 
@@ -81,29 +77,22 @@ impl ColumnLayoutManager {
             layout_cache: HashMap::new(),
             content_analysis_cache: HashMap::new(),
             string_cache: HashMap::new(),
-            ansi_cache: AnsiCodeCache::new(),
         }
     }
 
     /// Clears all caches to free memory
-    /// Should be called periodically or when memory usage is a concern
+    #[cfg(test)]
     pub fn clear_caches(&mut self) {
         let layout_cache_size = self.layout_cache.len();
         let content_cache_size = self.content_analysis_cache.len();
         let string_cache_size = self.string_cache.len();
-        let ansi_cache_stats = self.ansi_cache.get_cache_stats();
 
         self.layout_cache.clear();
         self.content_analysis_cache.clear();
         self.string_cache.clear();
-        self.ansi_cache.clear();
 
         tracing::debug!(
-            "Cleared layout caches: {} layout entries, {} content analysis entries, {} string entries, {} ANSI codes",
-            layout_cache_size,
-            content_cache_size,
-            string_cache_size,
-            ansi_cache_stats.position_codes + ansi_cache_stats.color_position_codes
+            "Cleared layout caches: {layout_cache_size} layout entries, {content_cache_size} content analysis entries, {string_cache_size} string entries"
         );
     }
 
@@ -115,194 +104,6 @@ impl ColumnLayoutManager {
             content_analysis_cache_size: self.content_analysis_cache.len(),
             string_cache_size: self.string_cache.len(),
         }
-    }
-
-    /// Pre-calculates ANSI positioning codes for optimal performance
-    /// This should be called after layout calculation to optimize rendering
-    ///
-    /// # Arguments
-    /// * `layout_config` - The layout configuration to pre-calculate codes for
-    /// * `max_lines` - Maximum number of lines that will be rendered
-    pub fn pre_calculate_ansi_codes(&mut self, layout_config: &LayoutConfig, max_lines: usize) {
-        self.ansi_cache
-            .pre_calculate_positions(layout_config, max_lines);
-        tracing::debug!(
-            "Pre-calculated ANSI positioning codes for {} lines",
-            max_lines
-        );
-    }
-
-    /// Gets an optimized positioning code for the given line and column
-    /// Uses pre-calculated codes when available
-    ///
-    /// # Arguments
-    /// * `line` - Line number (1-based for ANSI)
-    /// * `column` - Column number (1-based for ANSI)
-    ///
-    /// # Returns
-    /// * `&str` - The ANSI positioning code
-    pub fn get_position_code(&mut self, line: usize, column: usize) -> &str {
-        self.ansi_cache.get_position_code(line, column)
-    }
-
-    /// Gets an optimized positioning code with color for the given line, column, and color
-    /// Uses pre-calculated codes when available
-    ///
-    /// # Arguments
-    /// * `line` - Line number (1-based for ANSI)
-    /// * `column` - Column number (1-based for ANSI)
-    /// * `color` - ANSI color code
-    ///
-    /// # Returns
-    /// * `&str` - The ANSI positioning code with color
-    pub fn get_color_position_code(&mut self, line: usize, column: usize, color: u8) -> &str {
-        self.ansi_cache.get_color_position_code(line, column, color)
-    }
-
-    /// Generates optimized ANSI codes for team name display
-    /// Batches positioning, color, and formatting operations
-    ///
-    /// # Arguments
-    /// * `line` - Line number
-    /// * `column` - Column position
-    /// * `color` - Text color
-    /// * `team_name` - Team name to display
-    /// * `width` - Display width for padding
-    ///
-    /// # Returns
-    /// * `String` - Complete formatted ANSI string
-    pub fn format_team_name(
-        &mut self,
-        line: usize,
-        column: usize,
-        color: u8,
-        team_name: &str,
-        width: usize,
-    ) -> String {
-        let position_code = self.get_color_position_code(line, column, color);
-        format!(
-            "{}{:<width$}\x1b[0m",
-            position_code,
-            team_name.chars().take(width).collect::<String>(),
-            width = width
-        )
-    }
-
-    /// Generates optimized ANSI codes for separator display
-    /// Pre-formats common separator patterns
-    ///
-    /// # Arguments
-    /// * `line` - Line number
-    /// * `column` - Column position
-    /// * `color` - Text color
-    ///
-    /// # Returns
-    /// * `String` - Complete formatted ANSI string for separator
-    pub fn format_separator(&mut self, line: usize, column: usize, color: u8) -> String {
-        let position_code = self.get_color_position_code(line, column, color);
-        format!("{}  -  \x1b[0m", position_code) // Balanced separator: "  -  " (5 chars total)
-    }
-
-    /// Generates optimized ANSI codes for time/score display
-    /// Batches positioning and color operations
-    ///
-    /// # Arguments
-    /// * `line` - Line number
-    /// * `column` - Column position
-    /// * `color` - Text color
-    /// * `text` - Text to display
-    ///
-    /// # Returns
-    /// * `String` - Complete formatted ANSI string
-    pub fn format_time_score(
-        &mut self,
-        line: usize,
-        column: usize,
-        color: u8,
-        text: &str,
-    ) -> String {
-        let position_code = self.get_color_position_code(line, column, color);
-        format!("{}{}\x1b[0m", position_code, text)
-    }
-
-    /// Generates optimized ANSI codes for goal type display
-    /// Uses cached formatting for common goal type combinations
-    ///
-    /// # Arguments
-    /// * `line` - Line number
-    /// * `column` - Column position
-    /// * `color` - Text color
-    /// * `goal_types` - Goal type string
-    ///
-    /// # Returns
-    /// * `String` - Complete formatted ANSI string
-    pub fn format_goal_types(
-        &mut self,
-        line: usize,
-        column: usize,
-        color: u8,
-        goal_types: &str,
-    ) -> String {
-        let position_code = self.get_color_position_code(line, column, color);
-        format!("{}{}\x1b[0m", position_code, goal_types)
-    }
-
-    /// Batch generates multiple ANSI codes for a complete game line
-    /// Optimizes the most common rendering pattern
-    ///
-    /// # Arguments
-    /// * `line` - Line number
-    /// * `layout_config` - Layout configuration
-    /// * `home_team` - Home team name
-    /// * `away_team` - Away team name
-    /// * `time_score` - Time or score text
-    /// * `text_color` - Text color code
-    /// * `result_color` - Result color code
-    ///
-    /// # Returns
-    /// * `String` - Complete formatted game line with all ANSI codes
-    #[allow(clippy::too_many_arguments)]
-    pub fn format_complete_game_line(
-        &mut self,
-        line: usize,
-        layout_config: &LayoutConfig,
-        home_team: &str,
-        away_team: &str,
-        time_score: &str,
-        text_color: u8,
-        result_color: u8,
-    ) -> String {
-        // Pre-calculate all positions
-        let home_pos = self.content_margin + 1;
-        let separator_pos = home_pos + layout_config.home_team_width;
-        let away_pos = separator_pos + layout_config.separator_width;
-        let time_pos = layout_config.time_column;
-
-        // Pre-calculate all ANSI codes to avoid multiple mutable borrows
-        let home_code = self
-            .get_color_position_code(line, home_pos, text_color)
-            .to_string();
-        let separator_code = self.format_separator(line, separator_pos, text_color);
-        let away_code = self
-            .get_color_position_code(line, away_pos, text_color)
-            .to_string();
-        let time_code = self
-            .get_color_position_code(line, time_pos, result_color)
-            .to_string();
-
-        // Batch all ANSI code generation into a single string operation
-        let home_width = layout_config.home_team_width;
-        let away_width = layout_config.away_team_width;
-        format!(
-            "{}{:<home_width$}{}{}{:<away_width$}{}{}\x1b[0m",
-            home_code,
-            home_team.chars().take(home_width).collect::<String>(),
-            separator_code,
-            away_code,
-            away_team.chars().take(away_width).collect::<String>(),
-            time_code,
-            time_score
-        )
     }
 
     /// Optimizes string operations by caching goal type display generation
