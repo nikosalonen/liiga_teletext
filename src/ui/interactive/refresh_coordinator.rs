@@ -8,9 +8,11 @@
 //! - Backoff and retry logic coordination
 
 use crate::data_fetcher::api::standings_api::fetch_standings;
+use crate::data_fetcher::models::standings::StandingsEntry;
 use crate::data_fetcher::{GameData, fetch_liiga_data, has_live_games_from_game_data};
 use crate::error::AppError;
 use crate::teletext_ui::{ScoreType, TeletextPage};
+use std::collections::HashSet;
 use std::time::Duration;
 use tracing;
 
@@ -234,6 +236,230 @@ async fn animate_during_fetch(
             tracing::error!("Background fetch task failed: {join_error}");
             (Vec::new(), true, String::new(), true)
         }
+    }
+}
+
+impl RefreshResult {
+    /// Result of a standings or bracket refresh. These carry no game data, so
+    /// they skip change detection: otherwise `process_refresh_results` would
+    /// replace `last_games` with an empty list. A failed refresh is retried
+    /// with backoff.
+    fn without_games(new_page: Option<TeletextPage>, had_error: bool) -> Self {
+        Self {
+            games: vec![],
+            had_error,
+            fetched_date: String::new(),
+            should_retry: had_error,
+            new_page,
+            needs_render: true,
+            skip_change_detection: true,
+        }
+    }
+}
+
+/// Page details a standings or bracket refresh shows while it fetches.
+struct PageFetchSpec {
+    page_number: u16,
+    subheader: &'static str,
+    loading_message: &'static str,
+    /// Name used in log messages
+    label: &'static str,
+}
+
+const STANDINGS_FETCH: PageFetchSpec = PageFetchSpec {
+    page_number: 222,
+    subheader: "SARJATAULUKKO",
+    loading_message: "Haetaan sarjataulukkoa...",
+    label: "standings",
+};
+
+const BRACKET_FETCH: PageFetchSpec = PageFetchSpec {
+    page_number: 223,
+    subheader: "PUDOTUSPELIT",
+    loading_message: "Haetaan pudotuspelejä...",
+    label: "bracket",
+};
+
+/// What a finished standings or bracket fetch means for the screen.
+enum PageRefreshOutcome {
+    /// The fetch failed: an API error, a timeout, or a crashed task.
+    Failed,
+    /// The data matches what is already on screen.
+    Unchanged,
+    /// New data, built into the page that replaces the current one.
+    Updated(Box<TeletextPage>),
+}
+
+/// Runs `fetch` in a background task while showing progress, and returns its
+/// data, or `None` when the fetch failed (the failure is logged).
+///
+/// An auto-refresh animates the spinner on the current page; a first load
+/// shows a loading page. The only error returned is a config that can't be
+/// loaded.
+async fn fetch_with_progress<T, F, Fut>(
+    state: &mut InteractiveState,
+    spec: &PageFetchSpec,
+    is_auto_refresh: bool,
+    disable_links: bool,
+    fetch: F,
+) -> Result<Option<T>, AppError>
+where
+    F: FnOnce(crate::config::Config) -> Fut,
+    Fut: std::future::Future<Output = Result<T, AppError>> + Send + 'static,
+    T: Send + 'static,
+{
+    let mut loading_page = None;
+    if is_auto_refresh {
+        if let Some(page) = state.current_page_mut() {
+            page.show_auto_refresh_indicator();
+            state.request_render();
+        }
+        if let Some(page) = state.current_page()
+            && let Err(e) = page.render_buffered(&mut std::io::stdout())
+        {
+            tracing::warn!(
+                "Failed to render auto-refresh spinner for {}: {e}",
+                spec.label
+            );
+        }
+        state.clear_render_flag();
+    } else {
+        // Show the loading page right away so the UI feels responsive; the
+        // animated spinner line layers on top after the grace period
+        let mut page = TeletextPage::new(
+            spec.page_number,
+            "JÄÄKIEKKO".to_string(),
+            spec.subheader.to_string(),
+            disable_links,
+            true,
+            false,
+            false,
+            false,
+        );
+        page.add_error_message(spec.loading_message);
+        if let Err(e) = page.render_buffered(&mut std::io::stdout()) {
+            tracing::warn!("Failed to render {} loading page: {e}", spec.label);
+        }
+        loading_page = Some(page);
+    }
+
+    let app_config = match crate::config::Config::load().await {
+        Ok(config) => config,
+        Err(e) => {
+            if is_auto_refresh && let Some(page) = state.current_page_mut() {
+                page.hide_auto_refresh_indicator();
+                state.request_render();
+            }
+            return Err(e);
+        }
+    };
+    let timeout = crate::constants::http_timeout_with_margin(app_config.http_timeout_seconds);
+
+    // Fetch in a background task so the spinner animates while waiting
+    let handle = tokio::task::spawn(tokio::time::timeout(timeout, fetch(app_config)));
+    let result = if is_auto_refresh {
+        super::indicators::animate_page_during_task(&mut state.ui.current_page, handle, None).await
+    } else {
+        super::indicators::animate_page_during_task(
+            &mut loading_page,
+            handle,
+            Some(spec.loading_message),
+        )
+        .await
+    };
+
+    match result {
+        Ok(Ok(Ok(data))) => Ok(Some(data)),
+        Ok(Ok(Err(e))) => {
+            tracing::error!("Failed to fetch {}: {e}", spec.label);
+            Ok(None)
+        }
+        Ok(Err(_)) => {
+            tracing::error!(
+                "{} fetch timed out after {}s (safety timeout; the HTTP client should have timed out first)",
+                spec.label,
+                timeout.as_secs()
+            );
+            Ok(None)
+        }
+        Err(join_error) => {
+            tracing::error!("{} fetch task failed: {join_error}", spec.label);
+            Ok(None)
+        }
+    }
+}
+
+/// Applies a finished standings or bracket refresh to the screen.
+///
+/// A failed auto-refresh keeps the page on screen with the footer warning and
+/// is retried with backoff; a failed first load shows `error_page`. A
+/// successful refresh clears the warning.
+fn finish_page_refresh(
+    state: &mut InteractiveState,
+    is_auto_refresh: bool,
+    outcome: PageRefreshOutcome,
+    is_same_view: fn(&TeletextPage) -> bool,
+    error_page: impl FnOnce() -> TeletextPage,
+    preserved_page: Option<usize>,
+) -> RefreshResult {
+    if is_auto_refresh && let Some(page) = state.current_page_mut() {
+        page.hide_auto_refresh_indicator();
+        match outcome {
+            PageRefreshOutcome::Failed => {}
+            PageRefreshOutcome::Unchanged => {
+                page.hide_error_warning();
+                // Nothing else changes, so repaint without clearing the screen
+                page.skip_next_screen_clear();
+            }
+            PageRefreshOutcome::Updated(_) => page.hide_error_warning(),
+        }
+        state.request_render();
+    }
+
+    match outcome {
+        PageRefreshOutcome::Failed => {
+            if is_auto_refresh
+                && let Some(page) = state.current_page_mut()
+                && is_same_view(page)
+            {
+                page.show_error_warning();
+                return RefreshResult::without_games(None, true);
+            }
+            RefreshResult::without_games(Some(error_page()), true)
+        }
+        PageRefreshOutcome::Unchanged => {
+            tracing::debug!("Data unchanged, skipping UI update");
+            RefreshResult::without_games(None, false)
+        }
+        PageRefreshOutcome::Updated(mut page) => {
+            if let Some(saved_page) = preserved_page {
+                page.set_current_page(saved_page);
+            }
+            RefreshResult::without_games(Some(*page), false)
+        }
+    }
+}
+
+/// Marks teams that play a live game in `games` as live in `standings`.
+///
+/// The standings API flags a team as live only once its goals change, so a
+/// team in a 0-0 game needs the game data to show up as live.
+fn mark_live_teams_from_games(standings: &mut [StandingsEntry], games: &[GameData]) {
+    let live_team_names: HashSet<&str> = games
+        .iter()
+        .filter(|game| game.score_type == ScoreType::Ongoing)
+        .flat_map(|game| [game.home_team.as_str(), game.away_team.as_str()])
+        .collect();
+
+    for entry in standings.iter_mut().filter(|entry| {
+        !entry.live_game_active && live_team_names.contains(entry.team_name.as_str())
+    }) {
+        tracing::info!(
+            "Marking team '{}' as live from game data (0-0 game detection)",
+            entry.team_name
+        );
+        entry.live_game_active = true;
+        entry.live_points_delta.get_or_insert(0);
     }
 }
 
@@ -679,199 +905,66 @@ impl RefreshCoordinator {
     ) -> Result<RefreshResult, AppError> {
         tracing::info!("Fetching standings data (live_mode: {live_mode})");
 
-        let last_standings_hash = state.change_detection.last_standings_hash();
         let is_auto_refresh = state.current_page().is_some_and(|p| p.is_standings_page())
-            && last_standings_hash.is_some();
+            && state.change_detection.last_standings_hash().is_some();
 
-        // Loading page shown (and animated) during initial loads; auto-refreshes
-        // animate the subtle spinner on the existing page instead.
-        let mut loading_page_slot: Option<TeletextPage> = None;
-        if is_auto_refresh {
-            // Show subtle spinner on existing page instead of full loading screen
-            if let Some(page) = state.current_page_mut() {
-                page.show_auto_refresh_indicator();
-                state.request_render();
-            }
-            // Render spinner immediately
-            if let Some(page) = state.current_page() {
-                let mut stdout = std::io::stdout();
-                if let Err(e) = page.render_buffered(&mut stdout) {
-                    tracing::warn!("Failed to render auto-refresh spinner for standings: {e}");
-                }
-            }
-            state.clear_render_flag();
-        } else {
-            // Show loading indicator immediately so the UI feels responsive;
-            // the animated spinner line layers on top after the grace period
-            let mut loading_page = TeletextPage::new(
-                222,
-                "JÄÄKIEKKO".to_string(),
-                "SARJATAULUKKO".to_string(),
-                config.disable_links,
-                true,
-                false,
-                false,
-                false,
-            );
-            loading_page.add_error_message("Haetaan sarjataulukkoa...");
-            let mut stdout = std::io::stdout();
-            if let Err(e) = loading_page.render_buffered(&mut stdout) {
-                tracing::warn!("Failed to render standings loading page: {e}");
-            }
-            loading_page_slot = Some(loading_page);
-        }
+        let fetched = fetch_with_progress(
+            state,
+            &STANDINGS_FETCH,
+            is_auto_refresh,
+            config.disable_links,
+            move |app_config| async move { fetch_standings(&app_config, live_mode).await },
+        )
+        .await?;
 
-        let app_config = match crate::config::Config::load().await {
-            Ok(config) => config,
-            Err(e) => {
-                if is_auto_refresh && let Some(page) = state.current_page_mut() {
-                    page.hide_auto_refresh_indicator();
-                    state.request_render();
-                }
-                return Err(e);
-            }
-        };
-        let http_timeout = app_config.http_timeout_seconds;
-        let timeout_duration = crate::constants::http_timeout_with_margin(http_timeout);
-
-        // Fetch in a background task so the spinner animates while waiting
-        let fetch_handle = tokio::task::spawn(async move {
-            tokio::time::timeout(timeout_duration, fetch_standings(&app_config, live_mode)).await
-        });
-        let fetch_result = if is_auto_refresh {
-            super::indicators::animate_page_during_task(
-                &mut state.ui.current_page,
-                fetch_handle,
-                None,
-            )
-            .await
-        } else {
-            super::indicators::animate_page_during_task(
-                &mut loading_page_slot,
-                fetch_handle,
-                Some("Haetaan sarjataulukkoa..."),
-            )
-            .await
-        };
-
-        let (mut standings, playoffs_lines, had_error) = match fetch_result {
-            Ok(Ok(Ok((standings, playoffs_lines)))) => {
+        let outcome = match fetched {
+            None => PageRefreshOutcome::Failed,
+            Some((mut standings, playoffs_lines)) => {
                 tracing::info!("Standings fetched: {} teams", standings.len());
-                (standings, playoffs_lines, false)
-            }
-            Ok(Ok(Err(e))) => {
-                tracing::error!("Failed to fetch standings: {e}");
-                (vec![], vec![], true)
-            }
-            Ok(Err(_)) => {
-                tracing::error!(
-                    "Standings fetch timed out after {}s (safety timeout, HTTP client should have timed out at {http_timeout}s)",
-                    timeout_duration.as_secs()
-                );
-                (vec![], vec![], true)
-            }
-            Err(join_error) => {
-                tracing::error!("Standings fetch task failed: {join_error}");
-                (vec![], vec![], true)
-            }
-        };
-
-        // Cross-reference with game data to detect live teams that the standings
-        // API alone can't identify (e.g., teams in a 0-0 game where goals haven't changed)
-        if live_mode && !had_error {
-            let live_team_names: std::collections::HashSet<&str> = last_games
-                .iter()
-                .filter(|g| g.score_type == ScoreType::Ongoing)
-                .flat_map(|g| [g.home_team.as_str(), g.away_team.as_str()])
-                .collect();
-
-            if !live_team_names.is_empty() {
-                for entry in &mut standings {
-                    if !entry.live_game_active && live_team_names.contains(entry.team_name.as_str())
-                    {
-                        tracing::info!(
-                            "Marking team '{}' as live from game data (0-0 game detection)",
-                            entry.team_name
-                        );
-                        entry.live_game_active = true;
-                        if entry.live_points_delta.is_none() {
-                            entry.live_points_delta = Some(0);
-                        }
-                    }
+                if live_mode {
+                    mark_live_teams_from_games(&mut standings, last_games);
+                }
+                let new_hash = calculate_standings_hash(&standings, &playoffs_lines, live_mode);
+                if state.change_detection.update_standings_hash(new_hash) {
+                    PageRefreshOutcome::Updated(Box::new(
+                        navigation_manager::create_standings_page(
+                            &standings,
+                            &playoffs_lines,
+                            live_mode,
+                            config.disable_links,
+                            config.compact_mode,
+                            config.wide_mode,
+                        ),
+                    ))
+                } else {
+                    PageRefreshOutcome::Unchanged
                 }
             }
-        }
-
-        let data_changed = if !had_error {
-            let new_hash = calculate_standings_hash(&standings, &playoffs_lines, live_mode);
-            state.change_detection.update_standings_hash(new_hash)
-        } else {
-            true // errors always count as "changed" to show the error page
         };
 
-        // Hide auto-refresh spinner for auto-refresh case
-        if is_auto_refresh && let Some(page) = state.current_page_mut() {
-            page.hide_auto_refresh_indicator();
-            if !data_changed {
-                page.skip_next_screen_clear();
-            }
-            state.request_render();
-        }
-
-        if !data_changed {
-            tracing::debug!("Standings data unchanged, skipping UI update");
-            return Ok(RefreshResult {
-                games: vec![],
-                had_error: false,
-                fetched_date: String::new(),
-                should_retry: false,
-                new_page: None,
-                needs_render: true,
-                skip_change_detection: true,
-            });
-        }
-
-        let new_page = if !had_error {
-            let mut page = navigation_manager::create_standings_page(
-                &standings,
-                &playoffs_lines,
-                live_mode,
-                config.disable_links,
-                config.compact_mode,
-                config.wide_mode,
-            );
-            if let Some(saved_page) = preserved_page {
-                page.set_current_page(saved_page);
-            }
-            Some(page)
-        } else {
-            let mut error_page = TeletextPage::new(
-                222,
-                "JÄÄKIEKKO".to_string(),
-                "SARJATAULUKKO".to_string(),
-                config.disable_links,
-                true,
-                false,
-                config.compact_mode,
-                config.wide_mode,
-            );
-            error_page.add_error_message("Sarjataulukon lataus epäonnistui.");
-            error_page.add_error_message("Paina 's' palataksesi otteluihin.");
-            Some(error_page)
-        };
-
-        Ok(RefreshResult {
-            games: vec![],
-            had_error,
-            fetched_date: String::new(),
-            should_retry: had_error,
-            new_page,
-            needs_render: true,
-            // Standings refreshes carry no game data, so mark as discarded to
-            // prevent process_refresh_results from overwriting last_games with
-            // an empty vector.
-            skip_change_detection: true,
-        })
+        Ok(finish_page_refresh(
+            state,
+            is_auto_refresh,
+            outcome,
+            // A failed standings refresh always shows the error page
+            |_| false,
+            || {
+                let mut page = TeletextPage::new(
+                    STANDINGS_FETCH.page_number,
+                    "JÄÄKIEKKO".to_string(),
+                    STANDINGS_FETCH.subheader.to_string(),
+                    config.disable_links,
+                    true,
+                    false,
+                    config.compact_mode,
+                    config.wide_mode,
+                );
+                page.add_error_message("Sarjataulukon lataus epäonnistui.");
+                page.add_error_message("Paina 's' palataksesi otteluihin.");
+                page
+            },
+            preserved_page,
+        ))
     }
 
     /// Perform bracket-specific refresh cycle.
@@ -887,193 +980,64 @@ impl RefreshCoordinator {
     ) -> Result<RefreshResult, AppError> {
         tracing::info!("Fetching bracket data");
 
-        let last_bracket_hash = state.change_detection.last_bracket_hash();
-        let is_auto_refresh = state.current_page().is_some() && last_bracket_hash.is_some();
+        let is_auto_refresh =
+            state.current_page().is_some() && state.change_detection.last_bracket_hash().is_some();
 
-        // Loading page shown (and animated) during initial loads; auto-refreshes
-        // animate the subtle spinner on the existing page instead.
-        let mut loading_page_slot: Option<TeletextPage> = None;
-        if is_auto_refresh {
-            if let Some(page) = state.current_page_mut() {
-                page.show_auto_refresh_indicator();
-                state.request_render();
-            }
-            if let Some(page) = state.current_page() {
-                let mut stdout = std::io::stdout();
-                if let Err(e) = page.render_buffered(&mut stdout) {
-                    tracing::warn!("Failed to render auto-refresh spinner for bracket: {e}");
-                }
-            }
-            state.clear_render_flag();
-        } else {
-            // Immediate feedback; the animated spinner line layers on top
-            // after the grace period
-            let mut loading_page = TeletextPage::new(
-                223,
-                "JÄÄKIEKKO".to_string(),
-                "PUDOTUSPELIT".to_string(),
-                config.disable_links,
-                true,
-                false,
-                false,
-                false,
-            );
-            loading_page.add_error_message("Haetaan pudotuspelejä...");
-            let mut stdout = std::io::stdout();
-            if let Err(e) = loading_page.render_buffered(&mut stdout) {
-                tracing::warn!("Failed to render bracket loading page: {e}");
-            }
-            loading_page_slot = Some(loading_page);
-        }
-
-        let app_config = match crate::config::Config::load().await {
-            Ok(config) => config,
-            Err(e) => {
-                if is_auto_refresh && let Some(page) = state.current_page_mut() {
-                    page.hide_auto_refresh_indicator();
-                    state.request_render();
-                }
-                return Err(e);
-            }
-        };
-
-        let timeout_duration =
-            crate::constants::http_timeout_with_margin(app_config.http_timeout_seconds);
-
-        // Fetch in a background task so the spinner animates while waiting
-        let fetch_handle = tokio::task::spawn(async move {
-            tokio::time::timeout(
-                timeout_duration,
-                crate::data_fetcher::api::bracket_api::fetch_playoff_bracket(&app_config),
-            )
-            .await
-        });
-        let bracket_result = if is_auto_refresh {
-            super::indicators::animate_page_during_task(
-                &mut state.ui.current_page,
-                fetch_handle,
-                None,
-            )
-            .await
-        } else {
-            super::indicators::animate_page_during_task(
-                &mut loading_page_slot,
-                fetch_handle,
-                Some("Haetaan pudotuspelejä..."),
-            )
-            .await
-        };
-
-        let (bracket, had_error) = match bracket_result {
-            Ok(Ok(Ok(bracket))) => {
-                tracing::info!("Bracket fetched: has_data={}", bracket.has_data);
-                state.navigation.has_bracket_data = bracket.has_data;
-                (Some(bracket), false)
-            }
-            Ok(Ok(Err(e))) => {
-                tracing::error!("Failed to fetch bracket: {e}");
-                (None, true)
-            }
-            Ok(Err(_)) => {
-                tracing::error!("Bracket fetch timed out");
-                (None, true)
-            }
-            Err(join_error) => {
-                tracing::error!("Bracket fetch task failed: {join_error}");
-                (None, true)
-            }
-        };
+        let fetched = fetch_with_progress(
+            state,
+            &BRACKET_FETCH,
+            is_auto_refresh,
+            config.disable_links,
+            |app_config| async move {
+                crate::data_fetcher::api::bracket_api::fetch_playoff_bracket(&app_config).await
+            },
+        )
+        .await?;
 
         let (terminal_width, terminal_height) = crossterm::terminal::size().unwrap_or((80, 24));
-
-        let data_changed = if let Some(ref b) = bracket {
-            state
-                .change_detection
-                .update_bracket(b, (terminal_width, terminal_height))
-        } else {
-            true
+        let outcome = match fetched {
+            None => PageRefreshOutcome::Failed,
+            Some(bracket) => {
+                tracing::info!("Bracket fetched: has_data={}", bracket.has_data);
+                state.navigation.has_bracket_data = bracket.has_data;
+                if state
+                    .change_detection
+                    .update_bracket(&bracket, (terminal_width, terminal_height))
+                {
+                    PageRefreshOutcome::Updated(Box::new(navigation_manager::create_bracket_page(
+                        &bracket,
+                        config.disable_links,
+                        terminal_width,
+                        terminal_height,
+                    )))
+                } else {
+                    PageRefreshOutcome::Unchanged
+                }
+            }
         };
 
-        if is_auto_refresh && let Some(page) = state.current_page_mut() {
-            page.hide_auto_refresh_indicator();
-            if !data_changed {
-                page.skip_next_screen_clear();
-            }
-            // A successful fetch clears the warning left by a failed one.
-            if bracket.is_some() {
-                page.hide_error_warning();
-            }
-            state.request_render();
-        }
-
-        // A failed auto-refresh keeps the bracket on screen, with the footer
-        // warning, and is retried with backoff.
-        if bracket.is_none()
-            && is_auto_refresh
-            && let Some(page) = state.current_page_mut()
-            && page.is_bracket_page()
-        {
-            page.show_error_warning();
-            return Ok(RefreshResult {
-                games: vec![],
-                had_error,
-                fetched_date: String::new(),
-                should_retry: had_error,
-                new_page: None,
-                needs_render: true,
-                skip_change_detection: true,
-            });
-        }
-
-        if !data_changed {
-            tracing::debug!("Bracket data unchanged, skipping UI update");
-            return Ok(RefreshResult {
-                games: vec![],
-                had_error: false,
-                fetched_date: String::new(),
-                should_retry: false,
-                new_page: None,
-                needs_render: true,
-                skip_change_detection: true,
-            });
-        }
-
-        let new_page = if let Some(bracket) = bracket {
-            let mut page = navigation_manager::create_bracket_page(
-                &bracket,
-                config.disable_links,
-                terminal_width,
-                terminal_height,
-            );
-            if let Some(saved_page) = preserved_page {
-                page.set_current_page(saved_page);
-            }
-            Some(page)
-        } else {
-            let mut error_page = TeletextPage::new(
-                223,
-                "JÄÄKIEKKO".to_string(),
-                "PUDOTUSPELIT".to_string(),
-                config.disable_links,
-                true,
-                false,
-                false,
-                false,
-            );
-            error_page.add_error_message("Pudotuspelien lataus epäonnistui.");
-            error_page.add_error_message("Paina 'p' palataksesi.");
-            Some(error_page)
-        };
-
-        Ok(RefreshResult {
-            games: vec![],
-            had_error,
-            fetched_date: String::new(),
-            should_retry: had_error,
-            new_page,
-            needs_render: true,
-            skip_change_detection: true,
-        })
+        Ok(finish_page_refresh(
+            state,
+            is_auto_refresh,
+            outcome,
+            TeletextPage::is_bracket_page,
+            || {
+                let mut page = TeletextPage::new(
+                    BRACKET_FETCH.page_number,
+                    "JÄÄKIEKKO".to_string(),
+                    BRACKET_FETCH.subheader.to_string(),
+                    config.disable_links,
+                    true,
+                    false,
+                    false,
+                    false,
+                );
+                page.add_error_message("Pudotuspelien lataus epäonnistui.");
+                page.add_error_message("Paina 'p' palataksesi.");
+                page
+            },
+            preserved_page,
+        ))
     }
 
     /// Process refresh results and update state
@@ -2068,5 +2032,199 @@ mod tests {
         );
         assert!(!result.skip_change_detection);
         assert_eq!(coordinator.consecutive_transient_empty, 0);
+    }
+
+    fn standings_page_with_spinner() -> TeletextPage {
+        let mut page = TeletextPage::new(
+            222,
+            "JÄÄKIEKKO".to_string(),
+            "SARJATAULUKKO".to_string(),
+            false,
+            true,
+            true,
+            false,
+            false,
+        );
+        page.set_standings_mode(true, false);
+        page.show_auto_refresh_indicator();
+        page
+    }
+
+    fn error_page_for_test() -> TeletextPage {
+        let mut page = TeletextPage::new(
+            222,
+            "JÄÄKIEKKO".to_string(),
+            "SARJATAULUKKO".to_string(),
+            false,
+            true,
+            true,
+            false,
+            false,
+        );
+        page.add_error_message("Sarjataulukon lataus epäonnistui.");
+        page
+    }
+
+    #[test]
+    fn test_failed_auto_refresh_keeps_page_with_warning() {
+        let mut state = InteractiveState::new(None);
+        state.set_current_page(standings_page_with_spinner());
+
+        let result = finish_page_refresh(
+            &mut state,
+            true,
+            PageRefreshOutcome::Failed,
+            TeletextPage::is_standings_page,
+            || unreachable!("a failed auto-refresh must keep the page, not build an error page"),
+            None,
+        );
+
+        assert!(result.new_page.is_none(), "the table stays on screen");
+        assert!(result.had_error && result.should_retry);
+        assert!(result.skip_change_detection);
+        let page = state.current_page().expect("page kept");
+        assert!(page.is_standings_page());
+        assert!(page.is_error_warning_active());
+        assert!(!page.is_auto_refresh_indicator_active());
+    }
+
+    #[test]
+    fn test_failed_first_load_shows_error_page() {
+        let mut state = InteractiveState::new(None);
+
+        let result = finish_page_refresh(
+            &mut state,
+            false,
+            PageRefreshOutcome::Failed,
+            TeletextPage::is_standings_page,
+            error_page_for_test,
+            None,
+        );
+
+        let page = result.new_page.expect("error page");
+        assert!(page.has_error_message("Sarjataulukon lataus epäonnistui."));
+        assert!(result.had_error && result.should_retry);
+    }
+
+    #[test]
+    fn test_failed_auto_refresh_on_other_view_shows_error_page() {
+        // An auto-refresh of the bracket while a standings page is up must not
+        // leave the standings page standing in for the bracket.
+        let mut state = InteractiveState::new(None);
+        state.set_current_page(standings_page_with_spinner());
+
+        let result = finish_page_refresh(
+            &mut state,
+            true,
+            PageRefreshOutcome::Failed,
+            TeletextPage::is_bracket_page,
+            error_page_for_test,
+            None,
+        );
+
+        assert!(result.new_page.is_some());
+        assert!(
+            !state
+                .current_page()
+                .is_some_and(|page| page.is_error_warning_active())
+        );
+    }
+
+    #[test]
+    fn test_unchanged_auto_refresh_clears_warning_and_keeps_page() {
+        let mut state = InteractiveState::new(None);
+        let mut page = standings_page_with_spinner();
+        page.show_error_warning();
+        state.set_current_page(page);
+
+        let result = finish_page_refresh(
+            &mut state,
+            true,
+            PageRefreshOutcome::Unchanged,
+            TeletextPage::is_standings_page,
+            || unreachable!("no error page after a successful fetch"),
+            None,
+        );
+
+        assert!(result.new_page.is_none());
+        assert!(!result.had_error && !result.should_retry);
+        let page = state.current_page().expect("page kept");
+        assert!(!page.is_error_warning_active());
+        assert!(!page.is_auto_refresh_indicator_active());
+    }
+
+    #[test]
+    fn test_updated_refresh_returns_new_page() {
+        let mut state = InteractiveState::new(None);
+        state.set_current_page(standings_page_with_spinner());
+        let mut new_page = standings_page_with_spinner();
+        new_page.hide_auto_refresh_indicator();
+
+        let result = finish_page_refresh(
+            &mut state,
+            true,
+            PageRefreshOutcome::Updated(Box::new(new_page)),
+            TeletextPage::is_standings_page,
+            || unreachable!("no error page after a successful fetch"),
+            Some(0),
+        );
+
+        assert!(result.new_page.is_some_and(|page| page.is_standings_page()));
+        assert!(!result.had_error && !result.should_retry);
+    }
+
+    fn standings_entry(team_name: &str) -> StandingsEntry {
+        StandingsEntry {
+            team_name: team_name.to_string(),
+            team_id: team_name.to_string(),
+            games_played: 10,
+            wins: 5,
+            ot_wins: 0,
+            ot_losses: 0,
+            losses: 5,
+            goals_for: 30,
+            goals_against: 30,
+            points: 15,
+            live_goals_for: 30,
+            live_goals_against: 30,
+            live_points_delta: None,
+            live_position_change: None,
+            live_game_active: false,
+        }
+    }
+
+    #[test]
+    fn test_mark_live_teams_from_games_marks_only_ongoing_games() {
+        let mut standings = vec![
+            standings_entry("TPS"),
+            standings_entry("HIFK"),
+            standings_entry("Tappara"),
+        ];
+        let mut live = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        live.score_type = ScoreType::Ongoing;
+        let mut finished =
+            crate::testing_utils::TestDataBuilder::create_basic_game("Tappara", "Ilves");
+        finished.score_type = ScoreType::Final;
+
+        mark_live_teams_from_games(&mut standings, &[live, finished]);
+
+        assert!(standings[0].live_game_active);
+        assert_eq!(standings[0].live_points_delta, Some(0));
+        assert!(standings[1].live_game_active);
+        assert!(!standings[2].live_game_active);
+        assert_eq!(standings[2].live_points_delta, None);
+    }
+
+    #[test]
+    fn test_mark_live_teams_keeps_existing_points_delta() {
+        let mut standings = vec![standings_entry("TPS")];
+        standings[0].live_points_delta = Some(2);
+        let mut live = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        live.score_type = ScoreType::Ongoing;
+
+        mark_live_teams_from_games(&mut standings, &[live]);
+
+        assert!(standings[0].live_game_active);
+        assert_eq!(standings[0].live_points_delta, Some(2));
     }
 }
