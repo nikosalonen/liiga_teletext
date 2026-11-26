@@ -382,7 +382,7 @@ pub async fn create_future_games_page(
     current_page: Option<usize>,
 ) -> Option<TeletextPage> {
     // Check if these are future games by validating both time and start fields
-    if !games.is_empty() && is_future_game(&games[0]) {
+    if !games.is_empty() && starts_after_today(&games[0]) {
         // Extract date from the first game's start field (assuming format YYYY-MM-DDThh:mm:ssZ)
         let start_str = &games[0].start;
         let date_str = start_str.split('T').next().unwrap_or("");
@@ -557,8 +557,10 @@ pub fn create_page_not_found_page(page_number: u16) -> TeletextPage {
     page
 }
 
-/// Validates if a game is in the future by checking both time and start fields
-pub fn is_future_game(game: &GameData) -> bool {
+/// True when the game starts on a later calendar day than today (local time).
+/// Not the same as `GameData::is_scheduled`: a game later today is scheduled
+/// but does not start after today.
+pub fn starts_after_today(game: &GameData) -> bool {
     // Check if time field is non-empty (indicates scheduled game)
     if game.time.is_empty() {
         return false;
@@ -727,7 +729,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_is_future_game() {
+    async fn test_starts_after_today() {
         // Create a future game (different date)
         let future_game = {
             let mut game =
@@ -741,7 +743,7 @@ mod tests {
             game
         };
 
-        assert!(is_future_game(&future_game));
+        assert!(starts_after_today(&future_game));
 
         // Create a past game
         let past_game = {
@@ -752,7 +754,7 @@ mod tests {
             game
         };
 
-        assert!(!is_future_game(&past_game));
+        assert!(!starts_after_today(&past_game));
     }
 
     #[test]

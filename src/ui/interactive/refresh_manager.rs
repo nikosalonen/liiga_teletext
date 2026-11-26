@@ -8,13 +8,7 @@
 
 use crate::data_fetcher::cache::is_awaiting_start;
 use crate::data_fetcher::{GameData, has_live_games_from_game_data, is_historical_date};
-use crate::teletext_ui::ScoreType;
 use std::time::{Duration, Instant};
-
-/// Helper function to check if a game is in the future (scheduled)
-fn is_future_game(game: &GameData) -> bool {
-    game.score_type == ScoreType::Scheduled
-}
 
 /// Checks if a game is in its start window: due within 5 minutes, or past its
 /// scheduled start by up to 60 minutes while the API still says not started
@@ -115,7 +109,7 @@ pub(super) fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool
     }
 
     let has_ongoing_games = has_live_games_from_game_data(params.games);
-    let all_scheduled = !params.games.is_empty() && params.games.iter().all(is_future_game);
+    let all_scheduled = !params.games.is_empty() && params.games.iter().all(GameData::is_scheduled);
 
     if has_ongoing_games {
         tracing::info!("Auto-refresh triggered for ongoing games");
@@ -139,6 +133,7 @@ pub(super) fn should_trigger_auto_refresh(params: AutoRefreshParams<'_>) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::teletext_ui::ScoreType;
     use crate::testing_utils::TestDataBuilder;
 
     /// A game scheduled three hours from now, well outside the near-start window.

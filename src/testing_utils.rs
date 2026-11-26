@@ -1,4 +1,4 @@
-use crate::data_fetcher::models::{GameData, GoalEventData};
+use crate::data_fetcher::models::{GameData, GoalEvent, GoalEventData, ScheduleGame, ScheduleTeam};
 use crate::teletext_ui::ScoreType;
 
 /// Test utilities for creating mock data and testing scenarios
@@ -242,6 +242,64 @@ pub fn create_basic_game(
     serie: &str,
 ) -> GameData {
     TestDataBuilder::create_custom_game(id, home_team, away_team, result, serie)
+}
+
+// --- Raw API model fixtures shared by the model unit tests ---
+
+/// A goal event with fixed sample values (even-strength goal with a video clip).
+pub fn create_test_goal_event() -> GoalEvent {
+    GoalEvent {
+        scorer_player_id: 12345,
+        log_time: "18:30:00".to_string(),
+        game_time: 900,
+        period: 1,
+        event_id: 1,
+        home_team_score: 1,
+        away_team_score: 0,
+        winning_goal: false,
+        goal_types: vec!["EV".to_string()],
+        assistant_player_ids: vec![67890, 11111],
+        video_clip_url: Some("https://example.com/video.mp4".to_string()),
+        scorer_player: None,
+    }
+}
+
+/// The HIFK schedule team with one goal from `create_test_goal_event`.
+pub fn create_test_schedule_team() -> ScheduleTeam {
+    ScheduleTeam {
+        team_id: Some("HIFK".to_string()),
+        team_placeholder: None,
+        team_name: Some("HIFK Helsinki".to_string()),
+        goals: 2,
+        time_out: None,
+        powerplay_instances: 3,
+        powerplay_goals: 1,
+        short_handed_instances: 1,
+        short_handed_goals: 0,
+        ranking: Some(5),
+        game_start_date_time: Some("2024-01-15T18:30:00Z".to_string()),
+        goal_events: vec![create_test_goal_event()],
+    }
+}
+
+/// A finished regular-season game; both sides are `create_test_schedule_team`.
+pub fn create_test_schedule_game() -> ScheduleGame {
+    ScheduleGame {
+        id: 12345,
+        season: 2024,
+        start: "2024-01-15T18:30:00Z".to_string(),
+        end: Some("2024-01-15T21:00:00Z".to_string()),
+        home_team: create_test_schedule_team(),
+        away_team: create_test_schedule_team(),
+        finished_type: Some("ENDED_DURING_REGULAR_TIME".to_string()),
+        started: true,
+        ended: true,
+        game_time: 3600,
+        serie: "runkosarja".to_string(),
+        play_off_phase: None,
+        play_off_pair: None,
+        play_off_req_wins: None,
+    }
 }
 
 /// Property-based testing utilities

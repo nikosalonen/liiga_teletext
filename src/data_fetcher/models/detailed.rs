@@ -86,24 +86,7 @@ pub struct DetailedGameResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_fetcher::models::goals::GoalEvent;
-
-    fn create_test_goal_event() -> GoalEvent {
-        GoalEvent {
-            scorer_player_id: 12345,
-            log_time: "18:30:00".to_string(),
-            game_time: 900,
-            period: 1,
-            event_id: 1,
-            home_team_score: 1,
-            away_team_score: 0,
-            winning_goal: false,
-            goal_types: vec!["EV".to_string()],
-            assistant_player_ids: vec![67890, 11111],
-            video_clip_url: Some("https://example.com/video.mp4".to_string()),
-            scorer_player: None,
-        }
-    }
+    use crate::testing_utils::create_test_goal_event;
 
     fn create_test_penalty_event() -> PenaltyEvent {
         PenaltyEvent {
