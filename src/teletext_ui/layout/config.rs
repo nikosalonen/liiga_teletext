@@ -65,42 +65,6 @@ pub(super) struct ContentAnalysis {
     pub(super) max_goal_types_width: usize,
 }
 
-/// Cache key for layout calculations based on terminal configuration and content signature
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(super) struct LayoutCacheKey {
-    /// Terminal width
-    pub(super) terminal_width: usize,
-    /// Content margin
-    pub(super) content_margin: usize,
-    /// Content signature (hash of game data relevant for layout)
-    pub(super) content_signature: u64,
-    /// Whether this is for wide mode
-    pub(super) is_wide_mode: bool,
-}
-
-/// Cache key for content analysis based on game data signature
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(super) struct ContentCacheKey {
-    /// Content signature (hash of relevant game data)
-    pub(super) content_signature: u64,
-    /// Whether this is for fallback analysis
-    pub(super) is_fallback: bool,
-    /// Terminal width (affects fallback analysis)
-    pub(super) terminal_width: Option<usize>,
-}
-
-/// Cache statistics for monitoring performance
-#[derive(Debug, Clone)]
-#[allow(dead_code)] // Used in tests
-pub struct CacheStats {
-    /// Number of entries in layout cache
-    pub layout_cache_size: usize,
-    /// Number of entries in content analysis cache
-    pub content_analysis_cache_size: usize,
-    /// Number of entries in string cache
-    pub string_cache_size: usize,
-}
-
 /// Cache statistics for alignment calculations
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // Used in tests

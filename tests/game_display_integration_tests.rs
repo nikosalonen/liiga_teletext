@@ -88,7 +88,7 @@ async fn test_complete_game_display_with_layout_calculation() {
     ];
 
     // Test layout calculation
-    let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let layout_config = layout_manager.calculate_layout(&games);
 
     // Verify layout configuration is calculated correctly
@@ -148,7 +148,7 @@ async fn test_ansi_positioning_code_correctness() {
     let games = vec![game];
 
     // Test layout calculation for ANSI positioning
-    let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let layout_config = layout_manager.calculate_layout(&games);
 
     // Verify calculated positions match expected ANSI positioning
@@ -249,7 +249,7 @@ async fn test_play_icon_alignment_consistency() {
     ];
 
     // Test layout calculation and alignment
-    let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let layout_config = layout_manager.calculate_layout(&games);
     let mut alignment_calculator = AlignmentCalculator::new();
     let play_icon_positions =
@@ -329,7 +329,7 @@ async fn test_goal_type_positioning_and_overflow_prevention() {
     let games = vec![game];
 
     // Test layout and positioning
-    let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let layout_config = layout_manager.calculate_layout(&games);
     let mut alignment_calculator = AlignmentCalculator::new();
     let goal_type_positions =
@@ -455,7 +455,7 @@ async fn test_complete_game_display_scenarios_normal_mode() {
 
         // Test layout calculation for this scenario
         let games = vec![game_data.clone()];
-        let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+        let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
         let layout_config = layout_manager.calculate_layout(&games);
 
         // Verify layout handles the scenario correctly
@@ -568,7 +568,7 @@ async fn test_complete_game_display_scenarios_wide_mode() {
     ];
 
     // Test layout calculation for wide mode (136 char width)
-    let mut layout_manager = ColumnLayoutManager::new(136, CONTENT_MARGIN);
+    let layout_manager = ColumnLayoutManager::new(136, CONTENT_MARGIN);
     let layout_config = layout_manager.calculate_layout(&games);
 
     // Verify wide mode layout has more space for content
@@ -673,7 +673,7 @@ async fn test_layout_system_integration_different_widths() {
     for width in terminal_widths {
         println!("Testing layout with terminal width: {}", width);
 
-        let mut layout_manager = ColumnLayoutManager::new(width, CONTENT_MARGIN);
+        let layout_manager = ColumnLayoutManager::new(width, CONTENT_MARGIN);
         let layout_config = layout_manager.calculate_layout(&games);
 
         // Verify layout is reasonable for this width
@@ -851,7 +851,7 @@ async fn test_wide_mode_rendering_with_layout_system() {
     );
 
     // Test layout calculation for wide mode columns
-    let mut wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
+    let wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
     let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games);
 
     // Verify wide mode layout configuration
@@ -1021,10 +1021,10 @@ async fn test_wide_mode_backward_compatibility() {
     );
 
     // Test layout calculations work for both modes
-    let mut normal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let normal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let normal_layout = normal_layout_manager.calculate_layout(&legacy_scenarios);
 
-    let mut wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
+    let wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
     let wide_layout = wide_layout_manager.calculate_wide_mode_layout(&legacy_scenarios);
 
     // Both layouts should be valid
@@ -1182,7 +1182,7 @@ async fn test_wide_mode_layout_integration_different_game_types() {
     ];
 
     // Test wide mode layout calculation with diverse content
-    let mut wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
+    let wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
     let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games);
 
     // Verify layout handles diverse content appropriately
@@ -1330,14 +1330,14 @@ async fn test_wide_mode_play_icon_alignment() {
     ];
 
     // Test normal mode layout and alignment
-    let mut normal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let normal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let normal_layout_config = normal_layout_manager.calculate_layout(&games);
     let mut normal_alignment_calculator = AlignmentCalculator::new();
     let normal_play_icon_positions =
         normal_alignment_calculator.calculate_play_icon_positions(&games, &normal_layout_config);
 
     // Test wide mode layout and alignment using wide mode column width (60 chars)
-    let mut wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
+    let wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
     let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games);
     let mut wide_alignment_calculator = AlignmentCalculator::new();
     let wide_play_icon_positions =
@@ -1449,8 +1449,7 @@ async fn test_wide_mode_play_icon_alignment_different_column_widths() {
             width
         );
 
-        let mut layout_manager =
-            ColumnLayoutManager::new_for_wide_mode_column(width, CONTENT_MARGIN);
+        let layout_manager = ColumnLayoutManager::new_for_wide_mode_column(width, CONTENT_MARGIN);
         let layout_config = layout_manager.calculate_wide_mode_layout(&games);
         let mut alignment_calculator = AlignmentCalculator::new();
         let play_icon_positions =
@@ -1536,14 +1535,14 @@ async fn test_wide_mode_vs_normal_mode_play_icon_consistency() {
     ];
 
     // Test normal mode (80 char terminal)
-    let mut normal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let normal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let normal_layout_config = normal_layout_manager.calculate_layout(&games);
     let mut normal_alignment_calculator = AlignmentCalculator::new();
     let normal_play_icon_positions =
         normal_alignment_calculator.calculate_play_icon_positions(&games, &normal_layout_config);
 
     // Test wide mode (60 char column)
-    let mut wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
+    let wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(60, CONTENT_MARGIN);
     let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games);
     let mut wide_alignment_calculator = AlignmentCalculator::new();
     let wide_play_icon_positions =
@@ -1750,7 +1749,7 @@ async fn test_game_display_error_handling() {
 
         // Test layout calculation with edge case data
         let games = vec![game.clone()];
-        let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+        let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
         let layout_config = layout_manager.calculate_layout(&games);
 
         // Layout calculation should not panic and should produce valid results
@@ -1854,7 +1853,7 @@ async fn test_game_display_layout_performance() {
 
     // Test layout calculation performance
     let layout_start = Instant::now();
-    let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let layout_config = layout_manager.calculate_layout(&games);
     let layout_duration = layout_start.elapsed();
 

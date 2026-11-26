@@ -9,13 +9,8 @@ pub use columns::AlignmentCalculator;
 pub use config::{IntelligentTruncator, LayoutConfig};
 
 use crate::data_fetcher::models::GameData;
-use std::collections::HashMap;
 
-use columns::generate_content_signature;
-use config::{
-    CacheStats, ContentAnalysis, ContentCacheKey, GameDataValidator, LayoutCacheKey,
-    TerminalWidthValidation, TruncationStrategy,
-};
+use config::{ContentAnalysis, GameDataValidator, TerminalWidthValidation, TruncationStrategy};
 
 /// Manages column layout calculations for dynamic width determination
 #[derive(Debug)]
@@ -24,12 +19,6 @@ pub struct ColumnLayoutManager {
     terminal_width: usize,
     /// Content margin from terminal border
     content_margin: usize,
-    /// Cache for layout calculations to avoid repeated computation
-    layout_cache: HashMap<LayoutCacheKey, LayoutConfig>,
-    /// Cache for content analysis results
-    content_analysis_cache: HashMap<ContentCacheKey, ContentAnalysis>,
-    /// Cache for string operations (goal type displays)
-    string_cache: HashMap<Vec<String>, String>,
 }
 
 /// Minimum terminal width constants for layout validation
@@ -56,9 +45,6 @@ impl ColumnLayoutManager {
         Self {
             terminal_width,
             content_margin,
-            layout_cache: HashMap::new(),
-            content_analysis_cache: HashMap::new(),
-            string_cache: HashMap::new(),
         }
     }
 
@@ -74,91 +60,18 @@ impl ColumnLayoutManager {
         Self {
             terminal_width: column_width,
             content_margin,
-            layout_cache: HashMap::new(),
-            content_analysis_cache: HashMap::new(),
-            string_cache: HashMap::new(),
         }
-    }
-
-    /// Clears all caches to free memory
-    #[cfg(test)]
-    pub fn clear_caches(&mut self) {
-        let layout_cache_size = self.layout_cache.len();
-        let content_cache_size = self.content_analysis_cache.len();
-        let string_cache_size = self.string_cache.len();
-
-        self.layout_cache.clear();
-        self.content_analysis_cache.clear();
-        self.string_cache.clear();
-
-        tracing::debug!(
-            "Cleared layout caches: {layout_cache_size} layout entries, {content_cache_size} content analysis entries, {string_cache_size} string entries"
-        );
-    }
-
-    /// Gets cache statistics for monitoring performance
-    #[allow(dead_code)] // Used in tests
-    pub fn get_cache_stats(&self) -> CacheStats {
-        CacheStats {
-            layout_cache_size: self.layout_cache.len(),
-            content_analysis_cache_size: self.content_analysis_cache.len(),
-            string_cache_size: self.string_cache.len(),
-        }
-    }
-
-    /// Optimizes string operations by caching goal type display generation
-    /// This reduces repeated string allocations and concatenations
-    #[allow(dead_code)]
-    fn get_cached_goal_type_display(&mut self, goal_types: &[String]) -> String {
-        // Check cache first
-        if let Some(cached_display) = self.string_cache.get(goal_types) {
-            return cached_display.clone();
-        }
-
-        // Generate display string (optimized version of GoalEventData::get_goal_type_display)
-        let display = if goal_types.is_empty() {
-            String::new()
-        } else {
-            // Pre-allocate string with estimated capacity to reduce reallocations
-            let estimated_capacity = goal_types.len() * 3; // Assume average 2 chars per type + space
-            let mut result = String::with_capacity(estimated_capacity);
-
-            for (i, goal_type) in goal_types.iter().enumerate() {
-                if i > 0 {
-                    result.push(' ');
-                }
-                result.push_str(goal_type);
-            }
-            result
-        };
-
-        // Cache the result for future use
-        self.string_cache
-            .insert(goal_types.to_vec(), display.clone());
-
-        // Limit cache size to prevent unbounded growth
-        if self.string_cache.len() > 1000 {
-            tracing::debug!("String cache size exceeded 1000 entries, clearing oldest entries");
-            // Keep only the most recent 500 entries (simple LRU approximation)
-            let keys_to_remove: Vec<_> = self.string_cache.keys().take(500).cloned().collect();
-            for key in keys_to_remove {
-                self.string_cache.remove(&key);
-            }
-        }
-
-        display
     }
 
     /// Calculates optimal layout configuration based on game content
     /// Includes safe fallbacks for missing or corrupted data
-    /// Uses caching to optimize repeated calculations
     ///
     /// # Arguments
     /// * `games` - Slice of game data to analyze for content requirements
     ///
     /// # Returns
     /// * `LayoutConfig` - Calculated layout configuration
-    pub fn calculate_layout(&mut self, games: &[GameData]) -> LayoutConfig {
+    pub fn calculate_layout(&self, games: &[GameData]) -> LayoutConfig {
         tracing::debug!(
             "Starting layout calculation for {} games with terminal width {}",
             games.len(),
@@ -170,28 +83,6 @@ impl ColumnLayoutManager {
             tracing::info!("No games provided for layout calculation, using default configuration");
             return LayoutConfig::default();
         }
-
-        // Check cache first to avoid repeated calculations
-        let content_signature = generate_content_signature(games);
-        let cache_key = LayoutCacheKey {
-            terminal_width: self.terminal_width,
-            content_margin: self.content_margin,
-            content_signature,
-            is_wide_mode: false,
-        };
-
-        if let Some(cached_layout) = self.layout_cache.get(&cache_key) {
-            tracing::debug!(
-                "Layout calculation cache hit for signature {}, returning cached result",
-                content_signature
-            );
-            return cached_layout.clone();
-        }
-
-        tracing::debug!(
-            "Layout calculation cache miss for signature {}, performing calculation",
-            content_signature
-        );
 
         // Validate and sanitize game data before layout calculations
         let sanitized_games = GameDataValidator::sanitize_games(games);
@@ -246,8 +137,8 @@ impl ColumnLayoutManager {
 
         let mut config = LayoutConfig::default();
 
-        // Analyze content to determine space requirements using sanitized game data (with caching)
-        let content_analysis = self.analyze_content_cached(&sanitized_games, false);
+        // Analyze content to determine space requirements using sanitized game data
+        let content_analysis = self.analyze_content(&sanitized_games);
 
         tracing::debug!(
             "Content analysis results: max_player_name_width={}, max_goal_types_width={}",
@@ -318,58 +209,22 @@ impl ColumnLayoutManager {
             config.score_column
         );
 
-        // Cache the calculated layout for future use
-        self.layout_cache.insert(cache_key, config.clone());
-
-        // Limit cache size to prevent unbounded memory growth
-        if self.layout_cache.len() > 100 {
-            tracing::debug!("Layout cache size exceeded 100 entries, clearing oldest entries");
-            // Keep only the most recent 50 entries (simple LRU approximation)
-            let keys_to_remove: Vec<_> = self.layout_cache.keys().take(50).cloned().collect();
-            for key in keys_to_remove {
-                self.layout_cache.remove(&key);
-            }
-        }
-
         config
     }
 
     /// Calculates layout configuration optimized for wide mode columns
     /// Maintains proportional spacing while adapting to reduced column width
-    /// Uses caching to optimize repeated calculations
     ///
     /// # Arguments
     /// * `games` - Slice of game data to analyze for content requirements
     ///
     /// # Returns
     /// * `LayoutConfig` - Layout configuration adapted for wide mode column constraints
-    pub fn calculate_wide_mode_layout(&mut self, games: &[GameData]) -> LayoutConfig {
+    pub fn calculate_wide_mode_layout(&self, games: &[GameData]) -> LayoutConfig {
         tracing::debug!(
             "Starting wide mode layout calculation for {} games with column width {}",
             games.len(),
             self.terminal_width
-        );
-
-        // Check cache first for wide mode layouts
-        let content_signature = generate_content_signature(games);
-        let cache_key = LayoutCacheKey {
-            terminal_width: self.terminal_width,
-            content_margin: self.content_margin,
-            content_signature,
-            is_wide_mode: true,
-        };
-
-        if let Some(cached_layout) = self.layout_cache.get(&cache_key) {
-            tracing::debug!(
-                "Wide mode layout calculation cache hit for signature {}, returning cached result",
-                content_signature
-            );
-            return cached_layout.clone();
-        }
-
-        tracing::debug!(
-            "Wide mode layout calculation cache miss for signature {}, performing calculation",
-            content_signature
         );
 
         // Validate and sanitize game data before layout calculations
@@ -385,8 +240,8 @@ impl ColumnLayoutManager {
 
         let mut config = LayoutConfig::default();
 
-        // Analyze content to determine space requirements using sanitized game data (with caching)
-        let content_analysis = self.analyze_content_cached(&sanitized_games, false);
+        // Analyze content to determine space requirements using sanitized game data
+        let content_analysis = self.analyze_content(&sanitized_games);
 
         tracing::debug!(
             "Wide mode content analysis: max_player_name_width={}, max_goal_types_width={}",
@@ -492,9 +347,6 @@ impl ColumnLayoutManager {
             config.score_column
         );
 
-        // Cache the calculated wide mode layout for future use
-        self.layout_cache.insert(cache_key, config.clone());
-
         config
     }
 
@@ -582,73 +434,6 @@ impl ColumnLayoutManager {
             max_player_name_width,
             max_goal_types_width,
         }
-    }
-
-    /// Cached version of content analysis to optimize repeated calculations
-    ///
-    /// # Arguments
-    /// * `games` - Slice of game data to analyze
-    /// * `is_fallback` - Whether this is for fallback analysis
-    ///
-    /// # Returns
-    /// * `ContentAnalysis` - Analysis results (cached or freshly calculated)
-    fn analyze_content_cached(&mut self, games: &[GameData], is_fallback: bool) -> ContentAnalysis {
-        let content_signature = generate_content_signature(games);
-        let cache_key = ContentCacheKey {
-            content_signature,
-            is_fallback,
-            terminal_width: if is_fallback {
-                Some(self.terminal_width)
-            } else {
-                None
-            },
-        };
-
-        // Check cache first
-        if let Some(cached_analysis) = self.content_analysis_cache.get(&cache_key) {
-            tracing::debug!(
-                "Content analysis cache hit for signature {} (fallback: {})",
-                content_signature,
-                is_fallback
-            );
-            return cached_analysis.clone();
-        }
-
-        tracing::debug!(
-            "Content analysis cache miss for signature {} (fallback: {}), performing analysis",
-            content_signature,
-            is_fallback
-        );
-
-        // Perform analysis
-        let analysis = if is_fallback {
-            self.analyze_content_for_fallback(games)
-        } else {
-            self.analyze_content(games)
-        };
-
-        // Cache the result
-        self.content_analysis_cache
-            .insert(cache_key, analysis.clone());
-
-        // Limit cache size to prevent unbounded memory growth
-        if self.content_analysis_cache.len() > 200 {
-            tracing::debug!(
-                "Content analysis cache size exceeded 200 entries, clearing oldest entries"
-            );
-            // Keep only the most recent 100 entries (simple LRU approximation)
-            let keys_to_remove: Vec<_> = self
-                .content_analysis_cache
-                .keys()
-                .take(100)
-                .cloned()
-                .collect();
-            for key in keys_to_remove {
-                self.content_analysis_cache.remove(&key);
-            }
-        }
-
-        analysis
     }
 
     /// Gets the calculated width for home team display area
@@ -770,7 +555,7 @@ impl ColumnLayoutManager {
     ///
     /// # Returns
     /// * `LayoutConfig` - Minimal viable layout configuration
-    pub fn create_fallback_layout(&mut self, games: &[GameData]) -> LayoutConfig {
+    pub fn create_fallback_layout(&self, games: &[GameData]) -> LayoutConfig {
         tracing::warn!(
             "Terminal width {} is below recommended minimum of {}. Using fallback layout with intelligent truncation.",
             self.terminal_width,
@@ -789,8 +574,8 @@ impl ColumnLayoutManager {
         config.away_team_width = config.home_team_width;
         config.separator_width = 3; // Reduced separator for fallback layout
 
-        // Analyze content but with stricter limits and intelligent truncation (with caching)
-        let content_analysis = self.analyze_content_for_fallback_with_truncation_cached(games);
+        // Analyze content but with stricter limits and intelligent truncation
+        let content_analysis = self.analyze_content_for_fallback_with_truncation(games);
         config.max_player_name_width = content_analysis.max_player_name_width;
         config.max_goal_types_width = content_analysis.max_goal_types_width;
 
@@ -976,41 +761,6 @@ impl ColumnLayoutManager {
         config
     }
 
-    /// Analyzes content with stricter limits for fallback layouts
-    ///
-    /// # Arguments
-    /// * `games` - Slice of game data to analyze
-    ///
-    /// # Returns
-    /// * `ContentAnalysis` - Analysis results with conservative limits
-    fn analyze_content_for_fallback(&self, games: &[GameData]) -> ContentAnalysis {
-        let mut max_player_name_width = 0;
-        let mut max_goal_types_width = 0;
-
-        for game in games {
-            for event in &game.goal_events {
-                max_player_name_width =
-                    max_player_name_width.max(event.scorer_name.chars().count());
-                let goal_type_display = event.get_goal_type_display();
-                max_goal_types_width = max_goal_types_width.max(goal_type_display.chars().count());
-            }
-        }
-
-        // Apply stricter limits for fallback layout
-        max_player_name_width = if self.terminal_width < Self::ABSOLUTE_MINIMUM_WIDTH {
-            max_player_name_width.clamp(5, 8) // Very tight limits
-        } else {
-            max_player_name_width.clamp(8, 12) // Reduced but reasonable
-        };
-
-        max_goal_types_width = max_goal_types_width.clamp(2, 4); // Minimal goal type space
-
-        ContentAnalysis {
-            max_player_name_width,
-            max_goal_types_width,
-        }
-    }
-
     /// Analyzes content with intelligent truncation for extreme fallback layouts
     /// Uses IntelligentTruncator to determine optimal content widths
     ///
@@ -1073,50 +823,6 @@ impl ColumnLayoutManager {
             max_player_name_width,
             max_goal_types_width,
         }
-    }
-
-    /// Cached version of content analysis with intelligent truncation for extreme fallback layouts
-    ///
-    /// # Arguments
-    /// * `games` - Slice of game data to analyze
-    ///
-    /// # Returns
-    /// * `ContentAnalysis` - Analysis results with intelligent truncation applied (cached or freshly calculated)
-    fn analyze_content_for_fallback_with_truncation_cached(
-        &mut self,
-        games: &[GameData],
-    ) -> ContentAnalysis {
-        let content_signature = generate_content_signature(games);
-        let cache_key = ContentCacheKey {
-            content_signature,
-            is_fallback: true,
-            terminal_width: Some(self.terminal_width),
-        };
-
-        // Check cache first
-        if let Some(cached_analysis) = self.content_analysis_cache.get(&cache_key) {
-            tracing::debug!(
-                "Fallback content analysis cache hit for signature {} (terminal_width: {})",
-                content_signature,
-                self.terminal_width
-            );
-            return cached_analysis.clone();
-        }
-
-        tracing::debug!(
-            "Fallback content analysis cache miss for signature {} (terminal_width: {}), performing analysis",
-            content_signature,
-            self.terminal_width
-        );
-
-        // Perform analysis
-        let analysis = self.analyze_content_for_fallback_with_truncation(games);
-
-        // Cache the result
-        self.content_analysis_cache
-            .insert(cache_key, analysis.clone());
-
-        analysis
     }
 }
 
@@ -1246,7 +952,7 @@ mod tests {
 
     #[test]
     fn test_layout_calculation() {
-        let mut manager = ColumnLayoutManager::new(80, 2);
+        let manager = ColumnLayoutManager::new(80, 2);
 
         let goal_events = vec![create_test_goal_event(
             "Player Name",
@@ -1321,7 +1027,7 @@ mod tests {
 
     #[test]
     fn test_narrow_terminal_layout() {
-        let mut manager = ColumnLayoutManager::new(60, 2); // Narrow terminal
+        let manager = ColumnLayoutManager::new(60, 2); // Narrow terminal
 
         let games = vec![create_test_game_data("HIFK", "TPS", vec![])];
         let layout = manager.calculate_layout(&games);
@@ -1341,7 +1047,7 @@ mod tests {
 
     #[test]
     fn test_wide_mode_layout_calculation() {
-        let mut manager = ColumnLayoutManager::new_for_wide_mode_column(60, 2);
+        let manager = ColumnLayoutManager::new_for_wide_mode_column(60, 2);
 
         let goal_events = vec![create_test_goal_event(
             "Long Player Name",
@@ -1355,57 +1061,6 @@ mod tests {
         assert_eq!(layout.home_team_width, 18);
         assert_eq!(layout.away_team_width, 18);
         assert_eq!(layout.separator_width, 3);
-    }
-
-    #[test]
-    fn test_layout_calculation_caching() {
-        let mut manager = ColumnLayoutManager::new(80, 2);
-
-        let goal_events = vec![create_test_goal_event(
-            "Player Name",
-            vec!["YV".to_string(), "IM".to_string()],
-        )];
-
-        let games = vec![create_test_game_data("HIFK", "TPS", goal_events)];
-
-        // First calculation should populate cache
-        let layout1 = manager.calculate_layout(&games);
-        let stats1 = manager.get_cache_stats();
-        assert_eq!(stats1.layout_cache_size, 1);
-
-        // Second calculation with same data should use cache
-        let layout2 = manager.calculate_layout(&games);
-        let stats2 = manager.get_cache_stats();
-        assert_eq!(stats2.layout_cache_size, 1); // Should still be 1
-
-        // Results should be identical
-        assert_eq!(layout1.max_player_name_width, layout2.max_player_name_width);
-        assert_eq!(layout1.max_goal_types_width, layout2.max_goal_types_width);
-        assert_eq!(layout1.play_icon_column, layout2.play_icon_column);
-    }
-
-    #[test]
-    fn test_string_caching() {
-        let mut manager = ColumnLayoutManager::new(80, 2);
-
-        let goal_types1 = vec!["YV".to_string(), "IM".to_string()];
-        let goal_types2 = vec!["YV".to_string(), "IM".to_string()]; // Same content
-        let goal_types3 = vec!["TM".to_string()]; // Different content
-
-        // First call should populate cache
-        let display1 = manager.get_cached_goal_type_display(&goal_types1);
-        assert_eq!(display1, "YV IM");
-
-        // Second call with same content should use cache
-        let display2 = manager.get_cached_goal_type_display(&goal_types2);
-        assert_eq!(display2, "YV IM");
-
-        // Third call with different content should create new cache entry
-        let display3 = manager.get_cached_goal_type_display(&goal_types3);
-        assert_eq!(display3, "TM");
-
-        let stats = manager.get_cache_stats();
-        assert_eq!(stats.string_cache_size, 2); // Two unique entries
     }
 
     #[test]
@@ -1435,29 +1090,11 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_clearing() {
-        let mut manager = ColumnLayoutManager::new(80, 2);
-        let mut calculator = AlignmentCalculator::new();
+    fn test_layout_content_widths_without_goal_events() {
+        let manager = ColumnLayoutManager::new(80, 2);
 
-        // Populate caches
         let games = vec![create_test_game_data("HIFK", "TPS", vec![])];
         let layout = manager.calculate_layout(&games);
-        let _positions = calculator.calculate_play_icon_positions(&games, &layout);
-
-        // Verify caches have entries
-        assert!(manager.get_cache_stats().layout_cache_size > 0);
-        assert!(calculator.get_cache_stats().play_icon_cache_size > 0);
-
-        // Clear caches
-        manager.clear_caches();
-        calculator.clear_caches();
-
-        // Verify caches are empty
-        assert_eq!(manager.get_cache_stats().layout_cache_size, 0);
-        assert_eq!(manager.get_cache_stats().content_analysis_cache_size, 0);
-        assert_eq!(manager.get_cache_stats().string_cache_size, 0);
-        assert_eq!(calculator.get_cache_stats().play_icon_cache_size, 0);
-        assert_eq!(calculator.get_cache_stats().goal_type_cache_size, 0);
 
         // Should use reasonable content widths for normal mode
         assert!(layout.max_player_name_width <= 20);
@@ -1476,7 +1113,7 @@ mod tests {
 
     #[test]
     fn test_wide_mode_layout_with_normal_column_width() {
-        let mut manager = ColumnLayoutManager::new_for_wide_mode_column(80, 2); // Wider column
+        let manager = ColumnLayoutManager::new_for_wide_mode_column(80, 2); // Wider column
 
         let goal_events = vec![create_test_goal_event("Player", vec!["YV".to_string()])];
 
@@ -1495,8 +1132,8 @@ mod tests {
 
     #[test]
     fn test_wide_mode_layout_proportional_spacing() {
-        let mut narrow_manager = ColumnLayoutManager::new_for_wide_mode_column(60, 2);
-        let mut wide_manager = ColumnLayoutManager::new_for_wide_mode_column(80, 2);
+        let narrow_manager = ColumnLayoutManager::new_for_wide_mode_column(60, 2);
+        let wide_manager = ColumnLayoutManager::new_for_wide_mode_column(80, 2);
 
         let games = vec![create_test_game_data("HIFK", "TPS", vec![])];
         let narrow_layout = narrow_manager.calculate_wide_mode_layout(&games);
@@ -1566,7 +1203,7 @@ mod tests {
 
     #[test]
     fn test_fallback_layout_for_narrow_terminal() {
-        let mut manager = ColumnLayoutManager::new(45, 2); // Below absolute minimum
+        let manager = ColumnLayoutManager::new(45, 2); // Below absolute minimum
 
         let goal_events = vec![create_test_goal_event(
             "Long Player Name",
@@ -1595,7 +1232,7 @@ mod tests {
     fn test_fallback_layout_at_42_columns_does_not_underflow() {
         // At 42 columns only 1 column is left for the play area. The old
         // `available - 2` underflowed: a panic in debug, usize::MAX in release.
-        let mut manager = ColumnLayoutManager::new(42, 2);
+        let manager = ColumnLayoutManager::new(42, 2);
 
         let goal_events = vec![create_test_goal_event(
             "Long Player Name",
@@ -1613,7 +1250,7 @@ mod tests {
         // "Hämäläinen Ma." is 14 columns but 17 bytes. Counting bytes made the
         // name column 3 wider and pushed the time and score right with it.
         let layout_for = |scorer: &str| {
-            let mut manager = ColumnLayoutManager::new(80, 2);
+            let manager = ColumnLayoutManager::new(80, 2);
             let goal_events = vec![create_test_goal_event(
                 scorer,
                 vec!["YV".to_string(), "TM".to_string()],
@@ -1644,15 +1281,6 @@ mod tests {
             let manager = ColumnLayoutManager::new(width, 2);
             assert_eq!(
                 manager
-                    .analyze_content_for_fallback(&finnish)
-                    .max_player_name_width,
-                manager
-                    .analyze_content_for_fallback(&ascii)
-                    .max_player_name_width,
-                "width {width}"
-            );
-            assert_eq!(
-                manager
                     .analyze_content_for_fallback_with_truncation(&finnish)
                     .max_player_name_width,
                 manager
@@ -1665,7 +1293,7 @@ mod tests {
 
     #[test]
     fn test_fallback_layout_for_suboptimal_terminal() {
-        let mut manager = ColumnLayoutManager::new(60, 2); // Below recommended minimum
+        let manager = ColumnLayoutManager::new(60, 2); // Below recommended minimum
 
         let goal_events = vec![create_test_goal_event(
             "Player Name",
@@ -1692,7 +1320,7 @@ mod tests {
 
     #[test]
     fn test_calculate_layout_uses_fallback_for_narrow_terminal() {
-        let mut manager = ColumnLayoutManager::new(45, 2); // Below absolute minimum
+        let manager = ColumnLayoutManager::new(45, 2); // Below absolute minimum
 
         let games = vec![create_test_game_data("HIFK", "TPS", vec![])];
         let layout = manager.calculate_layout(&games);
@@ -1704,7 +1332,7 @@ mod tests {
 
     #[test]
     fn test_calculate_layout_uses_fallback_for_suboptimal_terminal() {
-        let mut manager = ColumnLayoutManager::new(60, 2); // Below recommended minimum
+        let manager = ColumnLayoutManager::new(60, 2); // Below recommended minimum
 
         let games = vec![create_test_game_data("HIFK", "TPS", vec![])];
         let layout = manager.calculate_layout(&games);
@@ -1716,7 +1344,7 @@ mod tests {
 
     #[test]
     fn test_calculate_layout_uses_normal_for_adequate_terminal() {
-        let mut manager = ColumnLayoutManager::new(80, 2); // Adequate width
+        let manager = ColumnLayoutManager::new(80, 2); // Adequate width
 
         let games = vec![create_test_game_data("HIFK", "TPS", vec![])];
         let layout = manager.calculate_layout(&games);
@@ -1727,46 +1355,8 @@ mod tests {
     }
 
     #[test]
-    fn test_analyze_content_for_fallback_strict_limits() {
-        let manager = ColumnLayoutManager::new(45, 2); // Very narrow
-
-        let goal_events = vec![create_test_goal_event(
-            "Extremely Long Player Name That Should Be Limited",
-            vec!["YV".to_string(), "IM".to_string(), "TM".to_string()],
-        )];
-
-        let games = vec![create_test_game_data("HIFK", "TPS", goal_events)];
-        let analysis = manager.analyze_content_for_fallback(&games);
-
-        // Should apply very strict limits for narrow terminals
-        assert!(analysis.max_player_name_width <= 8);
-        assert!(analysis.max_player_name_width >= 5);
-        assert!(analysis.max_goal_types_width <= 4);
-        assert!(analysis.max_goal_types_width >= 2);
-    }
-
-    #[test]
-    fn test_analyze_content_for_fallback_moderate_limits() {
-        let manager = ColumnLayoutManager::new(60, 2); // Suboptimal but usable
-
-        let goal_events = vec![create_test_goal_event(
-            "Long Player Name",
-            vec!["YV".to_string(), "IM".to_string()],
-        )];
-
-        let games = vec![create_test_game_data("HIFK", "TPS", goal_events)];
-        let analysis = manager.analyze_content_for_fallback(&games);
-
-        // Should apply moderate limits for suboptimal terminals
-        assert!(analysis.max_player_name_width <= 12);
-        assert!(analysis.max_player_name_width >= 8);
-        assert!(analysis.max_goal_types_width <= 4);
-        assert!(analysis.max_goal_types_width >= 2);
-    }
-
-    #[test]
     fn test_fallback_layout_positions_dont_overlap() {
-        let mut manager = ColumnLayoutManager::new(50, 2); // Minimum width
+        let manager = ColumnLayoutManager::new(50, 2); // Minimum width
 
         let goal_events = vec![create_test_goal_event(
             "Player",
@@ -2472,7 +2062,7 @@ mod tests {
 
     #[test]
     fn test_fallback_layout_with_intelligent_truncation() {
-        let mut manager = ColumnLayoutManager::new(45, 2); // Very narrow terminal
+        let manager = ColumnLayoutManager::new(45, 2); // Very narrow terminal
 
         let goal_events = vec![create_test_goal_event(
             "Very Long Player Name That Exceeds Limits",
@@ -2699,7 +2289,7 @@ mod tests {
 
     #[test]
     fn test_layout_calculation_with_validation() {
-        let mut manager = ColumnLayoutManager::new(80, 2);
+        let manager = ColumnLayoutManager::new(80, 2);
 
         // Create games with some validation issues
         let games = vec![

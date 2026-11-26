@@ -234,7 +234,7 @@ async fn test_layout_system_all_game_scenarios() {
     let games = create_comprehensive_test_games();
 
     // Test layout calculation for all scenarios
-    let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let layout_config = layout_manager.calculate_layout(&games);
 
     // Verify layout handles all scenarios correctly
@@ -316,7 +316,7 @@ async fn test_different_terminal_sizes_comprehensive() {
         println!("  Testing terminal width: {} ({})", width, description);
 
         // Test layout calculation for this terminal size
-        let mut layout_manager = ColumnLayoutManager::new(width, CONTENT_MARGIN);
+        let layout_manager = ColumnLayoutManager::new(width, CONTENT_MARGIN);
         let layout_config = layout_manager.calculate_layout(&games);
 
         // Verify layout is reasonable for this width
@@ -555,7 +555,7 @@ async fn test_error_handling_comprehensive_scenarios() {
     }];
 
     // Test layout system with malformed data
-    let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let layout_config = layout_manager.calculate_layout(&malformed_games);
 
     // Should provide reasonable defaults
@@ -591,7 +591,7 @@ async fn test_error_handling_comprehensive_scenarios() {
     }
 
     // Test extremely narrow terminal
-    let mut narrow_layout_manager = ColumnLayoutManager::new(40, CONTENT_MARGIN);
+    let narrow_layout_manager = ColumnLayoutManager::new(40, CONTENT_MARGIN);
     let narrow_layout = narrow_layout_manager.calculate_layout(&create_comprehensive_test_games());
 
     // Should provide fallback layout
@@ -617,7 +617,7 @@ async fn test_performance_comprehensive_scenarios() {
 
     // Test layout calculation performance
     let layout_start = std::time::Instant::now();
-    let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
+    let layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
     let _layout_config = layout_manager.calculate_layout(&games);
     let layout_duration = layout_start.elapsed();
 

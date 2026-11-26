@@ -81,8 +81,7 @@ impl TeletextPage {
 
         // Create layout manager for wide mode columns
         use super::layout::ColumnLayoutManager;
-        let mut wide_layout_manager =
-            ColumnLayoutManager::new_for_wide_mode_column(column_width, 2);
+        let wide_layout_manager = ColumnLayoutManager::new_for_wide_mode_column(column_width, 2);
         let games_for_layout = self.extract_games_for_layout(visible_rows);
         let wide_layout_config = wide_layout_manager.calculate_wide_mode_layout(&games_for_layout);
 
