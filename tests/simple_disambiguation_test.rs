@@ -105,7 +105,7 @@ fn test_ui_modes_with_verified_disambiguation() {
         series_score: None,
     };
 
-    // Test normal mode (Requirement 3.1)
+    // Test normal mode
     let mut normal_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
@@ -124,7 +124,7 @@ fn test_ui_modes_with_verified_disambiguation() {
     assert_eq!(normal_page.total_pages(), 1, "Should have one page");
     println!("✓ Normal mode correctly handles disambiguated names");
 
-    // Test compact mode (Requirement 3.2)
+    // Test compact mode
     let mut compact_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
@@ -143,7 +143,7 @@ fn test_ui_modes_with_verified_disambiguation() {
     assert_eq!(compact_page.total_pages(), 1, "Should have one page");
     println!("✓ Compact mode preserves disambiguated names within space constraints");
 
-    // Test wide mode (Requirement 3.3)
+    // Test wide mode
     let mut wide_page = TeletextPage::new(
         221,
         "JÄÄKIEKKO".to_string(),
@@ -309,7 +309,7 @@ fn test_disambiguation_edge_cases() {
 
 #[test]
 fn test_name_truncation_with_disambiguation() {
-    // Test that truncation preserves disambiguation (Requirement 3.4)
+    // Test that truncation preserves disambiguation
     let long_disambiguated_names = vec![
         GoalEventData {
             scorer_player_id: 1,

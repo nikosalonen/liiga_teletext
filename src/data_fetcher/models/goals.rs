@@ -52,7 +52,7 @@ pub struct GoalEventData {
 
 impl GoalEventData {
     /// Gets the display string for goal types with safe fallbacks for missing data
-    /// Ensures rendering continues even with problematic goal type data (Requirement 4.1)
+    /// Ensures rendering continues even with problematic goal type data
     pub fn get_goal_type_display(&self) -> String {
         // Handle missing or empty goal types safely
         if self.goal_types.is_empty() {

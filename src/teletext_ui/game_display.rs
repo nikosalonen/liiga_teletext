@@ -111,7 +111,7 @@ impl TeletextPage {
             layout_manager.calculate_layout(&games_for_layout)
         };
 
-        // Pre-calculate ANSI positioning codes for optimal performance (requirement 4.3)
+        // Pre-calculate ANSI positioning codes for optimal performance
         let estimated_lines = visible_rows.len() * 3; // Estimate 3 lines per game (game + goals + spacing)
         layout_manager.pre_calculate_ansi_codes(&layout_config, estimated_lines);
 
@@ -272,7 +272,7 @@ impl TeletextPage {
             ScoreType::Ongoing => text_fg_code,
         };
 
-        // Use optimized ANSI code generation for better performance (requirement 4.3)
+        // Use optimized ANSI code generation for better performance
         let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN); // Use default for ANSI generation
 
         if !time_display.is_empty() && !score_display.is_empty() {
@@ -284,7 +284,7 @@ impl TeletextPage {
             let time_pos = layout_config.time_column;
             let score_pos = layout_config.score_column;
 
-            // Batch string operations to reduce allocations (requirement 4.3)
+            // Batch string operations to reduce allocations
             let mut game_line = String::with_capacity(200); // Pre-allocate for better performance
 
             game_line.push_str(&layout_manager.format_team_name(
@@ -328,7 +328,7 @@ impl TeletextPage {
                 score_display
             };
 
-            // Use optimized complete game line formatting (requirement 4.3)
+            // Use optimized complete game line formatting
             let formatted_line = layout_manager.format_complete_game_line(
                 *current_line,
                 layout_config,
@@ -480,7 +480,7 @@ impl TeletextPage {
     }
 
     /// Renders a single goal event (scorer name, minute, video link, goal type).
-    /// Includes comprehensive safe fallbacks for missing data (requirement 4.1)
+    /// Includes comprehensive safe fallbacks for missing data
     ///
     /// # Arguments
     /// * `buffer` - The string buffer to append to
@@ -507,7 +507,7 @@ impl TeletextPage {
         goal_type_fg_code: u8,
         layout_config: &LayoutConfig,
     ) {
-        // Use safe rendering with comprehensive error handling (requirement 4.1)
+        // Use safe rendering with comprehensive error handling
         // Instead of panic handling, use Result-based error handling for safety
         match self.render_goal_event_safe(
             buffer,
@@ -575,7 +575,7 @@ impl TeletextPage {
             scorer_fg_code
         };
 
-        // Render goal minute with safe fallback for invalid data (requirement 4.1)
+        // Render goal minute with safe fallback for invalid data
         let safe_minute = if event.minute < 0 || event.minute > 200 {
             tracing::debug!(
                 "Invalid goal minute {} in event, using fallback: 0",
@@ -586,7 +586,7 @@ impl TeletextPage {
             event.minute
         };
 
-        // Use optimized ANSI code generation for goal minute (requirement 4.3)
+        // Use optimized ANSI code generation for goal minute
         let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
         let minute_code =
             layout_manager.get_color_position_code(current_line, column_offset, scorer_color);
@@ -595,7 +595,7 @@ impl TeletextPage {
         // Calculate dynamic spacing for player name to maintain play icon alignment
         // Note: We create separate layout managers for each operation to avoid borrowing issues
 
-        // Handle missing or corrupted player names safely (requirement 4.1)
+        // Handle missing or corrupted player names safely
         let safe_player_name = if event.scorer_name.trim().is_empty() {
             tracing::debug!("Empty player name in goal event, using fallback");
             "Unknown Player".to_string()
@@ -606,10 +606,10 @@ impl TeletextPage {
         // Store original length before truncation for spacing calculation
         let original_player_name_length = safe_player_name.chars().count();
 
-        // Use intelligent truncation for player names (requirement 3.2)
+        // Use intelligent truncation for player names
         let player_name_display =
             if original_player_name_length > layout_config.max_player_name_width {
-                // Use intelligent truncation with ellipsis only as last resort (requirement 3.2)
+                // Use intelligent truncation with ellipsis only as last resort
                 IntelligentTruncator::truncate_player_name(
                     &safe_player_name,
                     layout_config.max_player_name_width,
@@ -673,7 +673,7 @@ impl TeletextPage {
         // Render player name (make it clickable if there's a video link)
         let player_name_with_link = if let Some(url) = &event.video_clip_url {
             if !self.disable_video_links {
-                // Validate URL safety before rendering (requirement 4.1)
+                // Validate URL safety before rendering
                 let safe_url = if url.trim().is_empty() {
                     tracing::debug!("Empty video URL in goal event, skipping video link");
                     None
@@ -712,15 +712,15 @@ impl TeletextPage {
             buffer.push_str(&format!("\x1b[38;5;{play_icon_fg_code}m▶\x1b[0m"));
         }
 
-        // Get goal type display with safe fallback for missing data (requirement 4.1)
+        // Get goal type display with safe fallback for missing data
         let goal_type = event.get_goal_type_display();
 
         // Add single space before goal type (player name is already padded to fixed width)
         buffer.push(' ');
 
-        // Add goal type indicators with overflow prevention and validation (requirements 3.1, 3.2, 3.4)
+        // Add goal type indicators with overflow prevention and validation
         if !goal_type.is_empty() {
-            // Validate that goal types can be displayed without truncation (requirement 3.4)
+            // Validate that goal types can be displayed without truncation
             if !IntelligentTruncator::validate_goal_types_no_truncation(
                 &goal_type,
                 layout_config.max_goal_types_width,
@@ -750,17 +750,17 @@ impl TeletextPage {
             };
 
             if goal_type_end_position <= boundary_column {
-                // Safe to render at current position - use optimized formatting (requirement 4.3)
+                // Safe to render at current position - use optimized formatting
                 let formatted_goal_type =
                     format!("\x1b[38;5;{goal_type_fg_code}m{goal_type}\x1b[0m");
                 buffer.push_str(&formatted_goal_type);
             } else {
-                // Position goal types at safe location to prevent overflow (requirement 3.2)
-                // Never truncate goal types - always find a safe position (requirement 3.4)
+                // Position goal types at safe location to prevent overflow
+                // Never truncate goal types - always find a safe position
                 let safe_position =
                     boundary_column.saturating_sub(goal_type.len().min(boundary_column));
 
-                // Use optimized goal type formatting (requirement 4.3)
+                // Use optimized goal type formatting
                 let mut goal_layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
                 let formatted_goal_type = goal_layout_manager.format_goal_types(
                     current_line,
@@ -798,7 +798,7 @@ impl TeletextPage {
         current_line: &mut usize,
         text_fg_code: u8,
     ) {
-        // Use optimized ANSI code generation for error messages (requirement 4.3)
+        // Use optimized ANSI code generation for error messages
         let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
 
         for line in message.lines() {
@@ -827,7 +827,7 @@ impl TeletextPage {
         current_line: &mut usize,
         subheader_fg_code: u8,
     ) {
-        // Use optimized ANSI code generation for headers (requirement 4.3)
+        // Use optimized ANSI code generation for headers
         let mut layout_manager = ColumnLayoutManager::new(80, CONTENT_MARGIN);
         let formatted_header = layout_manager.format_time_score(
             *current_line,

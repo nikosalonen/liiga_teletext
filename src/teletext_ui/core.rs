@@ -520,7 +520,7 @@ impl TeletextPage {
             format!("SM-LIIGA {page_str} {clock}")
         };
 
-        // Use optimized ANSI code generation for headers (requirement 4.3)
+        // Use optimized ANSI code generation for headers
         let title_bg_code = get_ansi_code(title_bg(), 46);
         let header_fg_code = get_ansi_code(header_fg(), 21);
         let header_bg_code = get_ansi_code(header_bg(), 21);
@@ -529,7 +529,7 @@ impl TeletextPage {
         // Pre-calculate header width for better performance
         let header_width = (width as usize).saturating_sub(20);
 
-        // Batch header ANSI code generation (requirement 4.3)
+        // Batch header ANSI code generation
         let mut header_buffer = String::with_capacity(200); // Pre-allocate for performance
 
         // Build header line
