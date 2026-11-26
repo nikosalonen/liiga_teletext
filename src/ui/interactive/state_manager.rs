@@ -671,16 +671,8 @@ mod tests {
     fn test_resize_on_bracket_error_page_keeps_it() {
         // An error page has no bracket to lay out; rebuilding would hide the error.
         let mut state = state_showing_bracket();
-        let mut error_page = TeletextPage::new(
-            223,
-            "JÄÄKIEKKO".to_string(),
-            "PUDOTUSPELIT".to_string(),
-            true,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut error_page =
+            TeletextPage::new(223, "JÄÄKIEKKO", "PUDOTUSPELIT").with_video_links_disabled(true);
         error_page.add_error_message("Pudotuspelien lataus epäonnistui.");
         state.set_current_page(error_page);
 

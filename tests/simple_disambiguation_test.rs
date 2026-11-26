@@ -106,16 +106,8 @@ fn test_ui_modes_with_verified_disambiguation() {
     };
 
     // Test normal mode
-    let mut normal_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true, // ignore_height_limit for easier testing
-        false,
-        false,
-    );
+    let mut normal_page =
+        TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true);
     normal_page.add_game_result(game.clone());
     normal_page.set_screen_height(25);
 
@@ -125,16 +117,9 @@ fn test_ui_modes_with_verified_disambiguation() {
     println!("✓ Normal mode correctly handles disambiguated names");
 
     // Test compact mode
-    let mut compact_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true, // ignore_height_limit for easier testing
-        true,
-        false,
-    );
+    let mut compact_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+        .with_ignore_height_limit(true)
+        .with_compact_mode(true);
     compact_page.add_game_result(game.clone());
     compact_page.set_screen_height(25);
 
@@ -144,16 +129,9 @@ fn test_ui_modes_with_verified_disambiguation() {
     println!("✓ Compact mode preserves disambiguated names within space constraints");
 
     // Test wide mode
-    let mut wide_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true, // ignore_height_limit for easier testing
-        false,
-        true,
-    );
+    let mut wide_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+        .with_ignore_height_limit(true)
+        .with_wide_mode(true);
     wide_page.add_game_result(game.clone());
     wide_page.set_screen_height(25);
 
@@ -228,16 +206,8 @@ fn test_disambiguation_error_scenarios() {
         series_score: None,
     };
 
-    let mut error_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true, // ignore_height_limit for easier testing
-        false,
-        false,
-    );
+    let mut error_page =
+        TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true);
     error_page.add_game_result(error_game);
 
     // Should handle missing player ID gracefully without crashing
@@ -362,16 +332,8 @@ fn test_name_truncation_with_disambiguation() {
         series_score: None,
     };
 
-    let mut truncation_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true, // ignore_height_limit for easier testing
-        false,
-        false,
-    );
+    let mut truncation_page =
+        TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true);
     truncation_page.add_game_result(truncation_game);
     truncation_page.set_screen_height(25);
 
@@ -437,16 +399,10 @@ fn test_disambiguation_consistency_across_modes() {
     ];
 
     for (mode_name, compact, wide) in modes {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            true, // ignore_height_limit
-            compact,
-            wide,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+            .with_ignore_height_limit(true)
+            .with_compact_mode(compact)
+            .with_wide_mode(wide);
         page.add_game_result(game.clone());
 
         // Verify the page can be created and configured correctly

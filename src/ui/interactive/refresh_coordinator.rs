@@ -107,16 +107,10 @@ fn page_for_blank_screen(
     }
 
     if result.had_error {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            config.disable_links,
-            true,
-            false,
-            config.compact_mode,
-            config.wide_mode,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+            .with_video_links_disabled(config.disable_links)
+            .with_compact_mode(config.compact_mode)
+            .with_wide_mode(config.wide_mode);
         page.add_error_message("Otteluiden haku epäonnistui.");
         page.add_error_message("");
         page.add_error_message("Yritetään uudelleen automaattisesti,");
@@ -326,16 +320,8 @@ where
     } else {
         // Show the loading page right away so the UI feels responsive; the
         // animated spinner line layers on top after the grace period
-        let mut page = TeletextPage::new(
-            spec.page_number,
-            "JÄÄKIEKKO".to_string(),
-            spec.subheader.to_string(),
-            disable_links,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(spec.page_number, "JÄÄKIEKKO", spec.subheader)
+            .with_video_links_disabled(disable_links);
         page.add_error_message(spec.loading_message);
         if let Err(e) = page.render_buffered(&mut std::io::stdout()) {
             tracing::warn!("Failed to render {} loading page: {e}", spec.label);
@@ -950,14 +936,12 @@ impl RefreshCoordinator {
             || {
                 let mut page = TeletextPage::new(
                     STANDINGS_FETCH.page_number,
-                    "JÄÄKIEKKO".to_string(),
-                    STANDINGS_FETCH.subheader.to_string(),
-                    config.disable_links,
-                    true,
-                    false,
-                    config.compact_mode,
-                    config.wide_mode,
-                );
+                    "JÄÄKIEKKO",
+                    STANDINGS_FETCH.subheader,
+                )
+                .with_video_links_disabled(config.disable_links)
+                .with_compact_mode(config.compact_mode)
+                .with_wide_mode(config.wide_mode);
                 page.add_error_message("Sarjataulukon lataus epäonnistui.");
                 page.add_error_message("Paina 's' palataksesi otteluihin.");
                 page
@@ -1023,14 +1007,10 @@ impl RefreshCoordinator {
             || {
                 let mut page = TeletextPage::new(
                     BRACKET_FETCH.page_number,
-                    "JÄÄKIEKKO".to_string(),
-                    BRACKET_FETCH.subheader.to_string(),
-                    config.disable_links,
-                    true,
-                    false,
-                    false,
-                    false,
-                );
+                    "JÄÄKIEKKO",
+                    BRACKET_FETCH.subheader,
+                )
+                .with_video_links_disabled(config.disable_links);
                 page.add_error_message("Pudotuspelien lataus epäonnistui.");
                 page.add_error_message("Paina 'p' palataksesi.");
                 page
@@ -1600,16 +1580,9 @@ mod tests {
     #[test]
     fn test_existing_page_is_not_replaced_by_blank_screen_page() {
         let mut state = InteractiveState::new(Some("2026-09-28".to_string()));
-        state.set_current_page(TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            true,
-            false,
-            false,
-        ));
+        state.set_current_page(
+            TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true),
+        );
 
         assert!(
             page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
@@ -1618,16 +1591,7 @@ mod tests {
     }
 
     fn blank_screen_test_page() -> TeletextPage {
-        TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        )
+        TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
     }
 
     #[test]
@@ -1704,16 +1668,9 @@ mod tests {
     fn test_process_refresh_results_keeps_last_games_on_fetch_error() {
         let coordinator = RefreshCoordinator::new();
         let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
-        state.set_current_page(TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            true,
-            false,
-            false,
-        ));
+        state.set_current_page(
+            TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true),
+        );
 
         let mut game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
         game.result = "3-2".to_string();
@@ -2034,32 +1991,16 @@ mod tests {
     }
 
     fn standings_page_with_spinner() -> TeletextPage {
-        let mut page = TeletextPage::new(
-            222,
-            "JÄÄKIEKKO".to_string(),
-            "SARJATAULUKKO".to_string(),
-            false,
-            true,
-            true,
-            false,
-            false,
-        );
+        let mut page =
+            TeletextPage::new(222, "JÄÄKIEKKO", "SARJATAULUKKO").with_ignore_height_limit(true);
         page.set_standings_mode(true, false);
         page.show_auto_refresh_indicator();
         page
     }
 
     fn error_page_for_test() -> TeletextPage {
-        let mut page = TeletextPage::new(
-            222,
-            "JÄÄKIEKKO".to_string(),
-            "SARJATAULUKKO".to_string(),
-            false,
-            true,
-            true,
-            false,
-            false,
-        );
+        let mut page =
+            TeletextPage::new(222, "JÄÄKIEKKO", "SARJATAULUKKO").with_ignore_height_limit(true);
         page.add_error_message("Sarjataulukon lataus epäonnistui.");
         page
     }

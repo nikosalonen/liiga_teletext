@@ -18,16 +18,7 @@ impl TeletextPage {
     /// use liiga_teletext::TeletextPage;
     /// use liiga_teletext::ui::teletext::compact_display::CompactModeValidation;
     ///
-    /// let page = TeletextPage::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    ///     false,
-    ///     true,
-    ///     false,
-    ///     true, // compact_mode enabled
-    ///     false,
-    /// );
+    /// let page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_compact_mode(true);
     ///
     /// let validation = page.validate_compact_mode_compatibility();
     /// match validation {

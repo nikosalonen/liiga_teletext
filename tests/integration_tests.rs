@@ -39,16 +39,7 @@ async fn test_goal_event_processing() {
 #[tokio::test]
 async fn test_error_handling() {
     // Create teletext page
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA");
 
     // Add error message
     let error_msg = "No games found for the specified date";
@@ -65,16 +56,7 @@ async fn test_error_handling() {
 #[tokio::test]
 async fn test_page_navigation() {
     // Create teletext page
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA");
 
     // Add multiple games to test pagination
     for i in 0..10 {
@@ -198,16 +180,7 @@ async fn test_teletext_ui_generation() {
     };
 
     // Create teletext page
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        false, // ignore_height_limit
-        false, // compact_mode
-        false, // wide_mode
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA");
 
     // Add game result
     let game_data = GameResultData::new(&mock_game);
@@ -297,16 +270,7 @@ async fn test_end_to_end_multiple_games() {
     ];
 
     // Create teletext page
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA");
 
     // Add all game results
     for game in &mock_games {
@@ -342,16 +306,7 @@ async fn test_different_tournament_types() {
     };
 
     // Create teletext page
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "PLAYOFFS".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "PLAYOFFS");
 
     // Add game result
     let game_data = GameResultData::new(&playoffs_game);
@@ -480,16 +435,9 @@ async fn test_compact_mode_non_interactive() {
     ];
 
     // Create teletext page in compact mode
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit (non-interactive mode)
-        true,  // compact_mode
-        false, // wide_mode
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_compact_mode(true);
 
     // Add all game results
     for game in &mock_games {
@@ -559,16 +507,9 @@ async fn test_compact_mode_with_dates() {
     };
 
     // Test with past game (compact mode should work)
-    let mut past_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false,
-        true,
-        true,
-        true,  // compact_mode
-        false, // wide_mode
-    );
+    let mut past_page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_compact_mode(true);
     past_page.set_fetched_date("2024-01-15".to_string());
     let past_game_data = GameResultData::new(&past_game);
     past_page.add_game_result(past_game_data);
@@ -576,16 +517,9 @@ async fn test_compact_mode_with_dates() {
     assert!(past_page.is_compact_mode());
 
     // Test with future game (compact mode should work)
-    let mut future_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false,
-        true,
-        true,
-        true,  // compact_mode
-        false, // wide_mode
-    );
+    let mut future_page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_compact_mode(true);
     future_page.set_fetched_date("2024-12-15".to_string());
     let future_game_data = GameResultData::new(&future_game);
     future_page.add_game_result(future_game_data);
@@ -705,27 +639,12 @@ async fn test_compact_mode_preserves_styling() {
     ];
 
     // Create pages in both normal and compact mode
-    let mut normal_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false,
-        true,
-        true,
-        false, // normal mode
-        false, // wide_mode
-    );
+    let mut normal_page =
+        TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA").with_ignore_height_limit(true);
 
-    let mut compact_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false,
-        true,
-        true,
-        true,  // compact mode
-        false, // wide_mode
-    );
+    let mut compact_page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_compact_mode(true);
 
     // Add same games to both pages
     for game in &games {
@@ -802,16 +721,7 @@ async fn test_compact_mode_various_terminal_sizes() {
 #[tokio::test]
 async fn test_compact_mode_basic_functionality() {
     // Test that compact mode can be enabled and disabled properly
-    let mut page = TeletextPage::new(
-        221,
-        "TEST".to_string(),
-        "TEST".to_string(),
-        false,
-        true,
-        false,
-        true,  // compact mode enabled
-        false, // wide_mode
-    );
+    let mut page = TeletextPage::new(221, "TEST", "TEST").with_compact_mode(true);
 
     // Verify compact mode is enabled
     assert!(page.is_compact_mode());
@@ -887,16 +797,9 @@ async fn test_compact_mode_basic_functionality() {
 #[tokio::test]
 async fn test_wide_mode_cli_integration() {
     // Test wide mode page creation
-    let page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit (simulating --once mode)
-        false, // compact_mode
-        true,  // wide_mode - ENABLED
-    );
+    let page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_wide_mode(true);
 
     assert!(page.is_wide_mode(), "Wide mode should be enabled");
     assert!(
@@ -909,16 +812,9 @@ async fn test_wide_mode_cli_integration() {
 #[tokio::test]
 async fn test_wide_mode_terminal_widths() {
     // Test with sufficient width (non-interactive mode uses 136 chars)
-    let wide_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit (non-interactive, uses 136 width)
-        false, // compact_mode
-        true,  // wide_mode
-    );
+    let wide_page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_wide_mode(true);
 
     assert!(
         wide_page.can_fit_two_pages(),
@@ -926,16 +822,7 @@ async fn test_wide_mode_terminal_widths() {
     );
 
     // Test interactive mode behavior: uses actual terminal width
-    let interactive_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        false, // ignore_height_limit (interactive mode - uses actual terminal width)
-        false, // compact_mode
-        true,  // wide_mode
-    );
+    let interactive_page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA").with_wide_mode(true);
 
     // Confirm the page is in wide mode
     assert!(interactive_page.is_wide_mode());
@@ -964,16 +851,7 @@ async fn test_wide_mode_terminal_widths() {
     }
 
     // Test with wide mode disabled
-    let no_wide_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        false, // ignore_height_limit (interactive mode)
-        false, // compact_mode
-        false, // wide_mode disabled
-    );
+    let no_wide_page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA");
 
     // Wide mode should be disabled
     assert!(!no_wide_page.is_wide_mode());
@@ -987,16 +865,7 @@ async fn test_wide_mode_terminal_widths() {
 /// Test wide mode fallback behavior
 #[tokio::test]
 async fn test_wide_mode_fallback_behavior() {
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        false, // ignore_height_limit (narrow terminal)
-        false, // compact_mode
-        true,  // wide_mode - enabled but will fallback
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA").with_wide_mode(true);
 
     // Add test games
     let test_game = create_test_game_data();
@@ -1018,16 +887,9 @@ async fn test_wide_mode_fallback_behavior() {
 /// Test wide mode with different game states
 #[tokio::test]
 async fn test_wide_mode_with_different_game_states() {
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit (wide terminal)
-        false, // compact_mode
-        true,  // wide_mode
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_wide_mode(true);
 
     // Add games with different states
 
@@ -1070,27 +932,13 @@ async fn test_wide_mode_mutual_exclusivity() {
     // Test that wide mode and compact mode are mutually exclusive in practice
     // (This would be enforced at the CLI level, but we test the page behavior)
 
-    let page_compact = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit
-        true,  // compact_mode - ENABLED
-        false, // wide_mode - disabled
-    );
+    let page_compact = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_compact_mode(true);
 
-    let page_wide = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit
-        false, // compact_mode - disabled
-        true,  // wide_mode - ENABLED
-    );
+    let page_wide = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_wide_mode(true);
 
     // Verify modes are correctly set
     assert!(page_compact.is_compact_mode() && !page_compact.is_wide_mode());
@@ -1110,16 +958,9 @@ async fn test_wide_mode_mutual_exclusivity() {
 /// Test wide mode rendering with game distribution
 #[tokio::test]
 async fn test_wide_mode_game_distribution_integration() {
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit (wide terminal)
-        false, // compact_mode
-        true,  // wide_mode
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_wide_mode(true);
 
     // Add multiple games to test distribution logic
     let teams = [
@@ -1166,16 +1007,9 @@ async fn test_wide_mode_game_distribution_integration() {
 /// Test wide mode with goal scorer data
 #[tokio::test]
 async fn test_wide_mode_with_goal_scorers() {
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit
-        false, // compact_mode
-        true,  // wide_mode
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_wide_mode(true);
 
     // Create game with goal events
     let mut game_with_goals = create_test_game_data();
@@ -1279,16 +1113,9 @@ async fn test_wide_mode_performance_edge_cases() {
     }
     game_with_many_goals.goal_events = many_goal_events;
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "RUNKOSARJA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit
-        false, // compact_mode
-        true,  // wide_mode
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+        .with_ignore_height_limit(true)
+        .with_wide_mode(true);
 
     let game_data = GameResultData::new(&game_with_many_goals);
     page.add_game_result(game_data);

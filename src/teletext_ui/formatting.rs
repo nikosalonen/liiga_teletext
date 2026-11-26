@@ -1,6 +1,7 @@
 // src/teletext_ui/formatting.rs - Formatting utilities for TeletextPage display and layout
 
 use super::core::{CompactDisplayConfig, TeletextPage, TeletextRow};
+use super::game_display::result_with_suffix;
 use crate::teletext_ui::ScoreType;
 
 impl TeletextPage {
@@ -212,45 +213,24 @@ impl TeletextPage {
                     width = config.team_name_width
                 );
 
-                // Format score based on game state with appropriate colors
-                let score_display = match score_type {
-                    ScoreType::Scheduled => {
-                        // Scheduled games show time in white
-                        format!(
-                            "\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m",
-                            time,
-                            width = config.score_width
-                        )
-                    }
-                    ScoreType::Ongoing => {
-                        // Ongoing games show score in white (like regular mode)
-                        let mut score = result.clone();
-                        if *is_shootout {
-                            score.push_str(" rl");
-                        } else if *is_overtime {
-                            score.push_str(" ja");
-                        }
-                        format!(
-                            "\x1b[38;5;{text_fg_code}m{:<width$}\x1b[0m",
-                            score,
-                            width = config.score_width
-                        )
-                    }
-                    ScoreType::Final => {
-                        // Final games show score in bright green (like regular mode)
-                        let mut score = result.clone();
-                        if *is_shootout {
-                            score.push_str(" rl");
-                        } else if *is_overtime {
-                            score.push_str(" ja");
-                        }
-                        format!(
-                            "\x1b[38;5;{result_fg_code}m{:<width$}\x1b[0m",
-                            score,
-                            width = config.score_width
-                        )
-                    }
+                // Scheduled games show the start time in white, ongoing games
+                // the score in white and finished games the score in green,
+                // like normal mode
+                let (text, color) = match score_type {
+                    ScoreType::Scheduled => (time.clone(), text_fg_code),
+                    ScoreType::Ongoing => (
+                        result_with_suffix(result, *is_overtime, *is_shootout),
+                        text_fg_code,
+                    ),
+                    ScoreType::Final => (
+                        result_with_suffix(result, *is_overtime, *is_shootout),
+                        result_fg_code,
+                    ),
                 };
+                let score_display = format!(
+                    "\x1b[38;5;{color}m{text:<width$}\x1b[0m",
+                    width = config.score_width
+                );
 
                 format!("{padded_team}{score_display}")
             }
@@ -293,16 +273,7 @@ mod tests {
     fn compact_header_truncation_handles_multibyte_characters() {
         // Byte 30 falls inside "Ä"; slicing by bytes panicked here.
         let header = format!("{}ÄÄKKÖSET JA MUUT OTTELUT", "A".repeat(29));
-        let page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            true,
-            false,
-        );
+        let page = TeletextPage::new(221, "TEST", "TEST").with_compact_mode(true);
 
         let formatted = page.format_compact_game(
             &TeletextRow::SeriesHeader(header),

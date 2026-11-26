@@ -102,16 +102,7 @@ mod tests {
     use super::*;
 
     fn test_page() -> TeletextPage {
-        TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        )
+        TeletextPage::new(221, "TEST", "TEST")
     }
 
     #[tokio::test]

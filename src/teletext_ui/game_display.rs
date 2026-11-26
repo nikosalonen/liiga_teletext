@@ -3,6 +3,7 @@
 use super::core::get_ansi_code;
 use super::core::{TeletextPage, TeletextRow};
 use super::layout::{ColumnLayoutManager, IntelligentTruncator, LayoutConfig, ansi};
+use crate::data_fetcher::GoalEventData;
 use crate::data_fetcher::models::GameData;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
@@ -22,7 +23,57 @@ pub(super) fn hidden_goals_text(hidden_goals: usize) -> String {
     }
 }
 
+/// The score with its shootout ("rl") or overtime ("ja") suffix.
+pub(super) fn result_with_suffix(result: &str, is_overtime: bool, is_shootout: bool) -> String {
+    if is_shootout {
+        format!("{result} rl")
+    } else if is_overtime {
+        format!("{result} ja")
+    } else {
+        result.to_string()
+    }
+}
+
+/// What a game line shows as `(time, score)`: a scheduled game its start
+/// time, an ongoing game the game clock and the score, a finished game the
+/// score. `score` already carries the overtime or shootout suffix.
+pub(super) fn time_and_score_display(
+    score_type: &ScoreType,
+    time: &str,
+    score: String,
+    played_time: i32,
+) -> (String, String) {
+    match score_type {
+        ScoreType::Scheduled => (time.to_string(), String::new()),
+        ScoreType::Ongoing => (
+            format!("{:02}:{:02}", played_time / 60, played_time % 60),
+            score,
+        ),
+        ScoreType::Final => (String::new(), score),
+    }
+}
+
+/// Goals drawn in the winning-goal color: the overtime or shootout winner,
+/// and penalty shot goals ("VL").
+pub(super) fn is_highlighted_goal(
+    event: &GoalEventData,
+    is_overtime: bool,
+    is_shootout: bool,
+) -> bool {
+    (event.is_winning_goal && (is_overtime || is_shootout))
+        || event.goal_types.iter().any(|goal_type| goal_type == "VL")
+}
+
 impl TeletextPage {
+    /// True when the goal has a video clip and video links are turned on.
+    pub(super) fn shows_video_link(&self, event: &GoalEventData) -> bool {
+        !self.disable_video_links
+            && event
+                .video_clip_url
+                .as_ref()
+                .is_some_and(|url| !url.trim().is_empty())
+    }
+
     /// Last screen row game content may use. The two rows below it hold the
     /// loading line and the footer. Unlimited in non-interactive mode, where
     /// the page grows to fit its content.
@@ -242,24 +293,12 @@ impl TeletextPage {
         result_fg_code: u8,
         layout_config: &LayoutConfig,
     ) {
-        // Format result with overtime/shootout indicator
-        let result_text = if is_shootout {
-            format!("{result} rl")
-        } else if is_overtime {
-            format!("{result} ja")
-        } else {
-            result.to_string()
-        };
-
-        // Format time display based on game state
-        let (time_display, score_display) = match score_type {
-            ScoreType::Scheduled => (time.to_string(), String::new()),
-            ScoreType::Ongoing => {
-                let formatted_time = format!("{:02}:{:02}", played_time / 60, played_time % 60);
-                (formatted_time, result_text.clone())
-            }
-            ScoreType::Final => (String::new(), result_text.clone()),
-        };
+        let (time_display, score_display) = time_and_score_display(
+            score_type,
+            time,
+            result_with_suffix(result, is_overtime, is_shootout),
+            played_time,
+        );
 
         let result_color = match score_type {
             ScoreType::Final => result_fg_code,
@@ -545,10 +584,7 @@ impl TeletextPage {
         goal_type_fg_code: u8,
         layout_config: &LayoutConfig,
     ) -> Result<(), String> {
-        // Determine if this is a winning goal (overtime/shootout winner or "VL" penalty shot goal)
-        let scorer_color = if (event.is_winning_goal && (is_overtime || is_shootout))
-            || event.goal_types.contains(&"VL".to_string())
-        {
+        let scorer_color = if is_highlighted_goal(event, is_overtime, is_shootout) {
             winning_goal_fg_code
         } else {
             scorer_fg_code
@@ -626,11 +662,7 @@ impl TeletextPage {
 
         // Pad player name to available space, but not more than max_player_name_width
         // Reserve 1 character for play icon (▶) when video link is available
-        let has_video = !self.disable_video_links
-            && event
-                .video_clip_url
-                .as_ref()
-                .is_some_and(|url| !url.trim().is_empty());
+        let has_video = self.shows_video_link(event);
         let play_icon_width = if has_video { 1 } else { 0 };
         let padding_width = available_space_for_name
             .saturating_sub(play_icon_width)
@@ -831,16 +863,10 @@ mod tests {
             req_wins: 4,
         });
 
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "PLAYOFFS".to_string(),
-            true,
-            false,
-            true, // ignore_height_limit: fixed 80-column render width
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "PLAYOFFS")
+            .with_video_links_disabled(true)
+            .with_footer(false)
+            .with_ignore_height_limit(true);
         page.add_game_result(GameResultData::new(&game));
 
         let (rows, _) = page.get_page_content();
@@ -915,16 +941,10 @@ mod tests {
         goal_types: &[&str],
         layout_config: &LayoutConfig,
     ) -> String {
-        let page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            true, // disable video links
-            false,
-            true,
-            false,
-            false,
-        );
+        let page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+            .with_video_links_disabled(true)
+            .with_footer(false)
+            .with_ignore_height_limit(true);
         let event = make_home_event(name, goal_types);
         let mut buffer = String::new();
         page.render_goal_event_safe(
@@ -993,5 +1013,44 @@ mod tests {
             single_idx, double_idx,
             "goal type column misaligned: {single:?} vs {double:?}"
         );
+    }
+
+    #[test]
+    fn test_result_with_suffix() {
+        assert_eq!(result_with_suffix("3-2", false, false), "3-2");
+        assert_eq!(result_with_suffix("3-2", true, false), "3-2 ja");
+        assert_eq!(result_with_suffix("3-2", false, true), "3-2 rl");
+        // A shootout also went through overtime; the shootout wins
+        assert_eq!(result_with_suffix("3-2", true, true), "3-2 rl");
+    }
+
+    #[test]
+    fn test_time_and_score_display() {
+        let scheduled =
+            time_and_score_display(&ScoreType::Scheduled, "18:30", "0-0".to_string(), 0);
+        assert_eq!(scheduled, ("18:30".to_string(), String::new()));
+
+        let ongoing = time_and_score_display(&ScoreType::Ongoing, "18:30", "1-0".to_string(), 754);
+        assert_eq!(ongoing, ("12:34".to_string(), "1-0".to_string()));
+
+        let finished =
+            time_and_score_display(&ScoreType::Final, "18:30", "3-2 ja".to_string(), 3900);
+        assert_eq!(finished, (String::new(), "3-2 ja".to_string()));
+    }
+
+    #[test]
+    fn test_is_highlighted_goal() {
+        let mut winner = make_home_event("Koivu", &["YV"]);
+        winner.is_winning_goal = true;
+        assert!(is_highlighted_goal(&winner, true, false));
+        assert!(is_highlighted_goal(&winner, false, true));
+        // A regulation-time winner is not highlighted
+        assert!(!is_highlighted_goal(&winner, false, false));
+
+        let penalty_shot = make_home_event("Selänne", &["VL"]);
+        assert!(is_highlighted_goal(&penalty_shot, false, false));
+
+        let regular = make_home_event("Kurri", &["YV", "AV"]);
+        assert!(!is_highlighted_goal(&regular, true, false));
     }
 }

@@ -137,16 +137,8 @@ async fn test_complete_application_flow_all_scenarios() {
     let games = create_comprehensive_test_games();
 
     // Test normal mode page creation and game addition
-    let mut normal_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false, // enable video links
-        true,  // show footer
-        true,  // ignore height limit for testing
-        false, // normal mode
-        false, // not wide mode
-    );
+    let mut normal_page =
+        TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true);
 
     // Add all games to normal mode page
     for game in &games {
@@ -159,16 +151,9 @@ async fn test_complete_application_flow_all_scenarios() {
     assert!(!normal_page.is_wide_mode(), "Should not be in wide mode");
 
     // Test compact mode page creation
-    let mut compact_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false, // enable video links
-        true,  // show footer
-        true,  // ignore height limit for testing
-        true,  // compact mode
-        false, // not wide mode
-    );
+    let mut compact_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+        .with_ignore_height_limit(true)
+        .with_compact_mode(true);
 
     // Add all games to compact mode page
     for game in &games {
@@ -189,16 +174,9 @@ async fn test_complete_application_flow_all_scenarios() {
     );
 
     // Test wide mode page creation
-    let mut wide_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false, // enable video links
-        true,  // show footer
-        true,  // ignore height limit (uses 136 char width)
-        false, // not compact mode
-        true,  // wide mode
-    );
+    let mut wide_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+        .with_ignore_height_limit(true)
+        .with_wide_mode(true);
 
     // Add all games to wide mode page
     for game in &games {
@@ -330,16 +308,9 @@ async fn test_different_terminal_sizes_comprehensive() {
         }
 
         // Test page creation for this terminal size
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            true, // ignore height limit for testing
-            false,
-            width >= 128, // Enable wide mode for large terminals
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+            .with_ignore_height_limit(true)
+            .with_wide_mode(width >= 128);
 
         // Add all games
         for game in &games {
@@ -384,16 +355,7 @@ async fn test_interactive_mode_comprehensive_integration() {
     let games = create_comprehensive_test_games();
 
     // Test interactive mode page creation
-    let mut interactive_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false, // enable video links
-        true,  // show footer
-        false, // interactive mode (uses actual terminal size)
-        false, // not compact mode
-        false, // not wide mode initially
-    );
+    let mut interactive_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Add games incrementally (simulating live updates)
     for (i, game) in games.iter().enumerate() {
@@ -457,16 +419,7 @@ async fn test_error_handling_comprehensive_scenarios() {
     println!("🧪 Testing error handling and edge cases");
 
     // Test with empty games list
-    let empty_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true,
-        false,
-        false,
-    );
+    let empty_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true);
 
     // Should handle empty state gracefully
     assert!(!empty_page.is_compact_mode(), "Should handle empty state");
@@ -520,16 +473,8 @@ async fn test_error_handling_comprehensive_scenarios() {
     );
 
     // Test page creation with malformed data
-    let mut malformed_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true,
-        false,
-        false,
-    );
+    let mut malformed_page =
+        TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true);
 
     // Should handle malformed games gracefully
     for game in &malformed_games {
@@ -570,16 +515,7 @@ async fn test_performance_comprehensive_scenarios() {
 
     // Test page creation performance
     let page_start = std::time::Instant::now();
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true);
 
     for game in &games {
         page.add_game_result(GameResultData::new(game));
@@ -614,16 +550,12 @@ async fn test_backward_compatibility_comprehensive() {
     for (disable_video, hide_footer, compact, wide, description) in page_configs {
         println!("  Testing configuration: {}", description);
 
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            disable_video,
-            !hide_footer,
-            true, // ignore height limit for testing
-            compact,
-            wide,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+            .with_video_links_disabled(disable_video)
+            .with_footer(!hide_footer)
+            .with_ignore_height_limit(true)
+            .with_compact_mode(compact)
+            .with_wide_mode(wide);
 
         // Add all games
         for game in &games {
