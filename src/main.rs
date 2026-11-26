@@ -14,7 +14,7 @@ mod ui;
 mod version;
 
 #[cfg(test)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Shared with integration tests; the binary's own tests use only part of it
 mod testing_utils;
 
 use clap::Parser;

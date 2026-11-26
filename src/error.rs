@@ -86,10 +86,6 @@ pub enum AppError {
 
     #[error("Update failed: {0}")]
     SelfUpdate(String),
-
-    #[error("{0}")]
-    #[allow(dead_code)] // Kept for backward compatibility and future use
-    Custom(String),
 }
 
 impl AppError {
@@ -215,32 +211,6 @@ impl AppError {
         Self::ApiTournamentNotFound {
             tournament: tournament.into(),
             date: date.into(),
-        }
-    }
-
-    /// Check if error is retryable (network issues, server errors, rate limits)
-    #[allow(dead_code)] // Used in tests
-    pub fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            AppError::NetworkTimeout { .. }
-                | AppError::NetworkConnection { .. }
-                | AppError::ApiServerError { .. }
-                | AppError::ApiServiceUnavailable { .. }
-                | AppError::ApiRateLimit { .. }
-        )
-    }
-
-    /// Get suggested retry delay in seconds based on error type
-    #[allow(dead_code)] // Used in tests
-    pub fn retry_delay_seconds(&self) -> Option<u64> {
-        match self {
-            AppError::ApiRateLimit { .. } => Some(60),
-            AppError::ApiServerError { .. } => Some(5),
-            AppError::ApiServiceUnavailable { .. } => Some(30),
-            AppError::NetworkTimeout { .. } => Some(2),
-            AppError::NetworkConnection { .. } => Some(10),
-            _ => None,
         }
     }
 
@@ -426,23 +396,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_retryable() {
-        // Retryable errors
-        assert!(AppError::network_timeout("url").is_retryable());
-        assert!(AppError::network_connection("url", "message").is_retryable());
-        assert!(AppError::api_server_error(500, "message", "url").is_retryable());
-        assert!(AppError::api_rate_limit("message", "url").is_retryable());
-        assert!(AppError::api_service_unavailable(503, "message", "url").is_retryable());
-
-        // Non-retryable errors
-        assert!(!AppError::api_not_found("url").is_retryable());
-        assert!(!AppError::api_client_error(400, "message", "url").is_retryable());
-        assert!(!AppError::config_error("message").is_retryable());
-        assert!(!AppError::datetime_parse_error("message").is_retryable());
-        assert!(!AppError::api_malformed_json("message", "url").is_retryable());
-    }
-
-    #[test]
     fn test_is_not_found() {
         // Not found errors
         assert!(AppError::api_not_found("url").is_not_found());
@@ -533,146 +486,6 @@ mod tests {
     }
 
     #[test]
-    fn test_custom_error() {
-        let error = AppError::Custom("Custom error message".to_string());
-        assert_eq!(error.to_string(), "Custom error message");
-    }
-
-    #[test]
-    fn test_retry_delay_seconds_uses_constants() {
-        let rate_limit_error = AppError::api_rate_limit("rate limit", "https://example.com");
-        assert_eq!(rate_limit_error.retry_delay_seconds(), Some(60));
-
-        let server_error = AppError::api_server_error(500, "server error", "https://example.com");
-        assert_eq!(server_error.retry_delay_seconds(), Some(5));
-
-        let service_unavailable_error =
-            AppError::api_service_unavailable(503, "unavailable", "https://example.com");
-        assert_eq!(service_unavailable_error.retry_delay_seconds(), Some(30));
-
-        let timeout_error = AppError::network_timeout("https://example.com");
-        assert_eq!(timeout_error.retry_delay_seconds(), Some(2));
-
-        let connection_error =
-            AppError::network_connection("https://example.com", "connection failed");
-        assert_eq!(connection_error.retry_delay_seconds(), Some(10));
-
-        // Test non-retryable error returns None
-        let not_found_error = AppError::api_not_found("https://example.com");
-        assert_eq!(not_found_error.retry_delay_seconds(), None);
-    }
-
-    #[test]
-    fn test_retry_delay_seconds_for_retryable_errors() {
-        let retryable_errors = vec![
-            (
-                AppError::api_rate_limit("rate limit", "https://example.com"),
-                60,
-            ),
-            (
-                AppError::api_server_error(500, "internal error", "https://example.com"),
-                5,
-            ),
-            (
-                AppError::api_server_error(502, "bad gateway", "https://example.com"),
-                5,
-            ),
-            (
-                AppError::api_service_unavailable(
-                    503,
-                    "service unavailable",
-                    "https://example.com",
-                ),
-                30,
-            ),
-            (AppError::network_timeout("https://example.com"), 2),
-            (
-                AppError::network_connection("https://example.com", "connection refused"),
-                10,
-            ),
-        ];
-
-        for (error, expected_delay) in retryable_errors {
-            assert_eq!(
-                error.retry_delay_seconds(),
-                Some(expected_delay),
-                "Error {error:?} should return delay of {expected_delay} seconds"
-            );
-            // Also verify that these errors are marked as retryable
-            assert!(error.is_retryable(), "Error {error:?} should be retryable");
-        }
-    }
-
-    #[test]
-    fn test_retry_delay_seconds_for_non_retryable_errors() {
-        let non_retryable_errors = vec![
-            AppError::api_not_found("https://example.com"),
-            AppError::api_client_error(400, "bad request", "https://example.com"),
-            AppError::api_client_error(401, "unauthorized", "https://example.com"),
-            AppError::api_malformed_json("invalid json", "https://example.com"),
-            AppError::api_unexpected_structure("missing field", "https://example.com"),
-            AppError::api_no_data("empty response", "https://example.com"),
-            AppError::api_season_not_found(2024),
-            AppError::api_game_not_found(123, 2024),
-            AppError::api_tournament_not_found("runkosarja", "2024-01-15"),
-            AppError::config_error("invalid config"),
-            AppError::datetime_parse_error("invalid date"),
-            AppError::log_setup_error("log setup failed"),
-            AppError::Custom("custom error".to_string()),
-        ];
-
-        for error in non_retryable_errors {
-            assert_eq!(
-                error.retry_delay_seconds(),
-                None,
-                "Error {error:?} should not have a retry delay"
-            );
-            // Also verify that these errors are not marked as retryable
-            assert!(
-                !error.is_retryable(),
-                "Error {error:?} should not be retryable"
-            );
-        }
-    }
-
-    #[test]
-    fn test_retry_delay_constants_consistency() {
-        let rate_limit_delay = 60u64;
-        let server_error_delay = 5u64;
-        let service_unavailable_delay = 30u64;
-        let timeout_delay = 2u64;
-        let connection_delay = 10u64;
-
-        // Verify the hierarchy of delays (rate limit should be longest, timeout shortest)
-        assert!(rate_limit_delay >= service_unavailable_delay);
-        assert!(service_unavailable_delay >= connection_delay);
-        assert!(connection_delay >= server_error_delay);
-        assert!(server_error_delay >= timeout_delay);
-
-        // Verify that the retry_delay_seconds method returns these exact values
-        assert_eq!(
-            AppError::api_rate_limit("test", "url").retry_delay_seconds(),
-            Some(rate_limit_delay)
-        );
-        assert_eq!(
-            AppError::api_server_error(500, "test", "url").retry_delay_seconds(),
-            Some(server_error_delay)
-        );
-        assert_eq!(
-            AppError::api_service_unavailable(503, "test", "url").retry_delay_seconds(),
-            Some(service_unavailable_delay)
-        );
-        assert_eq!(
-            AppError::network_timeout("url").retry_delay_seconds(),
-            Some(timeout_delay)
-        );
-        assert_eq!(
-            AppError::network_connection("url", "test").retry_delay_seconds(),
-            Some(connection_delay)
-        );
-    }
-
-    #[test]
     fn test_error_display_formats() {
         // Test that all error variants have proper display formatting
         let errors = vec![
@@ -692,7 +505,6 @@ mod tests {
             AppError::api_season_not_found(2024),
             AppError::api_game_not_found(123, 2024),
             AppError::api_tournament_not_found("tournament", "2024-01-15"),
-            AppError::Custom("custom message".to_string()),
         ];
 
         for error in errors {

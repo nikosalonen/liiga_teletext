@@ -387,17 +387,6 @@ impl PlayerNameStore {
     pub fn is_dirty(&self) -> bool {
         self.dirty_seq.load(Ordering::Acquire) != 0
     }
-
-    /// Clears all entries and resets state.
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub async fn clear(&self) {
-        let mut data = self.data.write().await;
-        data.clear();
-        self.dirty_seq.store(0, Ordering::Release);
-        let mut loaded = self.loaded_season.write().await;
-        *loaded = None;
-    }
 }
 
 #[cfg(test)]
