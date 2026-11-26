@@ -1,82 +1,63 @@
 # Liiga 221 Teletext Terminal App
 
-A Rust terminal application that displays Finnish Liiga hockey results in authentic YLE Teksti-TV style.
+Finnish Liiga hockey results in your terminal, in the style of YLE Teksti-TV page 221.
 
 <img width="2024" height="1594" alt="image" src="https://github.com/user-attachments/assets/828bcaf8-1ec7-4f90-990a-7f35b2c63756" />
 
-
 ## Features
 
-- **Authentic teletext interface** - YLE Teksti-TV channel 221 appearance
-- **Real-time updates** - Automatic refresh (every 15 seconds for live games, every 30 seconds around a game's start, every minute otherwise)
-- **Tournament support** - Regular season, playoffs, playout, qualifications, practice games
-- **Interactive navigation** - Arrow keys for page navigation, automatic date navigation
-- **Detailed game info** - Scores, goal scorers with timestamps, video links with play icons
-- **Standings view** - Toggle league standings with 's' key, live mode support
-- **Playoff series info** - Series scores, phase headers, and win indicators during playoffs
-- **Playoff bracket view** - Full tournament bracket with all rounds side by side and connectors on large terminals (80x24+), shown only while the playoffs are upcoming, ongoing, or recently finished
-- **Teletext page navigation** - Type 221/222/223 to jump between views, with Fastext-style colored footer shortcuts and a header clock
-- **Multiple display modes** - Compact (multi-column), wide (side-by-side), standard
-- **Configuration system** - Platform-specific storage, customizable settings
-- **Performance optimized** - Caching, request deduplication, intelligent refresh intervals
-
-## Requirements
-
-- Terminal with Unicode support for best display experience
-- **Rust 1.93.1 or newer**, only if you install with cargo or build from source. The prebuilt binaries need no Rust toolchain. This project uses the 2024 edition and let chains, and its test dependencies need 1.93.1
-
-You can check your Rust version with:
-
-```bash
-rustc --version
-```
-
-If you need to update Rust, visit [rustup.rs](https://rustup.rs/) or run:
-
-```bash
-rustup update
-```
+- Scores, goal scorers with times, and video links, laid out like teletext page 221
+- Automatic refresh: every 15 seconds during live games, every 30 seconds around a game's start, every minute otherwise
+- Regular season, playoffs, playout, qualifications and preseason games
+- League standings, with a live mode that updates during games
+- Playoff series scores and a full playoff bracket
+- Teletext page numbers (221, 222, 223), a colored Fastext-style footer and a header clock
+- Standard, compact (multi-column) and wide (two-column) layouts
+- Players who share a last name on the same team get a first initial, e.g. "Koivu M." and "Koivu S."
 
 ## Installation
+
+You need a terminal with Unicode support.
 
 ### Prebuilt binaries
 
 Download the binary for your platform from the
 [latest release](https://github.com/nikosalonen/liiga_teletext/releases/latest).
-Builds are available for macOS (Apple Silicon and Intel), Linux (x86_64 and arm64)
-and Windows (x86_64). On macOS and Linux, make it executable:
+Builds exist for macOS (Apple Silicon and Intel), Linux (x86_64 and arm64) and
+Windows (x86_64). They need no Rust toolchain.
+
+On macOS and Linux:
 
 ```bash
 chmod +x liiga_teletext-*
-```
 
-On macOS, a file downloaded in a browser is quarantined, and Gatekeeper blocks
-the unsigned binary. Remove the quarantine flag:
-
-```bash
+# macOS only: browsers quarantine downloads, and Gatekeeper blocks the unsigned binary
 xattr -d com.apple.quarantine liiga_teletext-*-apple-darwin
-```
 
-Then rename the file and move it to a folder on your `PATH`:
-
-```bash
-# Use the file name you downloaded. sudo only if the folder needs it.
+# Rename it and move it to a folder on your PATH. Use the file name you downloaded.
 sudo mv liiga_teletext-aarch64-apple-darwin /usr/local/bin/liiga_teletext
 ```
 
 On Windows, rename the file to `liiga_teletext.exe` and put it in a folder on
 your `PATH`.
 
-### Install from crates.io
+### With cargo
+
+Needs Rust 1.93.1 or newer. Run `rustup update` to upgrade.
 
 ```bash
 cargo install liiga_teletext
+
+# Optional: also run it as 221, the YLE Teksti-TV page number
+sudo ln -s ~/.cargo/bin/liiga_teletext /usr/local/bin/221
 ```
 
-You can create a symlink to the binary to make it available from anywhere:
+To build from source instead:
 
 ```bash
-sudo ln -s ~/.cargo/bin/liiga_teletext /usr/local/bin/221 # 221 is the channel number of YLE Teksti-TV
+git clone https://github.com/nikosalonen/liiga_teletext.git
+cd liiga_teletext
+cargo run --release
 ```
 
 ### Updating
@@ -86,202 +67,119 @@ liiga_teletext --update
 ```
 
 This downloads the prebuilt binary for your platform and checks its SHA-256
-checksum before replacing the current one. If the binary is not published yet
-or GitHub can't be reached, and you installed with cargo, it runs
-`cargo install` for you instead. Otherwise it tells you where to download the
-binary by hand.
+checksum before replacing the current one. Use `sudo` if the binary is in a
+folder your user can't write to, such as `/usr/local/bin`.
 
-If the binary is in a folder your user can't write to, such as
-`/usr/local/bin`, run `sudo liiga_teletext --update`.
-
-On Windows the cargo fallback is never used. If no prebuilt binary exists yet,
-`--update` prints manual steps.
-
-After a prebuilt update, `cargo install --list` still shows the old version,
-because cargo's own records are not updated.
-
-### Install from source
-
-1. Make sure Rust and Cargo are installed on your system. If not, install them from [rustup.rs](https://rustup.rs/).
-
-2. Clone this repository:
-
-```bash
-git clone https://github.com/nikosalonen/liiga_teletext.git
-cd liiga_teletext
-```
-
-3. Build and run the application:
-
-```bash
-cargo build --release
-cargo run --release
-```
+If the binary is not published yet or GitHub can't be reached, a cargo install
+runs `cargo install` for you instead. Other installs, and all Windows installs,
+get a link to download the binary by hand. After a prebuilt update,
+`cargo install --list` still shows the old version.
 
 ## Usage
 
-### Interactive Mode (Default)
-
-- Press `q` to quit the application
-- Use left/right arrow keys to navigate between pages
-- Use **Shift+Left/Right** to navigate between dates with games
-  - **Note**: Date navigation is limited to the current season for performance and UX reasons
-  - To view games from previous seasons, use the `-d` flag with a specific date
-- Press `s` to toggle standings view (press again to toggle live mode, once more to return)
-- Press `p` to toggle playoff bracket view (visible while playoffs are upcoming, ongoing, or recently finished)
-  - On terminals of 80x24 or larger the bracket shows every round side by side with connectors, including upcoming rounds as placeholders
-  - Outside the playoff season the view is hidden; set `LIIGA_BRACKET_GRACE_DAYS=400` to view the previous season's bracket
-- Press `l` to toggle live mode in standings
-- Press `t` to jump back to today's view
-- Press `r` to manually refresh data (at most once every 15 seconds)
-- Type a three-digit page number to jump directly to a view, just like real teletext:
-  - `221` - Games
-  - `222` - Standings
-  - `223` - Playoff bracket (during playoffs)
-  - Any other number shows an authentic "SIVUA EI LÖYDY" (page not found) page
-- Data refreshes automatically:
-  - Every 15 seconds for live games
-  - Every 30 seconds from 5 minutes before a game's scheduled start until it starts (for up to 60 minutes, to cover a late puck drop)
-  - Every 60 seconds otherwise (completed games served from 1-hour cache)
-
-### Command Line Options
-
-#### Display Options
-
-- `-d, --date <DATE>` - Show games for a specific date in YYYY-MM-DD format
-- `-o, --once` - Show scores once and exit immediately (useful for scripts)
-- `-p, --plain` - Disable clickable video links in the output
-- `-c, --compact` - Enable compact mode with space-efficient multi-column layout
-- `-w, --wide` - Enable wide mode with two-column side-by-side layout (requires 128+ character wide terminal)
-- `--min-refresh-interval <SECONDS>` - Set minimum refresh interval in seconds (default: auto-detect based on game count). Higher values reduce API calls but may miss updates. Use with caution.
-
-#### Configuration
-
-- `--config [DOMAIN]` - Update API domain in config (prompts if not provided)
-- `--set-log-file <PATH>` - Set a persistent custom log file location
-- `--clear-log-file` - Clear custom log file path and revert to default location
-- `--reset-cache` - Clear cached player names and start fresh
-- `-l, --list-config` - List current configuration settings
-
-#### Debug Options
-
-- `--debug` - Enable debug mode (doesn't clear terminal, logs to file)
-- `--log-file <PATH>` - Specify a custom log file path for this session
-
-#### Info
-
-- `-V, --version` - Show the version, platform and whether an update is available. When the output is piped, it prints only `liiga_teletext <version>`
-- `--update` - Update to the latest version (see [Updating](#updating))
-
-### Display Modes
-
-#### Compact Mode (`--compact`)
-
-Space-efficient multi-column layout with team abbreviations. Adapts from 1-3 columns based on terminal width.
-
 ```bash
-liiga_teletext --compact --once  # Quick compact view
+liiga_teletext                     # interactive mode
+liiga_teletext --once              # print the scores and exit
+liiga_teletext --date 2025-03-21   # games on a specific date
+liiga_teletext --compact           # multi-column layout
+liiga_teletext --wide              # two columns, needs a terminal 128+ characters wide
 ```
 
-#### Wide Mode (`--wide`)
+### Keys
 
-Side-by-side two-column layout for wide terminals (128+ characters). Shows full game details in each column.
+| Key | Action |
+|---|---|
+| `←` / `→` | Previous or next page |
+| `Shift+←` / `Shift+→` | Previous or next date with games. Stays in the current season; use `--date` for older seasons |
+| `s` | Standings. Press again for live mode, once more to go back |
+| `l` | Toggle live mode in standings |
+| `p` | Playoff bracket |
+| `t` | Back to today |
+| `r` | Refresh now, at most once every 15 seconds |
+| `q` | Quit |
+| `221`, `222`, `223` | Type a page number to jump to games, standings or the bracket. Any other number shows "SIVUA EI LÖYDY" (page not found) |
 
-```bash
-liiga_teletext --wide --date 2025-03-21  # Wide view for specific date
-```
+The bracket is available while the playoffs are upcoming, ongoing or finished
+less than 14 days ago. On terminals of 80x24 or larger it shows every round side
+by side with connectors, with upcoming rounds as placeholders.
 
-## Player Name Disambiguation
+### Options
 
-When multiple players share the same last name on a team, the app automatically adds first initials for clarity (e.g., "Koivu M.", "Koivu S."). This works per-team, so players with the same last name on different teams remain unchanged.
+| Option | Description |
+|---|---|
+| `-d, --date <DATE>` | Show games for a date (YYYY-MM-DD) |
+| `-o, --once` | Show the scores once and exit. Useful in scripts |
+| `-c, --compact` | Compact layout with team abbreviations, 1 to 3 columns depending on terminal width |
+| `-w, --wide` | Two columns side by side, each with full game details. Needs a terminal 128+ characters wide |
+| `-p, --plain` | No clickable video links |
+| `--min-refresh-interval <SECONDS>` | Minimum time between refreshes. Higher values mean fewer API calls but slower updates |
+| `--config [DOMAIN]` | Set the API domain. Prompts for it if left out |
+| `--set-log-file <PATH>` | Save a custom log file path in the config |
+| `--clear-log-file` | Remove the custom log file path and use the default |
+| `--log-file <PATH>` | Use a log file for this run only |
+| `--reset-cache` | Clear the cached player names |
+| `-l, --list-config` | Show the current settings |
+| `--debug` | Don't clear the terminal, and write logs to the log file |
+| `-V, --version` | Show the version, platform and whether an update is available. Prints only `liiga_teletext <version>` when piped |
+| `--update` | Update to the latest version (see [Updating](#updating)) |
 
 ## Configuration
 
-On first run, you will be prompted to enter your API domain. This will be saved to a config file at:
+On first run, the app asks for the API domain and saves it to `config.toml`:
 
 - Linux: `~/.config/liiga_teletext/config.toml`
 - macOS: `~/Library/Application Support/liiga_teletext/config.toml`
 - Windows: `%APPDATA%\liiga_teletext\config.toml`
 
-The configuration can be manually edited at any time by modifying this file. You can:
+You can edit the file by hand. Logs go to `logs/liiga_teletext.log.YYYY-MM-DD`
+next to it, one file per UTC day. A custom log path gets the same date suffix.
 
-- Update the API domain
-- Set a custom log file path
+### Environment variables
 
-### Environment Variables
+These override the config file for one run. `--list-config` marks them with
+"(from env)".
 
-These override the config file for a single run:
-
-- `LIIGA_API_DOMAIN` - API domain. When set, the first-run prompt is skipped
+- `LIIGA_API_DOMAIN` - API domain. Skips the first-run prompt
 - `LIIGA_LOG_FILE` - Log file path
-- `LIIGA_HTTP_TIMEOUT` - HTTP request timeout in seconds (default: 10)
-- `LIIGA_BRACKET_GRACE_DAYS` - How many days the playoff bracket stays visible after the last playoff game (default: 14). Set to `400` to view the previous season's bracket in the off-season
-
-`--list-config` marks values that come from the environment with "(from env)".
+- `LIIGA_HTTP_TIMEOUT` - HTTP timeout in seconds (default: 10)
+- `LIIGA_BRACKET_GRACE_DAYS` - Days the playoff bracket stays visible after the last playoff game (default: 14). Set it to `400` to see last season's bracket in the off-season
 
 ### Timezone
 
-Game times are shown in your local timezone. On macOS and Linux, the app checks at startup that it found your real timezone. If `TZ` forces UTC, or the timezone data can't be read, every start time would be off by your UTC offset, so the app prints a warning. In interactive mode the warning appears after you quit.
+Game times use your local timezone. On macOS and Linux, the app checks at
+startup that it found your real timezone. If `TZ` forces UTC or the timezone
+data can't be read, every start time would be off by your UTC offset, so the
+app prints a warning. In interactive mode the warning appears after you quit.
 
-### Logging
+## Tournaments
 
-The application includes comprehensive logging that can be configured:
+The app picks which tournaments to fetch from the time of year:
 
-- **Default location**: `logs/liiga_teletext.log.YYYY-MM-DD`, next to the `config.toml` listed above (one file per day, named by the UTC date)
-- **Custom location**: Can be set via `--set-log-file` or `--log-file`. The date suffix is added to that name too
-- **Debug mode**: Logs are written to file instead of terminal display
+- Regular season (`runkosarja`): September to April
+- Playoffs (`playoffs`), playout (`playout`) and qualifications (`qualifications`): March to June
+- Preseason games (`valmistavat_ottelut`): May to September
 
-## Tournament Support
-
-The application intelligently handles different tournament types based on the season:
-
-- **Regular Season** (`runkosarja`) - Main league games (September-April)
-- **Playoffs** (`playoffs`) - Championship playoffs (March-June)
-- **Playout** (`playout`) - Relegation playoffs (March-June)
-- **Qualifications** (`qualifications`) - Qualification games (March-June)
-- **Practice Games** (`valmistavat_ottelut`) - Preseason practice games (May-September)
-
-During off-season periods, the app shows a countdown to the next regular season start.
-
-## Performance Features
-
-- **Smart caching** - HTTP response caching with time-based expiration
-- **Request deduplication** - Prevents simultaneous identical API calls
-- **Adaptive refresh** - Intelligent intervals based on game state and count
-- **Connection pooling** - Efficient HTTP connection reuse
-- **Async architecture** - Non-blocking operations for responsive UI
+In the off-season it shows a countdown to the next regular season.
 
 ## Development
 
 ```bash
-# Build and test
 cargo build --all-features
 cargo test --all-features
-
-# Code quality checks
 cargo fmt
 cargo clippy --all-features --all-targets -- -D warnings
 ```
 
-Uses the Rust 2024 edition. The main modules are the CLI and commands, the data fetcher (API client, caching, processing), the teletext UI (page layout and rendering), the interactive UI (event loop and input), config, and the self-updater.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines including commit message format and development workflow.
-
-**Important**: Before submitting any changes, please ensure:
-
-- All tests pass: `cargo test --all-features`
-- Code is formatted: `cargo fmt`
-- No clippy warnings: `cargo clippy --all-features --all-targets -- -D warnings`
-- New functionality includes appropriate tests
-- Follow conventional commits for commit messages
+Before you open a pull request, tests must pass, the code must be formatted and
+clippy must show no warnings. New features need tests. Commit messages follow
+Conventional Commits. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full
+workflow.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT. See [LICENSE](LICENSE).
 
 ## Acknowledgements
 
 - [YLE Teksti-TV](https://yle.fi/aihe/tekstitv?P=221) for the design inspiration
-- [NHL-235](https://github.com/Hamatti/nhl-235) by Juha-Matti Santala for pioneering the concept of bringing teletext hockey scores to the terminal. My original inspiration for this project.
+- [NHL-235](https://github.com/Hamatti/nhl-235) by Juha-Matti Santala for pioneering teletext hockey scores in the terminal. My original inspiration for this project.
