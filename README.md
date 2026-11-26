@@ -7,6 +7,7 @@ Finnish Liiga hockey results in your terminal, in the style of YLE Teksti-TV pag
 ## Features
 
 - Scores, goal scorers with times, and video links, laid out like teletext page 221
+- Goal videos open in a small [web player](https://nikosalonen.github.io/liiga_teletext/play.html), so they play in Firefox too
 - Automatic refresh: every 15 seconds during live games, every 30 seconds around a game's start, every minute otherwise
 - Regular season, playoffs, playout, qualifications and preseason games
 - League standings, with a live mode that updates during games
