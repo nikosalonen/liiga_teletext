@@ -178,16 +178,10 @@ pub async fn handle_once_command(
     let (games, fetched_date) = match fetch_liiga_data(args.date.clone()).await {
         Ok((games, fetched_date)) => (games, fetched_date),
         Err(e) => {
-            let mut error_page = TeletextPage::new(
-                221,
-                "JÄÄKIEKKO".to_string(),
-                "SM-LIIGA".to_string(),
-                args.disable_links,
-                true,
-                false,
-                args.compact,
-                args.wide,
-            );
+            let mut error_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+                .with_video_links_disabled(args.disable_links)
+                .with_compact_mode(args.compact)
+                .with_wide_mode(args.wide);
             error_page.add_error_message(&format!("Virhe haettaessa otteluita: {e}"));
             // Set terminal title for non-interactive mode (error case)
             execute!(stdout(), SetTitle("SM-LIIGA 221"))?;
@@ -199,16 +193,12 @@ pub async fn handle_once_command(
     };
 
     let page = if games.is_empty() {
-        let mut no_games_page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            args.disable_links,
-            false, // Don't show footer in quick view mode
-            true,  // Ignore height limit in quick view mode
-            args.compact,
-            args.wide,
-        );
+        let mut no_games_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+            .with_video_links_disabled(args.disable_links)
+            .with_footer(false)
+            .with_ignore_height_limit(true)
+            .with_compact_mode(args.compact)
+            .with_wide_mode(args.wide);
         // Use UTC internally, convert to local time for date formatting
         let today = Utc::now()
             .with_timezone(&Local)

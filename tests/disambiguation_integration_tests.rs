@@ -326,16 +326,7 @@ async fn test_complete_data_flow_api_to_display() {
     // Step 4: Test display in all UI modes
 
     // Normal mode
-    let mut normal_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut normal_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
     normal_page.add_game_result(game_data.clone());
     normal_page.set_screen_height(25);
     assert!(
@@ -344,16 +335,7 @@ async fn test_complete_data_flow_api_to_display() {
     );
 
     // Compact mode
-    let mut compact_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        true,
-        false,
-    );
+    let mut compact_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_compact_mode(true);
     compact_page.add_game_result(game_data.clone());
     compact_page.set_screen_height(25);
     assert!(
@@ -362,16 +344,7 @@ async fn test_complete_data_flow_api_to_display() {
     );
 
     // Wide mode
-    let mut wide_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        true,
-    );
+    let mut wide_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_wide_mode(true);
     wide_page.add_game_result(game_data);
     wide_page.set_screen_height(25);
     assert!(

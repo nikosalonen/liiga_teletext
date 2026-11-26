@@ -273,16 +273,7 @@ mod tests {
     fn compact_header_truncation_handles_multibyte_characters() {
         // Byte 30 falls inside "Ä"; slicing by bytes panicked here.
         let header = format!("{}ÄÄKKÖSET JA MUUT OTTELUT", "A".repeat(29));
-        let page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            true,
-            false,
-        );
+        let page = TeletextPage::new(221, "TEST", "TEST").with_compact_mode(true);
 
         let formatted = page.format_compact_game(
             &TeletextRow::SeriesHeader(header),

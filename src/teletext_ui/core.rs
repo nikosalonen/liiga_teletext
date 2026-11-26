@@ -17,7 +17,6 @@ use crate::ui::teletext::colors::*;
 pub use crate::ui::teletext::compact_display::CompactDisplayConfig;
 pub use crate::ui::teletext::game_result::{GameResultData, ScoreType};
 pub use crate::ui::teletext::loading_indicator::LoadingIndicator;
-pub use crate::ui::teletext::page_config::TeletextPageConfig;
 
 // Import layout management components
 
@@ -103,71 +102,49 @@ pub enum TeletextRow {
     BracketPageBreak,
 }
 
+/// Screen height a new page starts with: fixed for non-interactive output,
+/// otherwise the terminal's height.
+fn initial_screen_height(ignore_height_limit: bool) -> u16 {
+    if ignore_height_limit {
+        24
+    } else {
+        crossterm::terminal::size().map_or(24, |(_, height)| height)
+    }
+}
+
 impl TeletextPage {
-    /// Creates a new TeletextPage instance with the specified parameters.
-    ///
-    /// # Arguments
-    /// * `page_number` - The teletext page number (e.g., 221 for sports)
-    /// * `title` - The title displayed at the top of the page
-    /// * `subheader` - The subtitle displayed below the title
-    /// * `disable_video_links` - Whether to disable clickable video links
-    /// * `show_footer` - Whether to show the control footer
-    /// * `ignore_height_limit` - Whether to ignore terminal height limits
-    ///
-    /// # Returns
-    /// * `TeletextPage` - A new instance configured with the provided parameters
+    /// Creates an empty page set up for the interactive UI: footer shown,
+    /// video links on, page height taken from the terminal, normal layout.
+    /// The `with_*` methods change those defaults.
     ///
     /// # Example
     /// ```
     /// use liiga_teletext::TeletextPage;
     ///
-    /// let page = TeletextPage::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    ///     false,
-    ///     true,
-    ///     false,
-    ///     false,
-    ///     false, // wide_mode
-    /// );
+    /// // A page for `--once` output with compact layout
+    /// let page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+    ///     .with_ignore_height_limit(true)
+    ///     .with_compact_mode(true);
     /// ```
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        page_number: u16,
-        title: String,
-        subheader: String,
-        disable_video_links: bool,
-        show_footer: bool,
-        ignore_height_limit: bool,
-        compact_mode: bool,
-        wide_mode: bool,
-    ) -> Self {
-        // Non-interactive mode uses a fixed height; otherwise ask the terminal
-        let screen_height = if ignore_height_limit {
-            24
-        } else {
-            crossterm::terminal::size().map_or(24, |(_, height)| height)
-        };
-
+    pub fn new(page_number: u16, title: impl Into<String>, subheader: impl Into<String>) -> Self {
         TeletextPage {
             page_number,
-            title,
-            subheader,
+            title: title.into(),
+            subheader: subheader.into(),
             content_rows: Vec::new(),
             current_page: 0,
-            screen_height,
-            disable_video_links,
-            show_footer,
-            ignore_height_limit,
+            screen_height: initial_screen_height(false),
+            disable_video_links: false,
+            show_footer: true,
+            ignore_height_limit: false,
             auto_refresh_disabled: false,
             season_countdown: None,
             fetched_date: None,
             loading_indicator: None,
             auto_refresh_indicator: None,
             error_warning_active: false,
-            compact_mode,
-            wide_mode,
+            compact_mode: false,
+            wide_mode: false,
             is_standings_page: false,
             standings_live_mode: false,
             playoffs_lines: Vec::new(),
@@ -179,6 +156,39 @@ impl TeletextPage {
             page_input_display: None,
             terminal_width_override: None,
         }
+    }
+
+    /// Turns clickable video links on goal scorers off.
+    pub fn with_video_links_disabled(mut self, disabled: bool) -> Self {
+        self.disable_video_links = disabled;
+        self
+    }
+
+    /// Shows or hides the control footer.
+    pub fn with_footer(mut self, show_footer: bool) -> Self {
+        self.show_footer = show_footer;
+        self
+    }
+
+    /// For non-interactive output (`--once`): the page grows to fit its
+    /// content instead of paging at the terminal height, and layout uses a
+    /// fixed width.
+    pub fn with_ignore_height_limit(mut self, ignore: bool) -> Self {
+        self.ignore_height_limit = ignore;
+        self.screen_height = initial_screen_height(ignore);
+        self
+    }
+
+    /// Turns compact mode (several games per line) on or off.
+    pub fn with_compact_mode(mut self, compact: bool) -> Self {
+        self.compact_mode = compact;
+        self
+    }
+
+    /// Turns wide mode (two columns of games) on or off.
+    pub fn with_wide_mode(mut self, wide: bool) -> Self {
+        self.wide_mode = wide;
+        self
     }
 
     /// Sets the in-progress page number entry shown in the header
@@ -197,46 +207,6 @@ impl TeletextPage {
         }
     }
 
-    /// Creates a new TeletextPage from a configuration struct.
-    /// This provides a more ergonomic API compared to the many-parameter constructor.
-    /// Validates that compact_mode and wide_mode are not both enabled.
-    ///
-    /// # Example
-    /// ```
-    /// use liiga_teletext::{TeletextPage, TeletextPageConfig};
-    ///
-    /// let config = TeletextPageConfig::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    /// );
-    /// let page = TeletextPage::from_config(config)?;
-    /// # Ok::<(), liiga_teletext::AppError>(())
-    /// ```
-    ///
-    /// # Errors
-    /// Returns an error if both compact_mode and wide_mode are enabled in the configuration.
-    #[allow(dead_code)] // Only tests use this so far; meant to replace the 8-argument `new`
-    pub fn from_config(config: TeletextPageConfig) -> Result<Self, AppError> {
-        // Validate mode exclusivity before creating the page
-        if let Err(msg) = config.validate_mode_exclusivity() {
-            return Err(AppError::config_error(format!(
-                "Invalid TeletextPageConfig: {msg}"
-            )));
-        }
-
-        Ok(Self::new(
-            config.page_number,
-            config.title,
-            config.subheader,
-            config.disable_video_links,
-            config.show_footer,
-            config.ignore_height_limit,
-            config.compact_mode,
-            config.wide_mode,
-        ))
-    }
-
     /// Updates the page layout when terminal size changes.
     /// Recalculates content positioning and pagination based on new dimensions.
     ///
@@ -245,16 +215,7 @@ impl TeletextPage {
     /// use liiga_teletext::TeletextPage;
     /// use std::io::stdout;
     ///
-    /// let mut page = TeletextPage::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    ///     false,
-    ///     true,
-    ///     false,
-    ///     false,
-    ///     false, // wide_mode
-    /// );
+    /// let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
     ///
     /// // Set a fixed screen height for testing to avoid terminal size issues
     /// page.set_screen_height(20);
@@ -405,16 +366,7 @@ impl TeletextPage {
     /// use liiga_teletext::TeletextPage;
     /// use std::io::stdout;
     ///
-    /// let mut page = TeletextPage::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    ///     false,
-    ///     true,
-    ///     false,
-    ///     false,
-    ///     false, // wide_mode
-    /// );
+    /// let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
     ///
     /// // Set a fixed screen height for testing to avoid terminal size issues
     /// page.set_screen_height(20);
@@ -775,16 +727,7 @@ mod tests {
 
     #[test]
     fn test_resize_preserves_bracket_page_position() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "PLAYOFFS".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "PLAYOFFS");
         page.set_screen_height(24);
 
         // Four bracket phase groups separated by forced page breaks,
@@ -811,16 +754,7 @@ mod tests {
 
     #[test]
     fn test_resize_clamps_page_when_content_shrinks_to_fewer_pages() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "PLAYOFFS".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "PLAYOFFS");
         page.set_screen_height(10); // available = 5 -> 5 lines per page
         for line in 0..20 {
             page.add_bracket_line(format!("line {line}"));
@@ -836,16 +770,8 @@ mod tests {
 
     #[test]
     fn test_header_page_str_shows_page_input_entry() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            true,
-            false,
-            false,
-        );
+        let mut page =
+            TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true);
         assert_eq!(page.format_header_page_str(), "221");
 
         page.set_page_input(Some("2".to_string()));
@@ -941,16 +867,7 @@ mod tests {
 
     #[test]
     fn test_loading_indicator() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST");
 
         // Test showing loading indicator
         page.show_loading("Etsitään otteluita...".to_string());
@@ -968,16 +885,7 @@ mod tests {
 
     #[test]
     fn test_tick_loading_animations_advances_active_indicators() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST");
 
         // No indicator active: nothing to animate
         assert!(!page.tick_loading_animations());
@@ -1005,16 +913,7 @@ mod tests {
 
     #[test]
     fn test_build_animation_frame_renders_only_active_indicators() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST");
         page.set_screen_height(20);
 
         // Nothing active: nothing to draw
@@ -1039,16 +938,7 @@ mod tests {
 
     #[test]
     fn test_auto_refresh_indicator_lifecycle() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST");
 
         // Initially no indicator
         assert!(!page.is_auto_refresh_indicator_active());
@@ -1070,16 +960,7 @@ mod tests {
 
     #[test]
     fn test_error_warning_lifecycle() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST");
 
         assert!(!page.is_error_warning_active());
 
@@ -1092,16 +973,7 @@ mod tests {
 
     #[test]
     fn test_page_navigation() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST");
         page.set_screen_height(20); // Set fixed screen height for testing
 
         // Add enough games with goal events to create multiple pages
@@ -1164,16 +1036,7 @@ mod tests {
 
     #[test]
     fn test_page_wrapping() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST");
         page.set_screen_height(20); // Set fixed screen height for testing
 
         // Add enough games with goal events to create multiple pages
@@ -1243,16 +1106,7 @@ mod tests {
 
     #[test]
     fn test_game_height_calculation() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            true, // ignore_height_limit = true to show all games
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST").with_ignore_height_limit(true);
 
         // Test game without goals
         page.add_game_result(GameResultData::new(&GameData {
@@ -1312,16 +1166,7 @@ mod tests {
 
     #[test]
     fn test_error_message_display() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            true, // ignore_height_limit = true to show all content
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST").with_ignore_height_limit(true);
         let error_msg = "Test Error";
         page.add_error_message(error_msg);
 
@@ -1335,16 +1180,7 @@ mod tests {
 
     #[test]
     fn test_game_result_display() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            true, // ignore_height_limit = true to show all games
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST").with_ignore_height_limit(true);
 
         // Test scheduled game display
         page.add_game_result(GameResultData::new(&GameData {
@@ -1490,16 +1326,7 @@ mod tests {
 
     #[test]
     fn test_video_link_display() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false, // video links enabled
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST");
 
         let goal_events = vec![GoalEventData {
             scorer_player_id: 123,
@@ -1533,16 +1360,8 @@ mod tests {
         }));
 
         // Create another page with video links disabled
-        let mut page_no_video = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            true, // video links disabled
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page_no_video =
+            TeletextPage::new(221, "TEST", "TEST").with_video_links_disabled(true);
 
         page_no_video.add_game_result(GameResultData::new(&GameData {
             home_team: "Home".to_string(),
@@ -1575,16 +1394,7 @@ mod tests {
 
     #[test]
     fn test_buffer_size_calculation() {
-        let page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let page = TeletextPage::new(221, "TEST", "TEST");
 
         // Test with empty content
         let empty_rows: Vec<&TeletextRow> = vec![];
@@ -1680,16 +1490,7 @@ mod tests {
 
     #[test]
     fn test_page_preservation() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
         // Set a small screen height to ensure multiple pages
         page.set_screen_height(10);
@@ -1704,16 +1505,7 @@ mod tests {
         assert_eq!(page.get_current_page(), 1);
 
         // Create a new page with the same content and preserved page number
-        let mut new_page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut new_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
         // Set the same small screen height
         new_page.set_screen_height(10);
@@ -1735,16 +1527,7 @@ mod tests {
 
     #[test]
     fn test_compact_mode_getter_setter() {
-        let mut page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "TEST", "TEST");
 
         // Test initial state
         assert!(!page.is_compact_mode());
@@ -1760,16 +1543,7 @@ mod tests {
 
     #[test]
     fn test_format_compact_game() {
-        let page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            true,
-            false,
-        );
+        let page = TeletextPage::new(221, "TEST", "TEST").with_compact_mode(true);
 
         let config = CompactDisplayConfig::default();
 
@@ -1812,16 +1586,7 @@ mod tests {
 
     #[test]
     fn test_group_games_for_compact_display() {
-        let page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            true,
-            false,
-        );
+        let page = TeletextPage::new(221, "TEST", "TEST").with_compact_mode(true);
 
         let config = CompactDisplayConfig::new(2, 10, 8, " | ");
 
@@ -1863,16 +1628,7 @@ mod tests {
 
     #[test]
     fn test_compact_display_shows_error_messages() {
-        let page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            true,
-            false,
-        );
+        let page = TeletextPage::new(221, "TEST", "TEST").with_compact_mode(true);
         let config = CompactDisplayConfig::default();
         let rows = [TeletextRow::ErrorMessage(
             "Ei otteluita tälle päivälle\nSeuraava ottelupäivä 26.09.".to_string(),
@@ -1892,16 +1648,7 @@ mod tests {
 
     #[test]
     fn test_terminal_width_adaptation() {
-        let page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            true,
-            false,
-        );
+        let page = TeletextPage::new(221, "TEST", "TEST").with_compact_mode(true);
 
         // Test wide terminal
         assert!(page.is_terminal_suitable_for_compact(120));
@@ -1950,16 +1697,7 @@ mod tests {
 
     #[test]
     fn test_compact_mode_compatibility_validation() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "Test".to_string(),
-            false,
-            true,
-            false,
-            true,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "Test").with_compact_mode(true);
 
         // Test compatible page (no warnings)
         let validation = page.validate_compact_mode_compatibility();
@@ -1984,16 +1722,8 @@ mod tests {
         }
 
         // Reset page for next test
-        let mut many_games_page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "Test".to_string(),
-            false,
-            true,
-            false,
-            true,
-            false,
-        );
+        let mut many_games_page =
+            TeletextPage::new(221, "JÄÄKIEKKO", "Test").with_compact_mode(true);
 
         // Test page with many games (manually create games to avoid testing_utils dependency)
         for i in 0..25 {
@@ -2143,16 +1873,9 @@ mod tests {
 
     #[test]
     fn test_compact_mode_spacing() {
-        let page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            false,
-            false,
-            true,
-            false,
-        );
+        let page = TeletextPage::new(221, "TEST", "TEST")
+            .with_footer(false)
+            .with_compact_mode(true);
 
         let config = CompactDisplayConfig::new(2, 8, 6, "  "); // 2 games per line
 
@@ -2217,16 +1940,7 @@ mod tests {
 
     #[test]
     fn test_compact_formatting_various_game_states() {
-        let page = TeletextPage::new(
-            221,
-            "TEST".to_string(),
-            "TEST".to_string(),
-            false,
-            true,
-            false,
-            true,
-            false,
-        );
+        let page = TeletextPage::new(221, "TEST", "TEST").with_compact_mode(true);
 
         let config = CompactDisplayConfig::default();
 
@@ -2311,16 +2025,9 @@ mod tests {
 
     #[test]
     fn test_header_truncation_logic() {
-        let page = TeletextPage::new(
-            1,
-            "Test Title".to_string(),
-            "Test Subheader".to_string(),
-            false,
-            false,
-            false,
-            true,
-            false,
-        );
+        let page = TeletextPage::new(1, "Test Title", "Test Subheader")
+            .with_footer(false)
+            .with_compact_mode(true);
         let config = CompactDisplayConfig::default();
 
         // Test short header - should not be truncated
@@ -2370,16 +2077,7 @@ mod tests {
 
     #[test]
     fn test_wide_mode_getter_setter() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            false, // show_videos
-            true,  // ignore_height_limit
-            false, // compact_mode
-            false, // wide_mode
-            false, // enable_colors
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA");
 
         // Test initial state
         assert!(!page.is_wide_mode());
@@ -2395,16 +2093,7 @@ mod tests {
 
     #[test]
     fn test_can_fit_two_pages_false_when_wide_mode_disabled() {
-        let page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            false, // show_videos
-            true,  // ignore_height_limit (non-interactive mode)
-            false, // compact_mode
-            false, // wide_mode - DISABLED
-            false, // enable_colors
-        );
+        let page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA");
 
         // Should return false when wide_mode is disabled, regardless of terminal width
         assert!(!page.can_fit_two_pages());
@@ -2412,16 +2101,9 @@ mod tests {
 
     #[test]
     fn test_can_fit_two_pages_with_sufficient_width() {
-        let page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            false, // disable_video_links
-            true,  // show_footer
-            true,  // ignore_height_limit (non-interactive mode - uses 136 width)
-            false, // compact_mode
-            true,  // wide_mode - ENABLED
-        );
+        let page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+            .with_ignore_height_limit(true)
+            .with_wide_mode(true);
 
         // Should return true when wide_mode is enabled and in non-interactive mode (136 >= 128)
         assert!(page.can_fit_two_pages());
@@ -2432,16 +2114,9 @@ mod tests {
         // This test simulates a narrow terminal by using interactive mode
         // In interactive mode, crossterm::terminal::size() would be called,
         // but it will fallback to 80 chars if it can't get the size
-        let page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            false, // show_videos
-            false, // ignore_height_limit (interactive mode - uses crossterm or fallback to 80)
-            false, // compact_mode
-            true,  // wide_mode - ENABLED
-            false, // enable_colors
-        );
+        let page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+            .with_footer(false)
+            .with_compact_mode(true);
 
         // Should return false when width is insufficient (80 < 128)
         // Note: This test relies on the fallback width of 80 when crossterm can't get terminal size
@@ -2450,16 +2125,7 @@ mod tests {
 
     #[test]
     fn test_distribute_games_for_wide_display_disabled() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            false, // show_videos
-            true,  // ignore_height_limit
-            false, // compact_mode
-            false, // wide_mode - DISABLED
-            false, // enable_colors
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA");
 
         // Add some test games using GameData -> GameResultData
         let test_game = GameData {
@@ -2492,16 +2158,9 @@ mod tests {
 
     #[test]
     fn test_distribute_games_for_wide_display_insufficient_width() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            false, // show_videos
-            false, // ignore_height_limit (interactive mode - narrow terminal)
-            false, // compact_mode
-            true,  // wide_mode - ENABLED but insufficient width
-            false, // enable_colors
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+            .with_footer(false)
+            .with_compact_mode(true);
 
         // Add some test games
         let test_game = GameData {
@@ -2534,16 +2193,9 @@ mod tests {
 
     #[test]
     fn test_distribute_games_for_wide_display_enabled() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            false, // disable_video_links
-            true,  // show_footer
-            true,  // ignore_height_limit (non-interactive mode - wide terminal)
-            false, // compact_mode
-            true,  // wide_mode - ENABLED
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+            .with_ignore_height_limit(true)
+            .with_wide_mode(true);
 
         // Add multiple test games to test distribution
         for i in 0..4 {
@@ -2583,16 +2235,9 @@ mod tests {
 
     #[test]
     fn test_distribute_games_for_wide_display_odd_number() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            false, // disable_video_links
-            true,  // show_footer
-            true,  // ignore_height_limit (non-interactive mode - wide terminal)
-            false, // compact_mode
-            true,  // wide_mode - ENABLED
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+            .with_ignore_height_limit(true)
+            .with_wide_mode(true);
 
         // Add 3 test games (odd number)
         for i in 0..3 {
@@ -2632,16 +2277,7 @@ mod tests {
 
     #[test]
     fn test_wide_mode_with_test_games() {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            false, // show_videos
-            true,  // ignore_height_limit (wide terminal)
-            false, // compact_mode
-            true,  // wide_mode
-            false, // enable_colors
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA").with_compact_mode(true);
 
         // Add test games
         let test_game1 = GameData {
@@ -2701,70 +2337,8 @@ mod tests {
     }
 
     #[test]
-    fn test_teletext_page_config_mode_exclusivity() {
-        // Test that new config has both modes disabled by default
-        let config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
-        assert!(!config.compact_mode);
-        assert!(!config.wide_mode);
-        assert!(config.validate_mode_exclusivity().is_ok());
-
-        // Test setter methods enforce mutual exclusivity
-        let mut config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
-
-        // Enable compact mode
-        config.set_compact_mode(true);
-        assert!(config.compact_mode);
-        assert!(!config.wide_mode);
-        assert!(config.validate_mode_exclusivity().is_ok());
-
-        // Enable wide mode - should disable compact mode
-        config.set_wide_mode(true);
-        assert!(!config.compact_mode);
-        assert!(config.wide_mode);
-        assert!(config.validate_mode_exclusivity().is_ok());
-
-        // Enable compact mode again - should disable wide mode
-        config.set_compact_mode(true);
-        assert!(config.compact_mode);
-        assert!(!config.wide_mode);
-        assert!(config.validate_mode_exclusivity().is_ok());
-    }
-
-    #[test]
-    fn test_teletext_page_config_validation() {
-        // Test valid configurations
-        let mut config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
-        assert!(config.validate_mode_exclusivity().is_ok());
-
-        config.set_compact_mode(true);
-        assert!(config.validate_mode_exclusivity().is_ok());
-
-        config.set_wide_mode(true);
-        assert!(config.validate_mode_exclusivity().is_ok());
-
-        // Test invalid configuration (both modes enabled)
-        let mut config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
-        config.compact_mode = true;
-        config.wide_mode = true;
-        assert!(config.validate_mode_exclusivity().is_err());
-        assert_eq!(
-            config.validate_mode_exclusivity().unwrap_err(),
-            "compact_mode and wide_mode cannot be enabled simultaneously"
-        );
-    }
-
-    #[test]
     fn test_teletext_page_mode_exclusivity() {
-        let mut page = TeletextPage::new(
-            221,
-            "Test".to_string(),
-            "Test".to_string(),
-            false,
-            true,
-            false,
-            false, // compact_mode
-            false, // wide_mode
-        );
+        let mut page = TeletextPage::new(221, "Test", "Test");
 
         // Test initial state
         assert!(!page.is_compact_mode());
@@ -2792,16 +2366,7 @@ mod tests {
 
     #[test]
     fn test_teletext_page_validation() {
-        let mut page = TeletextPage::new(
-            221,
-            "Test".to_string(),
-            "Test".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "Test", "Test");
 
         // Test valid configurations
         assert!(page.validate_mode_exclusivity().is_ok());
@@ -2813,16 +2378,9 @@ mod tests {
         assert!(page.validate_mode_exclusivity().is_ok());
 
         // Test invalid configuration (both modes enabled)
-        let page = TeletextPage::new(
-            221,
-            "Test".to_string(),
-            "Test".to_string(),
-            false,
-            true,
-            false,
-            true, // compact_mode
-            true, // wide_mode
-        );
+        let page = TeletextPage::new(221, "Test", "Test")
+            .with_compact_mode(true)
+            .with_wide_mode(true);
         assert!(page.validate_mode_exclusivity().is_err());
         assert_eq!(
             page.validate_mode_exclusivity().unwrap_err(),
@@ -2831,52 +2389,8 @@ mod tests {
     }
 
     #[test]
-    fn test_from_config_returns_error_with_invalid_config() {
-        let mut config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
-        config.compact_mode = true;
-        config.wide_mode = true;
-
-        // This should return an error
-        let result = TeletextPage::from_config(config);
-        assert!(result.is_err());
-
-        let error = result.unwrap_err();
-        assert!(matches!(error, AppError::Config(_)));
-        assert!(
-            error
-                .to_string()
-                .contains("compact_mode and wide_mode cannot be enabled simultaneously")
-        );
-    }
-
-    #[test]
-    fn test_from_config_succeeds_with_valid_config() {
-        let config = TeletextPageConfig::new(221, "Test".to_string(), "Test".to_string());
-
-        // This should succeed
-        let result = TeletextPage::from_config(config);
-        assert!(result.is_ok());
-
-        let page = result.unwrap();
-        assert_eq!(page.page_number, 221);
-        assert_eq!(page.title, "Test");
-        assert_eq!(page.subheader, "Test");
-        assert!(!page.is_compact_mode());
-        assert!(!page.is_wide_mode());
-    }
-
-    #[test]
     fn test_setter_validation_conflicts() {
-        let mut page = TeletextPage::new(
-            221,
-            "Test".to_string(),
-            "Test".to_string(),
-            false,
-            true,
-            false,
-            false, // compact_mode
-            false, // wide_mode
-        );
+        let mut page = TeletextPage::new(221, "Test", "Test");
 
         // Test that enabling compact mode when wide mode is active automatically disables wide mode
         page.set_wide_mode(true).unwrap();
@@ -2887,16 +2401,7 @@ mod tests {
         assert!(page.is_compact_mode());
 
         // Test that enabling wide mode when compact mode is active automatically disables compact mode
-        let mut page = TeletextPage::new(
-            221,
-            "Test".to_string(),
-            "Test".to_string(),
-            false,
-            true,
-            false,
-            false, // compact_mode
-            false, // wide_mode
-        );
+        let mut page = TeletextPage::new(221, "Test", "Test");
         page.set_compact_mode(true).unwrap();
         let result = page.set_wide_mode(true);
         assert!(result.is_ok());
@@ -2905,16 +2410,7 @@ mod tests {
         assert!(page.is_wide_mode());
 
         // Test that disabling modes doesn't cause conflicts
-        let mut page = TeletextPage::new(
-            221,
-            "Test".to_string(),
-            "Test".to_string(),
-            false,
-            true,
-            false,
-            true,  // compact_mode
-            false, // wide_mode
-        );
+        let mut page = TeletextPage::new(221, "Test", "Test").with_compact_mode(true);
         assert!(page.set_compact_mode(false).is_ok());
         assert!(page.set_wide_mode(false).is_ok());
     }
@@ -2924,16 +2420,7 @@ fn test_video_link_functionality_with_dynamic_layout() {
     use crate::data_fetcher::models::GameData;
 
     // Test video link positioning and behavior with the new dynamic layout system
-    let mut page = TeletextPage::new(
-        221,
-        "TEST".to_string(),
-        "TEST".to_string(),
-        false, // video links enabled
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "TEST", "TEST");
 
     // Create goal events with mixed video link scenarios
     let goal_events = vec![
@@ -2992,16 +2479,7 @@ fn test_video_link_functionality_with_dynamic_layout() {
     }));
 
     // Test with video links disabled
-    let mut page_no_video = TeletextPage::new(
-        221,
-        "TEST".to_string(),
-        "TEST".to_string(),
-        true, // video links disabled
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page_no_video = TeletextPage::new(221, "TEST", "TEST").with_video_links_disabled(true);
 
     page_no_video.add_game_result(GameResultData::new(&GameData {
         home_team: "HIFK".to_string(),

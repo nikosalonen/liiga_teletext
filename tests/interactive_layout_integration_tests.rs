@@ -119,16 +119,7 @@ fn test_interactive_state_layout_integration() {
     let mut state = MockInteractiveState::new();
 
     // Create a TeletextPage with layout manager
-    let page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false, // ignore_height_limit = false for interactive mode
-        false, // compact_mode
-        false, // wide_mode
-    );
+    let page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Verify initial state
     assert!(state.needs_refresh());
@@ -152,16 +143,7 @@ fn test_layout_updates_during_refresh() {
     let mut state = MockInteractiveState::new();
 
     // Create initial page with some games
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Add games with goal events to test layout calculations
     let goal_events = create_test_goal_events();
@@ -201,16 +183,7 @@ fn test_resize_handling_in_interactive_mode() {
     // Test that resize events are properly handled in interactive mode
     let mut state = MockInteractiveState::new();
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false, // Interactive mode
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Add some games to test layout recalculation
     let games = vec![create_test_game_data(
@@ -245,16 +218,7 @@ fn test_layout_consistency_across_refreshes() {
     // Test that layout calculations remain consistent across multiple refresh cycles
     let mut state = MockInteractiveState::new();
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Create consistent test data
     let goal_events = create_test_goal_events();
@@ -292,16 +256,7 @@ fn test_layout_with_goal_events_in_interactive_mode() {
     // Test that goal event positioning works correctly in interactive mode
     let mut state = MockInteractiveState::new();
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Create games with various goal event scenarios
     let complex_goal_events = vec![GoalEventData {
@@ -339,16 +294,7 @@ fn test_buffered_rendering_with_layout() {
     // Test that buffered rendering works correctly with the layout system
     let mut state = MockInteractiveState::new();
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        true, // ignore_height_limit = true for testing
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_ignore_height_limit(true);
 
     // Add games to test rendering
     let games = vec![
@@ -381,16 +327,7 @@ fn test_wide_mode_layout_integration() {
     // Test layout system integration with wide mode in interactive context
     let mut state = MockInteractiveState::new();
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        true, // wide_mode = true
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA").with_wide_mode(true);
 
     // Add enough games to test wide mode distribution
     let games: Vec<GameData> = (0..6)
@@ -430,16 +367,7 @@ fn test_layout_cache_performance() {
     // Test that layout calculations work consistently for performance
     let mut state = MockInteractiveState::new();
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Create games with goal events to test layout calculations
     let games = vec![create_test_game_data(
@@ -473,16 +401,7 @@ fn test_interactive_refresh_cycle_with_layout_updates() {
     let mut state = MockInteractiveState::new();
 
     // Create page with initial games
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false, // Interactive mode
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Initial games
     let initial_games = vec![create_test_game_data(
@@ -510,16 +429,7 @@ fn test_interactive_refresh_cycle_with_layout_updates() {
     // 3. Simulate game state change (scheduled -> ongoing)
     if let Some(page) = state.current_page_mut() {
         // Clear existing games and add updated game
-        *page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            false,
-            true,
-            false,
-            false,
-            false,
-        );
+        *page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
         let updated_games = vec![create_test_game_data(
             "Tappara",
@@ -558,16 +468,7 @@ fn test_layout_system_handles_empty_games_gracefully() {
     let mut state = MockInteractiveState::new();
 
     // Create page with no games initially
-    let page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     state.set_current_page(page);
 
@@ -593,16 +494,7 @@ fn test_layout_system_performance_under_frequent_updates() {
     // Test layout system performance under frequent refresh cycles
     let mut state = MockInteractiveState::new();
 
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Add games with complex goal events
     let games = vec![

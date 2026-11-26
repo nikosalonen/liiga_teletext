@@ -16,16 +16,7 @@
 //!     let (games, date) = fetch_liiga_data(Some("2024-01-15".to_string())).await?;
 //!
 //!     // Create teletext page
-//!     let mut page = TeletextPage::new(
-//!         221,
-//!         "JÄÄKIEKKO".to_string(),
-//!         "RUNKOSARJA".to_string(),
-//!         false,
-//!         true,
-//!         false,
-//!         false,
-//!         false, // wide_mode
-//!     );
+//!     let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA");
 //!
 //!     // Add games to the page
 //!     for game in &games {
@@ -54,7 +45,7 @@ pub use config::Config;
 pub use data_fetcher::api::fetch_liiga_data;
 pub use data_fetcher::models::{DetailedGameResponse, GameData, ScheduleResponse};
 pub use error::AppError;
-pub use teletext_ui::{GameResultData, TeletextPage, TeletextPageConfig};
+pub use teletext_ui::{GameResultData, TeletextPage};
 pub use ui::components::abbreviations::get_team_abbreviation;
 pub use ui::teletext::CompactDisplayConfig;
 

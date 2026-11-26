@@ -216,16 +216,12 @@ async fn create_base_page(
     current_page: Option<usize>,
 ) -> TeletextPage {
     let subheader = get_subheader(games);
-    let mut page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        subheader,
-        disable_video_links,
-        show_footer,
-        ignore_height_limit,
-        compact_mode,
-        wide_mode,
-    );
+    let mut page = TeletextPage::new(221, "JÄÄKIEKKO", subheader)
+        .with_video_links_disabled(disable_video_links)
+        .with_footer(show_footer)
+        .with_ignore_height_limit(ignore_height_limit)
+        .with_compact_mode(compact_mode)
+        .with_wide_mode(wide_mode);
 
     // Set the fetched date if provided
     if let Some(date) = fetched_date {
@@ -429,16 +425,10 @@ pub fn create_loading_page(
     compact_mode: bool,
     wide_mode: bool,
 ) -> TeletextPage {
-    let mut loading_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        disable_links,
-        true,
-        false,
-        compact_mode,
-        wide_mode,
-    );
+    let mut loading_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+        .with_video_links_disabled(disable_links)
+        .with_compact_mode(compact_mode)
+        .with_wide_mode(wide_mode);
 
     loading_page.set_is_loading_page(true);
 
@@ -469,16 +459,10 @@ pub fn create_error_page(
     compact_mode: bool,
     wide_mode: bool,
 ) -> TeletextPage {
-    let mut error_page = TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        disable_links,
-        true,
-        false,
-        compact_mode,
-        wide_mode,
-    );
+    let mut error_page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+        .with_video_links_disabled(disable_links)
+        .with_compact_mode(compact_mode)
+        .with_wide_mode(wide_mode);
 
     let formatted_date = format_date_for_display(fetched_date);
 
@@ -530,16 +514,7 @@ fn render_block_text(text: &str) -> Vec<String> {
 /// Creates the teletext-style "page not found" page shown when the user
 /// enters a page number that isn't in use (anything except 221/222/223).
 pub fn create_page_not_found_page(page_number: u16) -> TeletextPage {
-    let mut page = TeletextPage::new(
-        page_number,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page = TeletextPage::new(page_number, "JÄÄKIEKKO", "SM-LIIGA");
 
     // Block art centered within the classic 40-column teletext area
     page.add_banner_line(" ".to_string());
@@ -618,16 +593,8 @@ pub fn create_standings_page(
     };
 
     // Force normal mode for standings - compact/wide renderers don't support standings rows
-    let mut page = TeletextPage::new(
-        222,
-        "JÄÄKIEKKO".to_string(),
-        subheader,
-        disable_links,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page =
+        TeletextPage::new(222, "JÄÄKIEKKO", subheader).with_video_links_disabled(disable_links);
 
     page.set_standings_mode(true, live_mode);
     page.set_playoffs_lines(playoffs_lines);
@@ -650,16 +617,8 @@ pub fn create_bracket_page(
     let subheader = format!("PUDOTUSPELIT {}", bracket.season);
 
     // Force normal mode (no compact/wide), same as standings
-    let mut page = TeletextPage::new(
-        223,
-        "JÄÄKIEKKO".to_string(),
-        subheader,
-        disable_links,
-        true,
-        false,
-        false,
-        false,
-    );
+    let mut page =
+        TeletextPage::new(223, "JÄÄKIEKKO", subheader).with_video_links_disabled(disable_links);
 
     page.set_bracket_page(true);
 

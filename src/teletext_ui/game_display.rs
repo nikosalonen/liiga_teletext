@@ -863,16 +863,10 @@ mod tests {
             req_wins: 4,
         });
 
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "PLAYOFFS".to_string(),
-            true,
-            false,
-            true, // ignore_height_limit: fixed 80-column render width
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "PLAYOFFS")
+            .with_video_links_disabled(true)
+            .with_footer(false)
+            .with_ignore_height_limit(true);
         page.add_game_result(GameResultData::new(&game));
 
         let (rows, _) = page.get_page_content();
@@ -947,16 +941,10 @@ mod tests {
         goal_types: &[&str],
         layout_config: &LayoutConfig,
     ) -> String {
-        let page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "SM-LIIGA".to_string(),
-            true, // disable video links
-            false,
-            true,
-            false,
-            false,
-        );
+        let page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+            .with_video_links_disabled(true)
+            .with_footer(false)
+            .with_ignore_height_limit(true);
         let event = make_home_event(name, goal_types);
         let mut buffer = String::new();
         page.render_goal_event_safe(

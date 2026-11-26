@@ -22,16 +22,10 @@ type TeamPlayerData = (Vec<PlayerData>, Vec<PlayerData>);
 
 /// Creates a TeletextPage with standard test configuration, varying only the display modes.
 fn create_test_page(compact_mode: bool, wide_mode: bool) -> TeletextPage {
-    TeletextPage::new(
-        221,
-        "JÄÄKIEKKO".to_string(),
-        "SM-LIIGA".to_string(),
-        false, // disable_video_links
-        true,  // show_footer
-        true,  // ignore_height_limit for testing
-        compact_mode,
-        wide_mode,
-    )
+    TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA")
+        .with_ignore_height_limit(true)
+        .with_compact_mode(compact_mode)
+        .with_wide_mode(wide_mode)
 }
 
 /// Creates raw player data that needs disambiguation (for testing actual logic)

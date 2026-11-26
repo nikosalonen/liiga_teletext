@@ -379,16 +379,7 @@ impl TeletextPage {
     /// use liiga_teletext::TeletextPage;
     /// use crossterm::event::KeyCode;
     ///
-    /// let mut page = TeletextPage::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    ///     false,
-    ///     true,
-    ///     false,
-    ///     false,
-    ///     false, // wide_mode
-    /// );
+    /// let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
     ///
     /// let event = KeyCode::Right;
     /// if event == KeyCode::Right {
@@ -411,16 +402,7 @@ impl TeletextPage {
     /// use liiga_teletext::TeletextPage;
     /// use crossterm::event::KeyCode;
     ///
-    /// let mut page = TeletextPage::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    ///     false,
-    ///     true,
-    ///     false,
-    ///     false,
-    ///     false, // wide_mode
-    /// );
+    /// let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
     ///
     /// let event = KeyCode::Left;
     /// if event == KeyCode::Left {
@@ -578,16 +560,9 @@ mod tests {
 
     /// Builds a page with `screen_height` and no height-limit override.
     fn page_with_height(screen_height: u16) -> TeletextPage {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "HARJOITUSOTTELUT".to_string(),
-            true,
-            false,
-            false, // ignore_height_limit - pagination must actually run
-            false,
-            false,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "HARJOITUSOTTELUT")
+            .with_video_links_disabled(true)
+            .with_footer(false);
         page.set_screen_height(screen_height);
         page
     }
@@ -642,16 +617,11 @@ mod tests {
         compact_mode: bool,
         wide_mode: bool,
     ) -> TeletextPage {
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            true,
-            false,
-            false,
-            compact_mode,
-            wide_mode,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+            .with_video_links_disabled(true)
+            .with_footer(false)
+            .with_compact_mode(compact_mode)
+            .with_wide_mode(wide_mode);
         page.set_screen_height(height);
         page.set_terminal_width(width);
         page
@@ -852,16 +822,10 @@ mod tests {
         // Compact mode draws no scorer lines, so seven games with five scorers
         // each take at most 7 x 2 lines (one game per line plus a blank line),
         // well within the 19 available. Normal-mode heights spread them over 4 pages.
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            true,
-            false,
-            false,
-            true, // compact_mode
-            false,
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+            .with_video_links_disabled(true)
+            .with_footer(false)
+            .with_compact_mode(true);
         page.set_screen_height(24);
         for index in 0..7 {
             let mut game = scheduled_game(index);
@@ -899,16 +863,11 @@ mod tests {
     fn test_wide_column_split_is_by_height_not_count() {
         // Max scorer counts 7, 7, 5, 1, 1. Splitting by count put the first
         // three (24 lines) in the left column.
-        let mut page = TeletextPage::new(
-            221,
-            "JÄÄKIEKKO".to_string(),
-            "RUNKOSARJA".to_string(),
-            true,
-            false,
-            true, // ignore_height_limit: wide mode assumes 136 columns
-            false,
-            true, // wide_mode
-        );
+        let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "RUNKOSARJA")
+            .with_video_links_disabled(true)
+            .with_footer(false)
+            .with_ignore_height_limit(true)
+            .with_wide_mode(true);
         for (index, scorers) in [7, 7, 5, 1, 1].into_iter().enumerate() {
             let mut game = scheduled_game(index);
             game.score_type = ScoreType::Final;

@@ -14,16 +14,7 @@ impl TeletextPage {
     /// ```
     /// use liiga_teletext::{TeletextPage, GameResultData};
     ///
-    /// let mut page = TeletextPage::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    ///     false,
-    ///     true,
-    ///     false,
-    ///     false,
-    ///     false, // wide_mode
-    /// );
+    /// let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
     ///
     /// // Create a sample game result
     /// let game = GameResultData::new(&liiga_teletext::data_fetcher::models::GameData {
@@ -85,16 +76,7 @@ impl TeletextPage {
     /// ```
     /// use liiga_teletext::TeletextPage;
     ///
-    /// let mut page = TeletextPage::new(
-    ///     221,
-    ///     "JÄÄKIEKKO".to_string(),
-    ///     "SM-LIIGA".to_string(),
-    ///     false,
-    ///     true,
-    ///     false,
-    ///     false,
-    ///     false, // wide_mode
-    /// );
+    /// let mut page = TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA");
     ///
     /// page.add_error_message("Failed to fetch game data");
     /// ```
