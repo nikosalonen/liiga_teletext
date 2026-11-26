@@ -2,7 +2,9 @@
 
 use super::core::get_ansi_code;
 use super::core::{TeletextPage, TeletextRow};
+use super::game_display::{is_highlighted_goal, result_with_suffix, time_and_score_display};
 use super::layout::ansi;
+use crate::data_fetcher::GoalEventData;
 use crate::teletext_ui::{CONTENT_MARGIN, ScoreType};
 use crate::ui::teletext::colors::*;
 
@@ -97,7 +99,6 @@ impl TeletextPage {
                 rows,
                 *current_line,
                 column_start,
-                column_width,
                 &wide_layout_config,
             );
             bottom_line = bottom_line.max(column_end);
@@ -119,7 +120,6 @@ impl TeletextPage {
         rows: &[&TeletextRow],
         start_line: usize,
         column_start: usize,
-        column_width: usize,
         layout_config: &super::layout::LayoutConfig,
     ) -> usize {
         let last_content_line = self.last_content_line();
@@ -129,7 +129,7 @@ impl TeletextPage {
             if line > last_content_line {
                 break;
             }
-            let formatted = self.format_game_for_wide_column(row, column_width, layout_config);
+            let formatted = self.format_game_for_wide_column(row, layout_config);
             let row_lines: Vec<&str> = formatted.lines().collect();
 
             let room = (last_content_line - line).saturating_add(1);
@@ -210,12 +210,10 @@ impl TeletextPage {
         );
     }
 
-    /// Formats a game for display in a wide column with specified width constraints.
-    /// Optimized for performance with pre-allocated buffers and reasonable goal limits.
+    /// Formats a game for display in a wide-mode column.
     ///
     /// # Arguments
     /// * `game` - The game result to format
-    /// * `column_width` - Maximum width for the column
     /// * `layout_config` - Layout configuration for wide mode columns
     ///
     /// # Returns
@@ -223,7 +221,6 @@ impl TeletextPage {
     pub fn format_game_for_wide_column(
         &self,
         game: &TeletextRow,
-        _column_width: usize,
         layout_config: &super::layout::LayoutConfig,
     ) -> String {
         match game {
@@ -253,25 +250,12 @@ impl TeletextPage {
 
                 // Team names and score line using proper teletext layout within column
                 let team_score_line = {
-                    // Format result with overtime/shootout indicator
-                    let result_text = if *is_shootout {
-                        format!("{result} rl")
-                    } else if *is_overtime {
-                        format!("{result} ja")
-                    } else {
-                        result.clone()
-                    };
-
-                    // Format time display based on game state
-                    let (time_display, score_display) = match score_type {
-                        ScoreType::Scheduled => (time.clone(), String::new()),
-                        ScoreType::Ongoing => {
-                            let formatted_time =
-                                format!("{:02}:{:02}", played_time / 60, played_time % 60);
-                            (formatted_time, result_text)
-                        }
-                        ScoreType::Final => (String::new(), result_text),
-                    };
+                    let (time_display, score_display) = time_and_score_display(
+                        score_type,
+                        time,
+                        result_with_suffix(result, *is_overtime, *is_shootout),
+                        *played_time,
+                    );
 
                     let result_color = match score_type {
                         ScoreType::Final => result_fg_code,
@@ -359,31 +343,26 @@ impl TeletextPage {
                     // Pre-allocate lines vector with estimated capacity
                     lines.reserve(max_scorers + 1);
 
+                    let scorer_color = |event: &GoalEventData, team_color: u8| {
+                        if is_highlighted_goal(event, *is_overtime, *is_shootout) {
+                            winning_goal_fg_code
+                        } else {
+                            team_color
+                        }
+                    };
+                    // The ▶ icon in the team color, or `None` without a video link
+                    let video_icon = |event: &GoalEventData, team_color: u8| {
+                        self.shows_video_link(event)
+                            .then(|| format!("\x1b[38;5;{team_color}m▶\x1b[0m"))
+                    };
+
                     for i in 0..max_scorers {
                         let mut scorer_line = String::new();
 
                         // Build home side using layout-based widths
                         let home_side = if let Some(event) = home_scorers.get(i) {
-                            let scorer_color = if (event.is_winning_goal
-                                && (*is_overtime || *is_shootout))
-                                || event.goal_types.contains(&"VL".to_string())
-                            {
-                                winning_goal_fg_code // Purple for game-winning goals only
-                            } else {
-                                home_scorer_fg_code // Regular home team color
-                            };
-
+                            let scorer_color = scorer_color(event, home_scorer_fg_code);
                             let goal_type = event.get_goal_type_display();
-                            let has_video = !self.disable_video_links
-                                && event
-                                    .video_clip_url
-                                    .as_ref()
-                                    .is_some_and(|url| !url.trim().is_empty());
-                            let video_icon = if has_video {
-                                format!("\x1b[38;5;{home_scorer_fg_code}m▶\x1b[0m")
-                            } else {
-                                String::new()
-                            };
 
                             // Use layout config for player name and goal type widths
                             let player_name_width = layout_config.max_player_name_width;
@@ -391,11 +370,8 @@ impl TeletextPage {
 
                             // Fixed-width fields (name, icon, goal types) keep the
                             // away column aligned even when goal types differ per row
-                            let icon_field = if has_video {
-                                video_icon
-                            } else {
-                                " ".to_string()
-                            };
+                            let icon_field = video_icon(event, home_scorer_fg_code)
+                                .unwrap_or_else(|| " ".to_string());
                             let goal_type_field = if goal_type.is_empty() {
                                 " ".repeat(goal_types_width)
                             } else {
@@ -433,26 +409,10 @@ impl TeletextPage {
 
                         // Build away side using layout-based widths
                         if let Some(event) = away_scorers.get(i) {
-                            let scorer_color = if (event.is_winning_goal
-                                && (*is_overtime || *is_shootout))
-                                || event.goal_types.contains(&"VL".to_string())
-                            {
-                                winning_goal_fg_code // Purple for game-winning goals only
-                            } else {
-                                away_scorer_fg_code // Regular away team color
-                            };
-
+                            let scorer_color = scorer_color(event, away_scorer_fg_code);
                             let goal_type = event.get_goal_type_display();
-                            let has_video = !self.disable_video_links
-                                && event
-                                    .video_clip_url
-                                    .as_ref()
-                                    .is_some_and(|url| !url.trim().is_empty());
-                            let video_icon = if has_video {
-                                format!("\x1b[38;5;{away_scorer_fg_code}m▶\x1b[0m")
-                            } else {
-                                String::new()
-                            };
+                            let video_icon =
+                                video_icon(event, away_scorer_fg_code).unwrap_or_default();
 
                             // Use layout config for away team positioning and spacing
                             let away_start_spacing = layout_config.separator_width + 2; // Separator width plus some spacing
