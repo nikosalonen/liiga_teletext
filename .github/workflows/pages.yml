@@ -21,7 +21,9 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
+    # A job-level block replaces the workflow-level one, so repeat contents: read.
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:

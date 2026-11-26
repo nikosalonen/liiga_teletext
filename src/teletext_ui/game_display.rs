@@ -14,11 +14,12 @@ pub(crate) fn format_team_series_indicator(wins: u8, req_wins: u8) -> String {
     format!("{filled}{empty}")
 }
 
-/// Line shown in place of scorer lines cut off at the bottom of the page.
 /// Web player for goal clips, served from `pages/play.html` on GitHub Pages.
 /// Liiga's clips are HLS streams, which Firefox and other browsers without
 /// built-in HLS support download instead of playing. The page plays them with hls.js.
 const VIDEO_PLAYER_URL: &str = "https://nikosalonen.github.io/liiga_teletext/play.html";
+/// Only clips under this prefix go through the player page. Keep it in sync
+/// with `ALLOWED_HOST` in `pages/play.html`, which rejects every other host.
 const LIIGA_VIDEO_PREFIX: &str = "https://videos.liiga.fi/";
 
 /// The URL a goal's video link opens. Liiga clips go through the player page,
@@ -32,6 +33,7 @@ fn video_link_url(clip_url: &str) -> String {
     }
 }
 
+/// Line shown in place of scorer lines cut off at the bottom of the page.
 pub(super) fn hidden_goals_text(hidden_goals: usize) -> String {
     if hidden_goals == 1 {
         "+1 maali".to_string()

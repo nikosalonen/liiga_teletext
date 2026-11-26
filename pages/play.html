@@ -42,6 +42,7 @@
         crossorigin="anonymous"></script>
 <script>
   const ALLOWED_HOST = "videos.liiga.fi";
+  const OPEN_RAW_HINT = "Avaa alla oleva linkki esim. mpv:llä tai VLC:llä.";
 
   const video = document.getElementById("video");
   const clipInput = document.getElementById("clip");
@@ -56,18 +57,25 @@
 
   // Accept only https clips from Liiga's video server, so the page can't be
   // used to play arbitrary URLs. Returns null for anything else.
+  // The text is used as is, not %-decoded, so escapes inside the clip URL survive.
   function parseClip(text) {
     try {
-      const url = new URL(decodeURIComponent(text));
+      const url = new URL(text);
       if (url.protocol === "https:" && url.hostname === ALLOWED_HOST) return url.href;
     } catch (_) {
-      // Not a URL, or a malformed %-escape.
+      // Not a URL.
     }
     return null;
   }
 
   function startPlayback() {
-    video.play().catch(() => showStatus("Paina toistopainiketta."));
+    video.play().catch((error) => {
+      // AbortError: another clip replaced this one before it started.
+      if (error.name === "AbortError") return;
+      // NotAllowedError: the browser blocks autoplay until the user clicks play.
+      if (error.name === "NotAllowedError") showStatus("Paina toistopainiketta.");
+      else showStatus("Videota ei voitu toistaa. " + OPEN_RAW_HINT);
+    });
   }
 
   function play(clip) {
@@ -92,10 +100,21 @@
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = clip;
       startPlayback();
+    } else if (!window.Hls) {
+      // jsDelivr is down or blocked, or the file failed its SRI check.
+      showStatus("Soitinta (hls.js) ei voitu ladata. " + OPEN_RAW_HINT);
     } else {
-      showStatus("Tämä selain ei osaa toistaa videota. Avaa alla oleva linkki esim. mpv:llä tai VLC:llä.");
+      showStatus("Tämä selain ei osaa toistaa videota. " + OPEN_RAW_HINT);
     }
   }
+
+  // Native HLS (Safari) reports a clip that fails to load only on the video
+  // element. hls.js reports its own errors through Hls.Events.ERROR.
+  video.addEventListener("error", () => {
+    if (!hls) showStatus("Videota ei voitu ladata. " + OPEN_RAW_HINT);
+  });
+  // Clears "Paina toistopainiketta." once the user starts the clip.
+  video.addEventListener("playing", () => showStatus(""));
 
   function playFromHash() {
     const hash = location.hash.slice(1);
