@@ -6,7 +6,6 @@ authors = ["Niko Salonen <nikotsalonen@gmail.com>"]
 description = "YLE Teksti-TV 221 in your terminal - Finnish Liiga hockey results with authentic teletext aesthetics"
 license = "MIT"
 repository = "https://github.com/nikosalonen/liiga_teletext"
-homepage = "https://github.com/nikosalonen/liiga_teletext"
 documentation = "https://github.com/nikosalonen/liiga_teletext#readme"
 rust-version = "1.93.1"
 include = [
