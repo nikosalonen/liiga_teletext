@@ -1,8 +1,3 @@
-// Import game status functions from game_status module
-// Import goal event processing functions from goal_events module
-// Import time formatting functions from time_formatting module
-// Import player fetching functions from player_fetching module
-
 #[cfg(test)]
 mod tests {
     use crate::AppError;

@@ -72,38 +72,6 @@ pub fn format_for_display(full_name: &str) -> String {
         .collect::<String>()
 }
 
-/// Formats a player name for display with first initial when disambiguation is needed.
-/// This follows the hockey scoring convention of showing "LastName F." when multiple
-/// players on the same team share the same last name.
-///
-/// # Arguments
-/// * `first_name` - The player's first name
-/// * `last_name` - The player's last name
-///
-/// # Returns
-/// * `String` - The formatted display name with first initial (e.g., "Koivu M.")
-///
-/// # Examples
-/// ```
-/// use liiga_teletext::data_fetcher::player_names::format_for_display_with_first_initial;
-///
-/// let display_name = format_for_display_with_first_initial("Mikko", "Koivu");
-/// assert_eq!(display_name, "Koivu M.");
-///
-/// let display_name = format_for_display_with_first_initial("Saku", "Koivu");
-/// assert_eq!(display_name, "Koivu S.");
-/// ```
-#[allow(dead_code)]
-pub fn format_for_display_with_first_initial(first_name: &str, last_name: &str) -> String {
-    let formatted_last_name = format_for_display(&build_full_name("", last_name));
-
-    // Use the extract_first_initial helper to get the first alphabetic character
-    match extract_first_initial(first_name) {
-        Some(initial) => format!("{formatted_last_name} {initial}."),
-        None => formatted_last_name,
-    }
-}
-
 /// Extracts the first initial from a first name with proper Unicode support.
 /// This helper function handles edge cases like empty names, multiple words, and special characters.
 ///

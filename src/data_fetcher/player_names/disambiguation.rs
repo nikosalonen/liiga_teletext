@@ -98,81 +98,6 @@ pub fn format_with_disambiguation(players: &[(i64, String, String)]) -> HashMap<
     result
 }
 
-/// Check which players in a list need disambiguation.
-/// This function efficiently determines which player IDs will be affected by disambiguation
-/// without performing the actual disambiguation computation.
-///
-/// # Arguments
-/// * `players` - A slice of tuples containing (player_id, first_name, last_name)
-///
-/// # Returns
-/// * `HashSet<i64>` - Set of player IDs that will need disambiguation (have conflicting last names)
-///
-/// # Examples
-/// ```
-/// use liiga_teletext::data_fetcher::player_names::get_players_needing_disambiguation;
-/// use std::collections::HashSet;
-///
-/// let players = vec![
-///     (1, "Mikko".to_string(), "Koivu".to_string()),
-///     (2, "Saku".to_string(), "Koivu".to_string()),
-///     (3, "Teemu".to_string(), "Selänne".to_string()),
-/// ];
-///
-/// let needing_disambiguation = get_players_needing_disambiguation(&players);
-///
-/// // Players 1 and 2 (both Koivu) need disambiguation
-/// assert!(needing_disambiguation.contains(&1));
-/// assert!(needing_disambiguation.contains(&2));
-/// // Player 3 (Selänne) does not need disambiguation
-/// assert!(!needing_disambiguation.contains(&3));
-/// assert_eq!(needing_disambiguation.len(), 2);
-/// ```
-#[allow(dead_code)]
-pub fn get_players_needing_disambiguation(players: &[(i64, String, String)]) -> HashSet<i64> {
-    let mut result = HashSet::with_capacity(players.len());
-
-    // Fast path: if 0-1 players, no disambiguation needed
-    if players.len() <= 1 {
-        return result;
-    }
-
-    // Fast path: if exactly 2 players with different last names, no disambiguation needed
-    if players.len() == 2 {
-        let (_, _, last1) = &players[0];
-        let (_, _, last2) = &players[1];
-        if last1.to_lowercase() != last2.to_lowercase() {
-            return result;
-        }
-        // If both have same last name, both need disambiguation
-        result.insert(players[0].0);
-        result.insert(players[1].0);
-        return result;
-    }
-
-    // Group players by last name (case-insensitive) using indices for efficiency
-    let mut last_name_groups: HashMap<String, Vec<usize>> = HashMap::new();
-
-    for (index, (_, _, last_name)) in players.iter().enumerate() {
-        let normalized_last_name = last_name.to_lowercase();
-        last_name_groups
-            .entry(normalized_last_name)
-            .or_default()
-            .push(index);
-    }
-
-    // Add player IDs from groups that have conflicts (more than one player)
-    for group_indices in last_name_groups.values() {
-        if group_indices.len() > 1 {
-            for &index in group_indices {
-                result.insert(players[index].0);
-            }
-        }
-    }
-
-    result
-}
-
 /// Applies progressive disambiguation to a group of players with the same last name using indices.
 /// This is an optimized version that avoids cloning strings by using indices into the original slice.
 /// If single initials are sufficient, uses them. If not, extends to 2-3 characters as needed.
@@ -318,125 +243,10 @@ fn apply_extended_disambiguation_by_indices(
     result
 }
 
-/// Determines if disambiguation is needed for a given last name within a group of players.
-/// This helper function checks if multiple players share the same last name (case-insensitive).
-///
-/// # Arguments
-/// * `last_name` - The last name to check for duplicates
-/// * `players` - A slice of tuples containing (player_id, first_name, last_name)
-///
-/// # Returns
-/// * `bool` - True if multiple players share this last name
-///
-/// # Examples
-/// ```
-/// use liiga_teletext::data_fetcher::player_names::is_disambiguation_needed;
-///
-/// let players = vec![
-///     (1, "Mikko".to_string(), "Koivu".to_string()),
-///     (2, "Saku".to_string(), "Koivu".to_string()),
-///     (3, "Teemu".to_string(), "Selänne".to_string()),
-/// ];
-///
-/// assert!(is_disambiguation_needed("Koivu", &players));
-/// assert!(!is_disambiguation_needed("Selänne", &players));
-/// assert!(!is_disambiguation_needed("NonExistent", &players));
-/// ```
-#[allow(dead_code)]
-pub fn is_disambiguation_needed(last_name: &str, players: &[(i64, String, String)]) -> bool {
-    let normalized_last_name = last_name.to_lowercase();
-    let count = players
-        .iter()
-        .filter(|(_, _, ln)| ln.to_lowercase() == normalized_last_name)
-        .count();
-    count > 1
-}
-
-/// Groups players by their last name within a team.
-/// This helper function creates a mapping from normalized last names to lists of players
-/// who share that last name.
-///
-/// # Arguments
-/// * `players` - A slice of tuples containing (player_id, first_name, last_name)
-///
-/// # Returns
-/// * `HashMap<String, Vec<(i64, String, String)>>` - A mapping from normalized last names to player groups
-///
-/// # Examples
-/// ```
-/// use liiga_teletext::data_fetcher::player_names::group_players_by_last_name;
-///
-/// let players = vec![
-///     (1, "Mikko".to_string(), "Koivu".to_string()),
-///     (2, "Saku".to_string(), "Koivu".to_string()),
-///     (3, "Teemu".to_string(), "Selänne".to_string()),
-/// ];
-///
-/// let groups = group_players_by_last_name(&players);
-/// assert_eq!(groups.get("koivu").unwrap().len(), 2);
-/// assert_eq!(groups.get("selänne").unwrap().len(), 1);
-/// ```
-#[allow(dead_code)]
-pub fn group_players_by_last_name(
-    players: &[(i64, String, String)],
-) -> HashMap<String, Vec<(i64, String, String)>> {
-    let mut groups: HashMap<String, Vec<(i64, String, String)>> = HashMap::new();
-
-    for (id, first_name, last_name) in players {
-        let normalized_last_name = last_name.to_lowercase();
-        groups.entry(normalized_last_name).or_default().push((
-            *id,
-            first_name.clone(),
-            last_name.clone(),
-        ));
-    }
-
-    groups
-}
-
-/// Groups players by their last name within a team using indices to avoid cloning.
-/// This optimized helper function creates a mapping from normalized last names to lists of indices
-/// that reference the original player data.
-///
-/// # Arguments
-/// * `players` - A slice of tuples containing (player_id, first_name, last_name)
-///
-/// # Returns
-/// * `HashMap<String, Vec<usize>>` - A mapping from normalized last names to player indices
-///
-/// # Examples
-/// ```
-/// use liiga_teletext::data_fetcher::player_names::group_players_by_last_name_indices;
-///
-/// let players = vec![
-///     (1, "Mikko".to_string(), "Koivu".to_string()),
-///     (2, "Saku".to_string(), "Koivu".to_string()),
-///     (3, "Teemu".to_string(), "Selänne".to_string()),
-/// ];
-///
-/// let groups = group_players_by_last_name_indices(&players);
-/// assert_eq!(groups.get("koivu").unwrap().len(), 2);
-/// assert_eq!(groups.get("selänne").unwrap().len(), 1);
-/// ```
-#[allow(dead_code)]
-pub fn group_players_by_last_name_indices(
-    players: &[(i64, String, String)],
-) -> HashMap<String, Vec<usize>> {
-    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
-
-    for (index, (_, _, last_name)) in players.iter().enumerate() {
-        let normalized_last_name = last_name.to_lowercase();
-        groups.entry(normalized_last_name).or_default().push(index);
-    }
-
-    groups
-}
-
 /// Context for managing team-scoped player name disambiguation.
 /// This struct handles the disambiguation logic for a single team, ensuring that
 /// players with the same last name are properly distinguished.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct DisambiguationContext {
     /// The players in this team context
     pub players: Vec<(i64, String, String)>, // (id, first_name, last_name)
@@ -466,7 +276,6 @@ impl DisambiguationContext {
     /// let context = DisambiguationContext::new(players);
     /// assert_eq!(context.get_disambiguated_name(1), Some(&"Koivu M.".to_string()));
     /// ```
-    #[allow(dead_code)]
     pub fn new(players: Vec<(i64, String, String)>) -> Self {
         let disambiguated_names = format_with_disambiguation(&players);
 
@@ -483,7 +292,6 @@ impl DisambiguationContext {
     ///
     /// # Returns
     /// * `Option<&String>` - The disambiguated name if the player exists
-    #[allow(dead_code)]
     pub fn get_disambiguated_name(&self, player_id: i64) -> Option<&String> {
         self.disambiguated_names.get(&player_id)
     }
@@ -495,7 +303,7 @@ impl DisambiguationContext {
     ///
     /// # Returns
     /// * `bool` - True if multiple players share this last name
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Used by integration tests
     pub fn needs_disambiguation(&self, last_name: &str) -> bool {
         let normalized_last_name = last_name.to_lowercase();
         let count = self
