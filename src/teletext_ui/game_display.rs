@@ -831,7 +831,7 @@ impl TeletextPage {
         }
     }
 
-    /// Renders a future games header (e.g., "Seuraavat ottelut 15.01.2024").
+    /// Renders a future games header (e.g., "Seuraavat ottelut la 18.01.").
     ///
     /// # Arguments
     /// * `buffer` - The string buffer to append to

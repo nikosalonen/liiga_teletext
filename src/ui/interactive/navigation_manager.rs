@@ -636,7 +636,7 @@ pub fn create_bracket_page(
 }
 
 /// Formats a date string for display in Finnish format with the weekday
-/// ("ma 15.01."), so a date reached with Shift+arrows is easy to place.
+/// ("la 18.01."), so a date reached with Shift+arrows is easy to place.
 pub fn format_date_for_display(date_str: &str) -> String {
     // Parse the date using chrono for better error handling
     match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {

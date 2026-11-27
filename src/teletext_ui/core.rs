@@ -112,7 +112,7 @@ fn initial_screen_height(ignore_height_limit: bool) -> u16 {
     }
 }
 
-/// Builds the right side of the top header: "SM-LIIGA 221 la 15.01.2025 12:34".
+/// Builds the right side of the top header: "SM-LIIGA 221 la 18.01.2025 12:34".
 /// The weekday makes a date reached with Shift+arrows easy to place. When the
 /// text is wider than `max_width`, the year is dropped so the weekday still fits.
 fn format_header_text(
@@ -765,6 +765,19 @@ mod tests {
         let header = format_header_text("221", Some("2025-01-19"), "12:34", 30);
         assert_eq!(header, "SM-LIIGA 221 su 19.01. 12:34");
         assert!(header.chars().count() <= 30);
+    }
+
+    #[test]
+    fn test_header_text_keeps_year_when_it_exactly_fits() {
+        // "SM-LIIGA 221 la 18.01.2025 12:34" is 32 characters
+        assert_eq!(
+            format_header_text("221", Some("2025-01-18"), "12:34", 32),
+            "SM-LIIGA 221 la 18.01.2025 12:34"
+        );
+        assert_eq!(
+            format_header_text("221", Some("2025-01-18"), "12:34", 31),
+            "SM-LIIGA 221 la 18.01. 12:34"
+        );
     }
 
     #[test]

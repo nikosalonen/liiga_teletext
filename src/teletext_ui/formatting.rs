@@ -6,7 +6,7 @@ use crate::teletext_ui::ScoreType;
 use chrono::{Datelike, NaiveDate, Weekday};
 
 /// Finnish two-letter weekday abbreviation ("ma", "ti", ... "su"),
-/// as written in Finnish dates such as "la 15.01.".
+/// as written in Finnish dates such as "la 18.01.".
 pub fn finnish_weekday(date: NaiveDate) -> &'static str {
     match date.weekday() {
         Weekday::Mon => "ma",
@@ -260,7 +260,7 @@ impl TeletextPage {
 
                 // Format future games header for compact mode - intelligently abbreviate to preserve date
                 let abbreviated_header = if header_text.starts_with("Seuraavat ottelut ") {
-                    // Special handling for "Seuraavat ottelut DD.MM." - abbreviate "Seuraavat" to preserve date
+                    // "Seuraavat ottelut la 18.01.": shorten "Seuraavat" so the date stays visible
                     header_text.replace("Seuraavat ottelut ", "Seur. ottelut ")
                 } else if header_text.chars().count() > 30 {
                     // Truncate other long headers to 30 characters.
