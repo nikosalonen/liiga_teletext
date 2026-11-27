@@ -11,6 +11,7 @@ use super::series_utils::{get_subheader, is_playoff_type, playoff_phase_name, se
 use crate::data_fetcher::models::bracket::PlayoffBracket;
 use crate::data_fetcher::{GameData, is_historical_date};
 use crate::teletext_ui::bracket_display::render_bracket;
+use crate::teletext_ui::formatting::finnish_weekday;
 use crate::teletext_ui::{GameResultData, TeletextPage, TeletextRow};
 use chrono::NaiveDate;
 use std::collections::{HashMap, HashSet};
@@ -634,11 +635,12 @@ pub fn create_bracket_page(
     page
 }
 
-/// Formats a date string for display in Finnish format (DD.MM.)
+/// Formats a date string for display in Finnish format with the weekday
+/// ("ma 15.01."), so a date reached with Shift+arrows is easy to place.
 pub fn format_date_for_display(date_str: &str) -> String {
     // Parse the date using chrono for better error handling
     match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-        Ok(date) => date.format("%d.%m.").to_string(),
+        Ok(date) => format!("{} {}", finnish_weekday(date), date.format("%d.%m.")),
         Err(_) => date_str.to_string(), // Fallback if parsing fails
     }
 }
@@ -650,8 +652,8 @@ mod tests {
 
     #[test]
     fn test_format_date_for_display() {
-        assert_eq!(format_date_for_display("2024-01-15"), "15.01.");
-        assert_eq!(format_date_for_display("2024-12-31"), "31.12.");
+        assert_eq!(format_date_for_display("2024-01-15"), "ma 15.01.");
+        assert_eq!(format_date_for_display("2024-12-31"), "ti 31.12.");
 
         // Test invalid date - should return original string
         assert_eq!(format_date_for_display("invalid-date"), "invalid-date");

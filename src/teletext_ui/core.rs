@@ -112,6 +112,36 @@ fn initial_screen_height(ignore_height_limit: bool) -> u16 {
     }
 }
 
+/// Builds the right side of the top header: "SM-LIIGA 221 la 15.01.2025 12:34".
+/// The weekday makes a date reached with Shift+arrows easy to place. When the
+/// text is wider than `max_width`, the year is dropped so the weekday still fits.
+fn format_header_text(
+    page_str: &str,
+    fetched_date: Option<&str>,
+    clock: &str,
+    max_width: usize,
+) -> String {
+    let Some(date) = fetched_date else {
+        return format!("SM-LIIGA {page_str} {clock}");
+    };
+    let Ok(parsed) = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") else {
+        return format!("SM-LIIGA {page_str} {date} {clock}");
+    };
+    let weekday = super::formatting::finnish_weekday(parsed);
+    let with_year = format!(
+        "SM-LIIGA {page_str} {weekday} {} {clock}",
+        parsed.format("%d.%m.%Y")
+    );
+    if with_year.chars().count() <= max_width {
+        with_year
+    } else {
+        format!(
+            "SM-LIIGA {page_str} {weekday} {} {clock}",
+            parsed.format("%d.%m.")
+        )
+    }
+}
+
 impl TeletextPage {
     /// Creates an empty page set up for the interactive UI: footer shown,
     /// video links on, page height taken from the terminal, normal layout.
@@ -424,24 +454,19 @@ impl TeletextPage {
         // Format the header text with date if available, plus a teletext-style clock
         let page_str = self.format_header_page_str();
         let clock = Local::now().format("%H:%M").to_string();
-        let header_text = if let Some(ref date) = self.fetched_date {
-            let formatted_date = match chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
-                Ok(date) => date.format("%d.%m.%Y").to_string(),
-                Err(_) => date.clone(),
-            };
-            format!("SM-LIIGA {page_str} {formatted_date} {clock}")
-        } else {
-            format!("SM-LIIGA {page_str} {clock}")
-        };
+        let header_width = (width as usize).saturating_sub(20);
+        let header_text = format_header_text(
+            &page_str,
+            self.fetched_date.as_deref(),
+            &clock,
+            header_width,
+        );
 
         // Use optimized ANSI code generation for headers
         let title_bg_code = get_ansi_code(title_bg(), 46);
         let header_fg_code = get_ansi_code(header_fg(), 21);
         let header_bg_code = get_ansi_code(header_bg(), 21);
         let subheader_fg_code = get_ansi_code(subheader_fg(), 46);
-
-        // Pre-calculate header width for better performance
-        let header_width = (width as usize).saturating_sub(20);
 
         // Batch header ANSI code generation
         let mut header_buffer = String::with_capacity(200); // Pre-allocate for performance
@@ -724,6 +749,46 @@ mod tests {
     use crate::teletext_ui::formatting::get_team_abbreviation;
     use crate::ui::teletext::{CompactModeValidation, TerminalWidthValidation};
     use crossterm::style::Color;
+
+    #[test]
+    fn test_header_text_shows_weekday_and_year() {
+        // 2025-01-18 is a Saturday
+        assert_eq!(
+            format_header_text("221", Some("2025-01-18"), "12:34", 60),
+            "SM-LIIGA 221 la 18.01.2025 12:34"
+        );
+    }
+
+    #[test]
+    fn test_header_text_drops_year_when_narrow() {
+        // 50-column terminal leaves 30 columns for the header text
+        let header = format_header_text("221", Some("2025-01-19"), "12:34", 30);
+        assert_eq!(header, "SM-LIIGA 221 su 19.01. 12:34");
+        assert!(header.chars().count() <= 30);
+    }
+
+    #[test]
+    fn test_header_text_without_or_with_unparseable_date() {
+        assert_eq!(
+            format_header_text("221", None, "12:34", 60),
+            "SM-LIIGA 221 12:34"
+        );
+        assert_eq!(
+            format_header_text("221", Some("bad"), "12:34", 60),
+            "SM-LIIGA 221 bad 12:34"
+        );
+    }
+
+    #[test]
+    fn test_finnish_weekday_covers_whole_week() {
+        use crate::teletext_ui::formatting::finnish_weekday;
+        // 2025-01-13 is a Monday
+        let monday = chrono::NaiveDate::from_ymd_opt(2025, 1, 13).unwrap();
+        let week: Vec<&str> = (0..7)
+            .map(|offset| finnish_weekday(monday + chrono::Days::new(offset)))
+            .collect();
+        assert_eq!(week, ["ma", "ti", "ke", "to", "pe", "la", "su"]);
+    }
 
     #[test]
     fn test_resize_preserves_bracket_page_position() {

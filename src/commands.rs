@@ -208,7 +208,7 @@ pub async fn handle_once_command(
             no_games_page.add_error_message("Ei otteluita tänään");
         } else {
             no_games_page.add_error_message(&format!(
-                "Ei otteluita {} päivälle",
+                "Ei otteluita päivälle {}",
                 format_date_for_display(&fetched_date)
             ));
         }

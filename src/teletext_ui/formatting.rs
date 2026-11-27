@@ -3,6 +3,21 @@
 use super::core::{CompactDisplayConfig, TeletextPage, TeletextRow};
 use super::game_display::result_with_suffix;
 use crate::teletext_ui::ScoreType;
+use chrono::{Datelike, NaiveDate, Weekday};
+
+/// Finnish two-letter weekday abbreviation ("ma", "ti", ... "su"),
+/// as written in Finnish dates such as "la 15.01.".
+pub fn finnish_weekday(date: NaiveDate) -> &'static str {
+    match date.weekday() {
+        Weekday::Mon => "ma",
+        Weekday::Tue => "ti",
+        Weekday::Wed => "ke",
+        Weekday::Thu => "to",
+        Weekday::Fri => "pe",
+        Weekday::Sat => "la",
+        Weekday::Sun => "su",
+    }
+}
 
 impl TeletextPage {
     /// Calculates the expected buffer size for rendering to avoid reallocations.
