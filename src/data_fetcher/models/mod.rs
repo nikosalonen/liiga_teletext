@@ -1,4 +1,5 @@
 pub mod bracket;
+pub mod calendar;
 pub mod common;
 pub mod detailed;
 pub mod goals;

@@ -168,12 +168,36 @@ fn month_of_date(date: &str) -> u32 {
 /// Returns an error if `runkosarja` (the main data source) failed, or if no
 /// tournament returned a response and at least one fetch failed. A tournament
 /// that is not found just has no games, so its failure is not an error here.
+/// Any other tournament that failed is left out silently; use
+/// [`fetch_tournament_games_with_failures`] to learn about those.
 pub async fn fetch_tournament_games(
     client: &Client,
     config: &Config,
     tournaments: &[TournamentType],
     season: i32,
 ) -> Result<Vec<ScheduleApiGame>, AppError> {
+    fetch_tournament_games_with_failures(client, config, tournaments, season)
+        .await
+        .map(|fetched| fetched.games)
+}
+
+/// Games of several tournaments, from [`fetch_tournament_games_with_failures`].
+#[derive(Debug)]
+pub struct TournamentGames {
+    pub games: Vec<ScheduleApiGame>,
+    /// Tournaments other than `runkosarja` that failed with anything but
+    /// "not found". Their games are missing from `games`.
+    pub failed: Vec<TournamentType>,
+}
+
+/// [`fetch_tournament_games`], also naming the tournaments whose games are
+/// missing because their fetch failed.
+pub async fn fetch_tournament_games_with_failures(
+    client: &Client,
+    config: &Config,
+    tournaments: &[TournamentType],
+    season: i32,
+) -> Result<TournamentGames, AppError> {
     // Import fetch function from core module
     use super::fetch_utils::fetch;
 
@@ -217,7 +241,7 @@ pub async fn fetch_tournament_games(
                             "Failed to fetch {} schedule for season {}: {}",
                             tournament_name, season, e
                         );
-                        Err((*tournament == TournamentType::Runkosarja, e))
+                        Err((tournament.clone(), e))
                     }
                 }
             }
@@ -233,6 +257,7 @@ pub async fn fetch_tournament_games(
     let mut failed_fetches = 0;
     let mut primary_fetch_error = None;
     let mut secondary_fetch_error = None;
+    let mut failed_tournaments = Vec::new();
 
     for result in results {
         match result {
@@ -240,15 +265,16 @@ pub async fn fetch_tournament_games(
                 all_schedule_games.extend(games);
                 successful_fetches += 1;
             }
-            Err((is_primary, e)) => {
+            Err((tournament, e)) => {
                 failed_fetches += 1;
-                if !e.is_not_found() {
-                    let slot = if is_primary {
-                        &mut primary_fetch_error
-                    } else {
-                        &mut secondary_fetch_error
-                    };
-                    slot.get_or_insert(e);
+                if e.is_not_found() {
+                    continue;
+                }
+                if tournament == TournamentType::Runkosarja {
+                    primary_fetch_error.get_or_insert(e);
+                } else {
+                    failed_tournaments.push(tournament);
+                    secondary_fetch_error.get_or_insert(e);
                 }
             }
         }
@@ -269,7 +295,10 @@ pub async fn fetch_tournament_games(
     {
         return Err(error);
     }
-    Ok(all_schedule_games)
+    Ok(TournamentGames {
+        games: all_schedule_games,
+        failed: failed_tournaments,
+    })
 }
 
 /// Tournament candidates for a date, based on the calendar month only.

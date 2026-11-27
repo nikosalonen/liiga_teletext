@@ -92,6 +92,24 @@ fn build_footer_segments(ctx: &FooterContext<'_>) -> Vec<FooterSegment> {
                 BLOCK_TEXT_DARK,
             ));
         }
+        Some(ViewMode::Calendar) => {
+            segments.push(FooterSegment::block(
+                "Enter=Avaa",
+                FASTEXT_RED,
+                BLOCK_TEXT_LIGHT,
+            ));
+            segments.push(FooterSegment::block(
+                "⇧←→Kuukausi",
+                FASTEXT_GREEN,
+                BLOCK_TEXT_DARK,
+            ));
+            segments.push(FooterSegment::block(
+                "k=Takaisin",
+                FASTEXT_YELLOW,
+                BLOCK_TEXT_DARK,
+            ));
+            segments.push(FooterSegment::plain("t=Tänään"));
+        }
         Some(ViewMode::Games) | None => {
             segments.push(FooterSegment::block(
                 "⇧←Edellinen",
@@ -118,6 +136,7 @@ fn build_footer_segments(ctx: &FooterContext<'_>) -> Vec<FooterSegment> {
             if ctx.show_today_shortcut {
                 segments.push(FooterSegment::plain("t=Tänään"));
             }
+            segments.push(FooterSegment::plain("k=Kalenteri"));
         }
     }
 
@@ -376,6 +395,48 @@ mod tests {
         // Bracket view exits via 'p' (back to games)
         assert!(buffer.contains("p=Ottelut"));
         assert!(!buffer.contains("p=Pudotuspelit"));
+    }
+
+    #[test]
+    fn test_footer_calendar_view_keys() {
+        let mut buffer = String::new();
+        let mut stdout = std::io::stdout();
+        let ctx = FooterContext {
+            footer_y: 23,
+            width: 80,
+            auto_refresh_indicator: &None,
+            auto_refresh_disabled: false,
+            error_warning_active: false,
+            season_countdown: &None,
+            view_mode: Some(&crate::ui::interactive::state_manager::ViewMode::Calendar),
+            show_today_shortcut: false,
+            has_bracket_data: true,
+        };
+        render_footer_with_view(&mut stdout, &mut buffer, &ctx).unwrap();
+        assert!(buffer.contains("Enter=Avaa"));
+        assert!(buffer.contains("⇧←→Kuukausi"));
+        assert!(buffer.contains("k=Takaisin"));
+        // Date stepping keys belong to the games view
+        assert!(!buffer.contains("⇧←Edellinen"));
+    }
+
+    #[test]
+    fn test_footer_games_view_advertises_calendar() {
+        let mut buffer = String::new();
+        let mut stdout = std::io::stdout();
+        let ctx = FooterContext {
+            footer_y: 23,
+            width: 100,
+            auto_refresh_indicator: &None,
+            auto_refresh_disabled: false,
+            error_warning_active: false,
+            season_countdown: &None,
+            view_mode: Some(&crate::ui::interactive::state_manager::ViewMode::Games),
+            show_today_shortcut: false,
+            has_bracket_data: false,
+        };
+        render_footer_with_view(&mut stdout, &mut buffer, &ctx).unwrap();
+        assert!(buffer.contains("k=Kalenteri"));
     }
 
     #[test]

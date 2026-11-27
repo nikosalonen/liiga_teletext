@@ -6,7 +6,9 @@
 
 use crate::data_fetcher::GameData;
 use crate::data_fetcher::models::bracket::PlayoffBracket;
+use crate::data_fetcher::models::calendar::SeasonCalendar;
 use crate::teletext_ui::TeletextPage;
+use chrono::NaiveDate;
 use std::time::{Duration, Instant};
 
 /// Which view mode is active in the interactive UI
@@ -15,6 +17,7 @@ pub enum ViewMode {
     Games,
     Standings { live_mode: bool },
     Bracket,
+    Calendar,
 }
 
 /// Timer state for various interactive UI operations
@@ -184,6 +187,8 @@ pub struct NavigationState {
     pub initial_fetched_date: Option<String>,
     /// Accumulated digits for teletext-style page number entry (e.g. "22")
     pub page_input: String,
+    /// The day selected in the calendar view
+    pub calendar_cursor: Option<NaiveDate>,
 }
 
 impl NavigationState {
@@ -198,6 +203,7 @@ impl NavigationState {
             has_bracket_data: false,
             initial_fetched_date: None,
             page_input: String::new(),
+            calendar_cursor: None,
         }
     }
 
@@ -233,11 +239,19 @@ impl Default for NavigationState {
 pub struct ChangeDetectionState {
     pub last_games_hash: u64,
     pub last_games: Vec<GameData>,
+    /// The date `last_games` were fetched for. A failed fetch for another
+    /// date leaves them in place, so they can belong to an earlier date than
+    /// the one the games view is on.
+    last_games_date: Option<String>,
     last_standings_hash: Option<u64>,
     last_bracket_hash: Option<u64>,
     /// The bracket on screen, kept so a resize can rebuild its page without
     /// fetching it again.
     last_bracket: Option<PlayoffBracket>,
+    /// The last season fetched for the calendar. Kept after leaving the
+    /// calendar, so moving the cursor within the season needs no fetch, and
+    /// coming back shows the calendar while the refresh runs.
+    last_calendar: Option<SeasonCalendar>,
 }
 
 impl ChangeDetectionState {
@@ -246,9 +260,11 @@ impl ChangeDetectionState {
         Self {
             last_games_hash: 0,
             last_games: Vec::new(),
+            last_games_date: None,
             last_standings_hash: None,
             last_bracket_hash: None,
             last_bracket: None,
+            last_calendar: None,
         }
     }
 
@@ -271,6 +287,17 @@ impl ChangeDetectionState {
     /// Get last games reference
     pub fn last_games(&self) -> &[GameData] {
         &self.last_games
+    }
+
+    /// Records the date `last_games` were fetched for.
+    pub fn set_last_games_date(&mut self, date: Option<String>) {
+        self.last_games_date = date;
+    }
+
+    /// Whether `last_games` are the games of `date`, so the games page of
+    /// that date can be rebuilt from them without a fetch.
+    pub fn has_games_of(&self, date: &Option<String>) -> bool {
+        !self.last_games.is_empty() && self.last_games_date == *date
     }
 
     /// Get last standings hash (None means never fetched)
@@ -311,6 +338,19 @@ impl ChangeDetectionState {
     /// The last bracket fetched, if the bracket view has one.
     pub fn last_bracket(&self) -> Option<&PlayoffBracket> {
         self.last_bracket.as_ref()
+    }
+
+    /// Stores a season calendar after a successful fetch. Returns true if it
+    /// differs from the stored one, or if none is stored yet.
+    pub fn update_calendar(&mut self, calendar: SeasonCalendar) -> bool {
+        let changed = self.last_calendar.as_ref() != Some(&calendar);
+        self.last_calendar = Some(calendar);
+        changed
+    }
+
+    /// The last season calendar fetched, if any.
+    pub fn last_calendar(&self) -> Option<&SeasonCalendar> {
+        self.last_calendar.as_ref()
     }
 
     /// Forget the stored bracket (e.g., when switching away from bracket view)
@@ -480,10 +520,54 @@ impl InteractiveState {
     pub fn handle_resize(&mut self) {
         self.ui.handle_resize();
 
-        if self.navigation.current_view == ViewMode::Bracket {
-            let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
-            self.rebuild_bracket_page(width, height);
+        let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
+        match self.navigation.current_view {
+            ViewMode::Bracket => self.rebuild_bracket_page(width, height),
+            // The calendar is laid out to fit the screen height
+            ViewMode::Calendar if self.ui.current_page().is_some_and(|p| p.is_calendar_page()) => {
+                self.show_calendar_at_cursor(width, height);
+            }
+            _ => {}
         }
+    }
+
+    /// Shows the calendar at the selected day. Built from the stored season
+    /// when it has that day, so moving the cursor around the season needs no
+    /// fetch; otherwise asks for a refresh, which fetches that season.
+    pub fn show_calendar_at_cursor(&mut self, terminal_width: u16, terminal_height: u16) {
+        let Some(cursor) = self.navigation.calendar_cursor else {
+            return;
+        };
+        let Some(calendar) = self
+            .change_detection
+            .last_calendar()
+            .filter(|calendar| calendar.covers(cursor))
+        else {
+            self.request_refresh();
+            return;
+        };
+
+        let disable_links = self
+            .ui
+            .current_page()
+            .is_some_and(TeletextPage::video_links_disabled);
+        let keep_warning = self
+            .ui
+            .current_page()
+            .is_some_and(|page| page.is_calendar_page() && page.is_error_warning_active());
+        let mut page = super::navigation_manager::create_calendar_page(
+            calendar,
+            cursor,
+            disable_links,
+            terminal_width,
+            terminal_height,
+        );
+        if keep_warning {
+            page.show_error_warning();
+        }
+        page.set_has_bracket_data(self.navigation.has_bracket_data);
+        page.set_initial_fetched_date(self.navigation.initial_fetched_date.clone());
+        self.ui.set_current_page(page);
     }
 
     /// Rebuilds the bracket page for a new terminal size from the stored
@@ -568,7 +652,7 @@ impl NavigationState {
         self.current_view = match self.current_view {
             ViewMode::Games => ViewMode::Standings { live_mode: false },
             ViewMode::Standings { .. } => ViewMode::Games,
-            ViewMode::Bracket => ViewMode::Games,
+            ViewMode::Bracket | ViewMode::Calendar => ViewMode::Games,
         };
     }
 
@@ -700,6 +784,55 @@ mod tests {
         state.handle_resize();
 
         assert!(!state.needs_refresh());
+    }
+
+    fn day(text: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+    }
+
+    /// A state in the calendar view at `cursor` with the 2026-2027 season stored.
+    fn state_in_calendar(cursor: &str) -> InteractiveState {
+        let mut state = InteractiveState::new(None);
+        state.clear_refresh_flag();
+        state.navigation.current_view = ViewMode::Calendar;
+        state.navigation.calendar_cursor = Some(day(cursor));
+        state
+            .change_detection
+            .update_calendar(SeasonCalendar::from_schedule(2027, &[]));
+        state
+    }
+
+    #[test]
+    fn test_calendar_cursor_in_stored_season_redraws_without_fetch() {
+        let mut state = state_in_calendar("2026-11-27");
+
+        state.show_calendar_at_cursor(80, 24);
+
+        assert!(!state.needs_refresh());
+        let page = state.current_page().expect("calendar page");
+        assert!(page.is_calendar_page());
+    }
+
+    #[test]
+    fn test_calendar_cursor_in_another_season_fetches_it() {
+        let mut state = state_in_calendar("2026-06-15");
+
+        state.show_calendar_at_cursor(80, 24);
+
+        assert!(state.needs_refresh());
+        assert!(state.current_page().is_none());
+    }
+
+    #[test]
+    fn test_calendar_redraw_keeps_error_warning() {
+        let mut state = state_in_calendar("2026-11-27");
+        state.show_calendar_at_cursor(80, 24);
+        state.current_page_mut().unwrap().show_error_warning();
+
+        state.navigation.calendar_cursor = Some(day("2026-11-28"));
+        state.show_calendar_at_cursor(80, 24);
+
+        assert!(state.current_page().unwrap().is_error_warning_active());
     }
 
     #[test]

@@ -875,6 +875,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_historical_august_date_fetches_season_it_opens() {
+        // Practice games in August 2025 belong to season 2026 (2025-2026),
+        // the season the calendar shows them in
+        let mock_server = MockServer::start().await;
+        let client = create_test_http_client();
+        let mut config = create_mock_config();
+        config.api_domain = mock_server.uri();
+
+        let practice_game = vec![ScheduleApiGame {
+            id: 77,
+            season: 2026,
+            start: "2025-08-15T15:00:00Z".to_string(),
+            home_team_name: "Ilves".to_string(),
+            away_team_name: "Lukko".to_string(),
+            serie: 5,
+            finished_type: Some("ENDED_DURING_REGULAR_TIME".to_string()),
+            started: true,
+            ended: true,
+            game_time: Some(3600),
+            play_off_phase: None,
+            play_off_pair: None,
+            play_off_req_wins: None,
+            home_team_goals: 2,
+            away_team_goals: 1,
+        }];
+        Mock::given(method("GET"))
+            .and(path("/schedule"))
+            .and(query_param("tournament", "valmistavat_ottelut"))
+            .and(query_param("season", "2026"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&practice_game))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/schedule"))
+            .and(query_param("tournament", "runkosarja"))
+            .and(query_param("season", "2026"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(Vec::<ScheduleApiGame>::new()))
+            .mount(&mock_server)
+            .await;
+        // Anything else, such as the game details, is not found
+
+        let games = fetch_historical_games(&client, &config, "2025-08-15")
+            .await
+            .expect("historical fetch should succeed");
+
+        assert_eq!(games.len(), 1, "the practice game must be found");
+        assert_eq!(games[0].home_team, "Ilves");
+    }
+
+    #[tokio::test]
     async fn test_historical_date_returns_error_when_schedule_fetch_fails() {
         // Without an error, a past date whose schedule could not be fetched
         // would be shown as a day without games.

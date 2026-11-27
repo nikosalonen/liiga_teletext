@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod api_tests;
 pub mod bracket_api;
+pub mod calendar_api;
 pub mod date_logic;
 mod fetch_utils;
 mod game_api;

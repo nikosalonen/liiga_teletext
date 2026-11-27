@@ -9,8 +9,11 @@
 
 use super::series_utils::{get_subheader, is_playoff_type, playoff_phase_name, series_group_label};
 use crate::data_fetcher::models::bracket::PlayoffBracket;
+use crate::data_fetcher::models::calendar::SeasonCalendar;
 use crate::data_fetcher::{GameData, is_historical_date};
 use crate::teletext_ui::bracket_display::render_bracket;
+use crate::teletext_ui::calendar_display::render_calendar;
+use crate::teletext_ui::formatting::finnish_weekday;
 use crate::teletext_ui::{GameResultData, TeletextPage, TeletextRow};
 use chrono::NaiveDate;
 use std::collections::{HashMap, HashSet};
@@ -634,11 +637,40 @@ pub fn create_bracket_page(
     page
 }
 
-/// Formats a date string for display in Finnish format (DD.MM.)
+/// Creates the calendar page (224) for the month of `cursor`, with `cursor`
+/// selected. The page is laid out to fit one screen of the terminal's size,
+/// because ←/→ move the cursor there instead of turning pages. On a short
+/// terminal the month shows only the weeks around `cursor`.
+pub fn create_calendar_page(
+    calendar: &SeasonCalendar,
+    cursor: NaiveDate,
+    disable_links: bool,
+    terminal_width: u16,
+    terminal_height: u16,
+) -> TeletextPage {
+    let mut page = TeletextPage::new(224, "JÄÄKIEKKO", "OTTELUKALENTERI")
+        .with_video_links_disabled(disable_links);
+    page.set_screen_height(terminal_height);
+    page.set_calendar_page(true);
+
+    // The same content height pagination uses
+    let max_lines = usize::from(terminal_height.saturating_sub(5));
+    let today = chrono::Local::now().date_naive();
+    let max_width = usize::from(terminal_width).saturating_sub(crate::teletext_ui::CONTENT_MARGIN);
+    for row in render_calendar(calendar, cursor, today, max_width, max_lines) {
+        if let TeletextRow::BracketLine(line) = row {
+            page.add_bracket_line(line);
+        }
+    }
+    page
+}
+
+/// Formats a date string for display in Finnish format with the weekday
+/// ("la 18.01."), so a date reached with Shift+arrows is easy to place.
 pub fn format_date_for_display(date_str: &str) -> String {
     // Parse the date using chrono for better error handling
     match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-        Ok(date) => date.format("%d.%m.").to_string(),
+        Ok(date) => format!("{} {}", finnish_weekday(date), date.format("%d.%m.")),
         Err(_) => date_str.to_string(), // Fallback if parsing fails
     }
 }
@@ -650,8 +682,8 @@ mod tests {
 
     #[test]
     fn test_format_date_for_display() {
-        assert_eq!(format_date_for_display("2024-01-15"), "15.01.");
-        assert_eq!(format_date_for_display("2024-12-31"), "31.12.");
+        assert_eq!(format_date_for_display("2024-01-15"), "ma 15.01.");
+        assert_eq!(format_date_for_display("2024-12-31"), "ti 31.12.");
 
         // Test invalid date - should return original string
         assert_eq!(format_date_for_display("invalid-date"), "invalid-date");

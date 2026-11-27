@@ -1,6 +1,7 @@
 // src/teletext_ui/mod.rs - Modular teletext UI system
 
 pub mod bracket_display;
+pub mod calendar_display;
 pub mod compact_mode_rendering;
 pub mod content;
 pub mod core;
