@@ -6,10 +6,11 @@
 //! - Finding previous/next dates with games
 //! - Season boundary checking
 
+use crate::data_fetcher::models::calendar::SeasonCalendar;
 use crate::data_fetcher::{fetch_liiga_data, is_historical_date};
 use crate::error::AppError;
 use crate::teletext_ui::TeletextPage;
-use chrono::{Datelike, Local, NaiveDate, Utc};
+use chrono::{Datelike, Days, Local, Months, NaiveDate, Utc};
 use crossterm::event::{self, KeyCode, KeyEventKind, KeyModifiers};
 use std::time::{Duration, Instant};
 
@@ -31,6 +32,10 @@ pub(super) struct KeyEventParams<'a> {
     pub has_bracket_data: bool,
     pub page_input: &'a mut String,
     pub last_page_input: &'a mut Instant,
+    /// The day selected in the calendar view
+    pub calendar_cursor: &'a mut Option<NaiveDate>,
+    /// The season the calendar has fetched, if any
+    pub calendar: Option<&'a SeasonCalendar>,
 }
 
 /// Checks if the given key event matches the date navigation shortcut.
@@ -382,6 +387,7 @@ async fn find_next_date_with_games(current_date: &str) -> Option<String> {
 const PAGE_GAMES: &str = "221";
 const PAGE_STANDINGS: &str = "222";
 const PAGE_BRACKET: &str = "223";
+const PAGE_CALENDAR: &str = "224";
 
 /// Handles a digit key press for teletext-style page number entry.
 /// Digits accumulate in the header (e.g. "22-"); after three digits the
@@ -445,6 +451,7 @@ fn handle_page_number_input(params: &mut KeyEventParams<'_>, digit: char) {
                 *params.needs_refresh = true;
             }
         }
+        PAGE_CALENDAR => open_calendar(params),
         other => {
             let number = other.parse::<u16>().unwrap_or(0);
             tracing::info!("Page entry: page {number} not found");
@@ -453,6 +460,98 @@ fn handle_page_number_input(params: &mut KeyEventParams<'_>, digit: char) {
             ));
         }
     }
+}
+
+/// Opens the calendar at the date on screen, or at today when no date is set.
+fn open_calendar(params: &mut KeyEventParams<'_>) {
+    if matches!(*params.current_view, ViewMode::Calendar) {
+        return;
+    }
+    tracing::info!("Switching to calendar view");
+    let cursor = params
+        .current_date
+        .as_deref()
+        .and_then(|date| NaiveDate::parse_from_str(date, "%Y-%m-%d").ok())
+        .unwrap_or_else(|| Local::now().date_naive());
+
+    match *params.current_view {
+        // Keep the games page position, so leaving the calendar rebuilds the
+        // games page from the games already fetched
+        ViewMode::Games => {
+            if let Some(page) = params.current_page.as_ref() {
+                *params.preserved_games_page = Some(page.get_current_page());
+            }
+        }
+        ViewMode::Standings { live_mode } => *params.preserved_live_mode = live_mode,
+        ViewMode::Bracket | ViewMode::Calendar => {}
+    }
+    *params.calendar_cursor = Some(cursor);
+    *params.current_view = ViewMode::Calendar;
+    // Shows the stored season right away if it has the day; the refresh
+    // brings it up to date
+    *params.needs_refresh = true;
+}
+
+/// Leaves the calendar for the games page of `date`, or of the date already
+/// on screen when `date` is `None`.
+fn close_calendar(params: &mut KeyEventParams<'_>, date: Option<NaiveDate>) {
+    let new_date = date
+        .map(|day| day.format("%Y-%m-%d").to_string())
+        .filter(|day| params.current_date.as_deref() != Some(day.as_str()));
+    match new_date {
+        Some(day) => {
+            tracing::info!("Calendar: opening games of {day}");
+            *params.current_date = Some(day);
+            *params.preserved_games_page = None;
+        }
+        None => {
+            // Same date as before: rebuild the games page from the games
+            // already fetched. A fetch would find them unchanged and bring no
+            // new page, leaving the calendar on screen.
+            params.preserved_games_page.get_or_insert(0);
+        }
+    }
+    *params.current_view = ViewMode::Games;
+    *params.needs_refresh = true;
+}
+
+/// Handles a key in the calendar view. Returns false for keys the calendar
+/// doesn't use; those work as in the other views (q, s, p, r, digits).
+///
+/// Only the cursor changes here: the event handler rebuilds the page.
+fn handle_calendar_key(params: &mut KeyEventParams<'_>) -> bool {
+    let Some(cursor) = *params.calendar_cursor else {
+        return false;
+    };
+    let shift = params.key_event.modifiers.contains(KeyModifiers::SHIFT);
+    let new_cursor = match params.key_event.code {
+        KeyCode::Left if shift => cursor.checked_sub_months(Months::new(1)),
+        KeyCode::Right if shift => cursor.checked_add_months(Months::new(1)),
+        KeyCode::Left => cursor.pred_opt(),
+        KeyCode::Right => cursor.succ_opt(),
+        KeyCode::Up => cursor.checked_sub_days(Days::new(7)),
+        KeyCode::Down => cursor.checked_add_days(Days::new(7)),
+        KeyCode::Char('t') => Some(Local::now().date_naive()),
+        KeyCode::Enter => {
+            // A day without games has nothing to open
+            if params
+                .calendar
+                .is_some_and(|calendar| calendar.has_games_on(cursor))
+            {
+                close_calendar(params, Some(cursor));
+            }
+            return true;
+        }
+        KeyCode::Esc | KeyCode::Char('k') => {
+            close_calendar(params, None);
+            return true;
+        }
+        _ => return false,
+    };
+    if let Some(day) = new_cursor {
+        *params.calendar_cursor = Some(day);
+    }
+    true
 }
 
 /// Direction of a Shift+arrow date search.
@@ -542,10 +641,14 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
         *params.needs_render = true;
     }
 
-    // Disable date navigation in standings and bracket views
+    if matches!(*params.current_view, ViewMode::Calendar) && handle_calendar_key(&mut params) {
+        return Ok(false);
+    }
+
+    // Disable date navigation outside the games view
     let is_non_game_view = matches!(
         params.current_view,
-        ViewMode::Standings { .. } | ViewMode::Bracket
+        ViewMode::Standings { .. } | ViewMode::Bracket | ViewMode::Calendar
     );
 
     // Check for date navigation first (Shift + Arrow keys)
@@ -615,7 +718,9 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
                         // Preserve current games page so the fast-restore
                         // path rebuilds the page from cached data on return
                         // (avoids change-detection skip when data is unchanged).
-                        if let Some(page) = params.current_page.as_ref() {
+                        if matches!(*params.current_view, ViewMode::Games)
+                            && let Some(page) = params.current_page.as_ref()
+                        {
                             *params.preserved_games_page = Some(page.get_current_page());
                         }
                         *params.current_view = ViewMode::Bracket;
@@ -632,7 +737,9 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
                     }
                     _ => {
                         // Preserve current games page when leaving games
-                        if let Some(page) = params.current_page.as_ref() {
+                        if matches!(*params.current_view, ViewMode::Games)
+                            && let Some(page) = params.current_page.as_ref()
+                        {
                             *params.preserved_games_page = Some(page.get_current_page());
                         }
                         *params.current_view = ViewMode::Standings {
@@ -651,6 +758,7 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
                     *params.needs_refresh = true;
                 }
             }
+            KeyCode::Char('k') => open_calendar(&mut params),
             KeyCode::Char('t') => {
                 tracing::info!("Today's view requested");
                 *params.current_date = None;
@@ -841,6 +949,8 @@ mod tests {
         preserved_live_mode: bool,
         page_input: String,
         last_page_input: Instant,
+        calendar_cursor: Option<NaiveDate>,
+        calendar: Option<SeasonCalendar>,
     }
 
     impl KeyEventState {
@@ -858,7 +968,49 @@ mod tests {
                 preserved_live_mode: false,
                 page_input: String::new(),
                 last_page_input: Instant::now(),
+                calendar_cursor: None,
+                calendar: None,
             }
+        }
+
+        /// A state in the calendar view at `cursor`, with a season calendar
+        /// that has games on `game_days`.
+        fn in_calendar(cursor: &str, game_days: &[&str]) -> Self {
+            use crate::data_fetcher::models::ScheduleApiGame;
+            let games: Vec<ScheduleApiGame> = game_days
+                .iter()
+                .map(|day| ScheduleApiGame {
+                    id: 1,
+                    season: 2027,
+                    start: format!("{day}T12:00:00Z"),
+                    home_team_name: "HIFK".to_string(),
+                    away_team_name: "TPS".to_string(),
+                    serie: 1,
+                    finished_type: None,
+                    started: false,
+                    ended: false,
+                    game_time: None,
+                    play_off_phase: None,
+                    play_off_pair: None,
+                    play_off_req_wins: None,
+                    home_team_goals: 0,
+                    away_team_goals: 0,
+                })
+                .collect();
+            let mut state = Self::new();
+            state.current_view = ViewMode::Calendar;
+            state.calendar_cursor = Some(day(cursor));
+            state.calendar = Some(SeasonCalendar::from_schedule_in(
+                2027,
+                &games,
+                &chrono::FixedOffset::east_opt(7200).unwrap(),
+            ));
+            state
+        }
+
+        async fn press(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+            let key_event = event::KeyEvent::new(code, modifiers);
+            handle_key_event(self.params(&key_event)).await.unwrap()
         }
 
         fn params<'a>(&'a mut self, key_event: &'a event::KeyEvent) -> KeyEventParams<'a> {
@@ -877,8 +1029,168 @@ mod tests {
                 has_bracket_data: false,
                 page_input: &mut self.page_input,
                 last_page_input: &mut self.last_page_input,
+                calendar_cursor: &mut self.calendar_cursor,
+                calendar: self.calendar.as_ref(),
             }
         }
+    }
+
+    fn day(text: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_k_opens_calendar_at_date_on_screen() {
+        let mut state = KeyEventState::new();
+        state.current_date = Some("2026-11-20".to_string());
+        state.current_page = Some(TeletextPage::new(221, "JÄÄKIEKKO", "SM-LIIGA"));
+
+        state.press(KeyCode::Char('k'), KeyModifiers::NONE).await;
+
+        assert_eq!(state.current_view, ViewMode::Calendar);
+        assert_eq!(state.calendar_cursor, Some(day("2026-11-20")));
+        assert_eq!(
+            state.preserved_games_page,
+            Some(0),
+            "the games page position is kept for coming back"
+        );
+        assert!(state.needs_refresh);
+    }
+
+    #[tokio::test]
+    async fn test_page_224_opens_calendar() {
+        let mut state = KeyEventState::new();
+        state.current_date = Some("2026-11-20".to_string());
+
+        for digit in ['2', '2', '4'] {
+            state.press(KeyCode::Char(digit), KeyModifiers::NONE).await;
+        }
+
+        assert_eq!(state.current_view, ViewMode::Calendar);
+        assert_eq!(state.calendar_cursor, Some(day("2026-11-20")));
+    }
+
+    #[tokio::test]
+    async fn test_calendar_arrows_move_cursor() {
+        let mut state = KeyEventState::in_calendar("2026-11-27", &[]);
+
+        state.press(KeyCode::Right, KeyModifiers::NONE).await;
+        assert_eq!(state.calendar_cursor, Some(day("2026-11-28")));
+        state.press(KeyCode::Left, KeyModifiers::NONE).await;
+        state.press(KeyCode::Left, KeyModifiers::NONE).await;
+        assert_eq!(state.calendar_cursor, Some(day("2026-11-26")));
+        state.press(KeyCode::Down, KeyModifiers::NONE).await;
+        assert_eq!(state.calendar_cursor, Some(day("2026-12-03")));
+        state.press(KeyCode::Up, KeyModifiers::NONE).await;
+        assert_eq!(state.calendar_cursor, Some(day("2026-11-26")));
+
+        assert_eq!(state.current_view, ViewMode::Calendar);
+        assert!(
+            !state.needs_refresh,
+            "moving the cursor must not fetch; the event handler redraws the page"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calendar_shift_arrows_move_by_month() {
+        let mut state = KeyEventState::in_calendar("2027-01-31", &[]);
+
+        state.press(KeyCode::Right, KeyModifiers::SHIFT).await;
+        assert_eq!(
+            state.calendar_cursor,
+            Some(day("2027-02-28")),
+            "a day past the month's end clamps to its last day"
+        );
+        state.press(KeyCode::Left, KeyModifiers::SHIFT).await;
+        state.press(KeyCode::Left, KeyModifiers::SHIFT).await;
+        assert_eq!(state.calendar_cursor, Some(day("2026-12-28")));
+    }
+
+    #[tokio::test]
+    async fn test_calendar_enter_opens_games_of_selected_day() {
+        let mut state = KeyEventState::in_calendar("2026-11-27", &["2026-11-27"]);
+        state.current_date = Some("2026-11-20".to_string());
+        state.preserved_games_page = Some(2);
+
+        state.press(KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert_eq!(state.current_view, ViewMode::Games);
+        assert_eq!(state.current_date.as_deref(), Some("2026-11-27"));
+        assert_eq!(
+            state.preserved_games_page, None,
+            "another day's games must be fetched, not rebuilt from the old ones"
+        );
+        assert!(state.needs_refresh);
+    }
+
+    #[tokio::test]
+    async fn test_calendar_enter_on_day_without_games_does_nothing() {
+        let mut state = KeyEventState::in_calendar("2026-11-26", &["2026-11-27"]);
+        state.current_date = Some("2026-11-20".to_string());
+
+        state.press(KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert_eq!(state.current_view, ViewMode::Calendar);
+        assert_eq!(state.current_date.as_deref(), Some("2026-11-20"));
+        assert!(!state.needs_refresh);
+    }
+
+    #[tokio::test]
+    async fn test_calendar_enter_on_date_already_shown_rebuilds_games_page() {
+        let mut state = KeyEventState::in_calendar("2026-11-27", &["2026-11-27"]);
+        state.current_date = Some("2026-11-27".to_string());
+
+        state.press(KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert_eq!(state.current_view, ViewMode::Games);
+        assert_eq!(
+            state.preserved_games_page,
+            Some(0),
+            "unchanged games would bring no new page, so they are rebuilt"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calendar_back_keys_return_to_games() {
+        for code in [KeyCode::Esc, KeyCode::Char('k')] {
+            let mut state = KeyEventState::in_calendar("2026-11-27", &["2026-11-27"]);
+            state.current_date = Some("2026-11-20".to_string());
+            state.preserved_games_page = Some(1);
+
+            state.press(code, KeyModifiers::NONE).await;
+
+            assert_eq!(state.current_view, ViewMode::Games, "{code:?}");
+            assert_eq!(state.current_date.as_deref(), Some("2026-11-20"));
+            assert_eq!(state.preserved_games_page, Some(1));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_calendar_passes_other_keys_on() {
+        let mut state = KeyEventState::in_calendar("2026-11-27", &[]);
+
+        state.press(KeyCode::Char('s'), KeyModifiers::NONE).await;
+
+        assert_eq!(state.current_view, ViewMode::Standings { live_mode: false });
+        assert!(
+            state.press(KeyCode::Char('q'), KeyModifiers::NONE).await,
+            "q quits from every view"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_leaving_calendar_for_standings_keeps_games_page_position() {
+        let mut state = KeyEventState::in_calendar("2026-11-27", &[]);
+        state.preserved_games_page = Some(3);
+        state.current_page = Some(TeletextPage::new(224, "JÄÄKIEKKO", "OTTELUKALENTERI"));
+
+        state.press(KeyCode::Char('s'), KeyModifiers::NONE).await;
+
+        assert_eq!(
+            state.preserved_games_page,
+            Some(3),
+            "the calendar page's position is not a games page position"
+        );
     }
 
     #[tokio::test]

@@ -92,7 +92,7 @@ loop {
   1. Check if auto-refresh needed (RefreshCoordinator)
   2. Fetch data if refresh requested → update state
   3. Render page if state changed (buffered output)
-  4. Process keyboard events (←/→ pages, Shift+←/→ dates, 's' standings, 'p' bracket (playoffs only), 'l' live mode, 't' today, 'r' refresh, 'q' quit, digits for teletext page entry: 221 games / 222 standings / 223 bracket, others show a "SIVUA EI LÖYDY" page)
+  4. Process keyboard events (←/→ pages, Shift+←/→ dates, 's' standings, 'p' bracket (playoffs only), 'k' calendar, 'l' live mode, 't' today, 'r' refresh, 'q' quit, digits for teletext page entry: 221 games / 222 standings / 223 bracket / 224 calendar, others show a "SIVUA EI LÖYDY" page)
   5. Sleep 50ms
 }
 ```
@@ -114,6 +114,8 @@ Stores **raw** `{first, last}` names, never pre-formatted ones. Disambiguation i
 **Tournament negative cache** (`data_fetcher/api/tournament_logic.rs`) — secondary tournament endpoints (e.g. unannounced `valmistavat_ottelut`) that fail with 502/503/404 are skipped for 15 minutes, with a reduced retry budget (1 instead of 3). `runkosarja` is exempt and always re-checked.
 
 **Playoff bracket visibility** (`data_fetcher/api/bracket_api.rs`) — the bracket (`p` / page 223) is hidden once every playoff game concluded more than 14 days ago (`LIIGA_BRACKET_GRACE_DAYS` overrides). The bracket renders as a full side-by-side path with connectors on terminals ≥ ~80x24 (`teletext_ui/bracket_display.rs::render_full_path`), falling back to sequential tree and stacked layouts on smaller terminals. The layout is chosen when the page is built, so a resize rebuilds the page from the bracket stored in `ChangeDetectionState` (`state_manager.rs::rebuild_bracket_page`) instead of refetching. A failed bracket refresh keeps the bracket on screen with the footer warning; only a playoffs schedule that isn't published yet (404) counts as "no bracket".
+
+**Calendar** (`k` / page 224, `data_fetcher/api/calendar_api.rs`, `teletext_ui/calendar_display.rs`) — a month grid plus the selected day's games, built from one season schedule request per tournament (`SeasonCalendar`, by local date). Seasons split at July (`models/calendar.rs::season_for_date`), so August practice games sit with the season they open. Arrow keys only move `NavigationState::calendar_cursor`; `InteractiveState::show_calendar_at_cursor` redraws from the stored season, and fetches only when the cursor leaves it. The page is laid out for the terminal size (it never paginates, since ←/→ move the cursor) and is rebuilt on resize: the day's games sit beside the month on terminals about 71+ columns wide and under it otherwise, and weeks and games get blank rows between them when the height allows. Leaving the calendar for the date already on screen goes through `preserved_games_page`, because a fetch of unchanged games brings no new page and would leave the calendar up.
 
 ### Configuration
 

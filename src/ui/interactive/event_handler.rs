@@ -79,6 +79,7 @@ impl EventHandler {
         let mut current_view = previous_view;
         let mut preserved_games_page = state.navigation.preserved_games_page;
         let mut preserved_live_mode = state.navigation.preserved_live_mode;
+        let previous_cursor = state.navigation.calendar_cursor;
         // Use existing input handler with extracted state
         let should_exit = handle_key_event(KeyEventParams {
             key_event,
@@ -95,6 +96,8 @@ impl EventHandler {
             has_bracket_data: state.navigation.has_bracket_data,
             page_input: &mut state.navigation.page_input,
             last_page_input: &mut state.timers.last_page_input,
+            calendar_cursor: &mut state.navigation.calendar_cursor,
+            calendar: state.change_detection.last_calendar(),
         })
         .await?;
 
@@ -118,6 +121,15 @@ impl EventHandler {
         state.navigation.current_view = current_view;
         state.navigation.preserved_games_page = preserved_games_page;
         state.navigation.preserved_live_mode = preserved_live_mode;
+
+        // Calendar keys only move the cursor; draw the calendar at it
+        if current_view == ViewMode::Calendar
+            && (previous_view != ViewMode::Calendar
+                || state.navigation.calendar_cursor != previous_cursor)
+        {
+            let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
+            state.show_calendar_at_cursor(width, height);
+        }
 
         if should_exit {
             Ok(EventResult::Exit)

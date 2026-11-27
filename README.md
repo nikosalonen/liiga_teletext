@@ -12,7 +12,8 @@ Finnish Liiga hockey results in your terminal, in the style of YLE Teksti-TV pag
 - Regular season, playoffs, playout, qualifications and preseason games
 - League standings, with a live mode that updates during games
 - Playoff series scores and a full playoff bracket
-- Teletext page numbers (221, 222, 223), a colored Fastext-style footer and a header clock
+- A season calendar that shows which days have games, to jump to any of them
+- Teletext page numbers (221, 222, 223, 224), a colored Fastext-style footer and a header clock
 - Standard, compact (multi-column) and wide (two-column) layouts
 - Players who share a last name on the same team get a first initial, e.g. "Koivu M." and "Koivu S."
 
@@ -92,14 +93,26 @@ liiga_teletext --wide              # two columns, needs a terminal 128+ characte
 | Key | Action |
 |---|---|
 | `←` / `→` | Previous or next page |
-| `Shift+←` / `Shift+→` | Previous or next date with games. Stays in the current season; use `--date` for older seasons |
+| `Shift+←` / `Shift+→` | Previous or next date with games. Stays in the current season; use the calendar (`k`) or `--date` for older seasons |
 | `s` | Standings. Press again for live mode, once more to go back |
 | `l` | Toggle live mode in standings |
 | `p` | Playoff bracket |
+| `k` | Calendar. Press again, or `Esc`, to go back |
 | `t` | Back to today |
 | `r` | Refresh now, at most once every 15 seconds |
 | `q` | Quit |
-| `221`, `222`, `223` | Type a page number to jump to games, standings or the bracket. Any other number shows "SIVUA EI LÖYDY" (page not found) |
+| `221`, `222`, `223`, `224` | Type a page number to jump to games, standings, the bracket or the calendar. Any other number shows "SIVUA EI LÖYDY" (page not found) |
+
+In the calendar, days with games are white, days without are grey, and the
+selected day's games are listed under the month:
+
+| Key | Action |
+|---|---|
+| `←` / `→` | Previous or next day |
+| `↑` / `↓` | Same day a week earlier or later |
+| `Shift+←` / `Shift+→` | Previous or next month. Moving past the season loads the next one |
+| `Enter` | Open the selected day's games |
+| `t` | Back to today |
 
 The bracket is available while the playoffs are upcoming, ongoing or finished
 less than 14 days ago. On terminals of 80x24 or larger it shows every round side

@@ -99,9 +99,11 @@ fn page_for_blank_screen(
     result: &RefreshResult,
     config: &RefreshCycleConfig,
 ) -> Option<TeletextPage> {
+    // A calendar page still on screen after picking a day is blank too: it
+    // shows nothing of the games view.
     let screen_is_blank = state
         .current_page()
-        .is_none_or(|page| page.is_loading_page());
+        .is_none_or(|page| page.is_loading_page() || page.is_calendar_page());
     if !screen_is_blank || result.new_page.is_some() {
         return None;
     }
@@ -272,6 +274,13 @@ const BRACKET_FETCH: PageFetchSpec = PageFetchSpec {
     subheader: "PUDOTUSPELIT",
     loading_message: "Haetaan pudotuspelejä...",
     label: "bracket",
+};
+
+const CALENDAR_FETCH: PageFetchSpec = PageFetchSpec {
+    page_number: 224,
+    subheader: "OTTELUKALENTERI",
+    loading_message: "Haetaan otteluohjelmaa...",
+    label: "calendar",
 };
 
 /// What a finished standings or bracket fetch means for the screen.
@@ -495,7 +504,7 @@ impl RefreshCoordinator {
                 state.current_view(),
                 ViewMode::Standings { live_mode: true }
             );
-            let is_bracket = matches!(state.current_view(), ViewMode::Bracket);
+            let is_bracket = matches!(state.current_view(), ViewMode::Bracket | ViewMode::Calendar);
             let (auto_refresh_interval, game_count_for_min_interval) = if is_standings_live {
                 (
                     Duration::from_secs(crate::constants::refresh::LIVE_GAMES_INTERVAL_SECONDS),
@@ -720,6 +729,10 @@ impl RefreshCoordinator {
             return self
                 .perform_bracket_refresh(state, config, preserved_page)
                 .await;
+        }
+
+        if matches!(state.current_view(), ViewMode::Calendar) {
+            return self.perform_calendar_refresh(state, config).await;
         }
 
         if let ViewMode::Standings { live_mode } = state.current_view() {
@@ -1016,6 +1029,83 @@ impl RefreshCoordinator {
                 page
             },
             preserved_page,
+        ))
+    }
+
+    /// Perform calendar-specific refresh cycle: fetches the season of the
+    /// selected day.
+    ///
+    /// When the calendar of that season is already on screen, this is an
+    /// auto-refresh with a spinner; otherwise a loading page shows while the
+    /// season is fetched.
+    async fn perform_calendar_refresh(
+        &self,
+        state: &mut InteractiveState,
+        config: &RefreshCycleConfig,
+    ) -> Result<RefreshResult, AppError> {
+        let cursor = *state
+            .navigation
+            .calendar_cursor
+            .get_or_insert_with(|| chrono::Local::now().date_naive());
+        let season = crate::data_fetcher::models::calendar::season_for_date(cursor);
+        tracing::info!("Fetching calendar for season {season}");
+
+        let is_auto_refresh = state.current_page().is_some_and(|p| p.is_calendar_page())
+            && state
+                .change_detection
+                .last_calendar()
+                .is_some_and(|calendar| calendar.covers(cursor));
+
+        let fetched = fetch_with_progress(
+            state,
+            &CALENDAR_FETCH,
+            is_auto_refresh,
+            config.disable_links,
+            move |app_config| async move {
+                crate::data_fetcher::api::calendar_api::fetch_season_calendar(&app_config, season)
+                    .await
+            },
+        )
+        .await?;
+
+        let (terminal_width, terminal_height) = crossterm::terminal::size().unwrap_or((80, 24));
+        let outcome = match fetched {
+            None => PageRefreshOutcome::Failed,
+            Some(calendar) => {
+                let changed = state.change_detection.update_calendar(calendar.clone());
+                // A first load has no calendar on screen yet, even when the
+                // season is the same as the one stored
+                if changed || !is_auto_refresh {
+                    PageRefreshOutcome::Updated(Box::new(navigation_manager::create_calendar_page(
+                        &calendar,
+                        cursor,
+                        config.disable_links,
+                        terminal_width,
+                        terminal_height,
+                    )))
+                } else {
+                    PageRefreshOutcome::Unchanged
+                }
+            }
+        };
+
+        Ok(finish_page_refresh(
+            state,
+            is_auto_refresh,
+            outcome,
+            TeletextPage::is_calendar_page,
+            || {
+                let mut page = TeletextPage::new(
+                    CALENDAR_FETCH.page_number,
+                    "JÄÄKIEKKO",
+                    CALENDAR_FETCH.subheader,
+                )
+                .with_video_links_disabled(config.disable_links);
+                page.add_error_message("Otteluohjelman lataus epäonnistui.");
+                page.add_error_message("Paina 'k' palataksesi otteluihin.");
+                page
+            },
+            None,
         ))
     }
 
@@ -1588,6 +1678,22 @@ mod tests {
             page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn test_calendar_left_on_screen_gets_page_for_picked_day() {
+        // A day picked in the calendar whose games the games endpoint doesn't
+        // have: the result is discarded, and the calendar must not stay up
+        // in the games view.
+        let mut state = InteractiveState::new(Some("2026-11-27".to_string()));
+        let mut calendar_page = TeletextPage::new(224, "JÄÄKIEKKO", "OTTELUKALENTERI");
+        calendar_page.set_calendar_page(true);
+        state.set_current_page(calendar_page);
+
+        let page = page_for_blank_screen(&state, &empty_result(false), &blank_screen_test_config())
+            .expect("the calendar page counts as blank in the games view");
+
+        assert!(page.has_error_message("Ei otteluita päivälle"));
     }
 
     fn blank_screen_test_page() -> TeletextPage {

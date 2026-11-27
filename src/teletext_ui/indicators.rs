@@ -142,6 +142,16 @@ impl TeletextPage {
         self.is_bracket_page
     }
 
+    /// Sets whether this page is the calendar page.
+    pub fn set_calendar_page(&mut self, is_calendar: bool) {
+        self.is_calendar_page = is_calendar;
+    }
+
+    /// Returns whether this page is the calendar page.
+    pub fn is_calendar_page(&self) -> bool {
+        self.is_calendar_page
+    }
+
     /// Returns whether clickable video links are turned off for this page.
     pub fn video_links_disabled(&self) -> bool {
         self.disable_video_links

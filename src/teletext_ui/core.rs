@@ -50,6 +50,7 @@ pub struct TeletextPage {
     pub(super) skip_screen_clear: Cell<bool>, // Interior mutability needed because render_buffered takes &self. When true, skips screen clear to avoid flicker.
     pub(super) is_loading_page: bool,         // Whether this is a loading/fetching page
     pub(super) is_bracket_page: bool,         // Whether this is a bracket display page
+    pub(super) is_calendar_page: bool,        // Whether this is the calendar page
     pub(super) has_bracket_data: bool,        // Whether bracket data is available
     pub(super) initial_fetched_date: Option<String>, // The date originally fetched on startup
     pub(super) page_input_display: Option<String>, // Digits typed for teletext-style page entry, shown in header
@@ -96,6 +97,8 @@ pub enum TeletextRow {
         live_position_change: Option<i16>,
         live_game_active: bool,
     },
+    /// A finished line with its own color codes, drawn as is. The bracket
+    /// and calendar pages are made of these.
     BracketLine(String),
     /// Forced page break marker for bracket display.
     /// Inserted between phase groups to prevent mid-matchup pagination.
@@ -181,6 +184,7 @@ impl TeletextPage {
             skip_screen_clear: Cell::new(false),
             is_loading_page: false,
             is_bracket_page: false,
+            is_calendar_page: false,
             has_bracket_data: false,
             initial_fetched_date: None,
             page_input_display: None,
@@ -563,6 +567,8 @@ impl TeletextPage {
                 })
             } else if self.is_bracket_page {
                 Some(crate::ui::interactive::state_manager::ViewMode::Bracket)
+            } else if self.is_calendar_page {
+                Some(crate::ui::interactive::state_manager::ViewMode::Calendar)
             } else {
                 Some(crate::ui::interactive::state_manager::ViewMode::Games)
             };
