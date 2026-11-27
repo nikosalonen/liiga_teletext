@@ -51,7 +51,10 @@ pub struct TeletextPage {
     pub(super) is_loading_page: bool,         // Whether this is a loading/fetching page
     pub(super) is_bracket_page: bool,         // Whether this is a bracket display page
     pub(super) is_calendar_page: bool,        // Whether this is the calendar page
-    pub(super) has_bracket_data: bool,        // Whether bracket data is available
+    /// The view whose keys the footer lists, when it isn't the one the page
+    /// flags imply (e.g. the calendar's loading and error pages)
+    pub(super) footer_view: Option<crate::ui::interactive::state_manager::ViewMode>,
+    pub(super) has_bracket_data: bool, // Whether bracket data is available
     pub(super) initial_fetched_date: Option<String>, // The date originally fetched on startup
     pub(super) page_input_display: Option<String>, // Digits typed for teletext-style page entry, shown in header
     /// Terminal width to lay out for instead of the live one. Tests set it so
@@ -185,6 +188,7 @@ impl TeletextPage {
             is_loading_page: false,
             is_bracket_page: false,
             is_calendar_page: false,
+            footer_view: None,
             has_bracket_data: false,
             initial_fetched_date: None,
             page_input_display: None,
@@ -561,17 +565,19 @@ impl TeletextPage {
                 self.screen_height,
             );
 
-            let view_mode = if self.is_standings_page {
-                Some(crate::ui::interactive::state_manager::ViewMode::Standings {
+            use crate::ui::interactive::state_manager::ViewMode;
+            let page_view = if self.is_standings_page {
+                ViewMode::Standings {
                     live_mode: self.standings_live_mode,
-                })
+                }
             } else if self.is_bracket_page {
-                Some(crate::ui::interactive::state_manager::ViewMode::Bracket)
+                ViewMode::Bracket
             } else if self.is_calendar_page {
-                Some(crate::ui::interactive::state_manager::ViewMode::Calendar)
+                ViewMode::Calendar
             } else {
-                Some(crate::ui::interactive::state_manager::ViewMode::Games)
+                ViewMode::Games
             };
+            let view_mode = Some(self.footer_view.unwrap_or(page_view));
             let show_today_shortcut = self.fetched_date.as_ref().is_some_and(|date| {
                 let default_date = if should_show_todays_games() {
                     Local::now().format("%Y-%m-%d").to_string()

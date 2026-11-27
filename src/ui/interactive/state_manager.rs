@@ -239,13 +239,18 @@ impl Default for NavigationState {
 pub struct ChangeDetectionState {
     pub last_games_hash: u64,
     pub last_games: Vec<GameData>,
+    /// The date `last_games` were fetched for. A failed fetch for another
+    /// date leaves them in place, so they can belong to an earlier date than
+    /// the one the games view is on.
+    last_games_date: Option<String>,
     last_standings_hash: Option<u64>,
     last_bracket_hash: Option<u64>,
     /// The bracket on screen, kept so a resize can rebuild its page without
     /// fetching it again.
     last_bracket: Option<PlayoffBracket>,
     /// The last season fetched for the calendar. Kept after leaving the
-    /// calendar, so moving the cursor or coming back needs no fetch.
+    /// calendar, so moving the cursor within the season needs no fetch, and
+    /// coming back shows the calendar while the refresh runs.
     last_calendar: Option<SeasonCalendar>,
 }
 
@@ -255,6 +260,7 @@ impl ChangeDetectionState {
         Self {
             last_games_hash: 0,
             last_games: Vec::new(),
+            last_games_date: None,
             last_standings_hash: None,
             last_bracket_hash: None,
             last_bracket: None,
@@ -281,6 +287,17 @@ impl ChangeDetectionState {
     /// Get last games reference
     pub fn last_games(&self) -> &[GameData] {
         &self.last_games
+    }
+
+    /// Records the date `last_games` were fetched for.
+    pub fn set_last_games_date(&mut self, date: Option<String>) {
+        self.last_games_date = date;
+    }
+
+    /// Whether `last_games` are the games of `date`, so the games page of
+    /// that date can be rebuilt from them without a fetch.
+    pub fn has_games_of(&self, date: &Option<String>) -> bool {
+        !self.last_games.is_empty() && self.last_games_date == *date
     }
 
     /// Get last standings hash (None means never fetched)

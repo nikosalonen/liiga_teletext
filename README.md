@@ -103,14 +103,16 @@ liiga_teletext --wide              # two columns, needs a terminal 128+ characte
 | `q` | Quit |
 | `221`, `222`, `223`, `224` | Type a page number to jump to games, standings, the bracket or the calendar. Any other number shows "SIVUA EI LÖYDY" (page not found) |
 
-In the calendar, days with games are white, days without are grey, and the
-selected day's games are listed under the month:
+In the calendar, days with games are white, days without are grey, today is
+yellow and days with a live game are green. The selected day's games are listed
+beside the month, or under it on narrow terminals. Moving into another season
+loads that season.
 
 | Key | Action |
 |---|---|
 | `←` / `→` | Previous or next day |
 | `↑` / `↓` | Same day a week earlier or later |
-| `Shift+←` / `Shift+→` | Previous or next month. Moving past the season loads the next one |
+| `Shift+←` / `Shift+→` | Previous or next month |
 | `Enter` | Open the selected day's games |
 | `t` | Back to today |
 

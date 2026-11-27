@@ -29,8 +29,8 @@ const GRID_WIDTH: usize = 3 + 7 * CELL_WIDTH;
 /// Space between the month and the day's games when they sit side by side.
 const COLUMN_GAP: usize = 6;
 
-/// Visible width the day's games need: two team names and a result, or the
-/// "+ 4 muuta, Enter näyttää kaikki" line.
+/// Room for the day's games: a game line is at most 30 columns (two team
+/// names and "3-2 ja"), and the "+ 12 muuta, Enter näyttää kaikki" line 32.
 const LIST_WIDTH: usize = 32;
 
 /// Grid row that the day's games start on when they sit beside the month:
@@ -82,9 +82,10 @@ fn visible_width(text: &str) -> usize {
 
 /// Renders the month of `cursor` with `cursor` selected, and the selected
 /// day's games: beside the month when `max_width` has room, under it
-/// otherwise. The rows fit in `max_lines`. Blank rows go between the weeks
-/// when they fit; when the day has more games than fit, the last line says
-/// how many were left out.
+/// otherwise. Blank rows go between the weeks when they fit in `max_lines`,
+/// and the day's games are cut to fit, with a last line saying how many were
+/// left out. When even the month doesn't fit, it shows the weeks around the
+/// selected day (`compact_month`).
 pub fn render_calendar(
     calendar: &SeasonCalendar,
     cursor: NaiveDate,
@@ -113,7 +114,7 @@ fn side_by_side(
     let grid = if grid_is_spaced {
         spaced_grid
     } else {
-        month_grid(calendar, cursor, today, false)
+        compact_month(calendar, cursor, today, max_lines)
     };
     let games = calendar.games_on(cursor);
     let room = max_lines.saturating_sub(LIST_TOP);
@@ -158,11 +159,45 @@ fn stacked(
     let mut lines = if spaced.len() + 1 + summary_height <= max_lines {
         spaced
     } else {
-        month_grid(calendar, cursor, today, false)
+        // Leave room for the blank line and the day's title line
+        compact_month(calendar, cursor, today, max_lines.saturating_sub(2))
     };
     lines.push(String::new());
     let room = max_lines.saturating_sub(lines.len());
     lines.extend(day_summary(games, cursor, room, false));
+    lines
+}
+
+/// The month without blank rows, in at most `max_lines` when it can be done.
+/// On a short terminal the blank line under the title goes first, then the
+/// weeks farthest from the selected day. The title, the weekday header and
+/// the selected week always stay.
+fn compact_month(
+    calendar: &SeasonCalendar,
+    cursor: NaiveDate,
+    today: NaiveDate,
+    max_lines: usize,
+) -> Vec<String> {
+    let mut lines = month_grid(calendar, cursor, today, false);
+    if lines.len() <= max_lines {
+        return lines;
+    }
+    lines.remove(1); // the blank line under the title
+    if lines.len() <= max_lines {
+        return lines;
+    }
+
+    // Title and weekday header stay; the rest are weeks
+    let weeks = lines.split_off(2);
+    let room = max_lines.saturating_sub(lines.len()).clamp(1, weeks.len());
+    let first_of_month = cursor.with_day(1).expect("day 1 exists in every month");
+    let leading_days = first_of_month.weekday().num_days_from_monday() as usize;
+    let selected_week = (leading_days + cursor.day0() as usize) / 7;
+    // Center the selected week, without running past either end of the month
+    let first_shown = selected_week
+        .saturating_sub((room - 1) / 2)
+        .min(weeks.len() - room);
+    lines.extend(weeks.into_iter().skip(first_shown).take(room));
     lines
 }
 
@@ -483,6 +518,33 @@ mod tests {
     }
 
     #[test]
+    fn test_games_go_beside_the_month_only_when_they_fit() {
+        let games = [game(
+            "2026-11-27T15:30:00Z",
+            "HIFK",
+            "Tappara",
+            false,
+            false,
+        )];
+        let needed = GRID_WIDTH + COLUMN_GAP + LIST_WIDTH;
+        let render = |width| {
+            plain_lines(&render_calendar(
+                &calendar(&games),
+                date("2026-11-27"),
+                date("2026-11-27"),
+                width,
+                19,
+            ))
+        };
+
+        let beside = render(needed);
+        let under = render(needed - 1);
+
+        assert!(beside[2].ends_with("1 ottelu"), "{beside:?}");
+        assert_eq!(under[2], "vk  ma  ti  ke  to  pe  la  su", "{under:?}");
+    }
+
+    #[test]
     fn test_games_sit_beside_the_month_on_wide_terminals() {
         let games = [game(
             "2026-11-27T15:30:00Z",
@@ -553,6 +615,73 @@ mod tests {
         let lines = plain_lines(&rows);
 
         assert_eq!(lines.last().unwrap(), "to 26.11.2026  ei otteluita");
+    }
+
+    #[test]
+    fn test_short_terminal_keeps_selected_week_beside_games() {
+        // November 2026 has six weeks: the compact month takes 9 lines
+        let rows = render_calendar(
+            &calendar(&[game("2026-11-27T15:30:00Z", "HIFK", "TPS", false, false)]),
+            date("2026-11-27"),
+            date("2026-11-27"),
+            WIDE,
+            6,
+        );
+        let lines = plain_lines(&rows);
+
+        assert_eq!(lines.len(), 6);
+        assert!(lines[0].starts_with("MARRASKUU 2026"));
+        assert!(lines[1].starts_with("vk  ma  ti  ke  to  pe  la  su"));
+        // Room for 4 of the 6 weeks: 46-49, with the selected week 48
+        assert!(lines[2].starts_with("46   9"));
+        assert!(lines[4].starts_with("48  23  24  25  26  27  28  29"));
+        assert!(lines[5].starts_with("49  30"));
+        assert!(
+            lines[2].contains("pe 27.11.2026"),
+            "the day's games stay beside"
+        );
+    }
+
+    #[test]
+    fn test_short_terminal_keeps_selected_week_and_day_under_month() {
+        let rows = render_calendar(
+            &calendar(&[]),
+            date("2026-11-02"),
+            date("2026-11-27"),
+            NARROW,
+            6,
+        );
+        let lines = plain_lines(&rows);
+
+        assert_eq!(
+            lines,
+            [
+                "MARRASKUU 2026",
+                "vk  ma  ti  ke  to  pe  la  su",
+                "45   2   3   4   5   6   7   8",
+                "46   9  10  11  12  13  14  15",
+                "",
+                "ma 02.11.2026  ei otteluita",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_short_terminal_drops_only_the_title_gap_when_that_is_enough() {
+        // Compact month 9 lines, one line short: only the blank row goes
+        let rows = render_calendar(
+            &calendar(&[]),
+            date("2026-11-27"),
+            date("2026-11-27"),
+            WIDE,
+            8,
+        );
+        let lines = plain_lines(&rows);
+
+        assert_eq!(lines.len(), 8);
+        assert!(lines[1].starts_with("vk"));
+        assert!(lines[2].starts_with("44"));
+        assert!(lines[7].starts_with("49  30"));
     }
 
     #[test]

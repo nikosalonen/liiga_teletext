@@ -7,6 +7,7 @@
 //! - Cache monitoring and maintenance
 //! - Backoff and retry logic coordination
 
+use crate::data_fetcher::api::calendar_api::SeasonCalendarFetch;
 use crate::data_fetcher::api::standings_api::fetch_standings;
 use crate::data_fetcher::models::standings::StandingsEntry;
 use crate::data_fetcher::{GameData, fetch_liiga_data, has_live_games_from_game_data};
@@ -94,16 +95,22 @@ impl Default for CacheMonitoringConfig {
 /// A failed fetch never brings a page, so a failed first fetch (with or without
 /// `--date`) gets an error page here. A `--date` without games also ends up
 /// here: the fetcher returns another date's games, which are discarded.
+///
+/// `entering_games_view` is true when the games view was just entered from
+/// another view, so the page on screen (standings, bracket, calendar, or one
+/// of their error pages) shows nothing of the games view.
 fn page_for_blank_screen(
     state: &InteractiveState,
     result: &RefreshResult,
     config: &RefreshCycleConfig,
+    entering_games_view: bool,
 ) -> Option<TeletextPage> {
     // A calendar page still on screen after picking a day is blank too: it
     // shows nothing of the games view.
-    let screen_is_blank = state
-        .current_page()
-        .is_none_or(|page| page.is_loading_page() || page.is_calendar_page());
+    let screen_is_blank = entering_games_view
+        || state
+            .current_page()
+            .is_none_or(|page| page.is_loading_page() || page.is_calendar_page());
     if !screen_is_blank || result.new_page.is_some() {
         return None;
     }
@@ -130,6 +137,52 @@ fn page_for_blank_screen(
         config.compact_mode,
         config.wide_mode,
     ))
+}
+
+/// Rebuilds the games page from `last_games` when coming back to the games
+/// view from another view (`preserved_games_page` is set), so the page shows
+/// at once instead of after a fetch.
+///
+/// Returns `None` when not coming back, or when `last_games` aren't the games
+/// of the date on screen: a failed fetch for a new date (say, a day picked in
+/// the calendar) leaves the previous date's games there.
+async fn rebuild_preserved_games_page(
+    state: &mut InteractiveState,
+    config: &RefreshCycleConfig,
+) -> Option<RefreshResult> {
+    let preserved = state.navigation.preserved_games_page.take()?;
+    state.navigation.preserved_page_for_restoration = Some(preserved);
+    if !state.change_detection.has_games_of(state.current_date()) {
+        return None;
+    }
+
+    let fetched_date = state.current_date().clone().unwrap_or_default();
+    let games: Vec<_> = state.change_detection.last_games().to_vec();
+    let new_page = navigation_manager::create_or_restore_page(PageCreationConfig {
+        games: &games,
+        disable_links: config.disable_links,
+        compact_mode: config.compact_mode,
+        wide_mode: config.wide_mode,
+        fetched_date: &fetched_date,
+        preserved_page_for_restoration: state.preserved_page(),
+        current_date: state.current_date(),
+        updated_current_date: state.current_date(),
+    })
+    .await;
+
+    tracing::info!(
+        "Restored games page from cached data ({} games)",
+        games.len()
+    );
+    Some(RefreshResult {
+        games,
+        had_error: false,
+        fetched_date,
+        should_retry: false,
+        new_page,
+        needs_render: true,
+        skip_change_detection: false,
+    })
 }
 
 /// Check if fetched data should be discarded due to a date mismatch.
@@ -260,6 +313,8 @@ struct PageFetchSpec {
     loading_message: &'static str,
     /// Name used in log messages
     label: &'static str,
+    /// Footer keys for the loading page, when the page flags don't say
+    footer_view: Option<ViewMode>,
 }
 
 const STANDINGS_FETCH: PageFetchSpec = PageFetchSpec {
@@ -267,6 +322,7 @@ const STANDINGS_FETCH: PageFetchSpec = PageFetchSpec {
     subheader: "SARJATAULUKKO",
     loading_message: "Haetaan sarjataulukkoa...",
     label: "standings",
+    footer_view: None,
 };
 
 const BRACKET_FETCH: PageFetchSpec = PageFetchSpec {
@@ -274,6 +330,7 @@ const BRACKET_FETCH: PageFetchSpec = PageFetchSpec {
     subheader: "PUDOTUSPELIT",
     loading_message: "Haetaan pudotuspelejä...",
     label: "bracket",
+    footer_view: None,
 };
 
 const CALENDAR_FETCH: PageFetchSpec = PageFetchSpec {
@@ -281,6 +338,7 @@ const CALENDAR_FETCH: PageFetchSpec = PageFetchSpec {
     subheader: "OTTELUKALENTERI",
     loading_message: "Haetaan otteluohjelmaa...",
     label: "calendar",
+    footer_view: Some(ViewMode::Calendar),
 };
 
 /// What a finished standings or bracket fetch means for the screen.
@@ -332,6 +390,9 @@ where
         let mut page = TeletextPage::new(spec.page_number, "JÄÄKIEKKO", spec.subheader)
             .with_video_links_disabled(disable_links);
         page.add_error_message(spec.loading_message);
+        if let Some(view) = spec.footer_view {
+            page.set_footer_view(view);
+        }
         if let Err(e) = page.render_buffered(&mut std::io::stdout()) {
             tracing::warn!("Failed to render {} loading page: {e}", spec.label);
         }
@@ -433,6 +494,95 @@ fn finish_page_refresh(
             RefreshResult::without_games(Some(*page), false)
         }
     }
+}
+
+/// A finished calendar fetch, for [`finish_calendar_refresh`].
+struct CalendarRefresh {
+    /// The fetched season, or `None` when the fetch failed
+    fetched: Option<SeasonCalendarFetch>,
+    cursor: chrono::NaiveDate,
+    /// Whether the calendar of the cursor's season was on screen already
+    is_auto_refresh: bool,
+    disable_links: bool,
+    terminal_size: (u16, u16),
+}
+
+/// Applies a finished calendar fetch to the screen.
+///
+/// A season missing a tournament's games (its fetch failed) counts as a
+/// failure when that season's calendar is already on screen, because the one
+/// on screen still has those games. On a first load it is shown with the
+/// footer warning. Either way the fetch is retried.
+fn finish_calendar_refresh(
+    state: &mut InteractiveState,
+    refresh: CalendarRefresh,
+) -> RefreshResult {
+    let CalendarRefresh {
+        fetched,
+        cursor,
+        is_auto_refresh,
+        disable_links,
+        terminal_size: (terminal_width, terminal_height),
+    } = refresh;
+
+    let mut incomplete = false;
+    let outcome = match fetched {
+        None => PageRefreshOutcome::Failed,
+        Some(fetch) if !fetch.complete && is_auto_refresh => {
+            tracing::warn!("Calendar refresh is missing games; keeping the calendar on screen");
+            PageRefreshOutcome::Failed
+        }
+        Some(SeasonCalendarFetch { calendar, complete }) => {
+            incomplete = !complete;
+            let changed = state.change_detection.update_calendar(calendar.clone());
+            // A first load has no calendar on screen yet, even when the
+            // season is the same as the one stored
+            if changed || !is_auto_refresh {
+                PageRefreshOutcome::Updated(Box::new(navigation_manager::create_calendar_page(
+                    &calendar,
+                    cursor,
+                    disable_links,
+                    terminal_width,
+                    terminal_height,
+                )))
+            } else {
+                PageRefreshOutcome::Unchanged
+            }
+        }
+    };
+
+    let mut result = finish_page_refresh(
+        state,
+        is_auto_refresh,
+        outcome,
+        TeletextPage::is_calendar_page,
+        || calendar_error_page(disable_links),
+        None,
+    );
+    if incomplete {
+        if let Some(page) = result.new_page.as_mut() {
+            page.show_error_warning();
+        }
+        result.had_error = true;
+        result.should_retry = true;
+    }
+    result
+}
+
+/// The page shown when the calendar's first load fails.
+fn calendar_error_page(disable_links: bool) -> TeletextPage {
+    let mut page = TeletextPage::new(
+        CALENDAR_FETCH.page_number,
+        "JÄÄKIEKKO",
+        CALENDAR_FETCH.subheader,
+    )
+    .with_video_links_disabled(disable_links);
+    page.add_error_message("Otteluohjelman lataus epäonnistui.");
+    page.add_error_message("");
+    page.add_error_message("Yritetään uudelleen automaattisesti.");
+    page.add_error_message("Paina 'k' palataksesi otteluihin.");
+    page.set_footer_view(ViewMode::Calendar);
+    page
 }
 
 /// Marks teams that play a live game in `games` as live in `standings`.
@@ -743,43 +893,11 @@ impl RefreshCoordinator {
                 .await;
         }
 
-        // Restore preserved games page when switching back from standings.
-        // If we have cached game data, rebuild the page immediately instead
-        // of doing a full network fetch. The next auto-refresh cycle will
-        // update the data if needed.
-        if let Some(preserved) = state.navigation.preserved_games_page.take() {
-            state.navigation.preserved_page_for_restoration = Some(preserved);
-
-            let last_games = state.change_detection.last_games();
-            if !last_games.is_empty() {
-                let fetched_date = state.current_date().clone().unwrap_or_default();
-                let games: Vec<_> = last_games.to_vec();
-                let new_page = navigation_manager::create_or_restore_page(PageCreationConfig {
-                    games: &games,
-                    disable_links: config.disable_links,
-                    compact_mode: config.compact_mode,
-                    wide_mode: config.wide_mode,
-                    fetched_date: &fetched_date,
-                    preserved_page_for_restoration: state.preserved_page(),
-                    current_date: state.current_date(),
-                    updated_current_date: state.current_date(),
-                })
-                .await;
-
-                tracing::info!(
-                    "Restored games page from cached data ({} games)",
-                    games.len()
-                );
-                return Ok(RefreshResult {
-                    games,
-                    had_error: false,
-                    fetched_date,
-                    should_retry: false,
-                    new_page,
-                    needs_render: true,
-                    skip_change_detection: false,
-                });
-            }
+        // Coming back to the games view from another view: rebuild the games
+        // page without a fetch when the games of its date are at hand
+        let entering_games_view = state.navigation.preserved_games_page.is_some();
+        if let Some(result) = rebuild_preserved_games_page(state, config).await {
+            return Ok(result);
         }
 
         // Show auto-refresh spinner on the current page before fetching
@@ -871,7 +989,9 @@ impl RefreshCoordinator {
                     needs_render: false,
                     skip_change_detection: true,
                 };
-                if let Some(page) = page_for_blank_screen(state, &discarded, config) {
+                if let Some(page) =
+                    page_for_blank_screen(state, &discarded, config, entering_games_view)
+                {
                     discarded.new_page = Some(page);
                     discarded.needs_render = true;
                 }
@@ -881,7 +1001,7 @@ impl RefreshCoordinator {
             tracing::debug!("Updated current_date to: {:?}", state.current_date());
         }
 
-        if let Some(page) = page_for_blank_screen(state, &result, config) {
+        if let Some(page) = page_for_blank_screen(state, &result, config, entering_games_view) {
             result.new_page = Some(page);
             result.needs_render = true;
         }
@@ -1068,44 +1188,15 @@ impl RefreshCoordinator {
         )
         .await?;
 
-        let (terminal_width, terminal_height) = crossterm::terminal::size().unwrap_or((80, 24));
-        let outcome = match fetched {
-            None => PageRefreshOutcome::Failed,
-            Some(calendar) => {
-                let changed = state.change_detection.update_calendar(calendar.clone());
-                // A first load has no calendar on screen yet, even when the
-                // season is the same as the one stored
-                if changed || !is_auto_refresh {
-                    PageRefreshOutcome::Updated(Box::new(navigation_manager::create_calendar_page(
-                        &calendar,
-                        cursor,
-                        config.disable_links,
-                        terminal_width,
-                        terminal_height,
-                    )))
-                } else {
-                    PageRefreshOutcome::Unchanged
-                }
-            }
-        };
-
-        Ok(finish_page_refresh(
+        Ok(finish_calendar_refresh(
             state,
-            is_auto_refresh,
-            outcome,
-            TeletextPage::is_calendar_page,
-            || {
-                let mut page = TeletextPage::new(
-                    CALENDAR_FETCH.page_number,
-                    "JÄÄKIEKKO",
-                    CALENDAR_FETCH.subheader,
-                )
-                .with_video_links_disabled(config.disable_links);
-                page.add_error_message("Otteluohjelman lataus epäonnistui.");
-                page.add_error_message("Paina 'k' palataksesi otteluihin.");
-                page
+            CalendarRefresh {
+                fetched,
+                cursor,
+                is_auto_refresh,
+                disable_links: config.disable_links,
+                terminal_size: crossterm::terminal::size().unwrap_or((80, 24)),
             },
-            None,
         ))
     }
 
@@ -1196,6 +1287,9 @@ impl RefreshCoordinator {
         state
             .change_detection
             .update_state(result.games.clone(), games_hash);
+        // A successful games refresh has set current_date to the fetched date
+        let games_date = state.current_date().clone();
+        state.change_detection.set_last_games_date(games_date);
 
         // Hide auto-refresh spinner after fetch completes
         if let Some(page) = state.current_page_mut()
@@ -1622,6 +1716,45 @@ mod tests {
 
         assert_eq!(state.change_detection.last_games().len(), 1);
         assert_eq!(state.change_detection.last_games()[0].home_team, "TPS");
+        // The games are known to be that date's, so its games page can be
+        // rebuilt from them, but not another date's
+        assert!(
+            state
+                .change_detection
+                .has_games_of(&Some("2025-03-13".to_string()))
+        );
+        assert!(
+            !state
+                .change_detection
+                .has_games_of(&Some("2025-03-14".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_failed_fetch_leaves_games_of_previous_date() {
+        // Picking a day in the calendar and failing to fetch it must not make
+        // the old day's games pass as the new day's
+        let coordinator = RefreshCoordinator::new();
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+        let game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        let result = RefreshResult {
+            games: vec![game],
+            had_error: false,
+            fetched_date: "2025-03-13".to_string(),
+            should_retry: false,
+            new_page: None,
+            needs_render: false,
+            skip_change_detection: false,
+        };
+        coordinator.process_refresh_results(&mut state, &result);
+
+        state.set_current_date(Some("2025-03-20".to_string()));
+        coordinator.process_refresh_results(&mut state, &empty_result(true));
+
+        assert!(
+            !state.change_detection.has_games_of(state.current_date()),
+            "last_games still belong to 2025-03-13"
+        );
     }
 
     fn blank_screen_test_config() -> RefreshCycleConfig {
@@ -1651,8 +1784,13 @@ mod tests {
         // discarded. Without this page, nothing is drawn.
         let state = InteractiveState::new(Some("2026-09-28".to_string()));
 
-        let page = page_for_blank_screen(&state, &empty_result(false), &blank_screen_test_config())
-            .expect("a blank screen should get a page");
+        let page = page_for_blank_screen(
+            &state,
+            &empty_result(false),
+            &blank_screen_test_config(),
+            false,
+        )
+        .expect("a blank screen should get a page");
 
         assert!(page.has_error_message("Ei otteluita päivälle"));
     }
@@ -1661,8 +1799,13 @@ mod tests {
     fn test_blank_screen_gets_error_page_when_fetch_failed() {
         let state = InteractiveState::new(Some("2026-09-28".to_string()));
 
-        let page = page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
-            .expect("a failed first fetch should get a page");
+        let page = page_for_blank_screen(
+            &state,
+            &empty_result(true),
+            &blank_screen_test_config(),
+            false,
+        )
+        .expect("a failed first fetch should get a page");
 
         assert!(page.has_error_message("Otteluiden haku epäonnistui"));
     }
@@ -1675,8 +1818,13 @@ mod tests {
         );
 
         assert!(
-            page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
-                .is_none()
+            page_for_blank_screen(
+                &state,
+                &empty_result(true),
+                &blank_screen_test_config(),
+                false
+            )
+            .is_none()
         );
     }
 
@@ -1690,10 +1838,225 @@ mod tests {
         calendar_page.set_calendar_page(true);
         state.set_current_page(calendar_page);
 
-        let page = page_for_blank_screen(&state, &empty_result(false), &blank_screen_test_config())
-            .expect("the calendar page counts as blank in the games view");
+        let page = page_for_blank_screen(
+            &state,
+            &empty_result(false),
+            &blank_screen_test_config(),
+            false,
+        )
+        .expect("the calendar page counts as blank in the games view");
 
         assert!(page.has_error_message("Ei otteluita päivälle"));
+    }
+
+    fn calendar_fetch(starts: &[&str], complete: bool) -> SeasonCalendarFetch {
+        let games: Vec<_> = starts
+            .iter()
+            .zip(1..)
+            .map(|(start, id)| crate::data_fetcher::models::ScheduleApiGame {
+                id,
+                season: 2027,
+                start: start.to_string(),
+                home_team_name: "Tappara".to_string(),
+                away_team_name: "HIFK".to_string(),
+                serie: 1,
+                finished_type: None,
+                started: false,
+                ended: false,
+                game_time: None,
+                play_off_phase: None,
+                play_off_pair: None,
+                play_off_req_wins: None,
+                home_team_goals: 0,
+                away_team_goals: 0,
+            })
+            .collect();
+        SeasonCalendarFetch {
+            calendar: crate::data_fetcher::models::calendar::SeasonCalendar::from_schedule(
+                2027, &games,
+            ),
+            complete,
+        }
+    }
+
+    fn calendar_refresh(
+        fetched: Option<SeasonCalendarFetch>,
+        is_auto_refresh: bool,
+    ) -> CalendarRefresh {
+        CalendarRefresh {
+            fetched,
+            cursor: chrono::NaiveDate::from_ymd_opt(2026, 11, 27).unwrap(),
+            is_auto_refresh,
+            disable_links: false,
+            terminal_size: (100, 30),
+        }
+    }
+
+    /// A state with the calendar of `stored` on screen
+    fn state_showing_calendar(stored: SeasonCalendarFetch) -> InteractiveState {
+        let mut state = InteractiveState::new(None);
+        state.change_detection.update_calendar(stored.calendar);
+        let mut page = TeletextPage::new(224, "JÄÄKIEKKO", "OTTELUKALENTERI");
+        page.set_calendar_page(true);
+        state.set_current_page(page);
+        state
+    }
+
+    const FRIDAY_GAME: &str = "2026-11-27T15:30:00Z";
+    const SATURDAY_GAME: &str = "2026-11-28T14:00:00Z";
+
+    #[test]
+    fn test_calendar_first_load_failure_shows_error_page() {
+        let mut state = InteractiveState::new(None);
+
+        let result = finish_calendar_refresh(&mut state, calendar_refresh(None, false));
+
+        let page = result.new_page.expect("a failed first load needs a page");
+        assert!(page.has_error_message("Otteluohjelman lataus epäonnistui."));
+        assert!(result.should_retry);
+    }
+
+    #[test]
+    fn test_calendar_auto_refresh_failure_keeps_calendar_with_warning() {
+        let mut state = state_showing_calendar(calendar_fetch(&[FRIDAY_GAME], true));
+
+        let result = finish_calendar_refresh(&mut state, calendar_refresh(None, true));
+
+        assert!(result.new_page.is_none(), "the calendar stays on screen");
+        assert!(state.current_page().unwrap().is_error_warning_active());
+        assert!(result.should_retry);
+    }
+
+    #[test]
+    fn test_calendar_first_load_of_stored_season_builds_page() {
+        // Coming back to the calendar: the season is stored and unchanged,
+        // but no calendar is on screen yet
+        let mut state = InteractiveState::new(None);
+        state
+            .change_detection
+            .update_calendar(calendar_fetch(&[FRIDAY_GAME], true).calendar);
+
+        let result = finish_calendar_refresh(
+            &mut state,
+            calendar_refresh(Some(calendar_fetch(&[FRIDAY_GAME], true)), false),
+        );
+
+        let page = result.new_page.expect("the calendar must be shown");
+        assert!(page.is_calendar_page());
+        assert!(!result.should_retry);
+    }
+
+    #[test]
+    fn test_unchanged_calendar_auto_refresh_keeps_page() {
+        let mut state = state_showing_calendar(calendar_fetch(&[FRIDAY_GAME], true));
+
+        let result = finish_calendar_refresh(
+            &mut state,
+            calendar_refresh(Some(calendar_fetch(&[FRIDAY_GAME], true)), true),
+        );
+
+        assert!(result.new_page.is_none());
+        assert!(!result.should_retry);
+    }
+
+    #[test]
+    fn test_incomplete_calendar_on_first_load_is_shown_with_warning() {
+        let mut state = InteractiveState::new(None);
+
+        let result = finish_calendar_refresh(
+            &mut state,
+            calendar_refresh(Some(calendar_fetch(&[FRIDAY_GAME], false)), false),
+        );
+
+        let page = result.new_page.expect("the games that came are shown");
+        assert!(page.is_calendar_page());
+        assert!(
+            page.is_error_warning_active(),
+            "the user must see that games may be missing"
+        );
+        assert!(result.should_retry);
+    }
+
+    #[test]
+    fn test_incomplete_calendar_does_not_replace_complete_one() {
+        // A failed playoffs fetch must not empty the playoff days on screen
+        let mut state = state_showing_calendar(calendar_fetch(&[FRIDAY_GAME, SATURDAY_GAME], true));
+
+        let result = finish_calendar_refresh(
+            &mut state,
+            calendar_refresh(Some(calendar_fetch(&[FRIDAY_GAME], false)), true),
+        );
+
+        assert!(result.new_page.is_none());
+        assert!(state.current_page().unwrap().is_error_warning_active());
+        assert!(result.should_retry);
+        assert_eq!(
+            state.change_detection.last_calendar().unwrap().game_count(),
+            2,
+            "the stored season keeps the missing games"
+        );
+    }
+
+    #[test]
+    fn test_page_of_view_being_left_counts_as_blank() {
+        // Back from standings to a date whose fetch fails: the standings must
+        // not stay on screen in the games view
+        let mut state = InteractiveState::new(Some("2025-03-20".to_string()));
+        state.set_current_page(TeletextPage::new(222, "JÄÄKIEKKO", "SARJATAULUKKO"));
+
+        let page = page_for_blank_screen(
+            &state,
+            &empty_result(true),
+            &blank_screen_test_config(),
+            true,
+        )
+        .expect("the standings page shows nothing of the games view");
+        assert!(page.has_error_message("Otteluiden haku epäonnistui."));
+        assert!(
+            page_for_blank_screen(
+                &state,
+                &empty_result(true),
+                &blank_screen_test_config(),
+                false
+            )
+            .is_none(),
+            "a games page on screen keeps showing, with the warning"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_games_page_is_rebuilt_only_from_games_of_its_date() {
+        let coordinator = RefreshCoordinator::new();
+        let mut state = InteractiveState::new(Some("2025-03-13".to_string()));
+        let game = crate::testing_utils::TestDataBuilder::create_basic_game("TPS", "HIFK");
+        let fetched = RefreshResult {
+            games: vec![game],
+            had_error: false,
+            fetched_date: "2025-03-13".to_string(),
+            should_retry: false,
+            new_page: None,
+            needs_render: false,
+            skip_change_detection: false,
+        };
+        coordinator.process_refresh_results(&mut state, &fetched);
+        let config = blank_screen_test_config();
+
+        state.navigation.preserved_games_page = Some(0);
+        let rebuilt = rebuild_preserved_games_page(&mut state, &config)
+            .await
+            .expect("the games of the date on screen are at hand");
+        assert!(rebuilt.new_page.is_some());
+
+        // A day picked in the calendar whose fetch failed
+        state.set_current_date(Some("2025-03-20".to_string()));
+        state.navigation.preserved_games_page = Some(0);
+        assert!(
+            rebuild_preserved_games_page(&mut state, &config)
+                .await
+                .is_none(),
+            "2025-03-13's games must not be shown as 2025-03-20's"
+        );
+        assert_eq!(state.navigation.preserved_games_page, None);
     }
 
     fn blank_screen_test_page() -> TeletextPage {
@@ -1707,7 +2070,7 @@ mod tests {
         result.new_page = Some(blank_screen_test_page());
 
         assert!(
-            page_for_blank_screen(&state, &result, &blank_screen_test_config()).is_none(),
+            page_for_blank_screen(&state, &result, &blank_screen_test_config(), false).is_none(),
             "a fetch that brings a page must not have it replaced"
         );
     }
@@ -1721,8 +2084,13 @@ mod tests {
         loading.set_is_loading_page(true);
         state.set_current_page(loading);
 
-        let page = page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
-            .expect("a loading screen should be replaced after a failed fetch");
+        let page = page_for_blank_screen(
+            &state,
+            &empty_result(true),
+            &blank_screen_test_config(),
+            false,
+        )
+        .expect("a loading screen should be replaced after a failed fetch");
 
         assert!(page.has_error_message("Otteluiden haku epäonnistui"));
     }
@@ -1759,13 +2127,23 @@ mod tests {
     #[test]
     fn test_error_page_survives_a_second_failed_fetch() {
         let mut state = InteractiveState::new(None);
-        let first = page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
-            .expect("first failure shows the error page");
+        let first = page_for_blank_screen(
+            &state,
+            &empty_result(true),
+            &blank_screen_test_config(),
+            false,
+        )
+        .expect("first failure shows the error page");
         state.set_current_page(first);
 
         assert!(
-            page_for_blank_screen(&state, &empty_result(true), &blank_screen_test_config())
-                .is_none(),
+            page_for_blank_screen(
+                &state,
+                &empty_result(true),
+                &blank_screen_test_config(),
+                false
+            )
+            .is_none(),
             "the error page is kept, not rebuilt or replaced"
         );
     }

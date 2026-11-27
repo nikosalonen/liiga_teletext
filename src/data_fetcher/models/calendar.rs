@@ -64,11 +64,20 @@ impl SeasonCalendar {
     {
         let mut dated: Vec<(DateTime<Tz>, CalendarGame)> = games
             .iter()
-            .filter_map(|game| {
-                let start = DateTime::parse_from_rfc3339(&game.start)
-                    .ok()?
-                    .with_timezone(tz);
-                Some((start.clone(), calendar_game(game, &start)))
+            .filter_map(|game| match DateTime::parse_from_rfc3339(&game.start) {
+                Ok(start) => {
+                    let start = start.with_timezone(tz);
+                    Some((start.clone(), calendar_game(game, &start)))
+                }
+                Err(e) => {
+                    // Without a start time the game has no day to sit on
+                    tracing::warn!(
+                        "Calendar: skipping game {} with unreadable start time {:?}: {e}",
+                        game.id,
+                        game.start
+                    );
+                    None
+                }
             })
             .collect();
         dated.sort_by(|(a, _), (b, _)| a.cmp(b));
@@ -93,6 +102,11 @@ impl SeasonCalendar {
 
     pub fn has_games_on(&self, date: NaiveDate) -> bool {
         self.games_by_date.contains_key(&date)
+    }
+
+    /// Number of games in the season.
+    pub fn game_count(&self) -> usize {
+        self.games_by_date.values().map(Vec::len).sum()
     }
 
     /// Whether `date` falls in this calendar's season, i.e. whether this
@@ -188,6 +202,7 @@ mod tests {
         assert_eq!(friday[1].start_time, "18.30");
         assert_eq!(calendar.games_on(date("2026-11-28")).len(), 1);
         assert!(!calendar.has_games_on(date("2026-11-29")));
+        assert_eq!(calendar.game_count(), 3);
     }
 
     #[test]

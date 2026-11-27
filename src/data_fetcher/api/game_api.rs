@@ -31,6 +31,7 @@ use super::tournament_logic::{
     TournamentType, fetch_tournament_games, historical_tournaments_for_month,
 };
 use super::urls::build_game_url;
+use crate::data_fetcher::models::calendar::season_for_date;
 
 /// Helper function to extract team name from a ScheduleTeam, with fallback logic.
 /// Returns the team_name if available, otherwise team_placeholder, or "Unknown" as last resort.
@@ -791,8 +792,12 @@ pub(super) async fn fetch_historical_games(
 ) -> Result<Vec<GameData>, AppError> {
     info!("Fetching historical games for date: {date}");
 
-    // Parse the date and determine the season
-    let (_, month, season) = parse_date_and_season(date);
+    // August practice games belong to the season they open, so split seasons
+    // at July like the calendar (page 224) does. `parse_date_and_season`
+    // splits at September and would look for them a season too early.
+    let (_, month, september_season) = parse_date_and_season(date);
+    let season = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_or(september_season, season_for_date);
 
     // Determine which tournaments to check based on the month
     let tournaments = historical_tournaments_for_month(month);

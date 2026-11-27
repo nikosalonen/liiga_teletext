@@ -122,7 +122,8 @@ impl EventHandler {
         state.navigation.preserved_games_page = preserved_games_page;
         state.navigation.preserved_live_mode = preserved_live_mode;
 
-        // Calendar keys only move the cursor; draw the calendar at it
+        // Draw the calendar when entering it or when the cursor moved; the
+        // calendar keys themselves only move the cursor
         if current_view == ViewMode::Calendar
             && (previous_view != ViewMode::Calendar
                 || state.navigation.calendar_cursor != previous_cursor)

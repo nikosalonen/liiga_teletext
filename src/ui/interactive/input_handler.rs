@@ -506,8 +506,9 @@ fn close_calendar(params: &mut KeyEventParams<'_>, date: Option<NaiveDate>) {
         }
         None => {
             // Same date as before: rebuild the games page from the games
-            // already fetched. A fetch would find them unchanged and bring no
-            // new page, leaving the calendar on screen.
+            // already fetched, if they are that date's. A fetch would find
+            // them unchanged and bring no new page, leaving the calendar on
+            // screen.
             params.preserved_games_page.get_or_insert(0);
         }
     }
@@ -516,7 +517,7 @@ fn close_calendar(params: &mut KeyEventParams<'_>, date: Option<NaiveDate>) {
 }
 
 /// Handles a key in the calendar view. Returns false for keys the calendar
-/// doesn't use; those work as in the other views (q, s, p, r, digits).
+/// doesn't use; the caller handles those as in the other views.
 ///
 /// Only the cursor changes here: the event handler rebuilds the page.
 fn handle_calendar_key(params: &mut KeyEventParams<'_>) -> bool {
@@ -677,8 +678,10 @@ pub(super) async fn handle_key_event(mut params: KeyEventParams<'_>) -> Result<b
                     return Ok(false); // Skip refresh when auto-refresh is disabled
                 }
 
-                // Check if current date is historical - don't refresh historical data
-                if let Some(date) = params.current_date
+                // Don't refresh games of a historical date. The calendar shows
+                // a season, not the games date, so the check doesn't apply there.
+                if !matches!(*params.current_view, ViewMode::Calendar)
+                    && let Some(date) = params.current_date
                     && is_historical_date(date)
                 {
                     tracing::info!("Manual refresh skipped for historical date: {date}");
@@ -1107,6 +1110,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_calendar_cursor_crosses_seasons_and_jumps_to_today() {
+        let mut state = KeyEventState::in_calendar("2026-07-01", &[]);
+        state.current_date = Some("2026-11-20".to_string());
+
+        // Into the previous season: the event handler fetches it, not the keys
+        state.press(KeyCode::Left, KeyModifiers::NONE).await;
+        assert_eq!(state.calendar_cursor, Some(day("2026-06-30")));
+        state.press(KeyCode::Char('t'), KeyModifiers::NONE).await;
+        assert_eq!(state.calendar_cursor, Some(Local::now().date_naive()));
+
+        assert_eq!(state.current_view, ViewMode::Calendar);
+        assert_eq!(
+            state.current_date.as_deref(),
+            Some("2026-11-20"),
+            "t in the calendar moves the cursor, not the games date"
+        );
+        assert!(!state.needs_refresh);
+    }
+
+    #[tokio::test]
     async fn test_calendar_enter_opens_games_of_selected_day() {
         let mut state = KeyEventState::in_calendar("2026-11-27", &["2026-11-27"]);
         state.current_date = Some("2026-11-20".to_string());
@@ -1218,6 +1241,31 @@ mod tests {
         handle_key_event(state.params(&key_event)).await.unwrap();
 
         assert_eq!(state.page_input, "22");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_historical_games_date_does_not_block_calendar_refresh() {
+        // A past day picked in the calendar, then the calendar opened again
+        let mut state = KeyEventState::in_calendar("2026-11-27", &["2026-11-27"]);
+        state.current_date = Some("2025-01-15".to_string());
+        state.last_manual_refresh = Instant::now() - Duration::from_secs(20);
+
+        state.press(KeyCode::Char('r'), KeyModifiers::NONE).await;
+
+        assert!(state.needs_refresh, "the calendar's season must refresh");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_manual_refresh_skips_historical_games() {
+        let mut state = KeyEventState::new();
+        state.current_date = Some("2025-01-15".to_string());
+        state.last_manual_refresh = Instant::now() - Duration::from_secs(20);
+
+        state.press(KeyCode::Char('r'), KeyModifiers::NONE).await;
+
+        assert!(!state.needs_refresh);
     }
 
     #[tokio::test]

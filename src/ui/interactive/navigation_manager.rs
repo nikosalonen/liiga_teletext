@@ -638,8 +638,9 @@ pub fn create_bracket_page(
 }
 
 /// Creates the calendar page (224) for the month of `cursor`, with `cursor`
-/// selected. The page is laid out for the terminal size and always fits on
-/// one screen, because ←/→ move the cursor there instead of turning pages.
+/// selected. The page is laid out to fit one screen of the terminal's size,
+/// because ←/→ move the cursor there instead of turning pages. On a short
+/// terminal the month shows only the weeks around `cursor`.
 pub fn create_calendar_page(
     calendar: &SeasonCalendar,
     cursor: NaiveDate,
