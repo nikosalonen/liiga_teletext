@@ -24,8 +24,9 @@ You need a terminal with Unicode support.
 
 Download the binary for your platform from the
 [latest release](https://github.com/nikosalonen/liiga_teletext/releases/latest).
-Builds exist for macOS (Apple Silicon and Intel), Linux (x86_64 and arm64) and
-Windows (x86_64). They need no Rust toolchain.
+Builds exist for macOS (Apple Silicon), Linux (x86_64 and arm64) and
+Windows (x86_64). They need no Rust toolchain. On an Intel Mac, install
+[with cargo](#with-cargo).
 
 On macOS and Linux:
 

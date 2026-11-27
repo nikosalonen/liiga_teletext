@@ -123,7 +123,7 @@ Environment variable overrides: `LIIGA_API_DOMAIN`, `LIIGA_LOG_FILE`, `LIIGA_HTT
 
 ### Releases
 
-Pushing a `vX.Y.Z` tag runs `release-binaries.yml` (publishing a release in the GitHub UI creates the tag). It builds the 5 prebuilt targets, attaches them with `.sha256` files to the GitHub release (creating the release if it doesn't exist yet), and only then publishes to crates.io. Keep that order: `--update` learns about new versions from crates.io, so publishing first means a 404 for the binary until the builds finish. Asset names must match `self_update.rs::asset_name_for`. `release-binaries.yml` also runs as a build-only dry run on PRs that touch it or `Cargo.lock`.
+Pushing a `vX.Y.Z` tag runs `release-binaries.yml` (publishing a release in the GitHub UI creates the tag). It builds the 4 prebuilt targets (no Intel Mac build), attaches them with `.sha256` files to the GitHub release (creating the release if it doesn't exist yet), and only then publishes to crates.io. Keep that order: `--update` learns about new versions from crates.io, so publishing first means a 404 for the binary until the builds finish. Asset names must match `self_update.rs::asset_name_for`. `release-binaries.yml` also runs as a build-only dry run on PRs that touch it or `Cargo.lock`.
 
 ## Critical Requirements
 

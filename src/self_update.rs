@@ -19,11 +19,11 @@ use tokio::io::AsyncWriteExt;
 
 /// Name of the release asset built for `os`/`arch` (values of
 /// `std::env::consts::{OS, ARCH}`), or `None` when no binary is built for it.
-/// Linux always gets the static musl build so it runs on any distro.
+/// Linux always gets the static musl build so it runs on any distro. Intel
+/// Macs get no build, so they update with `cargo install`.
 pub fn asset_name_for(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
         ("macos", "aarch64") => Some("liiga_teletext-aarch64-apple-darwin"),
-        ("macos", "x86_64") => Some("liiga_teletext-x86_64-apple-darwin"),
         ("linux", "x86_64") => Some("liiga_teletext-x86_64-unknown-linux-musl"),
         ("linux", "aarch64") => Some("liiga_teletext-aarch64-unknown-linux-musl"),
         ("windows", "x86_64") => Some("liiga_teletext-x86_64-pc-windows-msvc.exe"),
@@ -474,10 +474,6 @@ mod tests {
             Some("liiga_teletext-aarch64-apple-darwin")
         );
         assert_eq!(
-            asset_name_for("macos", "x86_64"),
-            Some("liiga_teletext-x86_64-apple-darwin")
-        );
-        assert_eq!(
             asset_name_for("linux", "x86_64"),
             Some("liiga_teletext-x86_64-unknown-linux-musl")
         );
@@ -495,6 +491,7 @@ mod tests {
     fn unsupported_platform_has_no_asset() {
         assert_eq!(asset_name_for("freebsd", "x86_64"), None);
         assert_eq!(asset_name_for("windows", "aarch64"), None);
+        assert_eq!(asset_name_for("macos", "x86_64"), None);
     }
 
     const DIGEST_HEX: &str = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
